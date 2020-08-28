@@ -36,10 +36,12 @@ namespace sair {
 // `second`.
 OperandRange ChainOperandRanges(OperandRange first, OperandRange second);
 
-using namespace mlir;  // NOLINT - Required by the MLIR infrastructure.
+}  // namespace sair
+
 #define GET_OP_CLASSES
 #include "sair_ops.h.inc"
 
+namespace sair {
 // Parses the declaration of an iteration domain. Appends the dimensions that
 // compose the domain to 'dimensions' and their names to 'dim_names' with the
 // name that the domain binds to each dimension. The syntax for iteration

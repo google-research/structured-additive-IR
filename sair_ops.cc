@@ -1378,7 +1378,7 @@ llvm::SmallBitVector SairFbyOp::MustFuseDimensions(int sair_operand) {
   return mask;
 }
 
+}  // namespace sair
+
 #define GET_OP_CLASSES
 #include "sair_ops.cc.inc"
-
-}  // namespace sair
