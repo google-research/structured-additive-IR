@@ -1,0 +1,46 @@
+// Copyright 2020 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+include "mlir/Pass/PassBase.td"
+
+def CopyToMapPass : FunctionPass<"sair-copy-to-map"> {
+  let summary = "Lowers sair.copy operations into sair.map operations";
+  let constructor = [{ ::sair::CreateCopyToMapPass(); }];
+}
+
+def LowerToMemRefPass : FunctionPass<"sair-lower-tomemref"> {
+  let summary = "Folds sair.to_memref operations in their predecessors";
+  let constructor = [{ ::sair::CreateLowerToMemRefPass(); }];
+}
+
+def InlineTrivialSairOpsPass : FunctionPass<"inline-trivial-sair-ops"> {
+  let summary = "Inlines Sair ops operating on and producing 0D values";
+  let constructor = [{ ::sair::CreateInlineTrivialOpsPass(); }];
+}
+
+def InsertCopiesPass : FunctionPass<"sair-insert-copies"> {
+  let summary =
+    "Insert copies before operations when needed to operate in place";
+  let constructor = [{ ::sair::CreateInsertCopiesPass(); }];
+}
+
+def MaterializeMemRefsPass : FunctionPass<"sair-materialize-memrefs"> {
+  let summary = "Materializes Sair values as memrefs";
+  let constructor = [{ ::sair::CreateMaterializeMemRefsPass(); }];
+}
+
+def IntroduceLoopsPass : FunctionPass<"sair-introduce-loops"> {
+  let summary = "Replaces Sair iteration dimensions by loops";
+  let constructor = [{ ::sair::CreateIntroduceLoopsPass(); }];
+}

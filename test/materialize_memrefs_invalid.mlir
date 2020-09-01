@@ -1,0 +1,85 @@
+// RUN: sair-opt -split-input-file -sair-materialize-memrefs -verify-diagnostics %s
+
+func @dependent_dimensions() {
+  %c0 = constant 4 : index
+  sair.program {
+    %0 = sair.static_range 8 : !sair.range
+    %1 = sair.from_scalar %c0 : !sair.value<(), index>
+    %2 = sair.range[d0:%0] %1 : !sair.range<d0:range>
+    // expected-error @+1 {{can only materialize hyper-rectangular Sair values}}
+    %3 = sair.map[d0:%0, d1:%2] attributes {memory_space=[1]} {
+      ^bb0(%arg0: index, %arg1: index):
+        %4 = constant 1.0 : f32
+        sair.return %4 : f32
+    } : #sair.shape<d0:range x d1:range(d0)>, () -> f32
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @invalid_consumer() {
+  sair.program {
+    %0 = sair.static_range 8 : !sair.range
+    // expected-note @+1 {{while trying to materialize a value produced here}}
+    %1 = sair.map[d0:%0] attributes {memory_space=[1]} {
+      ^bb0(%arg0: index):
+        %2 = constant 1.0 : f32
+        sair.return %2 : f32
+    } : #sair.shape<d0:range>, () -> f32
+    // expected-error @+1 {{can only materialize operands of sair.map and sair.map_reduce operations}}
+    %3 = sair.copy[d0:%0] %1(d0) {memory_space=[1]} : !sair.value<d0:range, f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @in_place_incompatible_layout() {
+  sair.program {
+    %0 = sair.static_range 8 : !sair.range
+    // expected-note @+1 {{while trying to materialize a value produced here}}
+    %1 = sair.map[d0:%0] attributes{memory_space=[1]} {
+      ^bb0(%arg0: index):
+        %c0 = constant 1.0 : f32
+        sair.return %c0 : f32
+    } : #sair.shape<d0:range>, () -> f32
+    // expected-error @+1 {{layout incompatible with an in-place update}}
+    %2 = sair.map_reduce[d0:%0, d1:%0] %1(d0) reduce attributes {
+      memory_space=[1]
+    } {
+      ^bb0(%arg0: index, %arg1: index, %arg2: f32):
+        sair.return %arg2 : f32
+    } : #sair.shape<d0:range x d1:range>, () -> (f32)
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @in_place_not_last_use() {
+  sair.program {
+    %0 = sair.static_range 8 : !sair.range
+    // expected-note @+1 {{while trying to materialize a value produced here}}
+    %1 = sair.map[d0:%0] attributes {memory_space=[1]} {
+      ^bb0(%arg0: index):
+        %c0 = constant 1.0 : f32
+        sair.return %c0 : f32
+    } : #sair.shape<d0:range>, () -> f32
+    // expected-error @+1 {{cannot update in-place a value that is still alive}}
+    %2 = sair.map_reduce[d0:%0] %1(d0) reduce attributes {memory_space=[1]} {
+      ^bb0(%arg0: index, %arg1: f32):
+        sair.return %arg1 : f32
+    } : #sair.shape<d0:range>, () -> (f32)
+    // expected-note @+1 {{value used here}}
+    sair.map[d0:%0] %1(d0) {
+      ^bb0(%arg0: index, %arg1: f32):
+        sair.return
+    } : #sair.shape<d0:range>, (f32) -> ()
+    sair.exit
+  }
+  return
+}
