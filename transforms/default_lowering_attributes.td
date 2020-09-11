@@ -17,9 +17,11 @@ include "mlir/Pass/PassBase.td"
 def DefaultMemorySpacePass : FunctionPass<"sair-assign-default-memory-space"> {
   let summary = "Assigns the default memory space to Sair values";
   let constructor = [{ ::sair::CreateDefaultMemorySpacePass(); }];
+  let dependentDialects = ["::sair::SairDialect"];
 }
 
 def DefaultLoopNestPass : FunctionPass<"sair-assign-default-loop-nest"> {
   let summary = "Assigns the default loop nest to Sair operations";
   let constructor = [{ ::sair::CreateDefaultLoopNestPass(); }];
+  let dependentDialects = ["::sair::SairDialect"];
 }

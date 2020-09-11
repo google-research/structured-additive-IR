@@ -15,9 +15,13 @@
 #ifndef SAIR_SAIR_REGISTRATION_H_
 #define SAIR_SAIR_REGISTRATION_H_
 
+namespace mlir {
+class DialectRegistry;
+}  // namespace mlir
+
 namespace sair {
 // Registers Sair dialect with MLIR.
-void RegisterSairDialect();
+void RegisterSairDialect(mlir::DialectRegistry &registry);
 
 // Registers all Sair passes with MLIR.
 void RegisterSairPasses();

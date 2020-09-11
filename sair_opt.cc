@@ -59,10 +59,13 @@ int main(int argc, char **argv) {
 
   llvm::InitLLVM init(argc, argv);
 
+  // Register dialects.
+  mlir::DialectRegistry registry;
+  mlir::registerAllDialects(registry);
+  sair::RegisterSairDialect(registry);
+
   // Register any pass manager command line options.
-  mlir::registerAllDialects();
   mlir::registerAllPasses();
-  sair::RegisterSairDialect();
   sair::RegisterSairPasses();
   mlir::registerPassManagerCLOptions();
   mlir::PassPipelineCLParser passPipeline("", "MLIR passes to run");
@@ -83,8 +86,6 @@ int main(int argc, char **argv) {
     return EXIT_FAILURE;
   }
 
-  mlir::DialectRegistry registry;
-  mlir::getGlobalDialectRegistry().appendTo(registry);
   return mlir::failed(
       mlir::MlirOptMain(outputFile->os(), std::move(inputFile), passPipeline,
                         registry, split_input_file, verify_diagnostics,

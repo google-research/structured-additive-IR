@@ -15,8 +15,11 @@
 #ifndef THIRD_PARTY_SAIR_TRANSFORMS_LOWERING_PASS_CLASSES_H_
 #define THIRD_PARTY_SAIR_TRANSFORMS_LOWERING_PASS_CLASSES_H_
 
+#include "mlir/Dialect/SCF/SCF.h"
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Support/TypeID.h"
+#include "sair_dialect.h"
 
 namespace sair {
 

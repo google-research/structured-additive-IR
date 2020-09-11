@@ -64,4 +64,6 @@ void sair::RegisterSairPasses() {
       [](llvm::function_ref<void(const mlir::detail::PassOptions &)>) {});
 }
 
-void sair::RegisterSairDialect() { mlir::registerDialect<sair::SairDialect>(); }
+void sair::RegisterSairDialect(mlir::DialectRegistry &registry) {
+  registry.insert<sair::SairDialect>();
+}
