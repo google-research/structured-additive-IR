@@ -28,6 +28,8 @@ def SairDialect : Dialect {
     loosing the high-level structure of the code (hence the "additive" part of
     the name).
   }];
+
+  let cppNamespace = "::sair";
 }
 
 //===----------------------------------------------------------------------===//
