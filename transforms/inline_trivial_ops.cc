@@ -40,7 +40,7 @@ bool IsTrivialSairMap(SairOp op) {
   for (const ValueOperand operand : op.ValueOperands()) {
     assert(operand.GetType().Shape().Is0d());
 
-    mlir::Operation *defining_operation = operand.get().getDefiningOp();
+    mlir::Operation *defining_operation = operand.value().getDefiningOp();
     if (!isa_and_nonnull<SairFromScalarOp>(defining_operation)) {
       return false;
     }
@@ -74,7 +74,7 @@ bool InlineTrivialSairOp(mlir::FuncOp function) {
   auto trivial_op_operands = trivial_op.ValueOperands();
   source_values.reserve(trivial_op_operands.size());
   for (const ValueOperand operand : trivial_op_operands) {
-    mlir::Operation *defining_operation = operand.get().getDefiningOp();
+    mlir::Operation *defining_operation = operand.value().getDefiningOp();
     source_values.push_back(cast<SairFromScalarOp>(defining_operation).value());
   }
 
@@ -117,7 +117,7 @@ bool InlineTrivialSairOp(mlir::FuncOp function) {
   // Erase "from_value" if we are about to erase its only user. Explicitly drop
   // the uses of defined values first to break use-def chains.
   for (const ValueOperand operand : trivial_op_operands) {
-    mlir::Operation *defining_operation = operand.get().getDefiningOp();
+    mlir::Operation *defining_operation = operand.value().getDefiningOp();
     if (defining_operation->hasOneUse()) {
       defining_operation->dropAllDefinedValueUses();
       defining_operation->erase();

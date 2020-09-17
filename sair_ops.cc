@@ -36,6 +36,7 @@
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/StandardTypes.h"
 #include "mlir/IR/Types.h"
 #include "mlir/IR/Value.h"
@@ -422,7 +423,7 @@ static mlir::ParseResult ParseFbyOp(mlir::OpAsmParser &parser,
 static void PrintValueAccessList(const ValueOperandRange operands,
                                  mlir::OpAsmPrinter &printer) {
   llvm::interleaveComma(operands, printer, [&](ValueOperand operand) {
-    PrintValueAccess(operand.get(), operand.AccessPattern(), printer);
+    PrintValueAccess(operand.value(), operand.AccessPattern(), printer);
   });
 }
 

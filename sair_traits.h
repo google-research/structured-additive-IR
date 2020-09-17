@@ -43,18 +43,25 @@ class ValueOperand {
       : operand_(operand), index_(index) {}
 
   // Returns the value referenced by the operand.
-  mlir::Value get() const { return operand_->get(); }
+  mlir::Value value() const { return operand_->get(); }
+
   // Returns the type of the value referenced by the operand.
   ValueType GetType() const {
     return operand_->get().getType().cast<ValueType>();
   }
+
   // Returns the operation owning the operand.
   mlir::Operation *getOwner() { return operand_->getOwner(); }
+
   // Returns the access pattern associated to the operand.
   AccessPatternAttr AccessPattern();
 
+  // Returns the position of the operand.
+  int position() const { return index_; }
+
   // Sets the value referenced by the operand.
   void set_value(mlir::Value value) { operand_->set(value); }
+
   // Sets the access pattern associated to the operand.
   void SetAccessPattern(AccessPatternAttr access_pattern);
 
@@ -175,10 +182,9 @@ class SairOpTrait : public OpTrait::TraitBase<ConcreteType, SairOpTrait> {
 
     // Check !sair.value operands.
     for (::sair::ValueOperand v : sair_op.ValueOperands()) {
-      auto value_type =
-          v.get().getType().template dyn_cast<::sair::ValueType>();
+      auto value_type = v.GetType().template dyn_cast<::sair::ValueType>();
       if (!value_type) {
-        return mlir::emitError(v.get().getLoc())
+        return mlir::emitError(v.value().getLoc())
                << "expected a !sair.value operand";
       }
       if (v.AccessPattern().UseDomainSize() != sair_op.domain().size()) {
@@ -187,10 +193,10 @@ class SairOpTrait : public OpTrait::TraitBase<ConcreteType, SairOpTrait> {
       ::sair::DomainShapeAttr expected_shape =
           sair_op.shape().Inverse(v.AccessPattern());
       if (expected_shape != value_type.Shape()) {
-        return mlir::emitError(v.get().getLoc())
+        return mlir::emitError(v.value().getLoc())
                << "access pattern incompatible with the operand shape";
       }
-      mlir::Operation *defining_op = v.get().getDefiningOp();
+      mlir::Operation *defining_op = v.value().getDefiningOp();
       if (!defining_op ||
           defining_op->getParentRegion() != op->getParentRegion()) {
         return op->emitError()

@@ -131,7 +131,7 @@ SairCopyOp MaterializeOperand(DomainShapeAttr shape, mlir::OperandRange domain,
         {builder.getI64IntegerAttr(memory_space.getValue())});
   }
   SairCopyOp copy_op = builder.create<SairCopyOp>(
-      loc, type, domain, access_patterns, operand.get(),
+      loc, type, domain, access_patterns, operand.value(),
       /*loop_nest=*/insertion_point.loop_nest,
       /*memory_space=*/memory_space_attr);
   // Point the operand to the result of the copy operation.
@@ -184,8 +184,8 @@ class InsertCopies : public InsertCopiesPassBase<InsertCopies> {
         bool is_access_injective =
             operand.AccessPattern().IsInjective(op.parallel_domain().size());
         bool memory_space_match =
-            GetMemorySpace(operand.get()) == op.GetMemorySpace(i);
-        if (is_access_injective && GetLastUse(operand.get()) == op &&
+            GetMemorySpace(operand.value()) == op.GetMemorySpace(i);
+        if (is_access_injective && GetLastUse(operand.value()) == op &&
             memory_space_match) {
           continue;
         }

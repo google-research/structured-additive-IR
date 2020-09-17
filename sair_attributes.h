@@ -82,7 +82,7 @@ class AccessPatternAttr
   bool empty() const { return Dimensions().empty(); }
 
   // Returns the access pattern resulting from applying `this` and then `other`
-  // to the current set of indexes.
+  // to the current set of indices.
   AccessPatternAttr Compose(AccessPatternAttr other) const;
 
   // Applies the access pattern to a dependency mask. This converts a mask in

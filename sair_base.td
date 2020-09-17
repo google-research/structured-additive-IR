@@ -281,7 +281,10 @@ class SairOp<string mnemonic,
   : Op<
       dialect, mnemonic,
       !listconcat([SairOpInterface, SairOpTrait], traits)
-    >;
+    > {
+
+  let hasCanonicalizer = 1;
+}
 
 def SairValueProducerOp : OpInterface<"ValueProducerOp"> {
   let description = [{

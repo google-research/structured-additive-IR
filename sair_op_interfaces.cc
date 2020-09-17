@@ -404,7 +404,7 @@ static void AddDependencies(SairOp op, AccessPatternAttr access_pattern,
 
   for (int i = 0, e = op.ValueOperands().size(); i < e; ++i) {
     ValueOperand operand = op.ValueOperands()[i];
-    SairOp def = operand.get().getDefiningOp();
+    SairOp def = operand.value().getDefiningOp();
     llvm::SmallBitVector new_fuse_dimension =
         access_pattern.Apply(op.MustFuseDimensions(i)) | fuse_dimensions;
 
