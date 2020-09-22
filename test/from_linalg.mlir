@@ -1,8 +1,6 @@
 // RUN: sair-opt --convert-linalg-to-sair %s | FileCheck %s
 
 #pointwise_trait = {
-  args_in = 1,
-  args_out = 1,
   indexing_maps = [
     affine_map<(i, j, k) -> (i, k, j)>,
     affine_map<(i, j, k) -> (k, j, i)>
@@ -26,14 +24,16 @@ func @pointwise(%arg0: memref<1x2x3xf32>, %arg1: memref<2x3x1xf32>) {
   // CHECK: %[[d1:.*]] = sair.static_range 3 : !sair.range
   // CHECK: %[[d2:.*]] = sair.static_range 2 : !sair.range
   // CHECK: %[[v2:.*]] = sair.map[d0:%[[d0]], d1:%[[d1]], d2:%[[d2]]] %[[v0]](d0, d2, d1), %[[v1]](d2, d1, d0)
-  linalg.generic #pointwise_trait %arg0, %arg1 {
+  linalg.generic #pointwise_trait
+    ins(%arg0 : memref<1x2x3xf32>)
+   outs(%arg1 : memref<2x3x1xf32>) {
   // CHECK: ^{{.*}}(%{{.*}}: index, %{{.*}}: index, %{{.*}}: index, %{{.*}}: f32, %{{.*}}: f32):
   ^bb(%a0: f32, %a1: f32):
     %1 = addf %a0, %a1 : f32
     // CHECK: sair.return %{{.*}} f32
     linalg.yield %1 : f32
   // CHECK: #sair.shape<d0:range x d1:range x d2:range>, (f32, f32) -> f32
-  } : memref<1x2x3xf32>, memref<2x3x1xf32>
+  }
 
   // CHECK: sair.to_memref[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]] %[[v2]](d2, d1, d0), %{{.*}} : memref<2x3x1xf32>
   return
@@ -71,11 +71,13 @@ func @dynamic(%arg0: memref<?x2x?xf32>, %arg1: memref<?x3x?xf32>) {
   // CHECK: %[[d1:.*]] = sair.range %[[DIM2_2_VAL]]
   // CHECK: %[[d2:.*]] = sair.static_range 2
   // CHECK: %[[v2:.*]] = sair.map[d0:%[[d0]], d1:%[[d1]], d2:%[[d2]]] %[[v0]](d0, d2, d1), %[[v1]](d2, d1, d0)
-  linalg.generic #pointwise_trait %arg0, %arg1 {
+  linalg.generic #pointwise_trait
+    ins(%arg0 : memref<?x2x?xf32>)
+   outs(%arg1 : memref<?x3x?xf32>) {
   ^bb(%a0: f32, %a1: f32):
     %1 = addf %a0, %a1 : f32
     linalg.yield %1 : f32
-  } : memref<?x2x?xf32>, memref<?x3x?xf32>
+  }
 
   // CHECK: sair.to_memref[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]] %[[v2]](d2, d1, d0), %{{.*}} : memref<?x3x?xf32>
   return
@@ -83,8 +85,6 @@ func @dynamic(%arg0: memref<?x2x?xf32>, %arg1: memref<?x3x?xf32>) {
 
 
 #reductions_trait = {
-  args_in = 1,
-  args_out = 1,
   indexing_maps = [
     affine_map<(i, j, k, l, m) -> (i, j, k, l, m)>,
     affine_map<(i, j, k, l, m) -> (i, k, m)>
@@ -114,7 +114,9 @@ func @reductions(%arg0: memref<2x3x4x5x6xf32>, %arg1: memref<2x4x6xf32>) {
   // CHECK: %[[d4:.*]] = sair.static_range 5 : !sair.range
   // CHECK: %[[RES:.*]] = sair.map_reduce[d0:%[[d0]], d1:%[[d1]], d2:%[[d2]]] %[[INIT]](d0, d1, d2)
   // CHECK:                        reduce[d3:%[[d3]], d4:%[[d4]]] %[[INPUT]](d0, d3, d1, d4, d2) {
-  linalg.generic #reductions_trait %arg0, %arg1 {
+  linalg.generic #reductions_trait
+    ins(%arg0 : memref<2x3x4x5x6xf32>)
+   outs(%arg1 : memref<2x4x6xf32>) {
   // CHECK: ^{{.*}}(%{{.*}}: index, %{{.*}}: index, %{{.*}}: index, %{{.*}}: index, %{{.*}}: index, %[[reduce:.*]]: f32, %[[arg:.*]]: f32):
   ^bb0(%a0: f32, %a1: f32):
     // Expecting the operands to be swapped because of block argument
@@ -125,7 +127,7 @@ func @reductions(%arg0: memref<2x3x4x5x6xf32>, %arg1: memref<2x4x6xf32>) {
     // CHECK: sair.return %[[v0]]
     linalg.yield %0 : f32
   // CHECK: } : #sair.shape<d0:range x d1:range x d2:range x d3:range x d4:range>, (f32) -> f32
-  } : memref<2x3x4x5x6xf32>, memref<2x4x6xf32>
+  }
 
   // CHECK: sair.to_memref[d0:%[[r0]], d1:%[[r1]], d2:%[[r2]]] %[[RES]](d0, d1, d2), %{{.*}} : memref<2x4x6xf32>
   return
@@ -133,7 +135,9 @@ func @reductions(%arg0: memref<2x3x4x5x6xf32>, %arg1: memref<2x4x6xf32>) {
 
 // CHECK-LABEL: @indexed
 func @indexed(%arg0: memref<2x3x4x5x6xf64>, %arg1: memref<2x4x6xf64>) {
-  linalg.indexed_generic #reductions_trait %arg0, %arg1 {
+  linalg.indexed_generic #reductions_trait
+    ins(%arg0 : memref<2x3x4x5x6xf64>)
+   outs(%arg1 : memref<2x4x6xf64>) {
   // Sair puts reduction dimensions as innermost, so we expect the corresponding
   // indices (j and l) to be permuted accordingly in the block signature. Value
   // arguments are also permuted, similarly to the regular reduction.
@@ -147,6 +151,6 @@ func @indexed(%arg0: memref<2x3x4x5x6xf64>, %arg1: memref<2x4x6xf64>) {
     %3 = sitofp %2 : i64 to f64
     %4 = addf %0, %3 : f64
     linalg.yield %4 : f64
-  } : memref<2x3x4x5x6xf64>, memref<2x4x6xf64>
+  }
   return
 }
