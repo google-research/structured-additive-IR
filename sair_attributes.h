@@ -138,6 +138,7 @@ class DomainShapeDim {
 
   // Expected type for the dimension.
   const RangeType &type() const { return type_; }
+
   // Access pattern for the dimension, with regard to previous dimensions in the
   // domain.
   AccessPatternAttr dependency_pattern() const { return dependency_pattern_; }

@@ -593,7 +593,7 @@ func @loop_dependencies_not_covered(%arg0: index, %arg1: f32) {
     %2 = sair.range[d0:%0] %1 : !sair.range<d0:range>
     %3 = sair.from_scalar %arg1 : !sair.value<(), f32>
 
-    // expected-error @+1 {{dependencies of dimension 'd1' must be covered by outer loops in the loop nest}}
+    // expected-error @+1 {{dimension 'd1' must be nested in dimension 'd0'}}
     sair.copy[d0: %0, d1: %2] %3 {
       loop_nest = [
         {name = "A", iter = #sair.iter<d1>},
@@ -858,6 +858,53 @@ func @fby_must_fuse(%arg0: f32) {
     %4 = sair.copy[d0:%1] %3(d0) {
       loop_nest = [{name = "B", iter = #sair.iter<d0>}]
     } : !sair.value<d0:range, f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @fby_of_proj_dependency(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.static_range 8 : !sair.range
+    %2 = sair.fby %0 then[d0:%1] %4(d0) : !sair.value<d0:range, f32>
+    // expected-error @+1 {{dimension 'd0' must be nested in dimension 'd1'}}
+    %3 = sair.map[d0:%1, d1:%1] %2(d0) attributes {
+      loop_nest = [
+        {name = "A", iter = #sair.iter<d1>},
+        {name = "B", iter = #sair.iter<d0>}
+      ]
+    } {
+      ^bb0(%arg1: index, %arg2: index, %arg3: f32):
+        sair.return %arg3 : f32
+    } : #sair.shape<d0:range x d1:range>, (f32) -> f32
+    %4 = sair.proj_last[d0:%1] of[d1:%1] %3(d0, d1)
+      : #sair.shape<d0:range x d1:range>, f32
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @fby_of_fby_dependency(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.static_range 8 : !sair.range
+    %2 = sair.fby %0 then[d0:%1] %5(d0) : !sair.value<d0:range, f32>
+    %3 = sair.fby[d0:%1] %2(d0) then[d1:%1] %4(d0, d1)
+      : !sair.value<d0:range x d1:range, f32>
+    // expected-error @+1 {{dimension 'd1' must be nested in dimension 'd0'}}
+    %4 = sair.copy[d0:%1, d1:%1] %3(d0, d1) {
+      loop_nest = [
+        {name = "A", iter = #sair.iter<d1>},
+        {name = "B", iter = #sair.iter<d0>}
+      ]
+    } : !sair.value<d0:range x d1:range, f32>
+    %5 = sair.proj_last[d0:%1] of[d1:%1] %4(d0, d1)
+      : #sair.shape<d0:range x d1:range>, f32
     sair.exit
   }
   return

@@ -1371,7 +1371,7 @@ llvm::SmallBitVector SairFbyOp::DimsDependingOnOperand(int sair_operand) {
   return mask;
 }
 
-llvm::SmallBitVector SairFbyOp::MustFuseDimensions(int sair_operand) {
+llvm::SmallBitVector SairFbyOp::CarryingDimensions(int sair_operand) {
   llvm::SmallBitVector mask(domain().size());
   if (sair_operand == 1) {
     mask.set(parallel_domain().size(), domain().size());

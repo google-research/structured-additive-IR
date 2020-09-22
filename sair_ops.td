@@ -495,7 +495,7 @@ def SairFbyOp : SairOp<"fby", [
 
     bool AllowUseBeforeDef(int index) { return index == 1; }
 
-    llvm::SmallBitVector MustFuseDimensions(int sair_operand);
+    llvm::SmallBitVector CarryingDimensions(int sair_operand);
   }];
 }
 

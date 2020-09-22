@@ -224,67 +224,75 @@ static mlir::LogicalResult CheckLoopDependency(
          << "because of this operation";
 }
 
-// Verifies that the `loop_nest` attribute satisfies dependencies. The
-// `loop_nest` attribute must be set in `compute_op`.
-static mlir::LogicalResult VerifyDependencies(ComputeOp compute_op) {
-  SairOp sair_op = cast<SairOp>(compute_op.getOperation());
-  llvm::ArrayRef<mlir::Attribute> use_loop_nest =
-      compute_op.loop_nest().getValue().getValue();
+// Verifies that the dependency of `use` is satisfied.
+static mlir::LogicalResult VerifyDependency(
+    SairOp use, llvm::ArrayRef<mlir::Attribute> use_loop_nest,
+    Dependency &dependency) {
+  if (!dependency.def.loop_nest().hasValue()) return mlir::success();
+  llvm::ArrayRef<mlir::Attribute> def_loop_nest =
+      dependency.def.loop_nest().getValue().getValue();
 
-  llvm::SmallVector<Dependency, 4> dependencies = Dependencies(sair_op);
-  for (Dependency &dependency : dependencies) {
-    if (!dependency.def.loop_nest().hasValue()) continue;
-    llvm::ArrayRef<mlir::Attribute> def_loop_nest =
-        dependency.def.loop_nest().getValue().getValue();
-    int min_size = std::min(use_loop_nest.size(), def_loop_nest.size());
-    for (int i = 0; i < min_size; ++i) {
+  int min_size = std::min(use_loop_nest.size(), def_loop_nest.size());
+  for (int i = 0; i < min_size; ++i) {
+    LoopAttr use_loop = use_loop_nest[i].cast<LoopAttr>();
+    LoopAttr def_loop = def_loop_nest[i].cast<LoopAttr>();
+    if (use_loop.name() != def_loop.name()) break;
+
+    if (failed(CheckLoopDependency(use_loop, dependency.use_only_dimensions,
+                                   dependency.def, use)) ||
+        failed(CheckLoopDependency(def_loop, dependency.def_only_dimensions,
+                                   use, dependency.def))) {
+      return mlir::failure();
+    }
+
+    // Check mapped dimensions. If two dimensions are mapped by the access
+    // pattern, the def dimension must be fused with the use dimension
+    // or be in a separate loop nest.
+    if (def_loop.iter().Rematerialize()) continue;
+    int mapped_dimension =
+        dependency.mapped_dimensions.Dimension(def_loop.iter().Dimension());
+    if (mapped_dimension == AccessPatternAttr::kNoDimension) continue;
+    if (use_loop.iter().Rematerialize() ||
+        use_loop.iter().Dimension() != mapped_dimension) {
+      return (use.emitError()
+              << "loop " << use_loop.name() << " violates a data dependency")
+                 .attachNote(dependency.def.getLoc())
+             << "dependency from this operation";
+    }
+  }
+
+  // Check that dimensions that must be fused are fused.
+  int last_pref_def_only_dim = AccessPatternAttr::kNoDimension;
+  for (int i = 0, e = def_loop_nest.size(); i < e; ++i) {
+    LoopAttr def_loop = def_loop_nest[i].cast<LoopAttr>();
+    if (def_loop.iter().Rematerialize()) continue;
+    int def_dimension = def_loop.iter().Dimension();
+
+    if (dependency.prev_def_only_dimensions.test(def_dimension)) {
+      last_pref_def_only_dim = def_dimension;
+    }
+
+    int use_dimension = dependency.mapped_dimensions.Dimension(def_dimension);
+    if (use_dimension == AccessPatternAttr::kNoDimension ||
+        !dependency.carrying_dimensions.test(use_dimension)) {
+      continue;
+    }
+
+    if (last_pref_def_only_dim != AccessPatternAttr::kNoDimension) {
+      return dependency.def.emitError() << "dimension 'd" << def_dimension
+                                        << "' must be nested in dimension 'd"
+                                        << last_pref_def_only_dim << "'";
+    }
+
+    if (i < use_loop_nest.size()) {
       LoopAttr use_loop = use_loop_nest[i].cast<LoopAttr>();
-      LoopAttr def_loop = def_loop_nest[i].cast<LoopAttr>();
-      if (use_loop.name() != def_loop.name()) break;
-
-      if (failed(CheckLoopDependency(use_loop, dependency.use_only_dimensions,
-                                     dependency.def, sair_op)) ||
-          failed(CheckLoopDependency(def_loop, dependency.def_only_dimensions,
-                                     sair_op, dependency.def))) {
-        return mlir::failure();
-      }
-
-      // Check mapped dimensions. If two dimensions are mapped by the access
-      // pattern, the def dimension must be fused with the use dimension
-      // or be in a separate loop nest.
-      if (def_loop.iter().Rematerialize()) continue;
-      int mapped_dimension =
-          dependency.mapped_dimensions.Dimension(def_loop.iter().Dimension());
-      if (mapped_dimension == AccessPatternAttr::kNoDimension) continue;
-      if (use_loop.iter().Rematerialize() ||
-          use_loop.iter().Dimension() != mapped_dimension) {
-        return (sair_op.emitError()
-                << "loop " << use_loop.name() << " violates a data dependency")
-                   .attachNote(dependency.def.getLoc())
-               << "dependency from this operation";
-      }
+      if (use_loop.name() == def_loop.name()) continue;
     }
 
-    // Check that dimensions that must be fused are fused.
-    for (int i = 0; i < def_loop_nest.size(); ++i) {
-      LoopAttr def_loop = def_loop_nest[i].cast<LoopAttr>();
-      if (def_loop.iter().Rematerialize()) continue;
-      int def_dimension = def_loop.iter().Dimension();
-
-      int use_dimension = dependency.mapped_dimensions.Dimension(def_dimension);
-      if (use_dimension == AccessPatternAttr::kNoDimension ||
-          !dependency.fuse_dimensions.test(use_dimension)) {
-        continue;
-      }
-
-      if (i < use_loop_nest.size() ||
-          use_loop_nest[i].cast<LoopAttr>().name() != def_loop.name()) {
-        return (sair_op.emitError()
-                << "operation must be fused with loop " << def_loop.name())
-                   .attachNote(dependency.def.getLoc())
-               << "because of a dependency from this operation";
-      }
-    }
+    return (use.emitError()
+            << "operation must be fused with loop " << def_loop.name())
+               .attachNote(dependency.def.getLoc())
+           << "because of a dependency from this operation";
   }
 
   return mlir::success();
@@ -293,42 +301,53 @@ static mlir::LogicalResult VerifyDependencies(ComputeOp compute_op) {
 mlir::LogicalResult VerifyComputeOp(mlir::Operation *op) {
   ComputeOp compute_op = cast<ComputeOp>(op);
   if (!compute_op.loop_nest().hasValue()) return mlir::success();
+  llvm::ArrayRef<mlir::Attribute> loop_nest =
+      compute_op.loop_nest().getValue().getValue();
 
-  auto loop_nest = compute_op.loop_nest().getValue().getAsRange<LoopAttr>();
   SairProgramOp parent = dyn_cast<SairProgramOp>(op->getParentOp());
   // Delegate checking that `parent` is a SairProgramOp to SairOp verifier.
   if (parent == nullptr) return mlir::success();
-
   SairOp sair_op = cast<SairOp>(op);
-  // Bitfield that keeps track of which dimensions are implemented by loops.
   int domain_size = sair_op.domain().size();
+
+  // Retrieve dependencies.
+  llvm::SmallVector<Dependency, 4> dependencies;
+  llvm::SmallVector<llvm::SmallBitVector, 4> dimension_dependencies;
+  dimension_dependencies.reserve(domain_size);
+  for (const DomainShapeDim &dim : sair_op.shape().Dimensions()) {
+    dimension_dependencies.push_back(dim.DependencyMask());
+    dimension_dependencies.back().resize(domain_size);
+  }
+  GetDependencies(sair_op, dependencies, dimension_dependencies);
+
+  // Bitfield that keeps track of which dimensions are implemented by loops.
   llvm::SmallBitVector covered_dimensions(domain_size);
   llvm::SmallVector<int, 8> steps(sair_op.domain().size(), -1);
-  for (auto it = loop_nest.begin(), e = loop_nest.end(); it != e; ++it) {
-    LoopAttr loop = *it;
+  for (int i = 0, e = loop_nest.size(); i < e; ++i) {
+    LoopAttr loop = loop_nest[i].cast<LoopAttr>();
     if (llvm::count(parent.loop_name_table(), loop.name()) == 0) {
       return op->emitError() << "loop " << loop.name()
                              << " is not declared in the parent operation";
     }
 
     // Ensure that symbols are unique in the loop nest.
-    for (auto outer_it = loop_nest.begin(); outer_it != it; ++outer_it) {
-      LoopAttr outer_loop = *outer_it;
-      if (loop.name() == outer_loop.name()) {
+    for (int j = 0; j < i; ++j) {
+      if (loop.name() == loop_nest[j].cast<LoopAttr>().name()) {
         return op->emitError()
                << "name " << loop.name() << " used twice in the same loop nest";
       }
     }
 
     if (loop.iter().Rematerialize()) continue;
-
     int dimension = loop.iter().Dimension();
-    llvm::SmallBitVector dependency_mask =
-        sair_op.shape().Dimensions()[dimension].DependencyMask();
-    if ((~covered_dimensions).anyCommon(dependency_mask)) {
+
+    llvm::SmallBitVector missing_outer_dims =
+        dimension_dependencies[dimension] & ~covered_dimensions;
+    if (missing_outer_dims.any()) {
       return op->emitError()
              << "dependencies of dimension 'd" << dimension << "' "
-             << "must be covered by outer loops in the loop nest";
+             << "must be nested in dimension 'd"
+             << *missing_outer_dims.set_bits_begin() << "'";
     }
 
     int step = loop.iter().Step();
@@ -347,119 +366,154 @@ mlir::LogicalResult VerifyComputeOp(mlir::Operation *op) {
     return op->emitError() << "not all dimensions are covered by the loop nest";
   }
 
-  return VerifyDependencies(compute_op);
+  for (Dependency &dependency : dependencies) {
+    if (mlir::failed(VerifyDependency(sair_op, loop_nest, dependency))) {
+      return mlir::failure();
+    }
+  }
+
+  return mlir::success();
 }
 
-static void AddDependencyFrom(SairOp def, AccessPatternAttr access_pattern,
-                              llvm::SmallBitVector def_only_dimensions,
-                              llvm::SmallBitVector use_only_dimensions,
-                              llvm::SmallBitVector fuse_dimensions,
-                              llvm::SmallVectorImpl<Dependency> &dependencies);
+static void AddDependencyFrom(
+    SairOp def, AccessPatternAttr access_pattern,
+    llvm::SmallBitVector def_only_dimensions,
+    llvm::SmallBitVector use_only_dimensions,
+    llvm::SmallBitVector carrying_dimensions,
+    llvm::SmallBitVector prev_def_only_dimensions, bool is_loop_carried,
+    llvm::SmallVectorImpl<Dependency> &dependencies,
+    llvm::SmallVectorImpl<llvm::SmallBitVector> &use_dim_dependencies);
 
-// Appends dependencies of `op` to the list of dependencies. Translates
-// dependencies to the domain of the use operation by applying
-// `access_pattern`. Adds `def_only_dimensions` to dimensions of the def
-// operation that must complete before executing the current instance of use
-// and `use_only_dimensions` to the list of dimensions that can only execute
-// after the accessed instance of the def operation has executed.
-static void AddDependencies(SairOp op, AccessPatternAttr access_pattern,
-                            const llvm::SmallBitVector &def_only_dimensions,
-                            const llvm::SmallBitVector &use_only_dimensions,
-                            const llvm::SmallBitVector &fuse_dimensions,
-                            llvm::SmallVectorImpl<Dependency> &dependencies) {
+// Appends dependencies of `op` to the list of dependencies. Depdencies are
+// expressed in the domain of a user operation.
+// * `access_pattern`: the access pattern from `op` domain to the user domain.
+// * `def_only_dimension`, `use_only_dimensions`, `carrying_dimensions` and
+//   `prev_def_only_dimensions`: dimensions to add to the fields of the same
+//   name when creating the `Dependency` object.
+// * `is_loop_carried`: indicates if the dependency being built is a
+//   loop-carried dependency.
+// * `dependencies`: the list of dependencies to fill.
+// * `use_dim_dependencies`: dependencies on the dimensions of the use domain,
+//    to be filled by this function.
+static void AddDependencies(
+    SairOp op, AccessPatternAttr access_pattern,
+    const llvm::SmallBitVector &def_only_dimensions,
+    const llvm::SmallBitVector &use_only_dimensions,
+    const llvm::SmallBitVector &carrying_dimensions,
+    const llvm::SmallBitVector &prev_def_only_dimensions, bool is_loop_carried,
+    llvm::SmallVectorImpl<Dependency> &dependencies,
+    llvm::SmallVectorImpl<llvm::SmallBitVector> &use_dim_dependencies) {
   assert(access_pattern.Dimensions().size() == op.domain().size());
 
-  auto add_forward_dependency =
-      [&](SairOp def, AccessPatternAttr def_access_pattern,
-          const llvm::SmallBitVector &op_use_only_dimensions,
-          const llvm::SmallBitVector &new_fuse_dimensions) {
-        llvm::SmallBitVector new_use_only_dimensions =
-            access_pattern.Apply(op_use_only_dimensions) | use_only_dimensions;
+  auto add_dependency = [&](SairOp def, AccessPatternAttr def_access_pattern,
+                            const llvm::SmallBitVector &new_use_only_dimensions,
+                            const llvm::SmallBitVector &new_carrying_dimensions,
+                            bool new_is_loop_carried) {
+    AccessPatternAttr full_def_access_pattern =
+        def_access_pattern.Resize(def.domain().size());
 
-        llvm::SmallBitVector new_def_only_dimensions =
-            def_access_pattern.ApplyInverse(def_only_dimensions);
-        new_def_only_dimensions.resize(def.domain().size());
-        new_def_only_dimensions |= def.ResultsDimDependencies();
+    llvm::SmallBitVector new_def_only_dimensions =
+        full_def_access_pattern.ApplyInverse(def_only_dimensions);
+    llvm::SmallBitVector new_prev_def_only_dimensions =
+        full_def_access_pattern.ApplyInverse(prev_def_only_dimensions);
 
-        // Otherwise, we need to compute transitive dependencies.
-        AccessPatternAttr new_access_pattern =
-            access_pattern.Compose(def_access_pattern);
+    // Otherwise, we need to compute transitive dependencies.
+    AccessPatternAttr new_access_pattern =
+        access_pattern.Compose(full_def_access_pattern);
 
-        AddDependencyFrom(def, new_access_pattern, new_def_only_dimensions,
-                          new_use_only_dimensions, new_fuse_dimensions,
-                          dependencies);
-      };
+    AddDependencyFrom(def, new_access_pattern, new_def_only_dimensions,
+                      new_use_only_dimensions, new_carrying_dimensions,
+                      new_prev_def_only_dimensions, new_is_loop_carried,
+                      dependencies, use_dim_dependencies);
+  };
 
   // Dimension dependencies are computed before entering the dimension.
   for (int i = 0, e = op.domain().size(); i < e; ++i) {
     SairOp def = op.domain()[i].getDefiningOp();
-    llvm::SmallBitVector op_use_only_dimensions(op.domain().size());
-    op_use_only_dimensions.set(i);
-
+    llvm::SmallBitVector new_use_only_dimensions = use_only_dimensions;
+    if (access_pattern.Dimension(i) != AccessPatternAttr::kNoDimension) {
+      new_use_only_dimensions.set(access_pattern.Dimension(i));
+    }
     AccessPatternAttr dependency_pattern =
         op.shape().Dimensions()[i].dependency_pattern();
-    add_forward_dependency(def, dependency_pattern, op_use_only_dimensions,
-                           fuse_dimensions);
+
+    add_dependency(def, dependency_pattern, new_use_only_dimensions,
+                   carrying_dimensions, is_loop_carried);
   }
 
   for (int i = 0, e = op.ValueOperands().size(); i < e; ++i) {
     ValueOperand operand = op.ValueOperands()[i];
     SairOp def = operand.value().getDefiningOp();
-    llvm::SmallBitVector new_fuse_dimension =
-        access_pattern.Apply(op.MustFuseDimensions(i)) | fuse_dimensions;
+    llvm::SmallBitVector new_carrying_dimensions =
+        access_pattern.Apply(op.CarryingDimensions(i)) | carrying_dimensions;
+    llvm::SmallBitVector new_use_only_dimensions =
+        access_pattern.Apply(op.DimsDependingOnOperand(i)) |
+        use_only_dimensions;
 
     if (!operand.AllowUseBeforeDef()) {
-      add_forward_dependency(def, operand.AccessPattern(),
-                             op.DimsDependingOnOperand(i), new_fuse_dimension);
+      add_dependency(def, operand.AccessPattern(), new_use_only_dimensions,
+                     new_carrying_dimensions, is_loop_carried);
       continue;
     }
 
-    AccessPatternAttr new_access_pattern =
-        access_pattern.Compose(operand.AccessPattern());
+    // If the operand is a loop-carried dependency, we force
+    // use-only dimensions to be nested in forced fused dimensions instead of
+    // putting them in use_only.
+    llvm::SmallBitVector empty_use_only_dimensions(use_only_dimensions.size());
+    for (int outer_dim : new_carrying_dimensions.set_bits()) {
+      for (int inner_dim : new_use_only_dimensions.set_bits()) {
+        use_dim_dependencies[inner_dim].set(outer_dim);
+      }
+    }
 
-    // If the operand is a loop-carried dependency, we can ignore def- and
-    // use-only dimensions but def and use must be fused.
-    llvm::SmallBitVector new_def_only_dimensions(def.domain().size());
-    llvm::SmallBitVector new_use_only_dimensions(use_only_dimensions.size());
-
-    AddDependencyFrom(def, new_access_pattern, new_def_only_dimensions,
-                      new_use_only_dimensions, new_fuse_dimension,
-                      dependencies);
+    add_dependency(def, operand.AccessPattern(), empty_use_only_dimensions,
+                   new_carrying_dimensions, true);
   }
 }
 
 // Adds a dependency from `def` to the list of dependencies.
-static void AddDependencyFrom(SairOp def, AccessPatternAttr access_pattern,
-                              llvm::SmallBitVector def_only_dimensions,
-                              llvm::SmallBitVector use_only_dimensions,
-                              llvm::SmallBitVector fuse_dimensions,
-                              llvm::SmallVectorImpl<Dependency> &dependencies) {
-  access_pattern = access_pattern.Resize(def.domain().size());
+static void AddDependencyFrom(
+    SairOp def, AccessPatternAttr access_pattern,
+    llvm::SmallBitVector def_only_dimensions,
+    llvm::SmallBitVector use_only_dimensions,
+    llvm::SmallBitVector carrying_dimensions,
+    llvm::SmallBitVector prev_def_only_dimensions, bool is_loop_carried,
+    llvm::SmallVectorImpl<Dependency> &dependencies,
+    llvm::SmallVectorImpl<llvm::SmallBitVector> &use_dim_dependencies) {
+  if (is_loop_carried) {
+    prev_def_only_dimensions |= def.ResultsDimDependencies();
+  } else {
+    def_only_dimensions |= def.ResultsDimDependencies();
+  }
 
   // If the producer is a compute op, we can express the dependency
   // directly on the producer.
   ComputeOp compute_op = dyn_cast<ComputeOp>(def.getOperation());
   if (compute_op != nullptr) {
     dependencies.push_back({compute_op, def_only_dimensions,
-                            use_only_dimensions, fuse_dimensions,
-                            access_pattern});
+                            use_only_dimensions, carrying_dimensions,
+                            prev_def_only_dimensions, access_pattern});
     return;
   }
 
   AddDependencies(def, access_pattern, def_only_dimensions, use_only_dimensions,
-                  fuse_dimensions, dependencies);
+                  carrying_dimensions, prev_def_only_dimensions,
+                  is_loop_carried, dependencies, use_dim_dependencies);
 }
 
-llvm::SmallVector<Dependency, 4> Dependencies(SairOp op) {
-  llvm::SmallVector<Dependency, 4> dependencies;
+void GetDependencies(
+    SairOp op, llvm::SmallVectorImpl<Dependency> &dependencies,
+    llvm::SmallVectorImpl<llvm::SmallBitVector> &dimension_dependencies) {
   AccessPatternAttr access_pattern =
       AccessPatternAttr::GetIdentity(op.getContext(), op.domain().size());
-  llvm::SmallBitVector def_only_dimensions(op.domain().size());
-  llvm::SmallBitVector use_only_dimensions(op.domain().size());
-  llvm::SmallBitVector fuse_dimensions(op.domain().size());
+  int domain_size = op.domain().size();
+  llvm::SmallBitVector def_only_dimensions(domain_size);
+  llvm::SmallBitVector use_only_dimensions(domain_size);
+  llvm::SmallBitVector fuse_dimensions(domain_size);
+  llvm::SmallBitVector prev_def_only_dimensions(domain_size);
   AddDependencies(op, access_pattern, def_only_dimensions, use_only_dimensions,
-                  fuse_dimensions, dependencies);
-  return dependencies;
+                  fuse_dimensions, prev_def_only_dimensions, false,
+                  dependencies, dimension_dependencies);
 }
 
 #include "sair_op_interfaces.cc.inc"

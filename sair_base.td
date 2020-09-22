@@ -229,9 +229,9 @@ def SairOpInterface : OpInterface<"SairOp"> {
       [{return false;}]
     >,
     InterfaceMethod<
-      [{Returns a mask of the dimensions of the current operation that must be
-        fused with the producer of the !sair.vaue operand.}],
-      "llvm::SmallBitVector", "MustFuseDimensions",
+      [{Returns a mask of the dimensions of the current operation that carry
+        dependencies accross iterations for the given !sair.value operand}],
+      "llvm::SmallBitVector", "CarryingDimensions",
       (ins "int":$sair_operand), [{}], [{
         int size = cast<ConcreteOp>(this->getOperation()).domain().size();
         return llvm::SmallBitVector(size);

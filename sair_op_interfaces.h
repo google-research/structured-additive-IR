@@ -96,15 +96,24 @@ struct Dependency {
   // Dimensions of the use operation that cannot execute before the accessed
   // instance of def is computed.
   llvm::SmallBitVector use_only_dimensions;
-  // Dimension of the use operation that must be fused with the dimensions of
-  // the def operation they map to.
-  llvm::SmallBitVector fuse_dimensions;
+  // Dimension of the use operation that carry the dependency accross
+  // iterations. They must be fused with the dimensions of the def operation
+  // they map to.
+  llvm::SmallBitVector carrying_dimensions;
+  // Dimensions of the def operation that must complete at the previous
+  // iteration of `carrying_dimensions`. In practice, this means that they are
+  // nested in carrying dimensions.
+  llvm::SmallBitVector prev_def_only_dimensions;
   // Point-to-point communication pattern from def to use.
   AccessPatternAttr mapped_dimensions;
 };
 
-// Returns the dependencies of `op`.
-llvm::SmallVector<Dependency, 4> Dependencies(SairOp op);
+// Adds dependencies of `op` to `dependencies` and for each dimension `di` of
+// `op`, adds the dimensions `di` must be nested in to
+// `dimension_dependencies[i]`.
+void GetDependencies(
+    SairOp op, llvm::SmallVectorImpl<Dependency> &dependencies,
+    llvm::SmallVectorImpl<llvm::SmallBitVector> &dimension_dependencies);
 
 }  // namespace sair
 
