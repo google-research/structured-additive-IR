@@ -156,10 +156,10 @@ class InsertCopies : public InsertCopiesPassBase<InsertCopies> {
     getFunction().walk([&builder](SairToMemRefOp op) {
       mlir::Operation *defining_op = op.value().getDefiningOp();
       if (!isa<SairFromMemRefOp>(defining_op) &&
-          op.AccessPattern(0).InverseAffineMap()) {
+          op.Value().AccessPattern().InverseAffineMap()) {
         return;
       }
-      ValueOperand operand = op.ValueOperands()[0];
+      ValueOperand operand = op.Value();
       SairProgramOp program_op = cast<SairProgramOp>(op.getParentOp());
       // Move the operation at the end of the program so that we can generate a
       // new loop nest without causing interference with existing fusion
@@ -246,7 +246,8 @@ class LowerToMemRefPattern : public mlir::OpConversionPattern<SairToMemRefOp> {
     SairOpWithBody defining_op =
         dyn_cast_or_null<SairOpWithBody>(adapted.value().getDefiningOp());
     if (defining_op == nullptr) return failure();
-    mlir::AffineMap store_pattern = op.AccessPattern(0).InverseAffineMap();
+    mlir::AffineMap store_pattern =
+        op.Value().AccessPattern().InverseAffineMap();
     if (store_pattern == mlir::AffineMap(nullptr)) return failure();
     mlir::OpResult producer_result;
 
@@ -321,7 +322,8 @@ void UpdateUseAfterMaterialization(mlir::Value memref_value,
   const int operand_number = use.getOperandNumber();
   const int domain_size = sair_op.domain().size();
   const int input_position = operand_number - domain_size;
-  AccessPatternAttr old_access_pattern = sair_op.AccessPattern(input_position);
+  AccessPatternAttr old_access_pattern =
+      sair_op.ValueOperands()[input_position].AccessPattern();
   // Set the new value and access pattern.
   auto new_access_pattern =
       AccessPatternAttr::get(builder.getContext(), domain_size, {});
@@ -411,8 +413,8 @@ void UpdateUseInPlaceAfterMaterialization(
   mlir::BlockArgument memref_argument = new_op.block().addArgument(memref_type);
 
   // Load from the memref.
-  mlir::AffineMap access_map =
-      memref_layout.compose(op.AccessPattern(init_position).AsAffineMap());
+  mlir::AffineMap access_map = memref_layout.compose(
+      op.ValueOperands()[init_position].AccessPattern().AsAffineMap());
   builder.setInsertionPointToStart(&new_op.block());
   auto load_op = builder.create<mlir::AffineLoadOp>(
       op.getLoc(), memref_argument, access_map, access_indices);
@@ -484,7 +486,8 @@ mlir::LogicalResult UpdateUsersAfterMaterialization(mlir::Value old_value,
       // Handle the special case where the user updates the argument in place.
       int init_number =
           operand_number - reduce_op.inits().getBeginOperandIndex();
-      AccessPatternAttr access_pattern = reduce_op.AccessPattern(init_number);
+      AccessPatternAttr access_pattern =
+          reduce_op.ValueOperands()[init_number].AccessPattern();
       mlir::AffineMap result_layout = layout.compose(
           access_pattern.ResizeUseDomain(reduce_op.parallel_domain().size())
               .AsAffineMap());

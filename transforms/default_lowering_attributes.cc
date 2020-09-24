@@ -23,6 +23,7 @@
 #include "mlir/IR/Function.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Pass/Pass.h"
+#include "mlir/Pass/PassManager.h"
 #include "sair_attributes.h"
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
@@ -105,6 +106,11 @@ std::unique_ptr<mlir::Pass> CreateDefaultMemorySpacePass() {
 
 std::unique_ptr<mlir::Pass> CreateDefaultLoopNestPass() {
   return std::make_unique<DefaultLoopNest>();
+}
+
+void CreateDefaultLoweringAttributesPipeline(mlir::OpPassManager *pm) {
+  pm->addPass(CreateDefaultLoopNestPass());
+  pm->addPass(CreateDefaultMemorySpacePass());
 }
 
 }  // namespace sair

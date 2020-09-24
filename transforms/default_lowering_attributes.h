@@ -25,6 +25,10 @@
 
 namespace sair {
 
+// Adds a pass pipeline that generates default lowering attributes to the pass
+// manager.
+void CreateDefaultLoweringAttributesPipeline(mlir::OpPassManager *pm);
+
 // Returns a pass that sets the memory space of Sair values to its default
 // value. Leaves existing memory space attributes intact.
 std::unique_ptr<mlir::Pass> CreateDefaultMemorySpacePass();

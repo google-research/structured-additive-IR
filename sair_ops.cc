@@ -432,7 +432,7 @@ void Print(SairRangeOp op, OpAsmPrinter &printer) {
   printer << SairRangeOp::getOperationName();
   PrintDomain(op.domain(), printer);
   printer << " ";
-  PrintValueAccess(op.size(), op.AccessPattern(0), printer);
+  PrintValueAccess(op.size(), op.Size().AccessPattern(), printer);
   printer << " : " << op.getType();
 }
 
@@ -447,7 +447,7 @@ void Print(SairCopyOp op, OpAsmPrinter &printer) {
   printer << SairCopyOp::getOperationName();
   PrintDomain(op.domain(), printer);
   printer << " ";
-  PrintValueAccess(op.value(), op.AccessPattern(0), printer);
+  PrintValueAccess(op.value(), op.Value().AccessPattern(), printer);
   printer.printOptionalAttrDict(op.getAttrs(),
                                 {SairDialect::kAccessPatternAttrName});
   printer << " : " << op.getType();
@@ -473,7 +473,7 @@ void Print(SairToMemRefOp op, OpAsmPrinter &printer) {
   printer << SairToMemRefOp::getOperationName();
   PrintDomain(op.domain(), printer);
   printer << " ";
-  PrintValueAccess(op.value(), op.AccessPattern(0), printer);
+  PrintValueAccess(op.value(), op.Value().AccessPattern(), printer);
   printer << ", " << op.memref() << " : " << op.memref().getType();
 }
 
@@ -485,7 +485,7 @@ void PrintProjectionOp(Op op, OpAsmPrinter &printer) {
   printer << " " << kOfKeyword;
   PrintDomain(op.projection_domain(), printer, op.parallel_domain().size());
   printer << " ";
-  PrintValueAccess(op.value(), op.AccessPattern(0), printer);
+  PrintValueAccess(op.value(), op.Value().AccessPattern(), printer);
   printer << " : " << op.shape() << ", "
           << op.result().getType().template cast<ValueType>().ElementType();
 }
@@ -530,11 +530,11 @@ void Print(SairFbyOp op, OpAsmPrinter &printer) {
   printer << SairFbyOp::getOperationName();
   PrintDomain(op.parallel_domain(), printer);
   printer << " ";
-  PrintValueAccess(op.init(), op.AccessPattern(0), printer);
+  PrintValueAccess(op.init(), op.Init().AccessPattern(), printer);
   printer << " " << SairFbyOp::kThenKeyword;
   PrintDomain(op.sequential_domain(), printer, op.parallel_domain().size());
   printer << " ";
-  PrintValueAccess(op.value(), op.AccessPattern(1), printer);
+  PrintValueAccess(op.value(), op.Value().AccessPattern(), printer);
 
   printer.printOptionalAttrDict(op.getAttrs(),
                                 {
@@ -1208,8 +1208,7 @@ static mlir::LogicalResult VerifyFusedLoops(SairProgramOp program) {
       close_groups(0);
       return mlir::WalkResult::advance();
     }
-    llvm::ArrayRef<mlir::Attribute> loop_nest =
-        op.loop_nest().getValue().getValue();
+    llvm::ArrayRef<mlir::Attribute> loop_nest = op.LoopNestLoops();
     SairOp sair_op = cast<SairOp>(op.getOperation());
 
     // Check that dimensions are not out of range of the domain. We do this here

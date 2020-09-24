@@ -34,7 +34,7 @@ static AccessPatternAttr ExtendWithIdentity(AccessPatternAttr old_pattern,
 // domain. Returns true if any change was made.
 static bool SimplifyFbyOp(ValueOperand &use, SairFbyOp op) {
   if (!op.sequential_domain().empty()) return false;
-  use.SetAccessPattern(use.AccessPattern().Compose(op.AccessPattern(0)));
+  use.SetAccessPattern(use.AccessPattern().Compose(op.Init().AccessPattern()));
   use.set_value(op.init());
   return true;
 }
@@ -46,7 +46,8 @@ template <typename ProjOp>
 static bool SimplifyProjOp(ValueOperand &use, ProjOp op,
                            mlir::PatternRewriter &rewriter) {
   if (op.projection_domain().empty()) {
-    use.SetAccessPattern(use.AccessPattern().Compose(op.AccessPattern(0)));
+    use.SetAccessPattern(
+        use.AccessPattern().Compose(op.Value().AccessPattern()));
     use.set_value(op.value());
     return true;
   }
@@ -73,9 +74,9 @@ static bool SimplifyProjOp(ValueOperand &use, ProjOp op,
   DomainShapeAttr shape = DomainShapeAttr::get(op.getContext(), shape_dims);
 
   AccessPatternAttr new_access_pattern =
-      ExtendWithIdentity(op.AccessPattern(0), shape_dims.size(),
+      ExtendWithIdentity(op.Value().AccessPattern(), shape_dims.size(),
                          prev_op.domain().size())
-          .Compose(prev_op.AccessPattern(0));
+          .Compose(prev_op.Value().AccessPattern());
   mlir::ArrayAttr access_pattern_array =
       rewriter.getArrayAttr({new_access_pattern});
 

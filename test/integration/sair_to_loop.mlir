@@ -1,4 +1,4 @@
-// RUN: sair-opt -sair-assign-default-memory-space -convert-sair-to-loop %s | FileCheck %s
+// RUN: sair-opt -sair-default-lowering-attributes -convert-sair-to-loop %s | FileCheck %s
 
 // CHECK-LABEL: @empty_program
 func @empty_program() {

@@ -136,10 +136,8 @@ static LoopAttr FirstLoopOrNull(mlir::Operation *op) {
   ComputeOp compute_op = dyn_cast_or_null<ComputeOp>(op);
   if (compute_op == nullptr) return nullptr;
   if (!compute_op.loop_nest().hasValue()) return nullptr;
-  llvm::ArrayRef<mlir::Attribute> loop_nest =
-      compute_op.loop_nest().getValue().getValue();
-  if (loop_nest.empty()) return nullptr;
-  return loop_nest.front().dyn_cast<LoopAttr>();
+  if (compute_op.LoopNestLoops().empty()) return nullptr;
+  return compute_op.LoopNestLoops().front().dyn_cast<LoopAttr>();
 }
 
 mlir::LogicalResult VerifyValueProducerOp(mlir::Operation *operation) {
@@ -230,7 +228,7 @@ static mlir::LogicalResult VerifyDependency(
     Dependency &dependency) {
   if (!dependency.def.loop_nest().hasValue()) return mlir::success();
   llvm::ArrayRef<mlir::Attribute> def_loop_nest =
-      dependency.def.loop_nest().getValue().getValue();
+      dependency.def.LoopNestLoops();
 
   int min_size = std::min(use_loop_nest.size(), def_loop_nest.size());
   for (int i = 0; i < min_size; ++i) {
@@ -301,8 +299,7 @@ static mlir::LogicalResult VerifyDependency(
 mlir::LogicalResult VerifyComputeOp(mlir::Operation *op) {
   ComputeOp compute_op = cast<ComputeOp>(op);
   if (!compute_op.loop_nest().hasValue()) return mlir::success();
-  llvm::ArrayRef<mlir::Attribute> loop_nest =
-      compute_op.loop_nest().getValue().getValue();
+  llvm::ArrayRef<mlir::Attribute> loop_nest = compute_op.LoopNestLoops();
 
   SairProgramOp parent = dyn_cast<SairProgramOp>(op->getParentOp());
   // Delegate checking that `parent` is a SairProgramOp to SairOp verifier.

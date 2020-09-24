@@ -25,7 +25,9 @@
 namespace sair {
 
 AccessPatternAttr ValueOperand::AccessPattern() {
-  return cast<SairOp>(operand_->getOwner()).AccessPattern(index_);
+  return cast<SairOp>(operand_->getOwner()).access_pattern_array()
+      .getValue()[index_]
+      .template cast<::sair::AccessPatternAttr>();
 }
 
 void ValueOperand::SetAccessPattern(AccessPatternAttr access_pattern) {

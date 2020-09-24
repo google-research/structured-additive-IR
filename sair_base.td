@@ -193,10 +193,6 @@ def SairOpInterface : OpInterface<"SairOp"> {
       }]
     >,
     InterfaceMethod<
-      "Return the access pattern to the given Sair value operand",
-      "AccessPatternAttr", "AccessPattern", (ins "int":$pos)
-    >,
-    InterfaceMethod<
       "Sets the access pattern for the given Sair value operand",
       "void", "SetAccessPattern",
       (ins "int":$position, "AccessPatternAttr":$access_pattern)
@@ -251,24 +247,6 @@ def SairOpWithBody : OpInterface<"SairOpWithBody"> {
       "Returns the block executed at each point of the operation domain",
       "mlir::Block&", "block", (ins), [{}], [{
         return this->getOperation()->getRegions()[0].front();
-      }]
-    >,
-    InterfaceMethod<
-      [{
-        Removes the last iteration dimension from the domain of the operation.
-        Expects inputs not to depend on the removed dimension.
-      }],
-      "void", "RemoveInnermostDimension", (ins), [{
-        sair::RemoveInnermostDimension($_op);
-      }]
-    >,
-    InterfaceMethod<
-      [{
-        Adds a !sair.value operand to the operation and returns the
-        corresponding argument of the operation body.
-      }], "BlockArgument", "AddValueOperand",
-      (ins "mlir::Value":$value, "AccessPatternAttr":$access_pattern), [{
-        return sair::AddValueOperand($_op, value, access_pattern);
       }]
     >,
   ];
@@ -353,6 +331,12 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
       "Sets the loop nest to generate when lowering the operation",
       "void", "setLoopNest", (ins "mlir::ArrayAttr":$loop_nest), [{
         $_op.loop_nestAttr(loop_nest);
+      }]
+    >,
+    InterfaceMethod<
+      "Returns the loops in the loop_nest attribute. Fails if it is missing.",
+      "llvm::ArrayRef<mlir::Attribute>", "LoopNestLoops", (ins), [{}], [{
+        return $_op.loop_nest().getValue().getValue();
       }]
     >
   ];

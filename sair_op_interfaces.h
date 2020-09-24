@@ -60,29 +60,6 @@ mlir::LogicalResult VerifyValueProducerOp(mlir::Operation *op);
 // Verifies a `ComputeOp`.
 mlir::LogicalResult VerifyComputeOp(mlir::Operation *op);
 
-// Removes the last iteration dimension for the domain of the operation with the
-// SairOpWithBody trait.
-template <typename ConcreteOp>
-void RemoveInnermostDimension(ConcreteOp op) {
-  assert(!op.domain().empty());
-  int dimension_position = op.domain().size() - 1;
-  op.block().eraseArgument(dimension_position);
-  EraseOperand(dimension_position, ConcreteOp::getOperandSegmentSizeAttr(), op);
-  llvm::ArrayRef<DomainShapeDim> shape_dimensions =
-      op.shape().Dimensions().drop_back();
-  op.shapeAttr(DomainShapeAttr::get(op.getContext(), shape_dimensions));
-}
-
-// Appends a !sair.value operand to the operation with the SairOpWithBody trait.
-template <typename ConcreteOp>
-mlir::BlockArgument AddValueOperand(ConcreteOp op, mlir::Value value,
-                                    AccessPatternAttr access_pattern) {
-  AppendOperand(value, ConcreteOp::getOperandSegmentSizeAttr(), op);
-  AppendAccessPattern(access_pattern, op);
-  auto value_type = value.getType().cast<ValueType>();
-  return op.block().addArgument(value_type.ElementType());
-}
-
 using namespace mlir;  // NOLINT
 #include "sair_op_interfaces.h.inc"
 

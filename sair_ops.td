@@ -57,6 +57,10 @@ def SairRangeOp : SairOp<"range",
 
   let parser = [{return ParseRangeOp(parser, result);}];
   let printer = [{return Print(*this, p);}];
+
+  let extraClassDeclaration = [{
+    ValueOperand Size() { return ValueOperands()[0]; }
+  }];
 }
 
 def SairStaticRangeOp : SairOp<"static_range", [NoSideEffect]> {
@@ -115,6 +119,10 @@ def SairCopyOp : SairOp<"copy", [
 
   let parser = [{return ParseCopyOp(parser, result);}];
   let printer = [{return Print(*this, p);}];
+
+  let extraClassDeclaration = [{
+    ValueOperand Value() { return ValueOperands()[0]; }
+  }];
 }
 
 def SairFromScalarOp : SairOp<"from_scalar", [
@@ -222,7 +230,11 @@ def SairToMemRefOp : SairOp<"to_memref", [
   let parser = [{return ParseToMemRefOp(parser, result);}];
   let printer = [{return Print(*this, p);}];
 
-  let extraClassDeclaration = [{DomainShapeAttr shape();}];
+  let extraClassDeclaration = [{
+    DomainShapeAttr shape();
+
+    ValueOperand Value() { return ValueOperands()[0]; }
+  }];
 }
 
 def SairReturnOp : Op<SairDialect, "return", [Terminator]> {
@@ -408,6 +420,8 @@ class SairProjectionOp<string name> : SairOp<name, [
     OperandRange domain() {
       return ChainOperandRanges(parallel_domain(), projection_domain());
     }
+
+    ValueOperand Value() { return ValueOperands()[0]; }
   }];
 }
 
@@ -496,6 +510,10 @@ def SairFbyOp : SairOp<"fby", [
     bool AllowUseBeforeDef(int index) { return index == 1; }
 
     llvm::SmallBitVector CarryingDimensions(int sair_operand);
+
+    ValueOperand Init() { return ValueOperands()[0]; }
+
+    ValueOperand Value() { return ValueOperands()[1]; }
   }];
 }
 

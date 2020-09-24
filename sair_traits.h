@@ -231,15 +231,6 @@ class SairOpTrait : public OpTrait::TraitBase<ConcreteType, SairOpTrait> {
     return ::sair::VerifySairOpParent(sair_op);
   }
 
-  // Returns the access pattern of the !sair.value operand at the given
-  // position.
-  ::sair::AccessPatternAttr AccessPattern(int pos) {
-    ConcreteType op(this->getOperation());
-    return op.access_pattern_array()
-        .getValue()[pos]
-        .template cast<::sair::AccessPatternAttr>();
-  }
-
   // Returns the Sair value accessed by the operation, along with the
   // corresponding access patterns.
   ::sair::ValueOperandRange ValueOperands() {

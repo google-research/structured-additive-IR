@@ -1,5 +1,5 @@
-// RUN: sair-opt -sair-assign-default-memory-space -convert-sair-to-llvm %s | mlir-cpu-runner -e from_scalar | FileCheck %s
-// RUN: sair-opt -sair-assign-default-memory-space -convert-sair-to-llvm %s | mlir-cpu-runner -e from_to_memref | FileCheck %s
+// RUN: sair-opt -sair-default-lowering-attributes -convert-sair-to-llvm %s | mlir-cpu-runner -e from_scalar | FileCheck %s
+// RUN: sair-opt -sair-default-lowering-attributes -convert-sair-to-llvm %s | mlir-cpu-runner -e from_to_memref | FileCheck %s
 
 // All functions should return 1.0 on success.
 // CHECK: 1.0

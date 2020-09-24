@@ -62,6 +62,16 @@ void sair::RegisterSairPasses() {
         return mlir::success();
       },
       [](llvm::function_ref<void(const mlir::detail::PassOptions &)>) {});
+
+  mlir::registerPassPipeline(
+      "sair-default-lowering-attributes",
+      "annotates Sair operations with the default lowering strategy",
+      [](mlir::OpPassManager &pm, llvm::StringRef options) {
+        if (!options.empty()) return mlir::failure();
+        sair::CreateDefaultLoweringAttributesPipeline(&pm);
+        return mlir::success();
+      },
+      [](llvm::function_ref<void(const mlir::detail::PassOptions &)>) {});
 }
 
 void sair::RegisterSairDialect(mlir::DialectRegistry &registry) {
