@@ -44,7 +44,7 @@
 namespace sair {
 namespace {
 
-// TODO: doc
+// Adds canonicalization patterns from Ops to `list.
 template <typename... Ops>
 void getAllPatterns(mlir::OwningRewritePatternList &list, mlir::MLIRContext *ctx) {
   (Ops::getCanonicalizationPatterns(list, ctx), ...);
