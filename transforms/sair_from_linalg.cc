@@ -31,6 +31,7 @@
 #include "sair_attributes.h"
 #include "sair_ops.h"
 #include "sair_types.h"
+#include "utils.h"
 
 namespace sair {
 namespace {
@@ -464,8 +465,7 @@ void ComputePermutationMaps(mlir::ArrayAttr attr,
   parallel_loop_positions =
       mlir::AffineMap::get(num_visited_parallel_dims, /*symbolCount=*/0,
                            inverse_dimensions, context);
-  parallel_dimensions.append(reduction_dimensions.begin(),
-                             reduction_dimensions.end());
+  appendRange(parallel_dimensions, reduction_dimensions);
   linalg_to_sair_loops = mlir::AffineMap::get(attr.size(), /*symbolCount=*/0,
                                               parallel_dimensions, context);
 }
@@ -493,10 +493,8 @@ mlir::Operation *CreateMapReduceOp(
   // Reorder access patterns to match the expected order in Sair "map_reduce".
   llvm::SmallVector<mlir::Attribute, 8> access_patterns;
   access_patterns.reserve(operand_access_patterns.size());
-  auto first_inout_pattern =
-      std::next(operand_access_patterns.begin(), num_outputs);
-  access_patterns.append(first_inout_pattern, operand_access_patterns.end());
-  access_patterns.append(operand_access_patterns.begin(), first_inout_pattern);
+  appendRange(access_patterns, operand_access_patterns.drop_front(num_outputs));
+  appendRange(access_patterns, operand_access_patterns.take_front(num_outputs));
   mlir::ArrayAttr access_patterns_attr = rewriter.getArrayAttr(access_patterns);
 
   return rewriter.create<SairMapReduceOp>(

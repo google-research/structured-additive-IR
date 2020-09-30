@@ -26,6 +26,7 @@
 #include "sair_ops.h"
 #include "transforms/default_lowering_attributes.h"
 #include "transforms/lowering_pass_classes.h"
+#include "utils.h"
 
 namespace sair {
 namespace {
@@ -363,28 +364,27 @@ void UpdateUseInPlaceAfterMaterialization(
 
   llvm::SmallVector<mlir::Type, 4> result_types;
   result_types.reserve(op.getNumResults() - 1);
-  auto result_type_it = op.result_type_begin() + init_position;
-  result_types.append(op.result_type_begin(), result_type_it);
-  result_types.append(std::next(result_type_it), op.result_type_end());
+  appendRange(result_types, op.getResultTypes().take_front(init_position));
+  appendRange(result_types, op.getResultTypes().drop_front(init_position + 1));
 
   llvm::SmallVector<mlir::Value, 4> init_operands;
   init_operands.reserve(op.getNumResults() - 1);
-  auto init_operand_it = op.inits().begin() + init_position;
-  init_operands.append(op.inits().begin(), init_operand_it);
-  init_operands.append(std::next(init_operand_it), op.inits().end());
+  appendRange(init_operands, op.inits().take_front(init_position));
+  appendRange(init_operands, op.inits().drop_front(init_position + 1));
 
   llvm::SmallVector<mlir::Value, 4> input_operands;
   input_operands.reserve(op.inputs().size() + 1);
-  input_operands.append(op.inputs().begin(), op.inputs().end());
+  appendRange(input_operands, op.inputs());
   input_operands.push_back(memref_value);
 
   llvm::SmallVector<mlir::Attribute, 8> access_pattern_array;
   access_pattern_array.reserve(op.access_pattern_array().size());
-  auto access_pattern_it = op.access_pattern_array().begin() + init_position;
-  access_pattern_array.append(op.access_pattern_array().begin(),
-                              access_pattern_it);
-  access_pattern_array.append(std::next(access_pattern_it),
-                              op.access_pattern_array().end());
+  llvm::ArrayRef<mlir::Attribute> old_access_patterns =
+      op.access_pattern_array().getValue();
+  appendRange(access_pattern_array,
+              old_access_patterns.take_front(init_position));
+  appendRange(access_pattern_array,
+              old_access_patterns.drop_front(init_position + 1));
   access_pattern_array.push_back(
       AccessPatternAttr::get(op.getContext(), domain_size, {}));
   mlir::ArrayAttr access_pattern_attr =
@@ -392,9 +392,10 @@ void UpdateUseInPlaceAfterMaterialization(
 
   llvm::SmallVector<mlir::Attribute, 4> memory_spaces;
   memory_spaces.reserve(op.getNumResults() - 1);
-  auto memory_space_it = op.memory_space().getValue().begin() + init_position;
-  memory_spaces.append(op.memory_space().getValue().begin(), memory_space_it);
-  memory_spaces.append(memory_space_it + 1, op.memory_space().getValue().end());
+  llvm::ArrayRef<mlir::Attribute> old_memory_spaces =
+      op.memory_space().getValue().getValue();
+  appendRange(memory_spaces, old_memory_spaces.take_front(init_position));
+  appendRange(memory_spaces, old_memory_spaces.drop_front(init_position + 1));
   mlir::ArrayAttr memory_space_attr = builder.getArrayAttr(memory_spaces);
 
   SairMapReduceOp new_op = builder.create<SairMapReduceOp>(

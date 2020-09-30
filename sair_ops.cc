@@ -49,6 +49,7 @@
 #include "sair_op_interfaces.h"
 #include "sair_traits.h"
 #include "sair_types.h"
+#include "utils.h"
 
 namespace sair {
 
@@ -1013,8 +1014,7 @@ ParseResult ParseMapReduceOp(mlir::OpAsmParser &parser,
   // results, so the syntax avoids repetition).
   llvm::SmallVector<mlir::Type, 4> operand_element_types =
       llvm::to_vector<4>(function_type.getResults());
-  operand_element_types.append(function_type.getInputs().begin(),
-                               function_type.getInputs().end());
+  appendRange(operand_element_types, function_type.getInputs());
 
   // Resolve operand types.
   mlir::Builder &builder = parser.getBuilder();

@@ -40,6 +40,7 @@
 #include "sair_ops.h"
 #include "sair_types.h"
 #include "transforms/lowering_pass_classes.h"
+#include "utils.h"
 
 namespace sair {
 namespace {
@@ -265,8 +266,8 @@ llvm::SmallVector<mlir::Value, 4> EraseValue(mlir::ValueRange range,
                                              int position) {
   llvm::SmallVector<mlir::Value, 4> new_range;
   new_range.reserve(range.size() - 1);
-  new_range.append(range.begin(), range.begin() + position);
-  new_range.append(range.begin() + position + 1, range.end());
+  appendRange(new_range, range.take_front(position));
+  appendRange(new_range, range.drop_front(position + 1));
   return new_range;
 }
 
@@ -292,15 +293,13 @@ AccessPatternAttr EraseDimension(AccessPatternAttr access_pattern,
 DomainShapeAttr EraseDimension(DomainShapeAttr shape, int dimension) {
   llvm::SmallVector<DomainShapeDim, 4> shape_dimensions;
   shape_dimensions.reserve(shape.NumDimensions() - 1);
-  auto begin_it = shape.Dimensions().begin();
-  shape_dimensions.append(begin_it, begin_it + dimension);
+  appendRange(shape_dimensions, shape.Dimensions().take_front(dimension));
 
-  auto end_it = shape.Dimensions().end();
-  for (auto it = begin_it + dimension + 1; it != end_it; ++it) {
-    assert(!it->dependency_pattern().DependsOnDimension(dimension));
-
+  for (auto shape_dim : shape.Dimensions().drop_front(dimension + 1)) {
+    assert(!shape_dim.dependency_pattern().DependsOnDimension(dimension));
     shape_dimensions.emplace_back(
-        it->type(), EraseDimension(it->dependency_pattern(), dimension));
+        shape_dim.type(),
+        EraseDimension(shape_dim.dependency_pattern(), dimension));
   }
   return DomainShapeAttr::get(shape.getContext(), shape_dimensions);
 }
