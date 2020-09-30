@@ -83,3 +83,48 @@ func @fby(%arg0: f32) {
   } : f32
   return
 }
+
+// CHECK-LABEL: @fuse
+func @fuse(%arg0: f32) {
+  sair.program {
+    %0 = sair.static_range 4 : !sair.range
+    %1 = sair.static_range 8 : !sair.range
+    // CHECK: %[[V0:.*]] = sair.from_scalar
+    %2 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    // CHECK: sair.map %[[V0]] attributes
+    %3 = sair.map[d0:%0, d1:%1] attributes {
+      loop_nest = [
+        {name = "A", iter = #sair.iter<d0>},
+        {name = "B", iter = #sair.iter<d1>}
+      ]
+    } {
+    // CHECK: ^{{.*}}(%[[ARG0:.*]]: f32):
+      ^bb0(%arg1: index, %arg2: index):
+        // CHECK: scf.for %[[I0:.*]] = %{{.*}} to %{{.*}}
+        // CHECK: scf.for %[[I1:.*]] = %{{.*}} to %{{.*}}
+        // CHECK: call @foo(%[[I0]], %[[I1]])
+        call @foo(%arg1, %arg2) : (index, index) -> ()
+        // CHECK: %[[V1:.*]] = constant
+        %4 = constant 1.0 : f32
+        sair.return %4 : f32
+    } : #sair.shape<d0:range x d1:range>, () -> (f32)
+    // CHECK-NOT: sair.map
+    sair.map[d0:%1, d1:%0] %2, %3(d1, d0) attributes {
+      loop_nest = [
+        {name = "A", iter = #sair.iter<d1>},
+        {name = "B", iter = #sair.iter<d0>}
+      ]
+    } {
+      ^bb0(%arg1:index, %arg2: index, %arg3: f32, %arg4: f32):
+        // CHECK: call @foo(%[[I1]], %[[I0]])
+        call @foo(%arg1, %arg2) : (index, index) -> ()
+        // CHECK: call @bar(%[[ARG0]])
+        call @bar(%arg3) : (f32) -> f32
+        // CHECK: call @bar(%[[V1]])
+        call @bar(%arg4) : (f32) -> f32
+        sair.return
+    } : #sair.shape<d0:range x d1:range>, (f32, f32) -> ()
+    sair.exit
+  }
+  return
+}

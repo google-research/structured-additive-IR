@@ -330,6 +330,7 @@ mlir::ArrayAttr EraseDimensionFromLoopNest(
     LoopAttr loop = attr.cast<LoopAttr>();
     if (loop.iter().Rematerialize() || loop.iter().Dimension() < dimension) {
       new_loop_nest.push_back(attr);
+      continue;
     }
 
     assert(loop.iter().Dimension() != dimension);
@@ -601,6 +602,113 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op, Driver &driver) {
   return mlir::success();
 }
 
+// Fuses two sair.map operations. They must have the same loops in the loop_nest
+// attribute.
+void Fuse(SairMapOp first_op, SairMapOp second_op, Driver &driver) {
+  mlir::OpBuilder::InsertionGuard insertion_guard(driver);
+
+  llvm::SmallVector<mlir::Value, 4> second_block_args;
+  llvm::SmallVector<mlir::Value, 4> inputs;
+  llvm::SmallVector<mlir::Attribute, 4> access_patterns;
+
+  mlir::Operation *first_return = first_op.block().getTerminator();
+  mlir::Operation *second_return = second_op.block().getTerminator();
+
+  // Map loop indexes of second_op to loop indexes of first_op.
+  llvm::SmallVector<int, 4> first_to_second_pattern;
+  first_to_second_pattern.append(second_op.domain().size(),
+                                 AccessPatternAttr::kNoDimension);
+  second_block_args.append(second_op.domain().size(), nullptr);
+  for (auto [first_attr, second_attr] :
+       llvm::zip(first_op.LoopNestLoops(), second_op.LoopNestLoops())) {
+    int first_dimension = first_attr.cast<LoopAttr>().iter().Dimension();
+    int second_dimension = second_attr.cast<LoopAttr>().iter().Dimension();
+    first_to_second_pattern[second_dimension] = first_dimension;
+    second_block_args[second_dimension] =
+        first_op.block().getArgument(first_dimension);
+  }
+
+  // Gather operands for the new operation.
+  appendRange(inputs, first_op.inputs());
+  AccessPatternAttr first_to_second_pattern_attr = AccessPatternAttr::get(
+      driver.getContext(), first_op.domain().size(), first_to_second_pattern);
+
+  appendRange(access_patterns, first_op.access_pattern_array());
+  for (ValueOperand operand : second_op.ValueOperands()) {
+    if (operand.value().getDefiningOp() == first_op) {
+      auto it = llvm::find(first_op.getResults(), operand.value());
+      int return_pos = std::distance(first_op.result_begin(), it);
+      second_block_args.push_back(first_return->getOperand(return_pos));
+      continue;
+    }
+
+    inputs.push_back(operand.value());
+    access_patterns.push_back(
+        first_to_second_pattern_attr.Compose(operand.AccessPattern()));
+    mlir::Value block_argument =
+        first_op.block().addArgument(operand.GetType().ElementType());
+    second_block_args.push_back(block_argument);
+  }
+
+  // Create the new sair.return operation.
+  int num_results = first_op.getNumResults() + second_op.getNumResults();
+  llvm::SmallVector<mlir::Value, 4> returned_scalars;
+  returned_scalars.reserve(num_results);
+  appendRange(returned_scalars, first_return->getOperands());
+  appendRange(returned_scalars, second_return->getOperands());
+  driver.setInsertionPoint(second_return);
+  driver.replaceOpWithNewOp<SairReturnOp>(second_return, returned_scalars);
+
+  // Merge bodies.
+  driver.eraseOp(first_return);
+  driver.mergeBlocks(&second_op.block(), &first_op.block(), second_block_args);
+
+  // Gather return types for the new sair.map operation.
+  llvm::SmallVector<mlir::Type, 4> result_types;
+  result_types.reserve(num_results);
+  appendRange(result_types, first_op.getResultTypes());
+  appendRange(result_types, second_op.getResultTypes());
+
+  // Gather memory space attributes for the new sair.map operation.
+  llvm::SmallVector<mlir::Attribute, 4> memory_spaces;
+  memory_spaces.reserve(num_results);
+  auto append_memory_spaces = [&](SairMapOp op) {
+    if (op.memory_space().hasValue()) {
+      appendRange(memory_spaces, op.memory_space().getValue().getValue());
+    } else {
+      memory_spaces.append(op.getNumResults(), driver.getUnitAttr());
+    }
+  };
+  append_memory_spaces(first_op);
+  append_memory_spaces(second_op);
+
+  // Create the operation.
+  driver.setInsertionPoint(second_op);
+  SairMapOp new_op = driver.create<SairMapOp>(
+      /*location=*/first_op.getLoc(),
+      /*result_types=*/result_types,
+      /*domain=*/first_op.domain(),
+      /*access_patterns_array=*/driver.getArrayAttr(access_patterns),
+      /*inputs=*/inputs,
+      /*shape=*/first_op.shape(),
+      /*loop_nest=*/first_op.loop_nestAttr(),
+      /*memory_space=*/driver.getArrayAttr(memory_spaces));
+  new_op.body().takeBody(first_op.body());
+  driver.replaceOp(first_op,
+                   new_op.getResults().take_front(first_op.getNumResults()));
+  driver.replaceOp(second_op,
+                   new_op.getResults().take_back(second_op.getNumResults()));
+}
+
+// Indicates if two loop nests can be fused.
+bool CanFuse(mlir::ArrayAttr lhs, mlir::ArrayAttr rhs) {
+  if (lhs == nullptr || rhs == nullptr) return false;
+  if (lhs.empty() || rhs.empty()) return lhs == rhs;
+  LoopAttr lhs_inner_loop = lhs.getValue().back().cast<LoopAttr>();
+  LoopAttr rhs_inner_loop = rhs.getValue().back().cast<LoopAttr>();
+  return lhs_inner_loop.name() == rhs_inner_loop.name();
+}
+
 // Introduces the innermost loop of `op` or fuse it with one of its immediate
 // neigbors if possible.
 mlir::LogicalResult IntroduceLoopOrFuse(SairMapOp op, Driver &driver) {
@@ -612,15 +720,12 @@ mlir::LogicalResult IntroduceLoopOrFuse(SairMapOp op, Driver &driver) {
   mlir::ArrayAttr next_loop_nest =
       next_op == nullptr ? nullptr : next_op.loop_nest().getValue();
 
-  if (prev_loop_nest == curr_loop_nest) {
-    // TODO(ulysse): fuse prev_op with op
-    return op.emitError() << "fusion is not implemented yet";
-  } else if (curr_loop_nest == next_loop_nest) {
-    // TODO(ulysse): fuse op with next_op
-    return op.emitError() << "fusion is not implemented yet";
-  } else if (curr_loop_nest.empty()) {
-    return mlir::success();
-  } else if (!IsPrefix(curr_loop_nest, prev_loop_nest) &&
+  if (CanFuse(prev_loop_nest, curr_loop_nest)) {
+    Fuse(prev_op, op, driver);
+  } else if (CanFuse(curr_loop_nest, next_loop_nest)) {
+    Fuse(op, next_op, driver);
+  } else if (!curr_loop_nest.empty() &&
+             !IsPrefix(curr_loop_nest, prev_loop_nest) &&
              !IsPrefix(curr_loop_nest, next_loop_nest)) {
     return IntroduceLoop(op, driver);
   }
