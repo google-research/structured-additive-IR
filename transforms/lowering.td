@@ -21,9 +21,9 @@ def Deps {
                            "::sair::SairDialect"];
 }
 
-def CopyToMapPass : FunctionPass<"sair-copy-to-map"> {
-  let summary = "Lowers sair.copy operations into sair.map operations";
-  let constructor = [{ ::sair::CreateCopyToMapPass(); }];
+def LowerToMapPass : FunctionPass<"sair-lower-to-map"> {
+  let summary = "Lowers sair operations into sair.map operations";
+  let constructor = [{ ::sair::CreateLowerToMapPass(); }];
   let dependentDialects = Deps.dialects;
 }
 

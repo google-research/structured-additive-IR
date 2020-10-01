@@ -14,13 +14,16 @@
 
 #include <memory>
 
+#include "llvm/ADT/ArrayRef.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Function.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OperationSupport.h"
 #include "mlir/Pass/Pass.h"
+#include "sair_attributes.h"
 #include "sair_ops.h"
 #include "transforms/lowering_pass_classes.h"
+#include "utils.h"
 
 namespace sair {
 namespace {
@@ -41,23 +44,114 @@ void RewriteCopyToMap(SairCopyOp op, mlir::OpBuilder &builder) {
   op.erase();
 }
 
-class CopyToMap : public CopyToMapPassBase<CopyToMap> {
+// Lowers a map-reduce `op` into a sair.map by emitting a sair.fby to tie
+// together the initial value and partial reduction values, and a sair.proj_last
+// to only retain the final reduction value.
+void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
+  MLIRContext *ctx = op.getContext();
+  Location loc = op.getLoc();
+  auto parallel_domain = op.parallel_domain();
+  auto reduction_domain = op.reduction_domain();
+
+  // The domain of the final sair.map is a concatenation of the parallel and
+  // reduction domains of the sair.map_reduce.
+  llvm::SmallVector<Value, 8> domain;
+  domain.reserve(parallel_domain.size() + reduction_domain.size());
+  appendRange(appendRange(domain, parallel_domain), reduction_domain);
+
+  // Split the access pattern array into "initalizer" and "input" parts.
+  llvm::ArrayRef<mlir::Attribute> op_access_patterns =
+      op.access_pattern_array().getValue();
+  auto init_access_patterns = op_access_patterns.drop_back(op.inputs().size());
+  auto input_access_patterns = op_access_patterns.take_back(op.inputs().size());
+
+  // Assume the value produced by sair.fby is always indexed using the identity
+  // pattern (there is no control of the output pattern, so just make sure the
+  // value is read in the identity order as it was produced).
+  auto identity_access_pattern =
+      AccessPatternAttr::GetIdentity(ctx, domain.size());
+
+  // For each initializer, create a separate sair.fby operation. The results of
+  // these operations will be the leading arguments of sair.map in order to keep
+  // the order of arguments in its entry block the same as in sair.map_reduce.
+  SmallVector<SairFbyOp, 4> fbys;
+  SmallVector<Value, 4> map_operands;
+  fbys.reserve(op.getNumResults());
+  map_operands.reserve(op.getNumResults() + op.inputs().size());
+  for (unsigned i = 0, e = op.getNumResults(); i < e; ++i) {
+    Value init_value = op.inits()[i];
+    auto access_pattern_attr = builder.getArrayAttr(
+        {init_access_patterns[i], identity_access_pattern});
+    // This produces a value that of the same rank as the domain.
+    auto fby_type = ValueType::get(
+        ctx, op.shape(), init_value.getType().cast<ValueType>().ElementType());
+
+    // Use `init_value` as both arguments temporarily, the second argument will
+    // be updated later. Keep memory space undefined for the produced value.
+    auto fby = builder.create<SairFbyOp>(loc, fby_type, parallel_domain,
+                                         reduction_domain, access_pattern_attr,
+                                         init_value, init_value, nullptr);
+    fbys.push_back(fby);
+    map_operands.push_back(fby.getResult());
+  }
+
+  // Forward sair.map_reduce inputs as trailing arguments of the sair.map.
+  appendRange(map_operands, op.inputs());
+
+  // The values produced by sair.fby are accessed using identity patterns and
+  // the original inputs retain their patterns.
+  SmallVector<mlir::Attribute, 4> access_patterns(fbys.size(),
+                                                  identity_access_pattern);
+  appendRange(access_patterns, input_access_patterns);
+  auto map_access_pattern = builder.getArrayAttr(access_patterns);
+
+  // Keep memory space undefined for the produced value.
+  auto map = builder.create<SairMapOp>(loc, op.getResultTypes(), domain,
+                                       map_access_pattern, map_operands,
+                                       op.shape(), op.loop_nestAttr(), nullptr);
+  map.getRegion().takeBody(op.getRegion());
+
+  // For each original result of sair.map_reduce, create a sair.proj_last that
+  // only retains the final value of the reduction and use its result instead.
+  for (unsigned i = 0, e = op.getNumResults(); i < e; ++i) {
+    // Close the cycling definition of the sair.fby op.
+    fbys[i].Value().set_value(map.getResult(i));
+
+    // Place this result into the same memory space as we need to respect the
+    // previous choice, unlike the temporaries we introduced above.
+    mlir::ArrayAttr memory_space =
+        op.IsMemorySpaceSet(i) ? builder.getI64ArrayAttr(*op.GetMemorySpace(i))
+                               : nullptr;
+    auto proj = builder.create<SairProjLastOp>(
+        loc, op.getResultTypes()[i], op.parallel_domain(),
+        op.reduction_domain(), builder.getArrayAttr(identity_access_pattern),
+        map.getResult(i), op.shape(), memory_space);
+    op.results()[i].replaceAllUsesWith(proj.result());
+  }
+  op.erase();
+}
+
+class LowerToMap : public LowerToMapPassBase<LowerToMap> {
   // Converts sair.copy operations into sair.map operations. This is a hook for
   // the MLIR pass infrastructure.
   void runOnFunction() override {
     mlir::MLIRContext *context = &getContext();
-    getFunction().walk([context](SairCopyOp op) {
+    getFunction().walk([context](Operation *op) {
       mlir::OpBuilder builder(context);
       builder.setInsertionPoint(op);
-      RewriteCopyToMap(op, builder);
+      if (auto copy = dyn_cast<SairCopyOp>(op)) {
+        RewriteCopyToMap(copy, builder);
+      } else if (auto reduce = dyn_cast<SairMapReduceOp>(op)) {
+        RewriteMapReduceToMap(reduce, builder);
+      }
     });
   }
 };
 
 }  // namespace
 
-std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateCopyToMapPass() {
-  return std::make_unique<CopyToMap>();
+std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateLowerToMapPass() {
+  return std::make_unique<LowerToMap>();
 }
 
 }  // namespace sair

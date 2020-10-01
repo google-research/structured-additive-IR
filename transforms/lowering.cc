@@ -25,7 +25,7 @@ namespace sair {
 
 void CreateSairToLoopConversionPipeline(mlir::OpPassManager *pm) {
   pm->addPass(CreateInsertCopiesPass());
-  pm->addPass(CreateCopyToMapPass());
+  pm->addPass(CreateLowerToMapPass());
   pm->addPass(CreateLowerToMemRefPass());
   pm->addPass(CreateMaterializeMemRefsPass());
   pm->addPass(CreateIntroduceLoopsPass());

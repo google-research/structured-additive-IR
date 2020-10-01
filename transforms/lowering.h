@@ -23,8 +23,8 @@
 
 namespace sair {
 
-// Returns a pass that converts sair.copy operations into sair.map operations.
-std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateCopyToMapPass();
+// Returns a pass that converts sair operations into sair.map operations.
+std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateLowerToMapPass();
 
 // Returns a pass that inserts copies before sair.to_memref and sair.map_reduce
 // operations in order to ensure that they can operate in place. No copy is
