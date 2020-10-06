@@ -57,3 +57,9 @@ def IntroduceLoopsPass : FunctionPass<"sair-introduce-loops"> {
   let constructor = [{ ::sair::CreateIntroduceLoopsPass(); }];
   let dependentDialects = Deps.dialects;
 }
+
+def RematerializePass : FunctionPass<"sair-rematerialize"> {
+  let summary = "Replaces rematerialization annotations with actual dimensions";
+  let constructor = [{ ::sair::CreateRematerializePass(); }];
+  // This does not create ops from dialects that are not present in the input.
+}

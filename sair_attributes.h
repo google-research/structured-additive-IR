@@ -214,6 +214,10 @@ class DomainShapeAttr
 
   // Returns the expected shape of the sair value the access pattern refers to..
   DomainShapeAttr Inverse(AccessPatternAttr access_pattern) const;
+
+  // Returns a new domain that is a product of this and `other` domains, i.e.,
+  // is a concatenation of the dimensions of both.
+  DomainShapeAttr Product(DomainShapeAttr other) const;
 };
 
 // An iterator on a Sair iteration dimension.

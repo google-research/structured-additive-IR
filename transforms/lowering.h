@@ -51,6 +51,10 @@ CreateMaterializeMemRefsPass();
 // operations.
 std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateIntroduceLoopsPass();
 
+// Returns a pass that replaces rematerialization annotations with actual
+// dimensions.
+std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateRematerializePass();
+
 // Populates the pass manager to convert Sair operations to the Loops dialect.
 void CreateSairToLoopConversionPipeline(mlir::OpPassManager *pm);
 

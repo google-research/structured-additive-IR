@@ -65,6 +65,7 @@ add_mlir_library(sair_lowering
   introduce_loops.cc
   introduce_memrefs.cc
   lower_to_map.cc
+  rematerialize.cc
 
   DEPENDS
   sair_lowering_inc_gen

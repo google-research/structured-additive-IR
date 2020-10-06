@@ -1128,7 +1128,7 @@ static mlir::ArrayAttr GatherLoopNames(mlir::Block &block,
   llvm::SmallVector<mlir::Attribute, 8> loop_names;
   block.walk([&](ComputeOp op) {
     if (!op.loop_nest().hasValue()) return;
-    for (mlir::Attribute attribute : op.loop_nest().getValue()) {
+    for (mlir::Attribute attribute : op.LoopNestLoops()) {
       LoopAttr loop = attribute.dyn_cast<LoopAttr>();
       if (loop == nullptr) continue;
       loop_names.push_back(loop.name());

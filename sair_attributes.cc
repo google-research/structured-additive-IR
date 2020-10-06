@@ -158,6 +158,31 @@ DomainShapeAttr DomainShapeAttr::Inverse(
   return DomainShapeAttr::get(getContext(), shape);
 }
 
+DomainShapeAttr DomainShapeAttr::Product(DomainShapeAttr other) const {
+  // For the "left" part of the new domain, we just keep the dependency patterns
+  // (use domain size must remain equal to position, and they cannot depend on
+  // new dimensions).
+  auto shape = llvm::to_vector<4>(Dimensions());
+  shape.reserve(NumDimensions() + other.NumDimensions());
+
+  // For the "right" part of the new domain, shift right the existing dimensions
+  // by the number of dimensions on the left.
+  for (auto kvp : llvm::enumerate(other.Dimensions())) {
+    const DomainShapeDim &dim = kvp.value();
+    llvm::SmallVector<int, 4> dimensions;
+    dimensions.reserve(dim.dependency_pattern().Dimensions().size());
+    for (int d : dim.dependency_pattern()) {
+      dimensions.push_back(d + NumDimensions());
+    }
+
+    auto pattern = AccessPatternAttr::get(
+        getContext(), NumDimensions() + kvp.index(), dimensions);
+    shape.emplace_back(dim.type(), pattern);
+  }
+
+  return DomainShapeAttr::get(getContext(), shape);
+}
+
 // Private implementation/storage class for sair::AccessPatternAttr. Instances
 // of this class are allocated by MLIR type system in a dedicated arena. Not
 // intended for direct use.
