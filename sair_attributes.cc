@@ -159,25 +159,27 @@ DomainShapeAttr DomainShapeAttr::Inverse(
 }
 
 DomainShapeAttr DomainShapeAttr::Product(DomainShapeAttr other) const {
-  // For the "left" part of the new domain, we just keep the dependency patterns
-  // (use domain size must remain equal to position, and they cannot depend on
-  // new dimensions).
-  auto shape = llvm::to_vector<4>(Dimensions());
+  return ProductAt(NumDimensions(), other);
+}
+
+DomainShapeAttr DomainShapeAttr::ProductAt(int pos,
+                                           DomainShapeAttr other) const {
+  // The leftmost `pos` domain dimensions are kept as is, with the same
+  // dependency pattern.
+  auto shape = llvm::to_vector<8>(Dimensions().take_front(pos));
   shape.reserve(NumDimensions() + other.NumDimensions());
 
-  // For the "right" part of the new domain, shift right the existing dimensions
-  // by the number of dimensions on the left.
-  for (auto kvp : llvm::enumerate(other.Dimensions())) {
-    const DomainShapeDim &dim = kvp.value();
-    llvm::SmallVector<int, 4> dimensions;
-    dimensions.reserve(dim.dependency_pattern().Dimensions().size());
-    for (int d : dim.dependency_pattern()) {
-      dimensions.push_back(d + NumDimensions());
-    }
+  // All dimensions coming from the other domain must have their dependencies
+  // shifted by `pos` to make sure their refer their new positions.
+  for (const DomainShapeDim &dim : other.Dimensions()) {
+    shape.emplace_back(dim.type(), dim.dependency_pattern().ShiftRight(pos));
+  }
 
-    auto pattern = AccessPatternAttr::get(
-        getContext(), NumDimensions() + kvp.index(), dimensions);
-    shape.emplace_back(dim.type(), pattern);
+  // The remaining original dimensions must have their dependencies update to
+  // account for the inserted dimensions.
+  for (const DomainShapeDim &dim : Dimensions().drop_front(pos)) {
+    shape.emplace_back(dim.type(), dim.dependency_pattern().ShiftRight(
+                                       other.NumDimensions(), pos));
   }
 
   return DomainShapeAttr::get(getContext(), shape);
@@ -345,6 +347,17 @@ AccessPatternAttr AccessPatternAttr::Resize(int new_size) const {
                                        Dimensions().end());
   dimensions.resize(new_size, kNoDimension);
   return AccessPatternAttr::get(getContext(), UseDomainSize(), dimensions);
+}
+
+AccessPatternAttr AccessPatternAttr::ShiftRight(int offset, int start_from) {
+  llvm::SmallVector<int, 8> new_dimensions;
+  new_dimensions.reserve(Dimensions().size());
+  for (int dim : Dimensions()) {
+    new_dimensions.push_back(dim >= start_from ? dim + offset : dim);
+  }
+
+  return AccessPatternAttr::get(getContext(), UseDomainSize() + offset,
+                                new_dimensions);
 }
 
 // Private implementation/storage class for sair::IteratorAttr. Instances

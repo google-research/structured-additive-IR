@@ -126,6 +126,13 @@ class AccessPatternAttr
   // the access pattern.
   AccessPatternAttr Resize(int new_size) const;
 
+  // Returns this access pattern with dimensions shifted right by `offset`. If
+  // `start_from` is set, only starting from the given position will be shifted.
+  // For example:
+  //   (d0,d1,d2).ShiftRight(2)  =>  (d2,d3,d4)
+  //   (d0,d1,d2).ShiftRight(2,1) => (d0,d1,d4)
+  AccessPatternAttr ShiftRight(int offset, int start_from = 0);
+
   using iterator = llvm::ArrayRef<int>::iterator;
   iterator begin() const { return Dimensions().begin(); }
   iterator end() const { return Dimensions().end(); }
@@ -218,6 +225,13 @@ class DomainShapeAttr
   // Returns a new domain that is a product of this and `other` domains, i.e.,
   // is a concatenation of the dimensions of both.
   DomainShapeAttr Product(DomainShapeAttr other) const;
+
+  // Returns a new domain that is a product of this and `other` domains, with
+  // dimensions of the `other` domain starting at `pos` in the result. In other
+  // words, the result is a concatenation of the first `pos` dimensions of this
+  // domain, the dimensions of `other`, and the remaining dimensions of this
+  // domain.
+  DomainShapeAttr ProductAt(int pos, DomainShapeAttr other) const;
 };
 
 // An iterator on a Sair iteration dimension.
