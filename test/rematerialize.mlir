@@ -190,3 +190,75 @@ func @remat_map_reduce(%arg0: f32) {
   }
   return
 }
+
+// CHECK-LABEL: @remat_copy_dependent
+func @remat_copy_dependent(%arg0: f32, %arg1: index) {
+  sair.program {
+    // CHECK: %[[SCALAR:.*]] = sair.from_scalar
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.from_scalar %arg1 : !sair.value<(), index>
+
+    // CHECK: %[[STATIC_RANGE:.*]] = sair.static_range
+    %2 = sair.static_range 8 : !sair.range
+    %3 = sair.copy[d0:%2] %1 : !sair.value<d0:range, index>
+
+    // CHECK: %[[DYNAMIC_RANGE:.*]] = sair.range[d0:%[[STATIC_RANGE]]] %{{.*}}
+    %4 = sair.range[d0:%2] %3(d0) : !sair.range<d0:range>
+
+    // CHECK: %[[REMAT:.*]] = sair.copy[d0:%[[STATIC_RANGE]], d1:%[[DYNAMIC_RANGE]]] %[[SCALAR]]
+    // CHECK: loop_nest = [{iter = #sair.iter<d0>, name = "A"},
+    // CHECK:              {iter = #sair.iter<d1>, name = "B"}]
+    // CHECK: !sair.value<d0:range x d1:range(d0), f32>
+    //
+    // CHECK: %[[RESULT:.*]] = sair.proj_any of[d0:%[[STATIC_RANGE]], d1:%[[DYNAMIC_RANGE]]] %[[REMAT]](d0, d1)
+    // CHECK: #sair.shape<d0:range x d1:range(d0)>
+    %5 = sair.copy %0 {
+      loop_nest = [{name = "A", iter = #sair.iter<remat>},
+                   {name = "B", iter = #sair.iter<remat>}]
+    } : !sair.value<(), f32>
+
+    // CHECK: sair.copy[{{.*}}] %[[RESULT]]
+    %6 = sair.copy[d0:%2, d1:%4] %5 {
+      loop_nest = [{name = "A", iter = #sair.iter<d0>},
+                   {name = "B", iter = #sair.iter<d1>}]
+    } : !sair.value<d0:range x d1:range(d0), f32>
+    sair.exit
+  }
+  return
+}
+
+// CHECK-LABEL: @remat_copy_dependent_partial
+func @remat_copy_dependent_partial(%arg0: f32, %arg1: index) {
+  sair.program {
+    // CHECK: %[[SCALAR:.*]] = sair.from_scalar
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.from_scalar %arg1 : !sair.value<(), index>
+
+    // CHECK: %[[STATIC_RANGE:.*]] = sair.static_range
+    %2 = sair.static_range 8 : !sair.range
+    %3 = sair.copy[d0:%2] %1 : !sair.value<d0:range, index>
+
+    // CHECK: %[[DYNAMIC_RANGE:.*]] = sair.range[d0:%[[STATIC_RANGE]]] %{{.*}}
+    %4 = sair.range[d0:%2] %3(d0) : !sair.range<d0:range>
+
+    // CHECK: %[[REMAT:.*]] = sair.copy[d0:%[[STATIC_RANGE]], d1:%[[DYNAMIC_RANGE]]] %[[SCALAR]]
+    // CHECK: loop_nest = [{iter = #sair.iter<d0>, name = "A"},
+    // CHECK:              {iter = #sair.iter<d1>, name = "B"}]
+    // CHECK: !sair.value<d0:range x d1:range(d0), f32>
+    //
+    // CHECK: %[[RESULT:.*]] = sair.proj_any[d0:%[[STATIC_RANGE]]] of[d1:%[[DYNAMIC_RANGE]]] %[[REMAT]](d0, d1)
+    // CHECK: #sair.shape<d0:range x d1:range(d0)>
+    %5 = sair.copy[d0:%2] %0 {
+      loop_nest = [{name = "A", iter = #sair.iter<d0>},
+                   {name = "B", iter = #sair.iter<remat>}]
+    } : !sair.value<d0:range, f32>
+
+    // CHECK: sair.copy[{{.*}}] %[[RESULT]]
+    %6 = sair.copy[d0:%2, d1:%4] %5(d0) {
+      loop_nest = [{name = "A", iter = #sair.iter<d0>},
+                   {name = "B", iter = #sair.iter<d1>}]
+    } : !sair.value<d0:range x d1:range(d0), f32>
+    sair.exit
+  }
+  return
+}

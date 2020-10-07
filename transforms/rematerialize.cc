@@ -14,6 +14,7 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -35,17 +36,18 @@ namespace sair {
 namespace {
 
 // Contains the loop bounds in the form of a variable range and constant step.
+// Additionally, this contains the name of other loops the bounds of this loop
+// depend on.
 struct LoopBounds {
-  LoopBounds(mlir::Value range, int step, bool is_dependent)
-      : range(range), step(step), is_dependent(is_dependent) {}
+  LoopBounds(mlir::Value range, int step,
+             llvm::ArrayRef<mlir::StringAttr> dependencies)
+      : range(range),
+        step(step),
+        dependent_on(dependencies.begin(), dependencies.end()) {}
 
   mlir::Value range;
   int step;
-
-  // Set if the range is dependent on another value. This should be eventually
-  // replaced by the dependence description, but for now only serves to abort
-  // rematerialization in such cases.
-  bool is_dependent;
+  llvm::SmallVector<mlir::StringAttr, 2> dependent_on;
 };
 
 // Creates Sair value types with the same elemental types as those in the given
@@ -157,12 +159,11 @@ mlir::Operation::operand_range ParallelDomain(SairOp op) {
 
 // Replaces `op` by the same op with actual dimensions in the domain instead of
 // rematerialization tags. Effectively introduces as many trailing domain
-// operands as `loops` and extends the shape of the result accordingly. Expects
-// `loops` to contain indices of dimensions tagged for rematerialization in the
-// loop nest attribute. The `main_loops` map should contain the loop bounds for
-// all dimensions to rematerialize.
+// operands as `loops` and extends the shape of the result accordingly. The
+// `main_loops` map should contain the loop bounds for all dimensions to
+// rematerialize.
 mlir::LogicalResult Rematerialize(
-    ComputeOp op, ArrayRef<size_t> loops,
+    ComputeOp op,
     const llvm::DenseMap<mlir::Attribute, LoopBounds> &main_loops) {
   MLIRContext *ctx = op.getContext();
   auto sair_op = cast<SairOp>(op.getOperation());
@@ -170,28 +171,38 @@ mlir::LogicalResult Rematerialize(
   // Keep the parallel domain and store the operand position to use for new
   // domain dimensions about to be inserted.
   auto parallel_domain = ParallelDomain(sair_op);
-  size_t position = parallel_domain.size();
+  size_t num_parallel_dims = parallel_domain.size();
+  size_t position = num_parallel_dims;
+
+  // Find positions of loop attributes that require rematerialization. These
+  // will be used in the third sweep after we changed the attribute to refer to
+  // the actual dimensions.
+  llvm::SmallVector<int, 4> loops;
+  auto loop_nest_array = llvm::to_vector<4>(op.LoopNestLoops());
+  for (size_t i = 0, e = loop_nest_array.size(); i < e; ++i) {
+    auto loop = loop_nest_array[i].cast<LoopAttr>();
+    if (loop.iter().Rematerialize()) loops.push_back(i);
+  }
+  size_t num_remat = loops.size();
 
   // Rebuild the loop nest attribute and populate the list of extra domain
   // dimensions.
-  auto loop_nest_array = llvm::to_vector<4>(op.LoopNestLoops());
   llvm::SmallVector<mlir::Value, 4> extra_domain;
-  extra_domain.reserve(loops.size());
+  extra_domain.reserve(num_remat);
   for (size_t i = 0, e = loop_nest_array.size(); i < e; ++i) {
     // If we are inserting domain dimensions in the middle of the dimension
     // list, update the indices of trailing dimensions.
     auto loop = loop_nest_array[i].cast<LoopAttr>();
     if (!loop.iter().Rematerialize()) {
-      if (loop.iter().Dimension() >= parallel_domain.size()) {
+      if (loop.iter().Dimension() >= num_parallel_dims) {
         loop_nest_array[i] = LoopAttr::get(
             loop.name(),
-            IteratorAttr::get(ctx, loop.iter().Dimension() + loops.size(),
+            IteratorAttr::get(ctx, loop.iter().Dimension() + num_remat,
                               loop.iter().Step()),
             ctx);
       }
       continue;
     }
-    if (!llvm::is_contained(loops, i)) continue;
 
     // For each loop to rematerialize, add the range as the last domain argument
     // and update the loop nest attribute accordingly.
@@ -212,25 +223,59 @@ mlir::LogicalResult Rematerialize(
              << "to be used here";
     }
 
-    if (bounds.is_dependent) {
-      return op.emitOpError()
-             << "rematerialization is not supported for dependent dimensions";
-    }
-
     loop_nest_array[i] = LoopAttr::get(
         loop.name(), IteratorAttr::get(ctx, position++, bounds.step), ctx);
   }
 
-  // Expand the shape accordingly.
-  // TODO: this assumes we can only rematerialize independent dimensions. In the
-  // future, we should also pull the dimensions it depends on.
-  auto extra_domain_shape =
-      DomainShapeAttr::HyperRectangular(op.getContext(), loops.size());
-  DomainShapeAttr orig_op_shape = sair_op.shape();
-  DomainShapeAttr domain_shape =
-      orig_op_shape.ProductAt(parallel_domain.size(), extra_domain_shape);
+  llvm::ArrayRef<DomainShapeDim> orig_dims = sair_op.shape().Dimensions();
+  size_t num_orig_dims = orig_dims.size();
+  auto inner_range_type = RangeType::get(
+      ctx, DomainShapeAttr::HyperRectangular(ctx, num_orig_dims + num_remat));
+
+  // Parallel shape dimensions of the original op are kept as is.
+  auto domain_shape_dims =
+      llvm::to_vector<8>(orig_dims.take_front(num_parallel_dims));
+  domain_shape_dims.reserve(num_orig_dims + num_remat);
+
+  // Traverse the rematerialized loops in the same order as before to match the
+  // indices of the newly added dimensions and construct the corresponding
+  // dimensions of the operation shape.
+  for (size_t loop_idx : loops) {
+    auto loop = loop_nest_array[loop_idx].cast<LoopAttr>();
+    const LoopBounds &bounds = main_loops.find(loop.name())->second;
+
+    // Find positions of the loops the bounds of the current rematerialized loop
+    // depend on and use them to construct the dependency pattern. Make sure to
+    // take positions from the current op, as the dimensions that are depended
+    // upon may be already present.
+    auto dependencies_range =
+        llvm::map_range(bounds.dependent_on, [&](mlir::StringAttr dependee) {
+          auto iter = llvm::find_if(loop_nest_array, [&](mlir::Attribute attr) {
+            return attr.cast<LoopAttr>().name() == dependee;
+          });
+          assert(iter != loop_nest_array.end() &&
+                 "rematerialized dimension depends on a dimension missing from "
+                 "loop_nest attribute");
+          return iter->cast<LoopAttr>().iter().Dimension();
+        });
+    auto dependency_pattern = AccessPatternAttr::get(
+        ctx, loop.iter().Dimension(), llvm::to_vector<4>(dependencies_range));
+    domain_shape_dims.emplace_back(inner_range_type, dependency_pattern);
+  }
+
+  // Non-parallel shape dimensions (trailing) of the original op need to be
+  // shifted right to account for the inserted dimensions.
+  for (const DomainShapeDim &dim : orig_dims.drop_front(num_parallel_dims)) {
+    domain_shape_dims.emplace_back(
+        inner_range_type,
+        dim.dependency_pattern().ShiftRight(num_remat, num_parallel_dims));
+  }
+
+  // Create the new domain shape and derive the result shape from it by removing
+  // non-parallel dimensions.
+  auto domain_shape = DomainShapeAttr::get(ctx, domain_shape_dims);
   DomainShapeAttr result_shape =
-      orig_op_shape.Prefix(parallel_domain.size()).Product(extra_domain_shape);
+      domain_shape.Prefix(num_parallel_dims + num_remat);
 
   mlir::Operation *orig_operation = op.getOperation();
   llvm::SmallVector<mlir::Type, 2> new_types;
@@ -250,25 +295,22 @@ mlir::LogicalResult Rematerialize(
           .Default([](mlir::Operation *op) { return nullptr; });
   if (!new_operation) return mlir::failure();
 
-  // Project out the rematerialized dimensions from all results. Use the
-  // identity access pattern here since defs and uses conserved their
-  // patterns.
+  // Project out the rematerialized dimensions from all results.
   auto value_producer = cast<ValueProducerOp>(orig_operation);
   for (unsigned i = 0, e = new_types.size(); i < e; ++i) {
     mlir::Value orig_result = orig_operation->getResult(i);
     mlir::Value remat_result = new_operation->getResult(i);
 
-    // Construct the new shape from that of the original result rather
-    // than the operation shape to avoid including reduction dimensions.
-    DomainShapeAttr orig_result_shape =
-        orig_result.getType().cast<ValueType>().Shape();
-    DomainShapeAttr shape = orig_result_shape.Product(extra_domain_shape);
+    // Use the identity access pattern here since defs and uses conserved their
+    // patterns. In this case, the shape of the projection operation is equal to
+    // the shape of its argument.
+    auto access_pattern = builder.getArrayAttr(AccessPatternAttr::GetIdentity(
+        op.getContext(), num_parallel_dims + num_remat));
+    DomainShapeAttr shape = remat_result.getType().cast<ValueType>().Shape();
 
     auto proj_op = builder.create<SairProjAnyOp>(
         op.getLoc(), orig_result.getType(), parallel_domain, extra_domain,
-        builder.getArrayAttr(AccessPatternAttr::GetIdentity(
-            op.getContext(), parallel_domain.size() + loops.size())),
-        remat_result, shape, /*memory_space=*/nullptr);
+        access_pattern, remat_result, shape, /*memory_space=*/nullptr);
     if (llvm::Optional<int> memory_space = value_producer.GetMemorySpace(i)) {
       proj_op.SetMemorySpace(i, memory_space);
     }
@@ -283,8 +325,7 @@ mlir::LogicalResult Rematerialize(
 // Rematerializes loops in all compute operations in the given program.
 mlir::LogicalResult RematerializeInProgram(SairProgramOp op) {
   llvm::DenseMap<mlir::Attribute, LoopBounds> main_loops;
-  llvm::DenseMap<mlir::Operation *, llvm::SmallVector<size_t, 2>>
-      pending_rematerializations;
+  llvm::DenseSet<mlir::Operation *> pending_rematerializations;
 
   // Perform a single walk across the program to collect both the information
   // about actual loop bounds and the information about dimensions that require
@@ -296,27 +337,30 @@ mlir::LogicalResult RematerializeInProgram(SairProgramOp op) {
     for (size_t i = 0, e = loop_attr_range.size(); i < e; ++i) {
       auto loop = loop_attr_range[i].cast<LoopAttr>();
       if (loop.iter().Rematerialize()) {
-        pending_rematerializations[comp.getOperation()].push_back(i);
+        pending_rematerializations.insert(comp.getOperation());
         continue;
       }
 
       int dimension = loop.iter().Dimension();
       auto sair_op = cast<SairOp>(comp.getOperation());
       Value range = sair_op.domain()[dimension];
-      bool is_dependent =
-          sair_op.shape().Dimensions()[dimension].DependencyMask().any();
+      llvm::SmallBitVector dependency =
+          sair_op.shape().Dimensions()[dimension].DependencyMask();
+      llvm::SmallVector<mlir::StringAttr, 2> depends_on;
+      depends_on.reserve(dependency.count());
+      for (int bit_idx : dependency.set_bits()) {
+        depends_on.push_back(loop_attr_range[bit_idx].cast<LoopAttr>().name());
+      }
       main_loops.try_emplace(loop.name(), range, loop.iter().Step(),
-                             is_dependent);
+                             depends_on);
     }
   });
 
   // Rematrialize dimensions in each op where it is necessary. This operates on
   // all dimensions of an op simultaneously because the op is erased in the
   // process and we don't want to keep track of that.
-  for (const auto &rematerialization : pending_rematerializations) {
-    if (mlir::failed(
-            Rematerialize(cast<ComputeOp>(rematerialization.getFirst()),
-                          rematerialization.getSecond(), main_loops))) {
+  for (mlir::Operation *operation : pending_rematerializations) {
+    if (mlir::failed(Rematerialize(cast<ComputeOp>(operation), main_loops))) {
       return mlir::failure();
     }
   }

@@ -21,6 +21,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/raw_ostream.h"
+#include "mlir/IR/AsmState.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/InitAllDialects.h"
 #include "mlir/InitAllPasses.h"
@@ -68,6 +69,7 @@ int main(int argc, char **argv) {
   mlir::registerAllPasses();
   sair::RegisterSairPasses();
   mlir::registerPassManagerCLOptions();
+  mlir::registerAsmPrinterCLOptions();
   mlir::PassPipelineCLParser passPipeline("", "MLIR passes to run");
   llvm::cl::ParseCommandLineOptions(argc, argv, "SAIR optimizer driver\n");
 
