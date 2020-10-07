@@ -211,18 +211,6 @@ mlir::LogicalResult Rematerialize(
            "invalid loop_nest attribute");
     const LoopBounds &bounds = bounds_iterator->getSecond();
     extra_domain.push_back(bounds.range);
-
-    // TODO: attempt to move the upward slice of the range before its first use.
-    mlir::Operation *range_def = bounds.range.getDefiningOp();
-    assert(range_def && "unexpected !sair.range as block argument");
-    if (!range_def->isBeforeInBlock(op.getOperation())) {
-      return (range_def->emitOpError()
-              << "range value definition would not precede its use after "
-                 "rematerialization")
-                 .attachNote(op.getLoc())
-             << "to be used here";
-    }
-
     loop_nest_array[i] = LoopAttr::get(
         loop.name(), IteratorAttr::get(ctx, position++, bounds.step), ctx);
   }

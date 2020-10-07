@@ -757,12 +757,12 @@ func @dimension_defined_in_loop_nest(%arg0: index, %arg1: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
     %1 = sair.from_scalar %arg1 : !sair.value<(), f32>
-    // expected-error @+1 {{operation cannot be nested in loop "A"}}
+    // expected-error @+1 {{rematerialized loop "A" indirectly uses the range before it is defined}}
     %2 = sair.copy %0 {
       loop_nest = [{name = "A", iter = #sair.iter<remat>}]
     } : !sair.value<(), index>
+    // expected-note @+1 {{range defined here}}
     %3 = sair.range %2 : !sair.range
-    // expected-note @+1 {{because of this operation}}
     %4 = sair.copy[d0:%3] %1 {
       loop_nest = [{name = "A", iter = #sair.iter<d0>}],
       memory_space = [1]
@@ -905,6 +905,25 @@ func @fby_of_fby_dependency(%arg0: f32) {
     } : !sair.value<d0:range x d1:range, f32>
     %5 = sair.proj_last[d0:%1] of[d1:%1] %4(d0, d1)
       : #sair.shape<d0:range x d1:range>, f32
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @wrong_order_for_remat(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    // expected-error @+1 {{rematerialized loop "A" indirectly uses the range before it is defined}}
+    %2 = sair.copy %0 {
+      loop_nest = [{name = "A", iter = #sair.iter<remat>}]
+    } : !sair.value<(), f32>
+    // expected-note @+1 {{range defined here}}
+    %1 = sair.static_range 8 : !sair.range
+    %3 = sair.copy[d0:%1] %2 {
+      loop_nest = [{name = "A", iter = #sair.iter<d0>}]
+    } : !sair.value<d0:range, f32>
     sair.exit
   }
   return

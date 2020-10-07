@@ -1184,6 +1184,7 @@ static mlir::LogicalResult VerifyFusedLoops(SairProgramOp program) {
     // loop. Otherwise, contains the first operation referencing the loop with
     // the `iter` field set.
     ComputeOp defining_op;
+    llvm::SmallVector<ComputeOp, 4> ops;
   };
 
   llvm::SmallVector<FusionGroup, 8> fusion_prefix;
@@ -1197,6 +1198,15 @@ static mlir::LogicalResult VerifyFusedLoops(SairProgramOp program) {
             << "loop " << group.name
             << " must have the 'iter' field set in at least one operation";
         return mlir::failure();
+      }
+      for (ComputeOp op : group.ops) {
+        if (!group.dimension.getDefiningOp()->isBeforeInBlock(op)) {
+          (op.emitError() << "rematerialized loop " << group.name
+                          << " indirectly uses the range before it is defined")
+                  .attachNote(group.dimension.getLoc())
+              << "range defined here";
+          return mlir::failure();
+        }
       }
       closed_groups.insert(group.name);
     }
@@ -1234,6 +1244,7 @@ static mlir::LogicalResult VerifyFusedLoops(SairProgramOp program) {
       FusionGroup &group = fusion_prefix[common_prefix_size];
       if (loop.name() != group.name) break;
 
+      group.ops.push_back(op);
       if (loop.iter().Rematerialize()) continue;
 
       mlir::Value dimension = sair_op.domain()[loop.iter().Dimension()];
@@ -1274,6 +1285,7 @@ static mlir::LogicalResult VerifyFusedLoops(SairProgramOp program) {
       FusionGroup &group = fusion_prefix.emplace_back();
       group.name = loop.name();
       group.defining_op = op;
+      group.ops.push_back(op);
 
       if (loop.iter().Rematerialize()) continue;
       group.dimension = sair_op.domain()[loop.iter().Dimension()];
