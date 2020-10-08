@@ -15,6 +15,7 @@
 #include <memory>
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallVector.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Function.h"
 #include "mlir/IR/MLIRContext.h"
@@ -105,8 +106,16 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
   appendRange(access_patterns, input_access_patterns);
   auto map_access_pattern = builder.getArrayAttr(access_patterns);
 
+  // The shapes of new result types are same as the op shapes since we
+  // reintroduced the reduction dimensions in them.
+  auto result_types = llvm::to_vector<4>(
+      llvm::map_range(op.getResultTypes(), [&](mlir::Type type) -> mlir::Type {
+        return ValueType::get(type.getContext(), op.shape(),
+                              type.cast<ValueType>().ElementType());
+      }));
+
   // Keep memory space undefined for the produced value.
-  auto map = builder.create<SairMapOp>(loc, op.getResultTypes(), domain,
+  auto map = builder.create<SairMapOp>(loc, result_types, domain,
                                        map_access_pattern, map_operands,
                                        op.shape(), op.loop_nestAttr(), nullptr);
   map.getRegion().takeBody(op.getRegion());

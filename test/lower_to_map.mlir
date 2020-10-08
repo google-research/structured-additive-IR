@@ -1,4 +1,5 @@
 // RUN: sair-opt %s -sair-lower-to-map | sair-opt | FileCheck %s
+// RUN: sair-opt %s -sair-lower-to-map --mlir-print-op-generic | FileCheck %s --check-prefix=GENERIC
 
 // CHECK-LABEL: @copy
 func @copy(%arg0 : memref<?x?xf32>) {
@@ -19,6 +20,7 @@ func @copy(%arg0 : memref<?x?xf32>) {
   return
 }
 
+// CHECK-LABEL: @map_reduce
 func @map_reduce(%r1: index, %r2: index, %in1: f32) {
   sair.program {
     %0 = sair.from_scalar %r1 : !sair.value<(), index>
@@ -46,8 +48,15 @@ func @map_reduce(%r1: index, %r2: index, %in1: f32) {
       sair.return %9, %10 : f32, f32
     // CHECK: #sair.shape<d0:range x d1:range>, (f32, f32, f32) -> (f32, f32)
     } : #sair.shape<d0:range x d1:range>, (f32) -> (f32, f32)
+    // Verify the result types have correct shapes.
+    // GENERIC: "sair.map"
+    // GENERIC:      (!sair.range, !sair.range, !sair.value<d0:range x d1:range, f32>,
+    // GENERIC-SAME:  !sair.value<d0:range x d1:range, f32>, !sair.value<d0:range x d1:range, f32>) ->
+    // GENERIC-SAME: (!sair.value<d0:range x d1:range, f32>, !sair.value<d0:range x d1:range, f32>)
+
     // CHECK: sair.proj_last[d0:%[[RANGE1]]] of[d1:%[[RANGE2]]] %[[OUTPUT]]#0(d0, d1)
     // CHECK: sair.proj_last[d0:%[[RANGE1]]] of[d1:%[[RANGE2]]] %[[OUTPUT]]#1(d0, d1)
+    // GENERIC: "sair.proj_last"
     sair.exit
   }
   return
