@@ -64,8 +64,8 @@ void AdaptTypesToShape(mlir::TypeRange types, DomainShapeAttr shape,
 // Creates a new access pattern array by shifting all the accessed dimensions
 // starting from `insert_pos` right by `num_dims`. This reflects `num_dims`
 // dimensions being inserted at `insert_pos` into the domain.
-mlir::ArrayAttr AdaptAccessPatterns(mlir::ArrayAttr access_pattern_array,
-                                    size_t insert_pos, size_t num_dims) {
+mlir::ArrayAttr AccessPatternsInsertDims(mlir::ArrayAttr access_pattern_array,
+                                         size_t insert_pos, size_t num_dims) {
   llvm::SmallVector<mlir::Attribute, 4> new_access_patterns;
   new_access_patterns.reserve(access_pattern_array.size());
   for (auto access_pattern :
@@ -89,6 +89,21 @@ OpTy TakeBodyAdjustArguments(OpTy target, OpTy source, int pos, int num,
   return target;
 }
 
+// Given an array of Sair access patterns, creates a new array containing the
+// same patterns with use domain extended by `num_extra_dims`.
+mlir::ArrayAttr AccessPatternsExtendUseDomain(
+    mlir::ArrayAttr access_pattern_array, size_t num_extra_dims) {
+  llvm::SmallVector<mlir::Attribute, 4> new_access_patterns;
+  new_access_patterns.reserve(access_pattern_array.size());
+  for (auto access_pattern :
+       access_pattern_array.getAsRange<AccessPatternAttr>()) {
+    new_access_patterns.push_back(access_pattern.ResizeUseDomain(
+        access_pattern.UseDomainSize() + num_extra_dims));
+  }
+  return mlir::ArrayAttr::get(new_access_patterns,
+                              access_pattern_array.getContext());
+}
+
 // Creates a new sair.copy operation that is intended to replace `op`. Takes the
 // additional domain dimensions, the updated result type and loop nest attribute
 // supplied as arguments, extracts the value being copied and the access pattern
@@ -100,9 +115,11 @@ SairCopyOp RecreateOp(SairCopyOp op, mlir::TypeRange result_types,
   assert(result_types.size() == 1);
   auto domain = llvm::to_vector<8>(op.domain());
   appendRange(domain, extra_domain);
+  mlir::ArrayAttr access_patterns = AccessPatternsExtendUseDomain(
+      op.access_pattern_array(), extra_domain.size());
   return builder.create<SairCopyOp>(op.getLoc(), result_types[0], domain,
-                                    op.access_pattern_array(), op.value(),
-                                    loop_nest_attr, op.memory_spaceAttr());
+                                    access_patterns, op.value(), loop_nest_attr,
+                                    op.memory_spaceAttr());
 }
 
 // Creates a new sair.map operation that is intended to replace `op`. Takes the
@@ -115,8 +132,10 @@ SairMapOp RecreateOp(SairMapOp op, mlir::TypeRange result_types,
                      DomainShapeAttr domain_shape, mlir::OpBuilder &builder) {
   auto domain = llvm::to_vector<8>(op.domain());
   appendRange(domain, extra_domain);
+  mlir::ArrayAttr access_patterns = AccessPatternsExtendUseDomain(
+      op.access_pattern_array(), extra_domain.size());
   auto new_op = builder.create<SairMapOp>(
-      op.getLoc(), result_types, domain, op.access_pattern_array(), op.inputs(),
+      op.getLoc(), result_types, domain, access_patterns, op.inputs(),
       domain_shape, loop_nest_attr, op.memory_spaceAttr());
 
   return TakeBodyAdjustArguments(new_op, op, op.domain().size(),
@@ -134,7 +153,7 @@ SairMapReduceOp RecreateOp(SairMapReduceOp op, mlir::TypeRange result_types,
                            DomainShapeAttr domain_shape,
                            mlir::OpBuilder &builder) {
   auto parallel_domain = llvm::to_vector<8>(op.parallel_domain());
-  mlir::ArrayAttr access_pattern_attr = AdaptAccessPatterns(
+  mlir::ArrayAttr access_pattern_attr = AccessPatternsInsertDims(
       op.access_pattern_array(), parallel_domain.size(), extra_domain.size());
   appendRange(parallel_domain, extra_domain);
 
@@ -215,12 +234,9 @@ mlir::LogicalResult Rematerialize(
         loop.name(), IteratorAttr::get(ctx, position++, bounds.step), ctx);
   }
 
+  // Parallel shape dimensions of the original op are kept as is.
   llvm::ArrayRef<DomainShapeDim> orig_dims = sair_op.shape().Dimensions();
   size_t num_orig_dims = orig_dims.size();
-  auto inner_range_type = RangeType::get(
-      ctx, DomainShapeAttr::HyperRectangular(ctx, num_orig_dims + num_remat));
-
-  // Parallel shape dimensions of the original op are kept as is.
   auto domain_shape_dims =
       llvm::to_vector<8>(orig_dims.take_front(num_parallel_dims));
   domain_shape_dims.reserve(num_orig_dims + num_remat);
@@ -228,14 +244,15 @@ mlir::LogicalResult Rematerialize(
   // Traverse the rematerialized loops in the same order as before to match the
   // indices of the newly added dimensions and construct the corresponding
   // dimensions of the operation shape.
-  for (size_t loop_idx : loops) {
-    auto loop = loop_nest_array[loop_idx].cast<LoopAttr>();
+  for (auto en : llvm::enumerate(loops)) {
+    auto loop = loop_nest_array[en.value()].cast<LoopAttr>();
     const LoopBounds &bounds = main_loops.find(loop.name())->second;
 
     // Find positions of the loops the bounds of the current rematerialized loop
     // depend on and use them to construct the dependency pattern. Make sure to
     // take positions from the current op, as the dimensions that are depended
-    // upon may be already present.
+    // upon may be already present. Use the range type of the domain dimension
+    // to construct the shape.
     auto dependencies_range =
         llvm::map_range(bounds.dependent_on, [&](mlir::StringAttr dependee) {
           auto iter = llvm::find_if(loop_nest_array, [&](mlir::Attribute attr) {
@@ -248,14 +265,16 @@ mlir::LogicalResult Rematerialize(
         });
     auto dependency_pattern = AccessPatternAttr::get(
         ctx, loop.iter().Dimension(), llvm::to_vector<4>(dependencies_range));
-    domain_shape_dims.emplace_back(inner_range_type, dependency_pattern);
+    domain_shape_dims.emplace_back(
+        extra_domain[en.index()].getType().cast<RangeType>(),
+        dependency_pattern);
   }
 
   // Non-parallel shape dimensions (trailing) of the original op need to be
   // shifted right to account for the inserted dimensions.
   for (const DomainShapeDim &dim : orig_dims.drop_front(num_parallel_dims)) {
     domain_shape_dims.emplace_back(
-        inner_range_type,
+        dim.type(),
         dim.dependency_pattern().ShiftRight(num_remat, num_parallel_dims));
   }
 
