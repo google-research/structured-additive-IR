@@ -1,4 +1,5 @@
 // RUN: sair-opt --convert-linalg-to-sair %s | FileCheck %s
+// RUN: sair-opt --convert-linalg-to-sair --mlir-print-op-generic %s | FileCheck %s --check-prefix=GENERIC
 
 #pointwise_trait = {
   indexing_maps = [
@@ -14,6 +15,10 @@ func @pointwise(%arg0: memref<1x2x3xf32>, %arg1: memref<2x3x1xf32>) {
   // CHECK: %[[s1:.*]] = sair.static_range 2 : !sair.range
   // CHECK: %[[s2:.*]] = sair.static_range 3 : !sair.range
   // CHECK: %[[v0:.*]] = sair.from_memref[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]] %{{.*}} : memref<1x2x3xf32> -> !sair.value<d0:range x d1:range x d2:range, f32>
+  // GENERIC: %[[s0:.*]] = "sair.static_range"() {size = 1 : index}
+  // GENERIC: %[[s1:.*]] = "sair.static_range"() {size = 2 : index}
+  // GENERIC: %[[s2:.*]] = "sair.static_range"() {size = 3 : index}
+  // GENERIC: "sair.from_memref"(%[[s0]], %[[s1]], %[[s2]],
 
   // CHECK: %[[s0:.*]] = sair.static_range 2 : !sair.range
   // CHECK: %[[s1:.*]] = sair.static_range 3 : !sair.range
