@@ -235,11 +235,14 @@ AccessPatternAttr AccessPatternAttr::get(mlir::MLIRContext *context,
 }
 
 AccessPatternAttr AccessPatternAttr::GetIdentity(mlir::MLIRContext *context,
-                                                 int num_dimensions) {
+                                                 int num_dimensions,
+                                                 int use_domain_size) {
+  if (use_domain_size == -1) use_domain_size = num_dimensions;
+  assert(use_domain_size >= num_dimensions);
   llvm::SmallVector<int, 4> pattern;
   pattern.reserve(num_dimensions);
   for (int i = 0; i < num_dimensions; ++i) pattern.push_back(i);
-  return AccessPatternAttr::get(context, num_dimensions, pattern);
+  return AccessPatternAttr::get(context, use_domain_size, pattern);
 }
 
 AccessPatternAttr AccessPatternAttr::FromAffineMap(mlir::AffineMap map) {

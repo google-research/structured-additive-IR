@@ -58,9 +58,11 @@ class AccessPatternAttr
   static AccessPatternAttr get(mlir::MLIRContext *context, int domain_size,
                                llvm::ArrayRef<int> pattern);
   // Returns the access pattern that accesses `num_dimensions` pointwise without
-  // transposing any of them.
+  // transposing any of them, and has the given size of the use domain. If use
+  // domain size is `-1`, it is considered equal to `num_dimensions`.
   static AccessPatternAttr GetIdentity(mlir::MLIRContext *context,
-                                       int num_dimensions);
+                                       int num_dimensions,
+                                       int use_domain_size = -1);
 
   // Returns the access pattern that corresponds to the given affine map.
   // Expects the map to be a permutation.

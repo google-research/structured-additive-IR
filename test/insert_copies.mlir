@@ -1,4 +1,5 @@
 // RUN: sair-opt %s -sair-insert-copies | FileCheck %s
+// RUN: sair-opt %s -sair-insert-copies -mlir-print-op-generic | FileCheck %s --check-prefix=GENERIC
 
 // CHECK-LABEL: @from_to_memref
 // CHECK: %[[ARG0:.*]]: memref<?x?xf32>
@@ -114,6 +115,9 @@ func @reduce_memory_space_mismatch(%arg0: f32) {
   }
   return
 }
+// In the generic syntax, the function name is an attribute that is printed
+// after the function. Check for it anyway to delimit the test.
+// GENERIC-LABEL: sym_name = "reduce_memory_space_mismatch"
 
 // CHECK-LABEL: @reduce_loop_nest
 func @reduce_loop_nest(%arg0: f32) {
@@ -124,7 +128,12 @@ func @reduce_loop_nest(%arg0: f32) {
     %1 = sair.static_range 8 : !sair.range
     // CHECK: %[[V2:.*]] = sair.copy[d0:%[[V1]]] %[[V0]]
     // CHECK:   loop_nest = [{iter = #sair.iter<d0>, name = "A"}]
+    // GENERIC:      "sair.copy"
+    // GENERIC-SAME: access_pattern_array = [#sair.pattern<1>]
+
     // CHECK: sair.copy[d0:%[[V1]], d1:%[[V1]]] %[[V0]]
+    // GENERIC:      "sair.copy"
+    // GENERIC-SAME: access_pattern_array = [#sair.pattern<2>]
     sair.copy[d0:%1, d1:%1] %0 {
       loop_nest = [
         {name = "A", iter = #sair.iter<d0>},
@@ -132,6 +141,8 @@ func @reduce_loop_nest(%arg0: f32) {
       ]
     } : !sair.value<d0:range x d1:range, f32>
     // CHECK: sair.map_reduce[d0:%[[V1]]] %[[V2]](d0) reduce[d1:%[[V1]]]
+    // GENERIC: "sair.map_reduce"
+    // GENERIC: access_pattern_array = [#sair.pattern<2 : d0>]
     sair.map_reduce[d0:%1] %0 reduce[d1:%1] attributes {
       loop_nest = [
         {name = "A", iter = #sair.iter<d0>},
@@ -145,3 +156,6 @@ func @reduce_loop_nest(%arg0: f32) {
   }
   return
 }
+// In the generic syntax, the function name is an attribute that is printed
+// after the function. Check for it anyway to delimit the test.
+// GENERIC-LABEL: sym_name = "reduce_loop_nest"

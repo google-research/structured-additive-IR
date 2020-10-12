@@ -129,7 +129,8 @@ SairCopyOp MaterializeOperand(DomainShapeAttr shape, mlir::OperandRange domain,
   // Build the copy operation.
   mlir::Type type =
       builder.getType<ValueType>(shape, operand.GetType().ElementType());
-  auto access_patterns = builder.getArrayAttr(operand.AccessPattern());
+  auto access_patterns = builder.getArrayAttr(
+      operand.AccessPattern().ResizeUseDomain(shape.NumDimensions()));
   mlir::Location loc = operand.getOwner()->getLoc();
   mlir::ArrayAttr memory_space_attr;
   if (memory_space.hasValue()) {
@@ -142,8 +143,10 @@ SairCopyOp MaterializeOperand(DomainShapeAttr shape, mlir::OperandRange domain,
       /*memory_space=*/memory_space_attr);
   // Point the operand to the result of the copy operation.
   operand.set_value(copy_op.result());
-  operand.SetAccessPattern(
-      AccessPatternAttr::GetIdentity(builder.getContext(), domain.size()));
+  int use_domain_size =
+      cast<SairOp>(operand.getOwner()).shape().NumDimensions();
+  operand.SetAccessPattern(AccessPatternAttr::GetIdentity(
+      builder.getContext(), domain.size(), use_domain_size));
   return copy_op;
 }
 
