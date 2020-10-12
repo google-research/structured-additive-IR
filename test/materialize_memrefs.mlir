@@ -1,5 +1,9 @@
 // RUN: sair-opt %s -sair-materialize-memrefs | FileCheck %s
 
+// CHECK-DAG: #[[$map2d1:.*]] = affine_map<(d0, d1) -> (d1)>
+// CHECK-DAG: #[[$map2d0:.*]] = affine_map<(d0, d1) -> (d0)>
+// CHECK-DAG: #[[$map1d0:.*]] = affine_map<(d0) -> (d0)>
+
 // CHECK-LABEL: @from_memref
 // CHECK: %[[ARG0:.*]]: index, %[[ARG1:.*]]: memref<?x8xf32>
 func @from_memref(%arg0: index, %arg1: memref<?x8xf32>) {
@@ -17,7 +21,9 @@ func @from_memref(%arg0: index, %arg1: memref<?x8xf32>) {
       // CHECK: ^{{.*}}(%[[ARG2:.*]]: index, %[[ARG3:.*]]: index,
       // CHECK-SAME: %[[ARG4:.*]]: memref<?x8xf32>):
       ^bb0(%arg2: index, %arg3: index, %arg4: f32):
-        // CHECK: %[[V1:.*]] = affine.load %[[ARG4]][%[[ARG3]], %[[ARG2]]]
+        // CHECK: %[[IDX0:.*]] = affine.apply #[[$map2d1]](%[[ARG2]], %[[ARG3]])
+        // CHECK: %[[IDX1:.*]] = affine.apply #[[$map2d0]](%[[ARG2]], %[[ARG3]])
+        // CHECK: %[[V1:.*]] = load %[[ARG4]][%[[IDX0]], %[[IDX1]]]
         // CHECK: %{{.*}} = addf %[[V1]], %[[V1]] : f32
         %4 = addf %arg4, %arg4 : f32
         sair.return
@@ -88,7 +94,8 @@ func @map_reduce_input() {
     sair.map_reduce reduce[d0: %0] %1(d0) {
       // CHECK: ^{{.*}}(%[[ARG0:.*]]: index, %[[ARG1:.*]]: memref<8xf32>):
       ^bb0(%arg0: index, %arg1: f32):
-        // CHECK: %[[V0:.*]] = affine.load %{{.*}}[%[[ARG0]]]
+        // CHECK: %[[IDX0:.*]] = affine.apply #[[$map1d0]](%[[ARG0]])
+        // CHECK: %[[V0:.*]] = load %{{.*}}[%[[IDX0]]]
         // CHECK: %{{.*}} = addf %[[V0]], %[[V0]] : f32
         %2 = addf %arg1, %arg1 : f32
         // CHECK-NOT: store
@@ -123,10 +130,14 @@ func @map_reduce_init() {
     } {
       // CHECK: ^{{.*}}(%[[ARG0:.*]]: index, %[[ARG1:.*]]: index, %[[ARG2:.*]]: memref<8x8xf32>):
       ^bb0(%arg0: index, %arg1: index, %arg2: f32):
-        // CHECK: %[[V2:.*]] = affine.load %[[ARG2]][%[[ARG1]], %[[ARG0]]] : memref<8x8xf32>
+        // CHECK: %[[IDX0:.*]] = affine.apply #[[$map2d1]](%[[ARG0]], %[[ARG1]])
+        // CHECK: %[[IDX1:.*]] = affine.apply #[[$map2d0]](%[[ARG0]], %[[ARG1]])
+        // CHECK: %[[V2:.*]] = load %[[ARG2]][%[[IDX0]], %[[IDX1]]] : memref<8x8xf32>
         // CHECK: %[[V3:.*]] = addf %[[V2]], %[[V2]] : f32
         %3 = addf %arg2, %arg2 : f32
-        // CHECK: affine.store %[[V3]], %[[ARG2]][%[[ARG1]], %[[ARG0]]] : memref<8x8xf32>
+        // CHECK: %[[IDX0:.*]] = affine.apply #[[$map2d1]](%[[ARG0]], %[[ARG1]])
+        // CHECK: %[[IDX1:.*]] = affine.apply #[[$map2d0]](%[[ARG0]], %[[ARG1]])
+        // CHECK: store %[[V3]], %[[ARG2]][%[[IDX0]], %[[IDX1]]] : memref<8x8xf32>
         // CHECK-NOT: sair.return %{{.*}}
         // CHECK: sair.return
         sair.return %3 : f32
@@ -137,7 +148,9 @@ func @map_reduce_init() {
     sair.map[d0:%0, d1:%0] %2(d0, d1) attributes {memory_space = []} {
       // CHECK: ^{{.*}}(%[[ARG0:.*]]: index, %[[ARG1:.*]]: index, %[[ARG2:.*]]: memref<8x8xf32>):
       ^bb0(%arg0: index, %arg1: index, %arg2: f32):
-        // CHECK: %[[V2:.*]] = affine.load %[[ARG2]][%[[ARG1]], %[[ARG0]]] : memref<8x8xf32>
+        // CHECK: %[[IDX0:.*]] = affine.apply #[[$map2d1]](%[[ARG0]], %[[ARG1]])
+        // CHECK: %[[IDX1:.*]] = affine.apply #[[$map2d0]](%[[ARG0]], %[[ARG1]])
+        // CHECK: %[[V2:.*]] = load %[[ARG2]][%[[IDX0]], %[[IDX1]]] : memref<8x8xf32>
         // CHECK: %{{.*}} = addf %[[V2]], %[[V2]] : f32
         %4 = addf %arg2, %arg2 : f32
         sair.return

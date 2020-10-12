@@ -22,10 +22,11 @@ func @copy_to_memref(%arg0: memref<8xf32>, %arg1: memref<8xf32>) {
     // CHECK-DAG: %[[C8:.*]] = constant 8 : index
     // CHECK: scf.for %[[V0:.*]] = %[[C0]] to %[[C8]] step %[[C1]] {
     %0 = sair.static_range 8 : !sair.range
-    // CHECK:   %[[V1:.*]] = affine.load %[[ARG0]][%[[V0]]] : memref<8xf32>
+    // CHECK:   %[[V1:.*]] = affine.apply #[[$map0]](%[[V0]])
+    // CHECK:   %[[V2:.*]] = load %[[ARG0]][%[[V1]]] : memref<8xf32>
     %1 = sair.from_memref[d0:%0] %arg0 : memref<8xf32> -> !sair.value<d0:range, f32>
-    // CHECK:   %[[V2:.*]] = affine.apply #[[$map0]](%[[V0]])
-    // CHECK:   store %[[V1]], %[[ARG1]][%[[V2]]] : memref<8xf32>
+    // CHECK:   %[[V3:.*]] = affine.apply #[[$map0]](%[[V0]])
+    // CHECK:   store %[[V2]], %[[ARG1]][%[[V3]]] : memref<8xf32>
     sair.to_memref[d0:%0] %1(d0), %arg1 : memref<8xf32>
     // CHECK: }
     // CHECK-NOT: sair.exit

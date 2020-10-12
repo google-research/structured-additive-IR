@@ -248,6 +248,17 @@ mlir::StoreOp EmitPseudoAffineStore(mlir::Location loc,
   return builder.create<mlir::StoreOp>(loc, value_to_store, memref, applied);
 }
 
+// Uses `builder` to emit an equivalent of an AffineLoadOp that performs the
+// index transformation separately and uses standard Load Op to circumvent
+// Affine dialect value provenance restrictions.
+mlir::LoadOp EmitPseudoAffineLoad(mlir::Location loc, mlir::Value memref,
+                                  mlir::AffineMap map, mlir::ValueRange indices,
+                                  mlir::OpBuilder &builder) {
+  llvm::SmallVector<mlir::Value, 6> applied;
+  EmitAffineApplyMap(loc, map, indices, builder, applied);
+  return builder.create<mlir::LoadOp>(loc, memref, applied);
+}
+
 // Information about a `to_memref` op about to be eliminated.
 struct ToMemRefOpInfo {
   ToMemRefOpInfo(SairToMemRefOp op, unsigned pos, mlir::AffineMap map)
@@ -532,8 +543,8 @@ void UpdateUseAfterMaterialization(mlir::Value memref_value,
   mlir::AffineMap load_map =
       memref_layout.compose(old_access_pattern.AsAffineMap());
   auto load_indices = body->getArguments().take_front(domain_size);
-  auto load_op = builder.create<mlir::AffineLoadOp>(
-      sair_op.getLoc(), memref_argument, load_map, load_indices);
+  auto load_op = EmitPseudoAffineLoad(sair_op.getLoc(), memref_argument,
+                                      load_map, load_indices, builder);
   scalar_argument.replaceAllUsesWith(load_op.getResult());
   body->eraseArgument(scalar_argument.getArgNumber());
 }
@@ -610,17 +621,16 @@ void UpdateUseInPlaceAfterMaterialization(
   mlir::AffineMap access_map = memref_layout.compose(
       op.ValueOperands()[init_position].AccessPattern().AsAffineMap());
   builder.setInsertionPointToStart(&new_op.block());
-  auto load_op = builder.create<mlir::AffineLoadOp>(
-      op.getLoc(), memref_argument, access_map, access_indices);
+  auto load_op = EmitPseudoAffineLoad(op.getLoc(), memref_argument, access_map,
+                                      access_indices, builder);
   scalar_argument.replaceAllUsesWith(load_op.getResult());
   new_op.block().eraseArgument(scalar_argument.getArgNumber());
 
   // Store into the memref.
   mlir::Operation *sair_return = new_op.block().getTerminator();
   builder.setInsertionPoint(sair_return);
-  builder.create<mlir::AffineStoreOp>(
-      op.getLoc(), sair_return->getOperand(init_position), memref_argument,
-      access_map, access_indices);
+  EmitPseudoAffineStore(op.getLoc(), sair_return->getOperand(init_position),
+                        memref_argument, access_map, access_indices, builder);
   sair_return->eraseOperand(init_position);
 }
 
