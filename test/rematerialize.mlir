@@ -1,4 +1,4 @@
-// RUN: sair-opt -sair-rematerialize %s | sair-opt | FileCheck %s
+// RUN: sair-opt -sair-rematerialize %s | FileCheck %s
 // RUN: sair-opt -sair-rematerialize -mlir-print-op-generic %s | FileCheck %s --check-prefix=GENERIC
 
 // CHECK-LABEL: @remat_copy

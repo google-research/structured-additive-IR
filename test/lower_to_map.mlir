@@ -1,4 +1,4 @@
-// RUN: sair-opt %s -sair-lower-to-map | sair-opt | FileCheck %s
+// RUN: sair-opt %s -sair-lower-to-map | FileCheck %s
 // RUN: sair-opt %s -sair-lower-to-map --mlir-print-op-generic | FileCheck %s --check-prefix=GENERIC
 
 // CHECK-LABEL: @copy
