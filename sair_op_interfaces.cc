@@ -41,6 +41,55 @@
 
 namespace sair {
 
+AccessPatternAttr ValueOperand::AccessPattern() {
+  return cast<SairOp>(operand_->getOwner()).access_pattern_array()
+      .getValue()[index_]
+      .template cast<::sair::AccessPatternAttr>();
+}
+
+void ValueOperand::SetAccessPattern(AccessPatternAttr access_pattern) {
+  SairOp op = cast<SairOp>(operand_->getOwner());
+  op.SetAccessPattern(index_, access_pattern);
+}
+
+ValueOperandRange::ValueOperandRange()
+    : RangeBaseT(std::make_pair(nullptr, 0), 0) {}
+
+ValueOperandRange::ValueOperandRange(
+    llvm::MutableArrayRef<mlir::OpOperand> operands)
+    : RangeBaseT(std::make_pair(operands.data(), 0), operands.size()) {}
+
+ValueOperandRange::PtrPair ValueOperandRange::offset_base(PtrPair base_ptr,
+                                                          ptrdiff_t offset) {
+  base_ptr.first += offset;
+  base_ptr.second += offset;
+  return base_ptr;
+}
+
+ValueOperand ValueOperandRange::dereference_iterator(PtrPair base_ptr,
+                                                     ptrdiff_t offset) {
+  return ValueOperand(base_ptr.first + offset, base_ptr.second + offset);
+}
+
+llvm::SmallBitVector ValueOperand::DimsDependingOnOperand() const {
+  return cast<SairOp>(operand_->getOwner()).DimsDependingOnOperand(index_);
+}
+
+bool ValueOperand::AllowUseBeforeDef() const {
+  return cast<SairOp>(operand_->getOwner()).AllowUseBeforeDef(index_);
+}
+
+// Sair operations are only allowed inside a SairProgramOp.
+mlir::LogicalResult VerifySairOpParent(mlir::Operation *operation) {
+  if (isa<SairProgramOp>(operation->getParentOp())) {
+    return mlir::success();
+  }
+
+  return operation->emitOpError()
+         << "expected to be immediately contained in a '"
+         << SairProgramOp::getOperationName() << "'";
+}
+
 llvm::Optional<int> GetMemorySpace(int result, mlir::Operation *op) {
   llvm::Optional<mlir::ArrayAttr> array =
       cast<ValueProducerOp>(op).memory_space();
@@ -84,6 +133,112 @@ void SetMemorySpace(int result, llvm::Optional<int> memory_space,
   op->setAttr(ValueProducerOp::kMemorySpaceAttrName, new_attribute);
 }
 
+mlir::LogicalResult VerifySairOp(Operation *op) {
+  SairOp sair_op = cast<SairOp>(op);
+  // Check that the domain has the right shape.
+  if (llvm::size(sair_op.domain()) != sair_op.shape().NumDimensions()) {
+    return sair_op.emitError("unexpected number of dimensions");
+  }
+  for (auto pair :
+       llvm::zip(sair_op.domain(), sair_op.shape().Dimensions())) {
+    if (std::get<0>(pair).getType() != std::get<1>(pair).type()) {
+      return sair_op.emitError("unexpected dimension type");
+    }
+  }
+  // Check that the domain is defined locally.
+  for (mlir::Value dimension : sair_op.domain()) {
+    mlir::Operation *defining_op = dimension.getDefiningOp();
+    if (!defining_op ||
+        defining_op->getParentRegion() != op->getParentRegion()) {
+      return op->emitError()
+             << "sair dimensions must be defined in the region they are used";
+    }
+    if (!defining_op->isBeforeInBlock(op)) {
+      return (op->emitError() << "dimension used before its definition")
+                 .attachNote(defining_op->getLoc())
+             << "definition here";
+    }
+  }
+  // Check that operands start with the domain.
+  if (!sair_op.domain().empty() &&
+      sair_op.domain().begin() != op->operand_begin()) {
+    return sair_op.emitError()
+           << "expected operands to start with the domain";
+  }
+  // Check that there is enough operands.
+  int min_num_operands =
+      sair_op.shape().NumDimensions() + sair_op.access_pattern_array().size();
+  if (op->getNumOperands() < min_num_operands) {
+    return sair_op.emitError() << "unexpected number of operands";
+  }
+
+  if (!sair_op.ValueOperands().empty()) {
+    // Verify that the "access_pattern_array" attribute exists.
+    if (!op->getAttr(::sair::SairDialect::kAccessPatternAttrName)) {
+      return mlir::emitError(op->getLoc())
+             << "missing " << ::sair::SairDialect::kAccessPatternAttrName
+             << " attribute";
+    }
+    for (mlir::Attribute pattern : sair_op.access_pattern_array()) {
+      if (pattern.cast<::sair::AccessPatternAttr>().DependsOnDimension(
+              ::sair::AccessPatternAttr::kNoDimension)) {
+        return mlir::emitError(op->getLoc())
+               << "all dimensions of the accessed domain must be mapped";
+      }
+    }
+  }
+
+  // Check !sair.value operands.
+  for (::sair::ValueOperand v : sair_op.ValueOperands()) {
+    auto value_type = v.GetType().template dyn_cast<::sair::ValueType>();
+    if (!value_type) {
+      return mlir::emitError(v.value().getLoc())
+             << "expected a !sair.value operand";
+    }
+    if (v.AccessPattern().UseDomainSize() != sair_op.domain().size()) {
+      return mlir::emitError(op->getLoc()) << "invalid use domain size";
+    }
+    ::sair::DomainShapeAttr expected_shape =
+        sair_op.shape().Inverse(v.AccessPattern());
+    if (expected_shape != value_type.Shape()) {
+      return mlir::emitError(v.value().getLoc())
+             << "access pattern incompatible with the operand shape";
+    }
+    mlir::Operation *defining_op = v.value().getDefiningOp();
+    if (!defining_op ||
+        defining_op->getParentRegion() != op->getParentRegion()) {
+      return op->emitError()
+             << "sair values must be defined in the region they are used";
+    }
+    if (!defining_op->isBeforeInBlock(op) && !v.AllowUseBeforeDef()) {
+      return (op->emitError() << "operand used before its definition")
+                 .attachNote(defining_op->getLoc())
+             << "definition here";
+    }
+
+    llvm::SmallBitVector dependency_mask = v.AccessPattern().DependencyMask();
+    if (dependency_mask.anyCommon(v.DimsDependingOnOperand())) {
+      return op->emitError() << "an operand access pattern references a "
+                                "dimension that depends on the operand";
+    }
+  }
+
+  // Check that returned Sair values have the right shape.
+  ::sair::DomainShapeAttr results_shape =
+      sair_op.shape().Prefix(sair_op.results_rank());
+  for (mlir::Value result : op->getResults()) {
+    ::sair::SairShapedType type =
+        result.getType().dyn_cast<::sair::SairShapedType>();
+    if (type == nullptr) continue;
+    if (type.Shape() != results_shape) {
+      return op->emitError() << "unexpected shape: expected " << results_shape
+                             << ", got " << type.Shape();
+    }
+  }
+
+  return ::sair::VerifySairOpParent(sair_op);
+}
+
 // Returns the first loop of the loop_nest attribute of the operation, if any.
 static LoopAttr FirstLoopOrNull(mlir::Operation *op) {
   ComputeOp compute_op = dyn_cast_or_null<ComputeOp>(op);
@@ -92,6 +247,7 @@ static LoopAttr FirstLoopOrNull(mlir::Operation *op) {
   if (compute_op.LoopNestLoops().empty()) return nullptr;
   return compute_op.LoopNestLoops().front().dyn_cast<LoopAttr>();
 }
+
 
 mlir::LogicalResult VerifyValueProducerOp(mlir::Operation *operation) {
   ValueProducerOp op = cast<ValueProducerOp>(operation);

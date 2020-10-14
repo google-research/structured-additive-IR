@@ -78,7 +78,6 @@ add_mlir_library(sair_dialect
   sair_dialect.cc
   sair_op_interfaces.cc
   sair_ops.cc
-  sair_traits.cc
   sair_types.cc
 
   DEPENDS

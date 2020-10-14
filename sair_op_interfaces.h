@@ -28,6 +28,80 @@
 
 namespace sair {
 
+// A !sair.value operand of a Sair operation.
+class ValueOperand {
+ public:
+  // Builds a 'ValueOperand' from a pointer to the MLIR operand and the index of
+  // the access pattern in the array of access patterns of the Sair operation.
+  //
+  // Stores the 'operand' pointer without taking ownership.
+  ValueOperand(mlir::OpOperand *operand, int index)
+      : operand_(operand), index_(index) {}
+
+  // Returns the value referenced by the operand.
+  mlir::Value value() const { return operand_->get(); }
+
+  // Returns the type of the value referenced by the operand.
+  ValueType GetType() const {
+    return operand_->get().getType().cast<ValueType>();
+  }
+
+  // Returns the operation owning the operand.
+  mlir::Operation *getOwner() { return operand_->getOwner(); }
+
+  // Returns the access pattern associated to the operand.
+  AccessPatternAttr AccessPattern();
+
+  // Returns the position of the operand.
+  int position() const { return index_; }
+
+  // Sets the value referenced by the operand.
+  void set_value(mlir::Value value) { operand_->set(value); }
+
+  // Sets the access pattern associated to the operand.
+  void SetAccessPattern(AccessPatternAttr access_pattern);
+
+  // Returns a mask of dimensions that must execute after the operand is
+  // computed.
+  llvm::SmallBitVector DimsDependingOnOperand() const;
+
+  // Indicates if the operand can be used before it is defined.
+  bool AllowUseBeforeDef() const;
+
+ private:
+  mlir::OpOperand *operand_;
+  int index_;
+};
+
+// Exposes the !sair.value operands of a Sair operation. Each element of the
+// range is a `ValueOperand`.
+class ValueOperandRange
+    : public llvm::detail::indexed_accessor_range_base<
+          ValueOperandRange, std::pair<mlir::OpOperand *, int>, ValueOperand,
+          ValueOperand, ValueOperand> {
+ public:
+  // Import constructors from the base class.
+  using RangeBaseT::RangeBaseT;
+  // Constructs the empty range.
+  ValueOperandRange();
+
+  // Constructs a range from the list of !sair.value operands and the
+  // corresponding list of access patterns. Both arguments must have the same
+  // size.
+  explicit ValueOperandRange(llvm::MutableArrayRef<mlir::OpOperand> operands);
+
+ private:
+  using PtrPair = std::pair<mlir::OpOperand *, int>;
+
+  // See `llvm::detail::indexed_accessor_range_base` for details.
+  static PtrPair offset_base(PtrPair base, ptrdiff_t offset);
+  // See `llvm::detail::indexed_accessor_range_base` for details.
+  static ValueOperand dereference_iterator(PtrPair base, ptrdiff_t offset);
+
+  // Allow access to offset_base and dereference_iterator from the base type.
+  friend RangeBaseT;
+};
+
 // Represents wither a Sair value or a constant.
 class ValueOrConstant {
  public:
@@ -71,6 +145,9 @@ llvm::Optional<int> GetMemorySpace(mlir::Value value);
 void SetMemorySpace(int result, llvm::Optional<int> memory_space,
                     mlir::Operation *op);
 
+// Verifies a `SairOp`.
+mlir::LogicalResult VerifySairOp(mlir::Operation *op);
+
 // Verifies a `ValueProducerOp`.
 mlir::LogicalResult VerifyValueProducerOp(mlir::Operation *op);
 
@@ -79,6 +156,27 @@ mlir::LogicalResult VerifyComputeOp(mlir::Operation *op);
 
 // Verifies a `RangeOp`.
 mlir::LogicalResult VerifyRangeOp(mlir::Operation *op);
+
+// Returns the Sair value accessed by the operation, along with the
+// corresponding access patterns.
+template<typename ConcreteType>
+::sair::ValueOperandRange ValueOperands(ConcreteType op) {
+  auto operands = op.getOperation()->getOpOperands()
+                      .drop_front(op.domain().size())
+                      .take_front(op.access_pattern_array().size());
+  return ::sair::ValueOperandRange(operands);
+}
+
+// Sets the access pattern at the given position.
+template<typename ConcreteType>
+void SetAccessPattern(ConcreteType op, int position,
+                      ::sair::AccessPatternAttr access_pattern) {
+  llvm::SmallVector<mlir::Attribute, 4> new_array =
+      llvm::to_vector<4>(op.access_pattern_array());
+  new_array[position] = access_pattern;
+  mlir::ArrayAttr new_attr = mlir::ArrayAttr::get(new_array, op.getContext());
+  op.setAttr(::sair::SairDialect::kAccessPatternAttrName, new_attr);
+}
 
 using namespace mlir;  // NOLINT
 #include "sair_op_interfaces.h.inc"

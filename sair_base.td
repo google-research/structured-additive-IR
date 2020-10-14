@@ -129,13 +129,6 @@ def SairAccessPatternArrayAttr :
 // Sair Traits
 //===----------------------------------------------------------------------===//
 
-// Checks the invariants of Sair operations:
-// - That domain is compatible with the shape of the operation.
-// - That the operands are composed of first the domain, second the Sair value
-//   operands accessed through access patterns and finaly the other operands.
-// - The type of operands is compatible with the access patterns.
-def SairOpTrait : NativeOpTrait<"sair::SairOpTrait">;
-
 // Trait for operations that return a single Sair value or iteration dimension.
 // Defines a 'shape()' method that return the shape of the result.
 def SairOneResult : NativeOpTrait<"sair::OneResult">;
@@ -157,7 +150,7 @@ class SairSameRank<string sair_val, string mlir_val>
       CPred<"IsSameRank(" # sair_val # "(), " # mlir_val # " ())">>;
 
 //===----------------------------------------------------------------------===//
-// Sair Operations
+// Sair Interfaces
 //===----------------------------------------------------------------------===//
 
 def SairOpInterface : OpInterface<"SairOp"> {
@@ -195,11 +188,15 @@ def SairOpInterface : OpInterface<"SairOp"> {
     InterfaceMethod<
       "Sets the access pattern for the given Sair value operand",
       "void", "SetAccessPattern",
-      (ins "int":$position, "AccessPatternAttr":$access_pattern)
+      (ins "int":$position, "AccessPatternAttr":$access_pattern), [{}], [{
+        ::sair::SetAccessPattern(ConcreteOp($_op), position, access_pattern);
+      }]
     >,
     InterfaceMethod<
       "Returns the Sair values accessed by the operation",
-      "ValueOperandRange", "ValueOperands"
+      "ValueOperandRange", "ValueOperands", (ins), [{}], [{
+        return ::sair::ValueOperands(ConcreteOp($_op));
+      }]
     >,
     InterfaceMethod<
       [{Returns a mask of the dimensions of the current operation that depend on
@@ -234,6 +231,20 @@ def SairOpInterface : OpInterface<"SairOp"> {
       }]
     >,
   ];
+
+  let verify = [{return VerifySairOp(op);}];
+}
+
+// Base class for all Sair operators.
+class SairOp<string mnemonic,
+             list<OpTrait> traits = [],
+             Dialect dialect = SairDialect>
+  : Op<
+      dialect, mnemonic,
+      !listconcat([SairOpInterface], traits)
+    > {
+
+  let hasCanonicalizer = 1;
 }
 
 def SairOpWithBody : OpInterface<"SairOpWithBody"> {
@@ -250,18 +261,6 @@ def SairOpWithBody : OpInterface<"SairOpWithBody"> {
       }]
     >,
   ];
-}
-
-// Base class for all Sair operators.
-class SairOp<string mnemonic,
-             list<OpTrait> traits = [],
-             Dialect dialect = SairDialect>
-  : Op<
-      dialect, mnemonic,
-      !listconcat([SairOpInterface, SairOpTrait], traits)
-    > {
-
-  let hasCanonicalizer = 1;
 }
 
 def SairValueProducerOp : OpInterface<"ValueProducerOp"> {
