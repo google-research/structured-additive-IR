@@ -41,54 +41,6 @@
 
 namespace sair {
 
-void EraseOperand(int position, llvm::StringRef segment_sizes_attribute_name,
-                  mlir::Operation *op) {
-  op->eraseOperand(position);
-  // Find the corresponding segment.
-  auto sizes_attr = op->getAttrOfType<mlir::DenseIntElementsAttr>(
-      segment_sizes_attribute_name);
-  llvm::SmallVector<llvm::APInt, 4> sizes(sizes_attr.getIntValues());
-  int total_operands = 0;
-  for (int i = 0, e = sizes.size(); i < e; ++i) {
-    int current = sizes[i].getLimitedValue();
-    if (total_operands + current > position) {
-      --sizes[i];
-      break;
-    }
-  }
-  // Update the segment.
-  auto new_size_attr =
-      mlir::DenseIntElementsAttr::get(sizes_attr.getType(), sizes);
-  op->setAttr(segment_sizes_attribute_name, new_size_attr);
-}
-
-void AppendOperand(mlir::Value operand,
-                   llvm::StringRef segment_sizes_attribute_name,
-                   mlir::Operation *op) {
-  llvm::SmallVector<mlir::Value, 4> operands = op->getOperands();
-  operands.push_back(operand);
-  op->setOperands(operands);
-  // Update the last segment.
-  auto sizes_attr = op->getAttrOfType<mlir::DenseIntElementsAttr>(
-      segment_sizes_attribute_name);
-  llvm::SmallVector<llvm::APInt, 4> sizes(sizes_attr.getIntValues());
-  ++sizes.back();
-  auto new_size_attr =
-      mlir::DenseIntElementsAttr::get(sizes_attr.getType(), sizes);
-  op->setAttr(segment_sizes_attribute_name, new_size_attr);
-}
-
-void AppendAccessPattern(AccessPatternAttr access_pattern,
-                         mlir::Operation *op) {
-  auto old_attribute =
-      op->getAttrOfType<mlir::ArrayAttr>(SairDialect::kAccessPatternAttrName);
-  llvm::SmallVector<mlir::Attribute, 4> access_patterns(
-      old_attribute.getAsRange<mlir::Attribute>());
-  access_patterns.push_back(access_pattern);
-  auto new_attribute = mlir::ArrayAttr::get(access_patterns, op->getContext());
-  op->setAttr(SairDialect::kAccessPatternAttrName, new_attribute);
-}
-
 llvm::Optional<int> GetMemorySpace(int result, mlir::Operation *op) {
   llvm::Optional<mlir::ArrayAttr> array =
       cast<ValueProducerOp>(op).memory_space();

@@ -60,21 +60,6 @@ class ValueOrConstant {
   mlir::Attribute attribute_;
 };
 
-// Erases the operand of an operation with AttrSizedOperandSegments trait.
-void EraseOperand(int position, llvm::StringRef segment_sizes_attribute_name,
-                  mlir::Operation *op);
-
-// Appends an operand to the last segment of an operation with
-// AttrSizedOperandSegments trait.
-void AppendOperand(mlir::Value operand,
-                   llvm::StringRef segment_sizes_attribute_name,
-                   mlir::Operation *op);
-
-// Appends an access pattern to a Sair operation.
-void AppendAccessPattern(AccessPatternAttr access_pattern, mlir::Operation *op);
-
-class SairValueProducerOp;
-
 // Returns the memory space of the given result.
 llvm::Optional<int> GetMemorySpace(int result, mlir::Operation *op);
 
