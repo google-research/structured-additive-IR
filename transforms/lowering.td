@@ -33,6 +33,12 @@ def LowerToMemRefPass : FunctionPass<"sair-lower-tomemref"> {
   let dependentDialects = Deps.dialects;
 }
 
+def LowerToLLVM : Pass<"sair-lower-to-llvm", "::mlir::ModuleOp"> {
+  let summary = "Lowers Sair and Standard dialect operations to LLVM dialect";
+  let constructor = [{ ::sair::CreateLowerToLLVMPass(); }];
+  let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
+}
+
 def InlineTrivialSairOpsPass : FunctionPass<"inline-trivial-sair-ops"> {
   let summary = "Inlines Sair ops operating on and producing 0D values";
   let constructor = [{ ::sair::CreateInlineTrivialOpsPass(); }];

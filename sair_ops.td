@@ -602,7 +602,7 @@ def SairExitOp : SairOp<"exit", [Terminator]> {
     The custom syntax for the operation is the following.
     ```
     sair.exit (<ssa-value> <access-pattern>),* <attr-dict>
-      (':' <element-type> (, <element-type)*)?
+      (':' <element-type> (, <element-type>)*)?
     ```
   }];
 
@@ -622,6 +622,38 @@ def SairExitOp : SairOp<"exit", [Terminator]> {
                 mlir::OperationState &result,
                 mlir::ValueRange operands = {} }]>
   ];
+}
+
+// Note: this is not defined as SairOp because it is not expected inside
+// SairProgramOp and produces values of types other than sair::ValueType.
+def SairUndefOp : Op<SairDialect, "undef", [NoSideEffect]> {
+  let summary = "Produces an undefined value of any type";
+
+  let description = [{
+    SairUndefOp produces an undefined value of any type, i.e. not necessarily a
+    SairValue. This is a glue operation that maps directly to LLVM's `undef`
+    value and has the same semantics. Unlike other Sair operations, SairUndefOp
+    is not expected inside a Sair program and persists throuought the lowering.
+
+    The custom syntax is as follows.
+    ```
+      %0 = sair.undef <attr-dict>? : <type>
+    ```
+
+    It is intended for use as reduction initalizer as follows.
+    ```
+      %0 = sair.undef : f32
+      sair.program {
+        %1 = sair.from_scalar %0 : !sair.value<(), f32>
+        %2 = sair.copy[...] %0 : !sair.value<..., f32>
+        sair.map_reduce[...] %2 reduce[...] ...
+      }
+    ```
+  }];
+
+  let results = (outs AnyType:$result);
+
+  let assemblyFormat = [{ attr-dict `:` type($result) }];
 }
 
 #endif  // SAIR_SAIR_OPS_TD_

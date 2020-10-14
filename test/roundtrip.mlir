@@ -401,3 +401,15 @@ func @fby(%arg0: f32) {
   }
   return
 }
+
+// CHECK-LABEL: @undef
+func @undef() {
+  // CHECK: %[[UNDEF:.*]] = sair.undef : f32
+  %0 = sair.undef : f32
+  sair.program {
+    // CHECK: sair.from_scalar %[[UNDEF]]
+    %1 = sair.from_scalar %0 : !sair.value<(), f32>
+    sair.exit
+  }
+  return
+}

@@ -74,6 +74,7 @@ add_mlir_library(sair_lowering
   MLIRAffineOps
   MLIRAffineToStandard
   MLIRIR
+  MLIRLLVMIR
   MLIRPass
   MLIRSCF
   MLIRSCFToStandard
