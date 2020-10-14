@@ -21,8 +21,8 @@ include "mlir/IR/RegionKindInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "sair_base.td"
 
-def SairRangeOp : SairOp<"range",
-    [NoSideEffect, SairOneResult]> {
+def SairDynRangeOp : SairOp<"dyn_range",
+    [NoSideEffect, SairOneResult, SairRangeOp, AttrSizedOperandSegments]> {
   let summary = "Defines an iteration dimension as the interval [0, $size-1].";
 
   let description = [{
@@ -30,40 +30,49 @@ def SairRangeOp : SairOp<"range",
     of the domain. The general syntax is:
 
     ```
-    <var-name> = sair.range[<domain>] <size> : !sair.range< <domain-shape> >
+    <var-name> = sair.dyn_range[<domain>] <size> : !sair.range< <domain-shape> >
     ```
 
     For example, the following statement defines a range %n of size %n_size for
     each point of %m.
 
     ```mlir
-    %n = sair.range[%m] %n_size(0) : !sair.range<range>
+    %n = sair.dyn_range[%m] %n_size(0) : !sair.range<range>
     ```
 
     The brackets around the domain can be ommited when the it is empty:
 
     ```mlir
-    %k = sair.range 42 : sair.range
+    %k = sair.dyn_range 42 : sair.range
     ```
   }];
 
   let arguments = (ins
     Variadic<SairRange>:$domain,
     SairAccessPatternArrayAttr:$access_pattern_array,
-    SairValueOf<Index>:$size
+    Optional<SairValueOf<Index>>:$lower_bound,
+    SairValueOf<Index>:$upper_bound,
+    DefaultValuedAttr<IndexAttr, "1">:$step
   );
 
   let results = (outs SairRange:$range);
 
-  let parser = [{return ParseRangeOp(parser, result);}];
+  let parser = [{return ParseDynRangeOp(parser, result);}];
   let printer = [{return Print(*this, p);}];
 
   let extraClassDeclaration = [{
-    ValueOperand Size() { return ValueOperands()[0]; }
+    ValueOrConstant LowerBound() {
+      if (lower_bound() != nullptr) return ValueOperands()[0];
+      return mlir::IntegerAttr::get(mlir::IndexType::get(getContext()), 0);
+    }
+
+    ValueOrConstant UpperBound() {
+      return ValueOperands().back();
+    }
   }];
 }
 
-def SairStaticRangeOp : SairOp<"static_range", [NoSideEffect]> {
+def SairStaticRangeOp : SairOp<"static_range", [NoSideEffect, SairRangeOp]> {
   let summary = "Defines an iteration dimension as a fixed-size interval.";
 
   let description = [{
@@ -75,13 +84,24 @@ def SairStaticRangeOp : SairOp<"static_range", [NoSideEffect]> {
     ```
   }];
 
-  let arguments = (ins IndexAttr:$size);
+  let arguments = (ins
+    IndexAttr:$size,
+    DefaultValuedAttr<IndexAttr, "1">:$step
+  );
   let results = (outs SairRange:$range);
 
   let parser = [{return ParseStaticRangeOp(parser, result);}];
   let printer = [{return Print(*this, p);}];
 
   DerivedAttr shape = SairEmptyDomainShapeAttr;
+
+  let extraClassDeclaration = [{
+    ValueOrConstant LowerBound() {
+      return mlir::IntegerAttr::get(sizeAttr().getType(), 0);
+    }
+
+    ValueOrConstant UpperBound() { return sizeAttr(); }
+  }];
 }
 
 def SairCopyOp : SairOp<"copy", [

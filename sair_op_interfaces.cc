@@ -193,11 +193,17 @@ mlir::LogicalResult VerifyValueProducerOp(mlir::Operation *operation) {
   if (!needs_allocation || first_loop == nullptr) return mlir::success();
 
   for (mlir::Value dimension : cast<SairOp>(operation).domain()) {
-    SairRangeOp defining_op = dyn_cast<SairRangeOp>(dimension.getDefiningOp());
+    SairDynRangeOp defining_op =
+        dyn_cast<SairDynRangeOp>(dimension.getDefiningOp());
     if (defining_op == nullptr) continue;
-    LoopAttr size_first_loop =
-        FirstLoopOrNull(defining_op.size().getDefiningOp());
-    if (first_loop.name() == size_first_loop.name()) {
+    auto is_producer_fused = [&](mlir::Value value) {
+      if (value == nullptr) return false;
+      LoopAttr loop = FirstLoopOrNull(value.getDefiningOp());
+      if (loop == nullptr) return false;
+      return first_loop.name() == loop.name();
+    };
+    if (is_producer_fused(defining_op.lower_bound()) ||
+        is_producer_fused(defining_op.upper_bound())) {
       return op.emitError()
              << "operation cannot be nested in loop " << first_loop.name()
              << ": dimension sizes must be defined before entering the loop "
@@ -512,6 +518,14 @@ void GetDependencies(
   AddDependencies(op, access_pattern, def_only_dimensions, use_only_dimensions,
                   fuse_dimensions, prev_def_only_dimensions, false,
                   dependencies, dimension_dependencies);
+}
+
+mlir::LogicalResult VerifyRangeOp(mlir::Operation *op) {
+  RangeOp range_op = cast<RangeOp>(op);
+  if (!range_op.step().isStrictlyPositive()) {
+    return range_op.emitError() << "step must be strictly positive";
+  }
+  return mlir::success();
 }
 
 #include "sair_op_interfaces.cc.inc"

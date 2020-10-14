@@ -46,7 +46,7 @@ func @sair_program_return_values() {
     %3 = sair.from_scalar %c1 : !sair.value<(), i32>
     // CHECK: sair.exit %[[V0]], %[[V1]] : f32, i32
     sair.exit %2, %3 : f32, i32
-  // CHECK } : f32, i32
+  // CHECK: } : f32, i32
   } : f32, i32
   return
 }
@@ -57,8 +57,22 @@ func @range_op() {
   sair.program {
     // CHECK: %[[V0:.*]] = sair.from_scalar
     %0 = sair.from_scalar %c0 : !sair.value<(), index>
-    // CHECK: %{{.*}} = sair.range %[[V0]] : !sair.range
-    %1 = sair.range %0 : !sair.range
+    // CHECK: %{{.*}} = sair.dyn_range %[[V0]] : !sair.range
+    %1 = sair.dyn_range %0 : !sair.range
+    sair.exit
+  }
+  return
+}
+
+// CHECK-LABEL: @range_with_step
+func @range_with_step(%arg0: index, %arg1: index) {
+  sair.program {
+    // CHECK: %[[V0:.*]] = sair.from_scalar
+    %0 = sair.from_scalar %arg0 : !sair.value<(), index>
+    // CHECK: %[[V1:.*]] = sair.from_scalar
+    %1 = sair.from_scalar %arg1 : !sair.value<(), index>
+    // CHECK: %{{.*}} = sair.dyn_range %[[V0]], %[[V1]] step 2 : !sair.range
+    %2 = sair.dyn_range %0, %1 step 2 : !sair.range
     sair.exit
   }
   return
@@ -74,26 +88,36 @@ func @static_range_op() {
   return
 }
 
+// CHECK-LABEL: @static_range_with_step
+func @static_range_with_step() {
+  sair.program {
+    // CHECK: %{{.*}} = sair.static_range 42 step 2 : !sair.range
+    %0 = sair.static_range 42 step 2 : !sair.range
+    sair.exit
+  }
+  return
+}
+
 // CHECK-LABEL: @dependent_range_op
 func @dependent_range_op(%arg0 : index) {
   sair.program {
     // CHECK: %[[V0:.*]] = sair.from_scalar
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
-    // CHECK: %[[D0:.*]] = sair.range %[[V0]] : !sair.range
-    %1 = sair.range %0 : !sair.range
+    // CHECK: %[[D0:.*]] = sair.dyn_range %[[V0]] : !sair.range
+    %1 = sair.dyn_range %0 : !sair.range
     // CHECK: %[[V1:.*]] = sair.copy
     %2 = sair.copy[d0:%1] %0 : !sair.value<d0:range, index>
 
-    // CHECK: %[[D1:.*]] = sair.range[d0:%[[D0]]] %[[V1]](d0)
+    // CHECK: %[[D1:.*]] = sair.dyn_range[d0:%[[D0]]] %[[V1]](d0)
     // CHECK-SAME: : !sair.range<d0:range>
-    %3 = sair.range[d0:%1] %2(d0) : !sair.range<d0:range>
+    %3 = sair.dyn_range[d0:%1] %2(d0) : !sair.range<d0:range>
     // CHECK: %[[V2:.*]] = sair.copy
     %4 = sair.copy[d0:%1, d1:%3] %0
       : !sair.value<d0:range x d1:range(d0), index>
 
-    // CHECK: %{{.*}} = sair.range[d0:%[[D0]], d1:%[[D1]]] %[[V2]](d0, d1)
+    // CHECK: %{{.*}} = sair.dyn_range[d0:%[[D0]], d1:%[[D1]]] %[[V2]](d0, d1)
     // CHECK-SAME: : !sair.range<d0:range x d1:range(d0)>
-    %5 = sair.range[d0:%1, d1:%3] %4(d0, d1)
+    %5 = sair.dyn_range[d0:%1, d1:%3] %4(d0, d1)
       : !sair.range<d0:range x d1:range(d0)>
     sair.exit
   }

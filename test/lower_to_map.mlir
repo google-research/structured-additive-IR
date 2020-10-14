@@ -25,10 +25,10 @@ func @map_reduce(%r1: index, %r2: index, %in1: f32) {
   sair.program {
     %0 = sair.from_scalar %r1 : !sair.value<(), index>
     %1 = sair.from_scalar %r2 : !sair.value<(), index>
-    // CHECK: %[[RANGE1:.*]] = sair.range
-    %2 = sair.range %0 : !sair.range
-    // CHECK: %[[RANGE2:.*]] = sair.range
-    %3 = sair.range %1 : !sair.range
+    // CHECK: %[[RANGE1:.*]] = sair.dyn_range
+    %2 = sair.dyn_range %0 : !sair.range
+    // CHECK: %[[RANGE2:.*]] = sair.dyn_range
+    %3 = sair.dyn_range %1 : !sair.range
 
     %4 = sair.from_scalar %in1 : !sair.value<(), f32>
     %5 = sair.copy[d0:%2, d1:%3] %4 : !sair.value<d0:range x d1:range, f32>

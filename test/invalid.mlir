@@ -44,6 +44,17 @@ func @shape_none_dim() -> !sair.range<d0:range x d1:range(none)>
 
 // -----
 
+func @range_must_be_positive() {
+  sair.program {
+    // expected-error @+1 {{step must be strictly positive}}
+    %0 = sair.static_range 18 step 0 : !sair.range
+    sair.exit
+  }
+  return
+}
+
+// -----
+
 func @operand_access_pattern_dim_not_mapped(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -85,7 +96,7 @@ func @dimension_out_of_range() {
 func @range_op_invalid_type(%arg0 : !sair.value<(), index>) {
   sair.program {
     // expected-error @+1 {{expects different type}}
-    %1 = sair.range[d0:%arg0] %arg0 : !sair.range<d0:range>
+    %1 = sair.dyn_range[d0:%arg0] %arg0 : !sair.range<d0:range>
     sair.exit
   }
   return
@@ -95,9 +106,9 @@ func @range_op_invalid_type(%arg0 : !sair.value<(), index>) {
 
 func @domain_unexpected_num_dims(%arg0 : !sair.value<(), index>) {
   sair.program {
-    %0 = sair.range %arg0 : !sair.range
+    %0 = sair.dyn_range %arg0 : !sair.range
     // expected-error @+1 {{2 operands present, but expected 1}}
-    %1 = sair.range[d0:%0, d1:%0] %arg0 : !sair.range<d0:range>
+    %1 = sair.dyn_range[d0:%0, d1:%0] %arg0 : !sair.range<d0:range>
     sair.exit
   }
   return
@@ -108,9 +119,9 @@ func @domain_unexpected_num_dims(%arg0 : !sair.value<(), index>) {
 func @domain_unexpected_dimension_type(%arg0 : !sair.value<(), index>) {
   sair.program {
     // expected-note @+1 {{prior use here}}
-    %0 = sair.range %arg0 : !sair.range
+    %0 = sair.dyn_range %arg0 : !sair.range
     // expected-error @+1 {{expects different type}}
-    %1 = sair.range[d0:%0, d1:%0] %arg0 : !sair.range<d0:range x d1:range(d0)>
+    %1 = sair.dyn_range[d0:%0, d1:%0] %arg0 : !sair.range<d0:range x d1:range(d0)>
     sair.exit
   }
   return
@@ -120,9 +131,9 @@ func @domain_unexpected_dimension_type(%arg0 : !sair.value<(), index>) {
 
 func @domain_dim_redefinition(%arg0 : !sair.value<(), index>) {
   sair.program {
-    %0 = sair.range %arg0 : !sair.range
+    %0 = sair.dyn_range %arg0 : !sair.range
     // expected-error @+1 {{expected 'd1'}}
-    %1 = sair.range[d0:%0, d0:%0] %arg0 : !sair.range<range x range>
+    %1 = sair.dyn_range[d0:%0, d0:%0] %arg0 : !sair.range<range x range>
     sair.exit
   }
   return
@@ -162,7 +173,7 @@ func @invalid_access_pattern(%arg0 : !sair.range,
                              %arg1 : !sair.value<d0:range x d1:range(d0), index>) {
   sair.program {
     // expected-error @+1 {{expects different type}}
-    %0 = sair.range[d0: %arg0, d1:%arg0] %arg1(d0, d1) : !sair.range<d0:range x d1:range>
+    %0 = sair.dyn_range[d0: %arg0, d1:%arg0] %arg1(d0, d1) : !sair.range<d0:range x d1:range>
     sair.exit
   }
   return
@@ -229,7 +240,7 @@ func @hyper_rectangular_domain(%arg0: index, %arg1 : memref<?x?xf32>) {
   sair.program {
     %0 = sair.static_range 8 :!sair.range
     %1 = sair.from_scalar %arg0 : !sair.value<(), index>
-    %2 = sair.range[d0:%0] %1 :!sair.range<d0:range>
+    %2 = sair.dyn_range[d0:%0] %1 :!sair.range<d0:range>
 
     // expected-error @+1 {{hyper-rectangular}}
     %3 = sair.from_memref[d0:%0, d1:%2] %arg1
@@ -590,7 +601,7 @@ func @loop_dependencies_not_covered(%arg0: index, %arg1: f32) {
   sair.program {
     %0 = sair.static_range 8 : !sair.range
     %1 = sair.from_scalar %arg0 : !sair.value<(), index>
-    %2 = sair.range[d0:%0] %1 : !sair.range<d0:range>
+    %2 = sair.dyn_range[d0:%0] %1 : !sair.range<d0:range>
     %3 = sair.from_scalar %arg1 : !sair.value<(), f32>
 
     // expected-error @+1 {{dimension 'd1' must be nested in dimension 'd0'}}
@@ -762,7 +773,7 @@ func @dimension_defined_in_loop_nest(%arg0: index, %arg1: f32) {
       loop_nest = [{name = "A", iter = #sair.iter<remat>}]
     } : !sair.value<(), index>
     // expected-note @+1 {{range defined here}}
-    %3 = sair.range %2 : !sair.range
+    %3 = sair.dyn_range %2 : !sair.range
     %4 = sair.copy[d0:%3] %1 {
       loop_nest = [{name = "A", iter = #sair.iter<d0>}],
       memory_space = [1]
@@ -828,7 +839,7 @@ func @dimension_size_loop_nest(%arg0: index, %arg1: f32) {
     %3 = sair.copy %0 {
       loop_nest = [{name = "A", iter = #sair.iter<remat>}]
     } : !sair.value<(), index>
-    %4 = sair.range %3 : !sair.range
+    %4 = sair.dyn_range %3 : !sair.range
 
     // expected-error @+1 {{operation cannot be nested in loop "A"}}
     %5 = sair.copy[d0:%2, d1:%4] %1 {

@@ -71,8 +71,7 @@ ParseResult ParseValueAccess(int num_dimensions, mlir::OpAsmParser &parser,
 // the access pattern along the dimensions of the operation. Dimensions are
 // assigned names based on their position in the domain, following the pattern
 // d<position>.
-void PrintValueAccess(Value value, AccessPatternAttr pattern,
-                      OpAsmPrinter &printer);
+void PrintValueAccess(ValueOperand value, OpAsmPrinter &printer);
 // Prints an iteration domain. A domain is a list of dimensions between square
 // brackets, with a name assigned to each dimensions. Dimensions are named after
 // their positions: the i-th position is named 'd(i+offset)'.

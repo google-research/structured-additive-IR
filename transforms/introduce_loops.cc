@@ -394,17 +394,18 @@ void EraseDimension(SairFbyOp op, int dimension, mlir::Value new_value,
 // the loop. Replaces `old_index` by the index of the loop. Replaces the result
 // of the block at position `i` by the result of the scf.for operation at
 // position `results_pos[i]`.
-mlir::scf::ForOp CreateForOp(mlir::Location loc, mlir::Value size,
+mlir::scf::ForOp CreateForOp(mlir::Location loc, mlir::Value lower_bound,
+                             mlir::Value upper_bound, llvm::APInt step,
                              mlir::Value old_index,
                              mlir::ValueRange iter_args_init,
                              mlir::ValueRange iter_args,
                              mlir::ValueRange iter_args_result,
                              llvm::ArrayRef<int> results_pos, Driver &driver) {
   mlir::OpBuilder::InsertionGuard guard(driver);
-  auto zero = driver.create<mlir::ConstantIndexOp>(loc, 0);
-  auto one = driver.create<mlir::ConstantIndexOp>(loc, 1);
-  mlir::scf::ForOp for_op =
-      driver.create<mlir::scf::ForOp>(loc, zero, size, one, iter_args_init);
+  auto step_value =
+      driver.create<mlir::ConstantIndexOp>(loc, step.getSExtValue());
+  mlir::scf::ForOp for_op = driver.create<mlir::scf::ForOp>(
+      loc, lower_bound, upper_bound, step_value, iter_args_init);
 
   // Replace the sair.map results.
   mlir::Block &block = *driver.getBlock();
@@ -493,7 +494,7 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op, Driver &driver) {
   LoopAttr loop = loop_nest.back().cast<LoopAttr>();
 
   int dimension = loop.iter().Dimension();
-  mlir::Operation *range = op.domain()[dimension].getDefiningOp();
+  RangeOp range = cast<RangeOp>(op.domain()[dimension].getDefiningOp());
   if (op.shape().Dimensions()[dimension].DependencyMask().any()) {
     return op.emitError()
            << "lowering dependent dimensions is not supported yet";
@@ -509,21 +510,22 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op, Driver &driver) {
   }
 
   // Retrieve the loop size.
-  mlir::Value loop_size;
-  mlir::Block::iterator for_insertion_point = op.block().begin();
-  if (auto dyn_range = dyn_cast<SairRangeOp>(range)) {
-    inputs.push_back(dyn_range.size());
-    assert(dyn_range.domain().empty());
+  driver.setInsertionPointToStart(&op.block());
+  auto materialize_bound = [&](const ValueOrConstant &bound) -> mlir::Value {
+    if (bound.is_constant()) {
+      return driver.create<ConstantOp>(op.getLoc(), bound.constant());
+    }
+    inputs.push_back(bound.value());
+    assert(bound.access_pattern().UseDomainSize() == 0);
     access_patterns.push_back(
         AccessPatternAttr::get(op.getContext(), op.domain().size() - 1, {}));
-    loop_size = op.block().addArgument(driver.getIndexType());
-  } else {
-    SairStaticRangeOp static_range = cast<SairStaticRangeOp>(range);
-    driver.setInsertionPointToStart(&op.block());
-    loop_size = driver.create<ConstantOp>(static_range.getLoc(),
-                                          static_range.sizeAttr());
-    for_insertion_point = std::next(Block::iterator(loop_size.getDefiningOp()));
-  }
+    return op.block().addArgument(driver.getIndexType());
+  };
+
+  mlir::Value upper_bound = materialize_bound(range.UpperBound());
+  mlir::Value lower_bound = materialize_bound(range.LowerBound());
+  llvm::APInt step = range.step();
+  mlir::Block::iterator for_insertion_point = driver.getInsertionPoint();
 
   // Create the new sair.map operation.
   driver.setInsertionPoint(op);
@@ -593,8 +595,8 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op, Driver &driver) {
 
   // Create the scf.for operation.
   mlir::Value old_index = new_op.body().getArgument(dimension);
-  CreateForOp(op.getLoc(), loop_size, old_index, iter_args_init, iter_args,
-              iter_args_result, results_pos, driver);
+  CreateForOp(op.getLoc(), lower_bound, upper_bound, step, old_index,
+              iter_args_init, iter_args, iter_args_result, results_pos, driver);
   new_op.body().eraseArgument(dimension);
 
   // Erase the old operation.

@@ -117,30 +117,57 @@ ParseResult ParseOperandList(
 // accesses a single Sair value with index elements. The syntax for the range
 // operator is the following.
 //
-//   range-op ::= `sair.range` domain  ssa-value access-pattern
+//   range-op ::= `sair.dyn_range` domain  ssa-value access-pattern
 //
-ParseResult ParseRangeOp(mlir::OpAsmParser &parser,
-                         mlir::OperationState &result) {
+ParseResult ParseDynRangeOp(mlir::OpAsmParser &parser,
+                            mlir::OperationState &result) {
+  mlir::Builder &builder = parser.getBuilder();
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
-  mlir::OpAsmParser::OperandType size;
-  AccessPatternAttr size_access_pattern;
+  llvm::SmallVector<mlir::OpAsmParser::OperandType, 2> operands;
+  llvm::SmallVector<AccessPatternAttr, 2> patterns;
   RangeType type;
 
   if (ParseDomain(parser, domain) ||
-      ParseValueAccess(domain.size(), parser, size, size_access_pattern) ||
-      parser.parseColonType<RangeType>(type) ||
+      ParseOperandList(domain.size(), parser, operands, patterns)) {
+    return failure();
+  }
+
+  if (succeeded(parser.parseOptionalKeyword(RangeOp::kStepAttrName))) {
+    auto index_type = parser.getBuilder().getIndexType();
+    mlir::Attribute step;
+    if (mlir::failed(parser.parseAttribute(
+            step, index_type, RangeOp::kStepAttrName, result.attributes))) {
+      return failure();
+    }
+  }
+
+  if (parser.parseColonType<RangeType>(type) ||
       parser.addTypeToList(type, result.types) ||
       ResolveDomain(parser, type.Shape(), domain, result)) {
     return failure();
   }
 
-  result.addAttribute(SairDialect::kAccessPatternAttrName,
-                      parser.getBuilder().getArrayAttr({size_access_pattern}));
+  llvm::ArrayRef<mlir::Attribute> pattern_attrs(patterns.begin(),
+                                                patterns.size());
+  result.addAttribute(
+      SairDialect::kAccessPatternAttrName,
+      ArrayAttr::get(pattern_attrs, parser.getBuilder().getContext()));
+  result.addAttribute(
+      SairDynRangeOp::getOperandSegmentSizeAttr(),
+      builder.getI64VectorAttr({static_cast<int64_t>(domain.size()),
+                                static_cast<int64_t>(operands.size() - 1), 1}));
 
-  Type size_type = parser.getBuilder().getType<ValueType>(
-      type.Shape().Inverse(size_access_pattern),
-      parser.getBuilder().getType<mlir::IndexType>());
-  return parser.resolveOperand(size, size_type, result.operands);
+  ValueType index_value_type = builder.getType<ValueType>(
+      type.Shape(), builder.getType<mlir::IndexType>());
+  for (auto [operand, pattern] : llvm::zip(operands, patterns)) {
+    if (mlir::failed(parser.resolveOperand(
+            operand, index_value_type.AccessedType(pattern),
+            result.operands))) {
+      return mlir::failure();
+    }
+  }
+
+  return mlir::success();
 }
 
 // Parses the static_range operation. This operation takes a single integer
@@ -151,14 +178,23 @@ ParseResult ParseRangeOp(mlir::OpAsmParser &parser,
 ParseResult ParseStaticRangeOp(mlir::OpAsmParser &parser,
                                mlir::OperationState &result) {
   mlir::Attribute size;
-  auto size_type = parser.getBuilder().getIndexType();
+  mlir::Type index_type = parser.getBuilder().getIndexType();
   RangeType type;
-  if (parser.parseAttribute(size, size_type, "size", result.attributes) ||
-      parser.parseColonType<RangeType>(type) ||
-      parser.addTypeToList(type, result.types)) {
+  if (failed(
+          parser.parseAttribute(size, index_type, "size", result.attributes))) {
     return failure();
   }
-  return success();
+
+  if (succeeded(parser.parseOptionalKeyword(RangeOp::kStepAttrName))) {
+    mlir::Attribute step;
+    if (mlir::failed(parser.parseAttribute(
+            step, index_type, RangeOp::kStepAttrName, result.attributes))) {
+      return failure();
+    }
+  }
+
+  return failure(parser.parseColonType<RangeType>(type) ||
+                 parser.addTypeToList(type, result.types));
 }
 
 // Parses the copy operation. This operation has an iteration domain and
@@ -424,23 +460,33 @@ static mlir::ParseResult ParseFbyOp(mlir::OpAsmParser &parser,
 static void PrintValueAccessList(const ValueOperandRange operands,
                                  mlir::OpAsmPrinter &printer) {
   llvm::interleaveComma(operands, printer, [&](ValueOperand operand) {
-    PrintValueAccess(operand.value(), operand.AccessPattern(), printer);
+    PrintValueAccess(operand, printer);
   });
 }
 
 // Prints the range operation.
-void Print(SairRangeOp op, OpAsmPrinter &printer) {
-  printer << SairRangeOp::getOperationName();
+void Print(SairDynRangeOp op, OpAsmPrinter &printer) {
+  printer << SairDynRangeOp::getOperationName();
   PrintDomain(op.domain(), printer);
   printer << " ";
-  PrintValueAccess(op.size(), op.Size().AccessPattern(), printer);
+  if (op.LowerBound().is_value()) {
+    PrintValueAccess(op.ValueOperands()[0], printer);
+    printer << ", ";
+  }
+  PrintValueAccess(op.ValueOperands().back(), printer);
+  if (op.step() != 1) {
+    printer << " " << RangeOp::kStepAttrName << " " << op.step();
+  }
   printer << " : " << op.getType();
 }
 
 // Prints the sair.static_range operation.
 void Print(SairStaticRangeOp op, OpAsmPrinter &printer) {
-  printer << SairStaticRangeOp::getOperationName() << " " << op.size() << " : "
-          << op.getType();
+  printer << SairStaticRangeOp::getOperationName() << " " << op.size();
+  if (op.step() != 1) {
+    printer << " " << RangeOp::kStepAttrName << " " << op.step();
+  }
+  printer << " : " << op.getType();
 }
 
 // Prints the copy operation.
@@ -448,7 +494,7 @@ void Print(SairCopyOp op, OpAsmPrinter &printer) {
   printer << SairCopyOp::getOperationName();
   PrintDomain(op.domain(), printer);
   printer << " ";
-  PrintValueAccess(op.value(), op.Value().AccessPattern(), printer);
+  PrintValueAccess(op.Value(), printer);
   printer.printOptionalAttrDict(op.getAttrs(),
                                 {SairDialect::kAccessPatternAttrName});
   printer << " : " << op.getType();
@@ -474,7 +520,7 @@ void Print(SairToMemRefOp op, OpAsmPrinter &printer) {
   printer << SairToMemRefOp::getOperationName();
   PrintDomain(op.domain(), printer);
   printer << " ";
-  PrintValueAccess(op.value(), op.Value().AccessPattern(), printer);
+  PrintValueAccess(op.Value(), printer);
   printer << ", " << op.memref() << " : " << op.memref().getType();
 }
 
@@ -486,7 +532,7 @@ void PrintProjectionOp(Op op, OpAsmPrinter &printer) {
   printer << " " << kOfKeyword;
   PrintDomain(op.projection_domain(), printer, op.parallel_domain().size());
   printer << " ";
-  PrintValueAccess(op.value(), op.Value().AccessPattern(), printer);
+  PrintValueAccess(op.Value(), printer);
   printer << " : " << op.shape() << ", "
           << op.result().getType().template cast<ValueType>().ElementType();
 }
@@ -531,11 +577,11 @@ void Print(SairFbyOp op, OpAsmPrinter &printer) {
   printer << SairFbyOp::getOperationName();
   PrintDomain(op.parallel_domain(), printer);
   printer << " ";
-  PrintValueAccess(op.init(), op.Init().AccessPattern(), printer);
+  PrintValueAccess(op.Init(), printer);
   printer << " " << SairFbyOp::kThenKeyword;
   PrintDomain(op.sequential_domain(), printer, op.parallel_domain().size());
   printer << " ";
-  PrintValueAccess(op.value(), op.Value().AccessPattern(), printer);
+  PrintValueAccess(op.Value(), printer);
 
   printer.printOptionalAttrDict(op.getAttrs(),
                                 {
@@ -632,12 +678,11 @@ ParseResult ParseValueAccess(int num_dimensions, mlir::OpAsmParser &parser,
   return has_value_access.getValue();
 }
 
-void PrintValueAccess(Value value, AccessPatternAttr pattern,
-                      OpAsmPrinter &printer) {
-  printer << value;
-  if (pattern.empty()) return;
+void PrintValueAccess(ValueOperand value, OpAsmPrinter &printer) {
+  printer << value.value();
+  if (value.AccessPattern().empty()) return;
   printer << "(";
-  llvm::interleaveComma(pattern, printer,
+  llvm::interleaveComma(value.AccessPattern(), printer,
                         [&](int dim) { printer << "d" << dim; });
   printer << ")";
 }

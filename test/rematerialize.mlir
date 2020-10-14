@@ -255,9 +255,9 @@ func @remat_copy_dependent(%arg0: f32, %arg1: index) {
     %2 = sair.static_range 8 : !sair.range
     %3 = sair.copy[d0:%2] %1 : !sair.value<d0:range, index>
 
-    // CHECK: %[[DYNAMIC_RANGE:.*]] = sair.range[d0:%[[STATIC_RANGE]]] %{{.*}}
-    // GENERIC: %[[DYNAMIC_RANGE:.*]] = "sair.range"(%[[STATIC_RANGE]]
-    %4 = sair.range[d0:%2] %3(d0) : !sair.range<d0:range>
+    // CHECK: %[[DYNAMIC_RANGE:.*]] = sair.dyn_range[d0:%[[STATIC_RANGE]]] %{{.*}}
+    // GENERIC: %[[DYNAMIC_RANGE:.*]] = "sair.dyn_range"(%[[STATIC_RANGE]]
+    %4 = sair.dyn_range[d0:%2] %3(d0) : !sair.range<d0:range>
 
     // CHECK: %[[REMAT:.*]] = sair.copy[d0:%[[STATIC_RANGE]], d1:%[[DYNAMIC_RANGE]]] %[[SCALAR]]
     // CHECK: loop_nest = [{iter = #sair.iter<d0>, name = "A"},
@@ -303,8 +303,8 @@ func @remat_copy_dependent_partial(%arg0: f32, %arg1: index) {
     %2 = sair.static_range 8 : !sair.range
     %3 = sair.copy[d0:%2] %1 : !sair.value<d0:range, index>
 
-    // CHECK: %[[DYNAMIC_RANGE:.*]] = sair.range[d0:%[[STATIC_RANGE]]] %{{.*}}
-    %4 = sair.range[d0:%2] %3(d0) : !sair.range<d0:range>
+    // CHECK: %[[DYNAMIC_RANGE:.*]] = sair.dyn_range[d0:%[[STATIC_RANGE]]] %{{.*}}
+    %4 = sair.dyn_range[d0:%2] %3(d0) : !sair.range<d0:range>
 
     // CHECK: %[[REMAT:.*]] = sair.copy[d0:%[[STATIC_RANGE]], d1:%[[DYNAMIC_RANGE]]] %[[SCALAR]]
     // CHECK: loop_nest = [{iter = #sair.iter<d0>, name = "A"},

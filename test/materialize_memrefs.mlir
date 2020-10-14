@@ -9,7 +9,7 @@
 func @from_memref(%arg0: index, %arg1: memref<?x8xf32>) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
-    %1 = sair.range %0 : !sair.range
+    %1 = sair.dyn_range %0 : !sair.range
     %2 = sair.static_range 8 : !sair.range
 
     // CHECK: %[[V0:.*]] = sair.from_scalar %[[ARG1]]
@@ -41,8 +41,8 @@ func @map(%arg0: index) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
     // CHECK: %[[V1:.*]] = sair.static_range 8
     %1 = sair.static_range 8 : !sair.range
-    // CHECK: %[[V2:.*]] = sair.range %[[V0]]
-    %2 = sair.range %0 : !sair.range
+    // CHECK: %[[V2:.*]] = sair.dyn_range %[[V0]]
+    %2 = sair.dyn_range %0 : !sair.range
 
     // CHECK: %[[V3:.*]] = sair.map %[[V0]] attributes {memory_space = [0]} {
     // CHECK: ^{{.*}}(%[[ARG1:.*]]: index):

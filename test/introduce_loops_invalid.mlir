@@ -75,7 +75,7 @@ func @dependent_dimension(%arg0: index) {
   sair.program {
     %0 = sair.static_range 8 : !sair.range
     %1 = sair.from_scalar %arg0 : !sair.value<(), index>
-    %2 = sair.range[d0:%0] %1 : !sair.range<d0:range>
+    %2 = sair.dyn_range[d0:%0] %1 : !sair.range<d0:range>
     // expected-error @+1 {{lowering dependent dimensions is not supported yet}}
     sair.map[d0:%0, d1:%2] attributes {
       loop_nest = [

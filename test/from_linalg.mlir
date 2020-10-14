@@ -15,9 +15,9 @@ func @pointwise(%arg0: memref<1x2x3xf32>, %arg1: memref<2x3x1xf32>) {
   // CHECK: %[[s1:.*]] = sair.static_range 2 : !sair.range
   // CHECK: %[[s2:.*]] = sair.static_range 3 : !sair.range
   // CHECK: %[[v0:.*]] = sair.from_memref[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]] %{{.*}} : memref<1x2x3xf32> -> !sair.value<d0:range x d1:range x d2:range, f32>
-  // GENERIC: %[[s0:.*]] = "sair.static_range"() {size = 1 : index}
-  // GENERIC: %[[s1:.*]] = "sair.static_range"() {size = 2 : index}
-  // GENERIC: %[[s2:.*]] = "sair.static_range"() {size = 3 : index}
+  // GENERIC: %[[s0:.*]] = "sair.static_range"() {size = 1 : index, step = 1 : index}
+  // GENERIC: %[[s1:.*]] = "sair.static_range"() {size = 2 : index, step = 1 : index}
+  // GENERIC: %[[s2:.*]] = "sair.static_range"() {size = 3 : index, step = 1 : index}
   // GENERIC: "sair.from_memref"(%[[s0]], %[[s1]], %[[s2]],
 
   // CHECK: %[[s0:.*]] = sair.static_range 2 : !sair.range
@@ -57,23 +57,23 @@ func @dynamic(%arg0: memref<?x2x?xf32>, %arg1: memref<?x3x?xf32>) {
   // CHECK: sair.program
 
   // CHECK: %[[DIM0_0_VAL:.*]] = sair.from_scalar %[[DIM0_0]] : !sair.value<(), index>
-  // CHECK: %[[s0:.*]] = sair.range %[[DIM0_0_VAL]]
+  // CHECK: %[[s0:.*]] = sair.dyn_range %[[DIM0_0_VAL]]
   // CHECK: %[[s1:.*]] = sair.static_range 2
   // CHECK: %[[DIM0_2_VAL:.*]] = sair.from_scalar %[[DIM0_2]] : !sair.value<(), index>
-  // CHECK: %[[s2:.*]] = sair.range %[[DIM0_2_VAL]]
+  // CHECK: %[[s2:.*]] = sair.dyn_range %[[DIM0_2_VAL]]
   // CHECK: %[[v0:.*]] = sair.from_memref[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]] %{{.*}} : memref<?x2x?xf32> -> !sair.value<d0:range x d1:range x d2:range, f32>
 
   // CHECK: %[[DIM1_0_VAL:.*]] = sair.from_scalar %[[DIM1_0]] : !sair.value<(), index>
-  // CHECK: %[[s0:.*]] = sair.range %[[DIM1_0_VAL]]
+  // CHECK: %[[s0:.*]] = sair.dyn_range %[[DIM1_0_VAL]]
   // CHECK: %[[s1:.*]] = sair.static_range 3
   // CHECK: %[[DIM1_2_VAL:.*]] = sair.from_scalar %[[DIM1_2]] : !sair.value<(), index>
-  // CHECK: %[[s2:.*]] = sair.range %[[DIM1_2_VAL]]
+  // CHECK: %[[s2:.*]] = sair.dyn_range %[[DIM1_2_VAL]]
   // CHECK: %[[v1:.*]] = sair.from_memref[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]] %{{.*}} : memref<?x3x?xf32> -> !sair.value<d0:range x d1:range x d2:range, f32>
 
   // CHECK: %[[DIM2_0_VAL:.*]] = sair.from_scalar %[[DIM2_0]] : !sair.value<(), index>
-  // CHECK: %[[d0:.*]] = sair.range %[[DIM2_0_VAL]]
+  // CHECK: %[[d0:.*]] = sair.dyn_range %[[DIM2_0_VAL]]
   // CHECK: %[[DIM2_2_VAL:.*]] = sair.from_scalar %[[DIM2_2]] : !sair.value<(), index>
-  // CHECK: %[[d1:.*]] = sair.range %[[DIM2_2_VAL]]
+  // CHECK: %[[d1:.*]] = sair.dyn_range %[[DIM2_2_VAL]]
   // CHECK: %[[d2:.*]] = sair.static_range 2
   // CHECK: %[[v2:.*]] = sair.map[d0:%[[d0]], d1:%[[d1]], d2:%[[d2]]] %[[v0]](d0, d2, d1), %[[v1]](d2, d1, d0)
   linalg.generic #pointwise_trait

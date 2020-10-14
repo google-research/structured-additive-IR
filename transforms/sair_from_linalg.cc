@@ -82,8 +82,9 @@ mlir::Value CreateSairRange(mlir::Location loc, const LoopBound &bound,
 
   // If the shape is statically known, create a simple static range.
   if (!ShapedType::isDynamic(dimension)) {
-    return rewriter.create<SairStaticRangeOp>(loc, range_type,
-                                              rewriter.getIndexAttr(dimension));
+    return rewriter.create<SairStaticRangeOp>(
+        loc, range_type, /*size=*/rewriter.getIndexAttr(dimension),
+        /*step=*/rewriter.getIndexAttr(1));
   }
 
   // Otherwise, extract the dynamic dimension of the shaped type, construct a 0d
@@ -105,8 +106,11 @@ mlir::Value CreateSairRange(mlir::Location loc, const LoopBound &bound,
   }();
   mlir::Value bound_value =
       rewriter.create<SairFromScalarOp>(loc, value_type, bound_dim);
-  return rewriter.create<SairRangeOp>(loc, range_type, mlir::ValueRange(),
-                                      access_pattern_array, bound_value);
+  return rewriter.create<SairDynRangeOp>(loc, range_type, mlir::ValueRange(),
+                                         access_pattern_array,
+                                         /*begin=*/nullptr,
+                                         /*end=*/bound_value,
+                                         /*step=*/rewriter.getIndexAttr(1));
 }
 
 // Extracts bounds of the loops comprised in the iteration domain from the list

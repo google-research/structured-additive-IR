@@ -348,4 +348,24 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
   }];
 }
 
+def SairRangeOp : OpInterface<"RangeOp"> {
+  let description = [{A Sair operation that defines a !sair.range}];
+
+  let methods = [
+    InterfaceMethod<"Returns the range step", "llvm::APInt", "step">,
+    InterfaceMethod<
+      "Returns the upper bound of the range", "ValueOrConstant", "LowerBound"
+    >,
+    InterfaceMethod<
+      "Returns the lower bound of the range", "ValueOrConstant", "UpperBound"
+    >,
+  ];
+
+  let extraClassDeclaration = [{
+    static constexpr llvm::StringRef kStepAttrName = "step";
+  }];
+
+  let verify = [{return sair::VerifyRangeOp(op);}];
+}
+
 #endif  // SAIR_SAIR_BASE_TD_

@@ -8,7 +8,7 @@ func @map(%arg0: index) {
   sair.program {
     // CHECK: %[[V0:.*]] = sair.from_scalar %[[ARG0]]
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
-    %1 = sair.range %0 : !sair.range
+    %1 = sair.dyn_range %0 : !sair.range
     %2 = sair.static_range 8 : !sair.range
     // CHECK: sair.map %[[V0]] attributes {loop_nest = []} {
     sair.map[d0: %1, d1: %2] attributes {

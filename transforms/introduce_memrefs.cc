@@ -751,11 +751,11 @@ void GetMemRefDimension(
     return;
   }
 
-  auto range = llvm::cast<SairRangeOp>(defining_op);
+  auto range = llvm::cast<SairDynRangeOp>(defining_op);
   assert(range.domain().empty());
   int dynamic_size = mlir::MemRefType::kDynamicSize;
   memref_shape.push_back(dynamic_size);
-  alloc_operands.push_back(range.size());
+  alloc_operands.push_back(range.upper_bound());
   alloc_access_patterns.push_back(
       AccessPatternAttr::get(defining_op->getContext(), 0, {}));
 }
@@ -880,6 +880,13 @@ mlir::LogicalResult IntroduceMemRef(SairMapOp op, mlir::OpBuilder &builder) {
   if (!op.shape().IsHyperRectangular()) {
     return op.emitError()
            << "can only materialize hyper-rectangular Sair values";
+  }
+  if (llvm::any_of(op.domain(), [](mlir::Value v) {
+    ValueOrConstant bound = cast<RangeOp>(v.getDefiningOp()).LowerBound();
+    return bound.is_value() ||
+           bound.constant().cast<mlir::IntegerAttr>().getInt() != 0;
+  })) {
+    return op.emitError() << "only 0-based ranges are supported for memrefs";
   }
 
   // Create the new memref.

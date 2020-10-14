@@ -264,7 +264,7 @@ void SairProjLastOp::getCanonicalizationPatterns(
   patterns.insert<SimplifySairOperands>();
 }
 
-void SairRangeOp::getCanonicalizationPatterns(
+void SairDynRangeOp::getCanonicalizationPatterns(
     mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>();
 }

@@ -28,6 +28,38 @@
 
 namespace sair {
 
+// Represents wither a Sair value or a constant.
+class ValueOrConstant {
+ public:
+  ValueOrConstant(mlir::Value value, AccessPatternAttr access_pattern)
+      : value_(value), attribute_(access_pattern) {}
+  ValueOrConstant(mlir::Attribute constant) : attribute_(constant) {}
+  ValueOrConstant(ValueOperand &&operand)
+      : ValueOrConstant(operand.value(), operand.AccessPattern()) { }
+
+  bool is_constant() const { return value_ == nullptr; }
+  bool is_value() const { return !is_constant(); }
+
+  mlir::Value value() const {
+    assert(is_value());
+    return value_;
+  }
+
+  AccessPatternAttr access_pattern() const {
+    assert(is_value());
+    return attribute_.cast<AccessPatternAttr>();
+  }
+
+  mlir::Attribute constant() const {
+    assert(is_constant());
+    return attribute_;
+  }
+
+ private:
+  mlir::Value value_;
+  mlir::Attribute attribute_;
+};
+
 // Erases the operand of an operation with AttrSizedOperandSegments trait.
 void EraseOperand(int position, llvm::StringRef segment_sizes_attribute_name,
                   mlir::Operation *op);
@@ -59,6 +91,9 @@ mlir::LogicalResult VerifyValueProducerOp(mlir::Operation *op);
 
 // Verifies a `ComputeOp`.
 mlir::LogicalResult VerifyComputeOp(mlir::Operation *op);
+
+// Verifies a `RangeOp`.
+mlir::LogicalResult VerifyRangeOp(mlir::Operation *op);
 
 using namespace mlir;  // NOLINT
 #include "sair_op_interfaces.h.inc"

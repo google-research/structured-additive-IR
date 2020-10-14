@@ -5,13 +5,33 @@ func @dependent_dimensions() {
   sair.program {
     %0 = sair.static_range 8 : !sair.range
     %1 = sair.from_scalar %c0 : !sair.value<(), index>
-    %2 = sair.range[d0:%0] %1 : !sair.range<d0:range>
+    %2 = sair.dyn_range[d0:%0] %1 : !sair.range<d0:range>
     // expected-error @+1 {{can only materialize hyper-rectangular Sair values}}
     %3 = sair.map[d0:%0, d1:%2] attributes {memory_space=[1]} {
       ^bb0(%arg0: index, %arg1: index):
         %4 = constant 1.0 : f32
         sair.return %4 : f32
     } : #sair.shape<d0:range x d1:range(d0)>, () -> f32
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @non_zero_based_range(%arg0: index, %arg1: index) {
+  %c1 = constant 1 : index
+  %c4 = constant 4 : index
+  sair.program {
+    %0 = sair.from_scalar %c1 : !sair.value<(), index>
+    %1 = sair.from_scalar %c4 : !sair.value<(), index>
+    %2 = sair.dyn_range %0, %1 : !sair.range
+    // expected-error @+1 {{only 0-based ranges are supported for memrefs}}
+    %3 = sair.map[d0:%2] attributes {memory_space=[1]} {
+      ^bb0(%arg2: index):
+        %4 = constant 1.0 : f32
+        sair.return %4 : f32
+    } : #sair.shape<d0:range>, () -> f32
     sair.exit
   }
   return
