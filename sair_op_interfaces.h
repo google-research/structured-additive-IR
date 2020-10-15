@@ -181,35 +181,6 @@ void SetAccessPattern(ConcreteType op, int position,
 using namespace mlir;  // NOLINT
 #include "sair_op_interfaces.h.inc"
 
-// A dependency of a Sair operation.
-struct Dependency {
-  // Operation the use operation depends on.
-  ComputeOp def;
-  // Dimensions of the def operation that must complete before the current
-  // instance of the use operation execute.
-  llvm::SmallBitVector def_only_dimensions;
-  // Dimensions of the use operation that cannot execute before the accessed
-  // instance of def is computed.
-  llvm::SmallBitVector use_only_dimensions;
-  // Dimension of the use operation that carry the dependency accross
-  // iterations. They must be fused with the dimensions of the def operation
-  // they map to.
-  llvm::SmallBitVector carrying_dimensions;
-  // Dimensions of the def operation that must complete at the previous
-  // iteration of `carrying_dimensions`. In practice, this means that they are
-  // nested in carrying dimensions.
-  llvm::SmallBitVector prev_def_only_dimensions;
-  // Point-to-point communication pattern from def to use.
-  AccessPatternAttr mapped_dimensions;
-};
-
-// Adds dependencies of `op` to `dependencies` and for each dimension `di` of
-// `op`, adds the dimensions `di` must be nested in to
-// `dimension_dependencies[i]`.
-void GetDependencies(
-    SairOp op, llvm::SmallVectorImpl<Dependency> &dependencies,
-    llvm::SmallVectorImpl<llvm::SmallBitVector> &dimension_dependencies);
-
 }  // namespace sair
 
 #endif  // SAIR_SAIR_OP_INTERFACES_H_

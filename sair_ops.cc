@@ -44,6 +44,7 @@
 #include "mlir/Parser.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
+#include "loop_nest.h"
 #include "sair_attributes.h"
 #include "sair_dialect.h"
 #include "sair_op_interfaces.h"
@@ -1214,135 +1215,6 @@ void Print(SairProgramOp op, mlir::OpAsmPrinter &printer) {
                         [&](mlir::Type type) { printer.printType(type); });
 }
 
-// Checks properties of loop nests that involve multiple operations. That is
-// that:
-// - fused dimensions are contiguous
-// - fused dimensions have the same definition
-// - fused dimensions have the 'iter' field set in at least one operation
-// - fused dimensions are nested in the same dimensions.
-static mlir::LogicalResult VerifyFusedLoops(SairProgramOp program) {
-  struct FusionGroup {
-    mlir::StringAttr name;
-    mlir::Value dimension;
-    int step;
-    // If dimension == nullptr, contains the first operation referencing the
-    // loop. Otherwise, contains the first operation referencing the loop with
-    // the `iter` field set.
-    ComputeOp defining_op;
-    llvm::SmallVector<ComputeOp, 4> ops;
-  };
-
-  llvm::SmallVector<FusionGroup, 8> fusion_prefix;
-  llvm::DenseSet<mlir::Attribute> closed_groups;
-
-  auto close_groups = [&](int final_prefix_size) {
-    while (fusion_prefix.size() > final_prefix_size) {
-      FusionGroup group = fusion_prefix.pop_back_val();
-      if (group.dimension == nullptr) {
-        group.defining_op.emitError()
-            << "loop " << group.name
-            << " must have the 'iter' field set in at least one operation";
-        return mlir::failure();
-      }
-      for (ComputeOp op : group.ops) {
-        if (!group.dimension.getDefiningOp()->isBeforeInBlock(op)) {
-          (op.emitError() << "rematerialized loop " << group.name
-                          << " indirectly uses the range before it is defined")
-                  .attachNote(group.dimension.getLoc())
-              << "range defined here";
-          return mlir::failure();
-        }
-      }
-      closed_groups.insert(group.name);
-    }
-    return mlir::success();
-  };
-
-  mlir::WalkResult result = program.walk([&](ComputeOp op) {
-    if (!op.loop_nest().hasValue()) {
-      close_groups(0);
-      return mlir::WalkResult::advance();
-    }
-    llvm::ArrayRef<mlir::Attribute> loop_nest = op.LoopNestLoops();
-    SairOp sair_op = cast<SairOp>(op.getOperation());
-
-    // Check that dimensions are not out of range of the domain. We do this here
-    // rather than in ComputeOp as this verifier is run first and requires this
-    // property.
-    for (mlir::Attribute attr : loop_nest) {
-      LoopAttr loop = attr.dyn_cast<LoopAttr>();
-      if (loop == nullptr) return mlir::WalkResult::advance();
-
-      if (loop.iter().Rematerialize()) continue;
-      if (loop.iter().Dimension() >= sair_op.domain().size()) {
-        op.emitError() << "dimension 'd" << loop.iter().Dimension() << "' "
-                       << "is out of range of the domain";
-        return mlir::WalkResult::interrupt();
-      }
-    }
-
-    // Find the number of common loops.
-    int common_prefix_size = 0;
-    for (int e = std::min(loop_nest.size(), fusion_prefix.size());
-         common_prefix_size < e; ++common_prefix_size) {
-      LoopAttr loop = loop_nest[common_prefix_size].cast<LoopAttr>();
-      FusionGroup &group = fusion_prefix[common_prefix_size];
-      if (loop.name() != group.name) break;
-
-      group.ops.push_back(op);
-      if (loop.iter().Rematerialize()) continue;
-
-      mlir::Value dimension = sair_op.domain()[loop.iter().Dimension()];
-
-      // Set the group dimension if not already set.
-      if (group.dimension == nullptr) {
-        group.dimension = dimension;
-        group.step = loop.iter().Step();
-        group.defining_op = op;
-        continue;
-      }
-
-      // Ensure the loop definition matches the rest of the group.
-      if (group.dimension != dimension || group.step != loop.iter().Step()) {
-        (op.emitError() << "loop " << group.name
-                        << " dimension does not match previous occurrences")
-                .attachNote(group.defining_op.getLoc())
-            << "previous occurrence here";
-        return mlir::WalkResult::interrupt();
-      }
-    }
-
-    // Reset the current fusion prefix to the number of common loops.
-    if (mlir::failed(close_groups(common_prefix_size))) {
-      return mlir::WalkResult::interrupt();
-    }
-
-    // Add remaining loops to the current fusion prefix.
-    for (mlir::Attribute attribute : loop_nest.drop_front(common_prefix_size)) {
-      LoopAttr loop = attribute.cast<LoopAttr>();
-
-      if (closed_groups.count(loop.name()) > 0) {
-        op.emitError() << "occurrences of loop " << loop.name()
-                       << " must be contiguous and nested in the same loops";
-        return mlir::WalkResult::interrupt();
-      }
-
-      FusionGroup &group = fusion_prefix.emplace_back();
-      group.name = loop.name();
-      group.defining_op = op;
-      group.ops.push_back(op);
-
-      if (loop.iter().Rematerialize()) continue;
-      group.dimension = sair_op.domain()[loop.iter().Dimension()];
-      group.step = loop.iter().Step();
-    }
-    return mlir::WalkResult::advance();
-  });
-  if (result.wasInterrupted()) return mlir::failure();
-
-  return close_groups(0);
-}
-
 // Verifies the well-formedness of the given SairProgramOp, in particular that
 // all its non-terminator ops are Sair ops.
 mlir::LogicalResult Verify(SairProgramOp op) {
@@ -1360,7 +1232,7 @@ mlir::LogicalResult Verify(SairProgramOp op) {
     return op.emitError() << "expected a sair.exit terminator";
   }
 
-  return VerifyFusedLoops(op);
+  return VerifyLoopNests(op);
 }
 
 void SairProgramOp::build(mlir::OpBuilder &builder,
