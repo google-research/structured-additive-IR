@@ -264,16 +264,11 @@ mlir::LoadOp EmitPseudoAffineLoad(mlir::Location loc, mlir::Value memref,
 
 // Information about a `to_memref` op about to be eliminated.
 struct ToMemRefOpInfo {
-  ToMemRefOpInfo(SairToMemRefOp op, unsigned pos, mlir::AffineMap map)
-      : op(op), producer_result_pos(pos), inverted_access_map(map) {}
+  ToMemRefOpInfo(SairToMemRefOp op, mlir::AffineMap map)
+      : op(op), inverted_access_map(map) {}
 
   // The op to be eliminated.
   SairToMemRefOp op;
-
-  // Position of the value stored into memref in the result list of the
-  // operation that produces it.
-
-  unsigned producer_result_pos;
 
   // Inverted access map or null if the map is not invertible.
   mlir::AffineMap inverted_access_map;
@@ -304,8 +299,7 @@ mlir::LogicalResult internMemRefs(
         if (!inverse_access) {
           return rewriter.notifyMatchFailure(user, "non-invertible access map");
         }
-        to_memref_ops.emplace_back(to_memref, result.getResultNumber(),
-                                   inverse_access);
+        to_memref_ops.emplace_back(to_memref, inverse_access);
       }
     }
   }
@@ -346,8 +340,8 @@ mlir::LogicalResult internMemRefs(
   auto domain_indices = new_map.block().getArguments().take_front(domain_size);
   for (auto en : llvm::enumerate(to_memref_ops)) {
     ToMemRefOpInfo &info = en.value();
-    mlir::Value terminatorOperand =
-        terminator->getOperand(info.producer_result_pos);
+    unsigned result_pos = info.op.value().cast<OpResult>().getResultNumber();
+    mlir::Value terminatorOperand = terminator->getOperand(result_pos);
     mlir::Value memref =
         new_map.block().getArguments().take_back(num_memrefs)[en.index()];
     EmitPseudoAffineStore(info.op.getLoc(), terminatorOperand, memref,
