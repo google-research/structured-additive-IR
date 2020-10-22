@@ -323,11 +323,6 @@ mlir::LogicalResult VerifyValueProducerOp(mlir::Operation *operation) {
   return mlir::success();
 }
 
-mlir::LogicalResult VerifyComputeOp(mlir::Operation *op) {
-  ComputeOp compute_op = cast<ComputeOp>(op);
-  return VerifyLoopNest(compute_op);
-}
-
 mlir::LogicalResult VerifyRangeOp(mlir::Operation *op) {
   RangeOp range_op = cast<RangeOp>(op);
   if (!range_op.step().isStrictlyPositive()) {

@@ -566,6 +566,19 @@ func @sair_iterator_step_non_positive() {
 
 // -----
 
+func @expected_loop_attr() {
+  sair.program {
+    // expected-error @+1 {{expected a `Loop` attribute}}
+    sair.map attributes { loop_nest = [0] } {
+      ^bb0:
+        sair.return
+    } : #sair.shape<()>, () -> ()
+    sair.exit
+  }
+}
+
+// -----
+
 func @loop_name_used_twice(%arg0: f32) {
   sair.program {
     %0 = sair.static_range 8 : !sair.range
@@ -693,11 +706,10 @@ func @loop_fusion_not_contiguous(%arg0: f32) {
 
 func @iter_field_missing(%arg0: f32) {
   sair.program {
-    %0 = sair.static_range 8 : !sair.range
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{loop "A" must have the 'iter' field set in at least one operation}}
-    sair.copy[d0: %0] %1 { loop_nest = [{name = "A", iter=#sair.iter<remat>}] }
-      : !sair.value<d0:range, f32>
+    sair.copy %1 { loop_nest = [{name = "A", iter=#sair.iter<remat>}] }
+      : !sair.value<(), f32>
     sair.exit
   }
   return
@@ -881,7 +893,7 @@ func @fby_of_proj_dependency(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range 8 : !sair.range
     %2 = sair.fby %0 then[d0:%1] %4(d0) : !sair.value<d0:range, f32>
-    // expected-error @+1 {{dimension 'd0' must be nested in dimension 'd1'}}
+    // expected-error @+1 {{dimension 'd1' must be nested in dimension 'd0'}}
     %3 = sair.map[d0:%1, d1:%1] %2(d0) attributes {
       loop_nest = [
         {name = "A", iter = #sair.iter<d1>},

@@ -11,9 +11,6 @@ namespace sair {
 // sair.program operation.
 mlir::LogicalResult VerifyLoopNests(SairProgramOp program);
 
-// Verifies the loop nest attribute of the operation.
-mlir::LogicalResult VerifyLoopNest(ComputeOp op);
-
 }  // namespace sair
 
 #endif  // THIRD_PARTY_SAIR_LOOP_NEST_H_
