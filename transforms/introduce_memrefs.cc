@@ -488,7 +488,8 @@ class LowerToMemRef : public LowerToMemRefPassBase<LowerToMemRef> {
     target.addLegalOp<mlir::FuncOp>();
     target.addIllegalOp<SairToMemRefOp>();
 
-    if (failed(mlir::applyFullConversion(getFunction(), target, patterns))) {
+    if (failed(mlir::applyFullConversion(getFunction(), target,
+                                         std::move(patterns)))) {
       signalPassFailure();
     }
   }
