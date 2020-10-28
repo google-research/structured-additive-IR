@@ -559,12 +559,6 @@ def SairProgramOp : Op<SairDialect, "program", [RegionKindInterface]> {
   let regions = (region SizedRegion<1>:$body);
   let results = (outs Variadic<AnyType>:$results);
 
-  let skipDefaultBuilders = 1;
-  let builders = [
-    OpBuilderDAG<(ins),
-    [{
-    Region *region = $_state.addRegion();
-    SairProgramOp::ensureTerminator(*region, builder, $_state.location);}]>];
   let parser = [{return ParseProgramOp(parser, result);}];
   let printer = [{Print(*this, p);}];
   let verifier = [{return Verify(*this);}];
