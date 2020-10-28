@@ -159,9 +159,10 @@ def SairFromScalarOp : SairOp<"from_scalar", [
   let verifier = [{return Verify(*this);}];
 
   let builders = [
-    OpBuilder<"OpBuilder &builder, OperationState &state, Value value", [{
-      state.addOperands(value);
-      state.addTypes(builder.getType<ValueType>(value.getType()));
+    OpBuilderDAG<(ins "Value":$value),
+    [{
+      $_state.addOperands(value);
+      $_state.addTypes($_builder.getType<ValueType>(value.getType()));
     }]>
   ];
 
@@ -266,8 +267,8 @@ def SairReturnOp : Op<SairDialect, "return", [Terminator]> {
   }];
 
   let builders = [
-      OpBuilder<"OpBuilder &builder, OperationState &result",
-                [{ return build(builder, result, ValueRange()); }]>];
+      OpBuilderDAG<(ins),
+      [{ return build($_builder, $_state, ValueRange()); }]>];
 
   let arguments = (ins Variadic<AnyType>:$operands);
   let parser = [{return ParseReturnOp(parser, result);}];
@@ -319,15 +320,11 @@ def SairMapOp : SairOp<"map", [
   let builders = [
     // Builds a sair.map operation and setups its block with the right arguments.
     // Input values must have !sair.value types.
-    OpBuilder<[{mlir::OpBuilder &builder,
-                mlir::OperationState &result,
-                mlir::TypeRange result_types,
-                mlir::ValueRange domain,
-                mlir::ArrayAttr access_patterns_array,
-                mlir::ValueRange inputs,
-                DomainShapeAttr shape,
-                /*optional*/ ArrayAttr loop_nest = nullptr,
-                /*optional*/ ArrayAttr memory_space = nullptr}]>
+    OpBuilderDAG<(ins "mlir::TypeRange":$result_types,
+      "mlir::ValueRange":$domain, "mlir::ArrayAttr":$access_patterns_array,
+      "mlir::ValueRange":$inputs, "DomainShapeAttr":$shape,
+      CArg<"/*optional*/ ArrayAttr", "nullptr">:$loop_nest,
+      CArg<"/*optional*/ ArrayAttr", "nullptr">:$memory_space)>
   ];
 
   let extraClassDeclaration = [{
@@ -563,9 +560,11 @@ def SairProgramOp : Op<SairDialect, "program", [RegionKindInterface]> {
   let results = (outs Variadic<AnyType>:$results);
 
   let skipDefaultBuilders = 1;
-  let builders = [OpBuilder<"OpBuilder &builder, OperationState &result", [{
-    Region *region = result.addRegion();
-    SairProgramOp::ensureTerminator(*region, builder, result.location);}]>];
+  let builders = [
+    OpBuilderDAG<(ins),
+    [{
+    Region *region = $_state.addRegion();
+    SairProgramOp::ensureTerminator(*region, builder, $_state.location);}]>];
   let parser = [{return ParseProgramOp(parser, result);}];
   let printer = [{Print(*this, p);}];
   let verifier = [{return Verify(*this);}];
@@ -573,9 +572,7 @@ def SairProgramOp : Op<SairDialect, "program", [RegionKindInterface]> {
   let skipDefaultBuilders = 1;
   let builders = [
     // Builds a sair.program operation. Allocates the region its block.
-    OpBuilder<[{mlir::OpBuilder &builder,
-                mlir::OperationState &result,
-                mlir::TypeRange result_types = {} }]>
+    OpBuilderDAG<(ins CArg<"mlir::TypeRange", "{}">:$result_types)>
   ];
 
   let extraClassDeclaration = [{
@@ -618,9 +615,7 @@ def SairExitOp : SairOp<"exit", [Terminator]> {
   DerivedAttr shape = SairEmptyDomainShapeAttr;
 
   let builders = [
-    OpBuilder<[{mlir::OpBuilder &builder,
-                mlir::OperationState &result,
-                mlir::ValueRange operands = {} }]>
+    OpBuilderDAG<(ins CArg<"mlir::ValueRange", "{}">:$operands)>
   ];
 }
 
