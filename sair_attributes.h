@@ -212,12 +212,21 @@ class DomainShapeAttr
 
   // Returns the number of dimensions in the domain.
   int NumDimensions() const;
+
   // Indicates if the domain contains exactly one point.
   bool Is0d() const;
+
   // Returns the shape of the iteration dimension that compose the domain.
   llvm::ArrayRef<DomainShapeDim> Dimensions() const;
+
+  // Returns the dimension at the given index.
+  const DomainShapeDim &Dimension(int index) const {
+    return Dimensions()[index];
+  }
+
   // Indicates if all the dimensions of the domain are independent.
   bool IsHyperRectangular() const;
+
   // Indicates if this DomainShapeAttr is a prefix of another DomainShapeAttr.
   bool IsPrefixOf(DomainShapeAttr other);
 

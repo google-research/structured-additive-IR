@@ -72,12 +72,16 @@ ValueOperand ValueOperandRange::dereference_iterator(PtrPair base_ptr,
   return ValueOperand(base_ptr.first + offset, base_ptr.second + offset);
 }
 
-llvm::SmallBitVector ValueOperand::DimsDependingOnOperand() const {
+llvm::SmallBitVector ValueOperand::DependingDims() const {
   return cast<SairOp>(operand_->getOwner()).DimsDependingOnOperand(index_);
 }
 
 bool ValueOperand::AllowUseBeforeDef() const {
   return cast<SairOp>(operand_->getOwner()).AllowUseBeforeDef(index_);
+}
+
+llvm::SmallBitVector ValueOperand::CarryingDims() const {
+  return cast<SairOp>(operand_->getOwner()).CarryingDimensions(index_);
 }
 
 // Sair operations are only allowed inside a SairProgramOp.
@@ -149,11 +153,6 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
   // Check that the domain is defined locally.
   for (mlir::Value dimension : sair_op.domain()) {
     mlir::Operation *defining_op = dimension.getDefiningOp();
-    if (!defining_op ||
-        defining_op->getParentRegion() != op->getParentRegion()) {
-      return op->emitError()
-             << "sair dimensions must be defined in the region they are used";
-    }
     if (!defining_op->isBeforeInBlock(op)) {
       return (op->emitError() << "dimension used before its definition")
                  .attachNote(defining_op->getLoc())
@@ -206,11 +205,6 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
              << "access pattern incompatible with the operand shape";
     }
     mlir::Operation *defining_op = v.value().getDefiningOp();
-    if (!defining_op ||
-        defining_op->getParentRegion() != op->getParentRegion()) {
-      return op->emitError()
-             << "sair values must be defined in the region they are used";
-    }
     if (!defining_op->isBeforeInBlock(op) && !v.AllowUseBeforeDef()) {
       return (op->emitError() << "operand used before its definition")
                  .attachNote(defining_op->getLoc())
@@ -218,7 +212,7 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
     }
 
     llvm::SmallBitVector dependency_mask = v.AccessPattern().DependencyMask();
-    if (dependency_mask.anyCommon(v.DimsDependingOnOperand())) {
+    if (dependency_mask.anyCommon(v.DependingDims())) {
       return op->emitError() << "an operand access pattern references a "
                                 "dimension that depends on the operand";
     }

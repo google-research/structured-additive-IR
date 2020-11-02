@@ -63,10 +63,14 @@ class ValueOperand {
 
   // Returns a mask of dimensions that must execute after the operand is
   // computed.
-  llvm::SmallBitVector DimsDependingOnOperand() const;
+  llvm::SmallBitVector DependingDims() const;
 
   // Indicates if the operand can be used before it is defined.
   bool AllowUseBeforeDef() const;
+
+  // If the operand is a loop-carried dependency, indicates along which
+  // dimensions it is carried.
+  llvm::SmallBitVector CarryingDims() const;
 
  private:
   mlir::OpOperand *operand_;

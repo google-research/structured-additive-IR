@@ -801,12 +801,11 @@ func @proj_last_dependency(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range 8 : !sair.range
-    // expected-note @+1 {{because of this operation}}
     %2 = sair.copy[d0:%1] %0 {
       loop_nest = [{name = "A", iter = #sair.iter<d0>}]
     } : !sair.value<d0:range, f32>
     %3 = sair.proj_last of[d0:%1] %2(d0) : #sair.shape<d0:range>, f32
-    // expected-error @+1 {{operation cannot be nested in loop "A"}}
+    // expected-error @+1 {{loop "A" must be closed before this operation}}
     %4 = sair.copy %3 {
       loop_nest = [{name = "A", iter = #sair.iter<remat>}]
     } : !sair.value<(), f32>
@@ -873,11 +872,10 @@ func @fby_must_fuse(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range 8 : !sair.range
     %2 = sair.fby %0 then[d0:%1] %4(d0) : !sair.value<d0:range, f32>
-    // expected-error @+1 {{operation must be fused with loop "B"}}
+    // expected-error @+1 {{loop "B" must be open at or before this operation}}
     %3 = sair.copy[d0:%1] %2(d0) {
       loop_nest = [{name = "A", iter = #sair.iter<d0>}]
     } : !sair.value<d0:range, f32>
-    // expected-note @+1 {{because of a dependency from this operation}}
     %4 = sair.copy[d0:%1] %3(d0) {
       loop_nest = [{name = "B", iter = #sair.iter<d0>}]
     } : !sair.value<d0:range, f32>
@@ -892,8 +890,8 @@ func @fby_of_proj_dependency(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range 8 : !sair.range
+    // expected-error @+1 {{cannot take the previous value of the operand along 'd0'}}
     %2 = sair.fby %0 then[d0:%1] %4(d0) : !sair.value<d0:range, f32>
-    // expected-error @+1 {{dimension 'd1' must be nested in dimension 'd0'}}
     %3 = sair.map[d0:%1, d1:%1] %2(d0) attributes {
       loop_nest = [
         {name = "A", iter = #sair.iter<d1>},
@@ -916,10 +914,10 @@ func @fby_of_fby_dependency(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range 8 : !sair.range
+    // expected-error @+1 {{cannot take the previous value of the operand along 'd0'}}
     %2 = sair.fby %0 then[d0:%1] %5(d0) : !sair.value<d0:range, f32>
     %3 = sair.fby[d0:%1] %2(d0) then[d1:%1] %4(d0, d1)
       : !sair.value<d0:range x d1:range, f32>
-    // expected-error @+1 {{dimension 'd1' must be nested in dimension 'd0'}}
     %4 = sair.copy[d0:%1, d1:%1] %3(d0, d1) {
       loop_nest = [
         {name = "A", iter = #sair.iter<d1>},
