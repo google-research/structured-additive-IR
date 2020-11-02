@@ -16,11 +16,12 @@
 
 namespace sair {
 
+namespace {
+
 // Extends an access pattern with the identity pattern to match the given number
 // of dimensions.
-static AccessPatternAttr ExtendWithIdentity(AccessPatternAttr old_pattern,
-                                            int domain_size,
-                                            int new_pattern_size) {
+AccessPatternAttr ExtendWithIdentity(AccessPatternAttr old_pattern,
+                                     int domain_size, int new_pattern_size) {
   llvm::SmallVector<int, 4> dimensions;
   dimensions.reserve(new_pattern_size);
   appendRange(dimensions, old_pattern);
@@ -33,7 +34,7 @@ static AccessPatternAttr ExtendWithIdentity(AccessPatternAttr old_pattern,
 
 // Redirects `use` to the `init` operand of `op` if `op` has an empty sequential
 // domain. Returns true if any change was made.
-static bool SimplifyFbyOp(ValueOperand &use, SairFbyOp op) {
+bool SimplifyFbyOp(ValueOperand &use, SairFbyOp op) {
   if (!op.sequential_domain().empty()) return false;
   use.SetAccessPattern(use.AccessPattern().Compose(op.Init().AccessPattern()));
   use.set_value(op.init());
@@ -44,8 +45,8 @@ static bool SimplifyFbyOp(ValueOperand &use, SairFbyOp op) {
 // with an empty projection domain and by flattening chains of projections.
 // Returns true is any simplification was made.
 template <typename ProjOp>
-static bool SimplifyProjOp(ValueOperand &use, ProjOp op,
-                           mlir::PatternRewriter &rewriter) {
+bool SimplifyProjOp(ValueOperand &use, ProjOp op,
+                    mlir::PatternRewriter &rewriter) {
   if (op.projection_domain().empty()) {
     use.SetAccessPattern(
         use.AccessPattern().Compose(op.Value().AccessPattern()));
@@ -224,6 +225,49 @@ class DeduplicateMapInputsOutputs : public OpRewritePattern<SairMapOp> {
   }
 };
 
+// Remove a followed-by operation that depends on its own result, i.e.
+//   %1 = sair.fby[...] %0(...) then[...] %1(d0, d1, ..., dn)
+// and make its users use the init value instead.
+class RemoveCyclicFby : public OpRewritePattern<SairFbyOp> {
+ public:
+  using OpRewritePattern<SairFbyOp>::OpRewritePattern;
+
+  mlir::LogicalResult matchAndRewrite(
+      SairFbyOp op, PatternRewriter &rewriter) const override {
+    // Only apply to cycling followed-by with identity patterns.
+    if (op.result() != op.value() || !op.Value().AccessPattern().IsIdentity())
+      return mlir::failure();
+
+    // Update the users. The list of uses contains all uses, including multiple
+    // uses of the same value by the same operation.
+    for (OpOperand &operand : op.result().getUses()) {
+      if (operand.getOwner() == op) continue;
+      auto owner = cast<SairOp>(operand.getOwner());
+      auto iter = llvm::find_if(owner.ValueOperands(),
+                                [&operand](const ValueOperand &vop) {
+                                  return vop.value() == operand.get();
+                                });
+      assert(iter != owner.ValueOperands().end() &&
+             "expected a user of !sair.value to provide ValueOperand");
+
+      ValueOperand value_operand = *iter;
+      AccessPatternAttr access_pattern =
+          value_operand.AccessPattern().Compose(op.Init().AccessPattern());
+      value_operand.set_value(op.init());
+      value_operand.SetAccessPattern(access_pattern);
+    }
+
+    assert(llvm::hasSingleElement(op.result().getUses()) &&
+           op.result().getUses().begin()->getOwner() == op &&
+           "expected only the self-reference to remain");
+    op.erase();
+
+    return mlir::success();
+  }
+};
+
+}  // end namespace
+
 void SairCopyOp::getCanonicalizationPatterns(
     mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>();
@@ -242,6 +286,7 @@ void SairFromMemRefOp::getCanonicalizationPatterns(
 void SairFbyOp::getCanonicalizationPatterns(
     mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>();
+  patterns.insert<RemoveCyclicFby>(context);
 }
 
 void SairFromScalarOp::getCanonicalizationPatterns(

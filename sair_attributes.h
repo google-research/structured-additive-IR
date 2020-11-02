@@ -109,6 +109,10 @@ class AccessPatternAttr
   // use domain.
   bool DependsOnDimension(int dimension) const;
 
+  // Indicates whether the access pattern is an identity, e.g. does not
+  // transpose or otherwise modify any dimension.
+  bool IsIdentity() const;
+
   // A bit mask that indicates which dimensions of the domain the access pattern
   // depends on.
   llvm::SmallBitVector DependencyMask() const;

@@ -319,6 +319,13 @@ bool AccessPatternAttr::DependsOnDimension(int dimension) const {
   });
 }
 
+bool AccessPatternAttr::IsIdentity() const {
+  for (auto en : llvm::enumerate(getImpl()->pattern())) {
+    if (en.index() != en.value()) return false;
+  }
+  return true;
+}
+
 llvm::SmallBitVector AccessPatternAttr::DependencyMask() const {
   llvm::SmallBitVector mask(UseDomainSize());
   for (int dimension : Dimensions()) {
