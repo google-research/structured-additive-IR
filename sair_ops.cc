@@ -68,7 +68,9 @@ OptionalParseResult ParseOptionalValueAccess(
     return has_operand;
 
   llvm::SMLoc loc = parser.getCurrentLocation();
-  access_pattern = ParseOptionalAccessPattern(parser, num_dimensions);
+  if (!(access_pattern = ParseOptionalAccessPattern(parser, num_dimensions))) {
+    return mlir::failure();
+  }
   if (!access_pattern.IsFullySpecified()) {
     return parser.emitError(loc)
            << "expected access pattern to a concrete element, got 'none'";

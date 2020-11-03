@@ -933,6 +933,21 @@ func @fby_of_fby_dependency(%arg0: f32) {
 
 // -----
 
+// Make sure we don't crash here.
+func @fby_dim_out_of_range(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.static_range 8 : !sair.range
+    %2 = sair.copy[d0:%1, d1:%1] %0 : !sair.value<d0:range x d1:range, f32>
+    // expected-error @+1 {{dimension 'd2' is out of range (2 dimensions)}}
+    %3 = sair.fby[d0:%1, d1:%1] %2(d1, d2) then[d2:%1, d3:%1] %3(d0, d1, d2, d3) : !sair.value<d0:range x d1:range x d2:range x d3:range, f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
 func @wrong_order_for_remat(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -949,3 +964,4 @@ func @wrong_order_for_remat(%arg0: f32) {
   }
   return
 }
+
