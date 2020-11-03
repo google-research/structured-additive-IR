@@ -180,8 +180,7 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
              << " attribute";
     }
     for (mlir::Attribute pattern : sair_op.access_pattern_array()) {
-      if (pattern.cast<::sair::AccessPatternAttr>().DependsOnDimension(
-              ::sair::AccessPatternAttr::kNoDimension)) {
+      if (!pattern.cast<::sair::AccessPatternAttr>().IsFullySpecified()) {
         return mlir::emitError(op->getLoc())
                << "all dimensions of the accessed domain must be mapped";
       }

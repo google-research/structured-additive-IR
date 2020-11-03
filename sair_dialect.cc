@@ -116,14 +116,14 @@ DomainShapeAttr ParseDomainShape(mlir::DialectAsmParser &parser) {
     AccessPatternAttr access_pattern =
         ParseOptionalAccessPattern(parser, dimensions.size());
     if (access_pattern == nullptr) return nullptr;
-    if (access_pattern.DependsOnDimension(AccessPatternAttr::kNoDimension)) {
+    if (!access_pattern.IsFullySpecified()) {
       parser.emitError(loc) << "the access pattern must map all dimensions";
       return nullptr;
     }
 
     std::vector<DomainShapeDim> arg_shape_dims;
     llvm::SmallBitVector seen_dimensions(dimensions.size());
-    for (int dimension : access_pattern.Dimensions()) {
+    for (int dimension : access_pattern) {
       llvm::SmallBitVector dependencies =
           dimensions[dimension].DependencyMask();
       if ((~seen_dimensions).anyCommon(dependencies)) {
@@ -282,7 +282,7 @@ void Print(ValueType type, mlir::DialectAsmPrinter *os) {
 void PrintWithUseDomainSize(AccessPatternAttr access_pattern,
                             mlir::DialectAsmPrinter &os) {
   os << access_pattern.UseDomainSize();
-  if (access_pattern.Dimensions().empty()) return;
+  if (access_pattern.empty()) return;
   os << " : " << access_pattern;
 }
 

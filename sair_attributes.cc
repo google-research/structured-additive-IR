@@ -26,23 +26,185 @@
 
 namespace sair {
 
+// Private implementation/storage class for sair::AccessPatternAttr. Instances
+// of this class are allocated by MLIR type system in a dedicated arena. Not
+// intended for direct use.
+class impl::AccessPatternAttrStorage : public mlir::AttributeStorage {
+ public:
+  // Key type uniquely identifying AccessPatternAttrStorage for MLIR attribute
+  // unique-ing. This specific name is required by mlir::AttributeUniquer.
+  using KeyTy = std::pair<int, llvm::ArrayRef<int>>;
+
+  // Creates an AccessPatternAttrStorage using the provided allocator. Hook for
+  // MLIR attribute system.
+  static AccessPatternAttrStorage *construct(
+      mlir::AttributeStorageAllocator &allocator, const KeyTy &key) {
+    return new (allocator.allocate<AccessPatternAttrStorage>())
+        AccessPatternAttrStorage(
+            std::make_pair(key.first, allocator.copyInto(key.second)));
+  }
+
+  // Compares the AccessPatternAttrStorage identification key with this object.
+  bool operator==(const KeyTy &key) const {
+    return key.first == use_domain_size_ && key.second == pattern_;
+  }
+
+  // Returns the number of dimensions in the use domain.
+  int use_domain_size() const { return use_domain_size_; }
+
+  // Returns the list of dimensions along which a variable is accessed.
+  // Dimensions are identified by their position in the domain definition.
+  llvm::ArrayRef<int> pattern() const { return pattern_; }
+
+ private:
+  // Constructs a storage object from the provided key. Such objects must not be
+  // constructed directly but rather created by MLIR's type system within an
+  // arena allocator by calling ::construct.
+  explicit AccessPatternAttrStorage(KeyTy key)
+      : use_domain_size_(key.first), pattern_(key.second) {}
+
+  int use_domain_size_;
+
+  // The list of dimensions along which a Sair variable is accessed.
+  llvm::ArrayRef<int> pattern_;
+};
+
+AccessPatternAttr AccessPatternAttr::get(mlir::MLIRContext *context,
+                                         int use_domain_size,
+                                         llvm::ArrayRef<int> pattern) {
+  return Base::get(context, std::make_pair(use_domain_size, pattern));
+}
+
+AccessPatternAttr AccessPatternAttr::GetIdentity(mlir::MLIRContext *context,
+                                                 int num_dimensions,
+                                                 int use_domain_size) {
+  if (use_domain_size == -1) use_domain_size = num_dimensions;
+  assert(use_domain_size >= num_dimensions);
+  llvm::SmallVector<int, 4> pattern;
+  pattern.reserve(num_dimensions);
+  for (int i = 0; i < num_dimensions; ++i) pattern.push_back(i);
+  return AccessPatternAttr::get(context, use_domain_size, pattern);
+}
+
+AccessPatternAttr AccessPatternAttr::FromAffineMap(mlir::AffineMap map) {
+  assert(map.isProjectedPermutation());
+  llvm::SmallVector<int, 8> dimensions;
+
+  dimensions.reserve(map.getNumResults());
+  for (mlir::AffineExpr expr : map.getResults()) {
+    dimensions.push_back(expr.cast<mlir::AffineDimExpr>().getPosition());
+  }
+  return get(map.getContext(), map.getNumDims(), dimensions);
+}
+
+llvm::ArrayRef<int> AccessPatternAttr::Dimensions() const {
+  return getImpl()->pattern();
+}
+
+int AccessPatternAttr::UseDomainSize() const {
+  return getImpl()->use_domain_size();
+}
+
+AccessPatternAttr AccessPatternAttr::Compose(AccessPatternAttr other) const {
+  llvm::SmallVector<int, 4> new_access_pattern_dims;
+  new_access_pattern_dims.reserve(other.Dimensions().size());
+  for (int dimension : other.Dimensions()) {
+    if (dimension == kNoDimension) {
+      new_access_pattern_dims.push_back(kNoDimension);
+    } else {
+      new_access_pattern_dims.push_back(Dimensions()[dimension]);
+    }
+  }
+  return AccessPatternAttr::get(getContext(), UseDomainSize(),
+                                new_access_pattern_dims);
+}
+
+mlir::AffineMap AccessPatternAttr::AsAffineMap() const {
+  llvm::SmallVector<mlir::AffineExpr, 4> affine_exprs;
+  affine_exprs.reserve(Dimensions().size());
+  for (int index : *this) {
+    affine_exprs.push_back(mlir::getAffineDimExpr(index, getContext()));
+  }
+  return mlir::AffineMap::get(UseDomainSize(), 0, affine_exprs, getContext());
+}
+
+mlir::AffineMap AccessPatternAttr::InverseAffineMap() const {
+  return mlir::inversePermutation(AsAffineMap());
+}
+
+bool AccessPatternAttr::IsFullySpecified() const {
+  return llvm::all_of(*this, [](int pattern_dim) {
+    return pattern_dim != AccessPatternAttr::kNoDimension;
+  });
+}
+
+bool AccessPatternAttr::IsIdentity() const {
+  for (auto en : llvm::enumerate(getImpl()->pattern())) {
+    if (en.index() != en.value()) return false;
+  }
+  return true;
+}
+
+llvm::SmallBitVector AccessPatternAttr::DependencyMask() const {
+  llvm::SmallBitVector mask(UseDomainSize());
+  for (int dimension : Dimensions()) {
+    if (dimension != kNoDimension) mask.set(dimension);
+  }
+  return mask;
+}
+
+bool AccessPatternAttr::IsInjective(int num_dimensions) const {
+  llvm::SmallBitVector mask = DependencyMask();
+  mask.resize(num_dimensions);
+  return mask.all();
+}
+
+AccessPatternAttr AccessPatternAttr::ResizeUseDomain(int new_size) const {
+  assert(DependencyMask().find_last() < new_size);
+  if (new_size == UseDomainSize()) return *this;
+  return AccessPatternAttr::get(getContext(), new_size, Dimensions());
+}
+
+AccessPatternAttr AccessPatternAttr::Resize(int new_size) const {
+  int current_size = Dimensions().size();
+  if (new_size == current_size) return *this;
+  if (new_size < current_size) {
+    return AccessPatternAttr::get(getContext(), UseDomainSize(),
+                                  Dimensions().take_front(new_size));
+  }
+  llvm::SmallVector<int, 4> dimensions(Dimensions().begin(),
+                                       Dimensions().end());
+  dimensions.resize(new_size, kNoDimension);
+  return AccessPatternAttr::get(getContext(), UseDomainSize(), dimensions);
+}
+
+AccessPatternAttr AccessPatternAttr::ShiftRight(int offset, int start_from) {
+  llvm::SmallVector<int, 8> new_dimensions;
+  new_dimensions.reserve(Dimensions().size());
+  for (int dim : Dimensions()) {
+    new_dimensions.push_back(dim >= start_from ? dim + offset : dim);
+  }
+
+  return AccessPatternAttr::get(getContext(), UseDomainSize() + offset,
+                                new_dimensions);
+}
+
 DomainShapeDim::DomainShapeDim(RangeType type,
                                AccessPatternAttr dependency_pattern)
     : type_(type), dependency_pattern_(dependency_pattern) {
   assert(type != nullptr);
   assert(dependency_pattern != nullptr);
-  assert(
-      !dependency_pattern.DependsOnDimension(AccessPatternAttr::kNoDimension));
+  assert(dependency_pattern.IsFullySpecified());
 }
 
 DomainShapeDim DomainShapeDim::Inverse(AccessPatternAttr access_pattern,
                                        int num_dimensions) const {
   llvm::SmallVector<int, 4> new_access_pattern_dims;
-  new_access_pattern_dims.reserve(dependency_pattern_.Dimensions().size());
-  for (int dimension : dependency_pattern_.Dimensions()) {
-    auto it = find(access_pattern.Dimensions(), dimension);
-    assert(it != access_pattern.Dimensions().end());
-    int position = std::distance(access_pattern.Dimensions().begin(), it);
+  new_access_pattern_dims.reserve(dependency_pattern_.size());
+  for (int dimension : dependency_pattern_) {
+    auto it = llvm::find(access_pattern, dimension);
+    assert(it != access_pattern.end());
+    int position = std::distance(access_pattern.begin(), it);
     assert(position < num_dimensions);
     new_access_pattern_dims.push_back(position);
   }
@@ -148,8 +310,8 @@ bool DomainShapeAttr::IsPrefixOf(DomainShapeAttr other) {
 DomainShapeAttr DomainShapeAttr::Inverse(
     AccessPatternAttr access_pattern) const {
   llvm::SmallVector<DomainShapeDim, 4> shape;
-  shape.reserve(access_pattern.Dimensions().size());
-  for (int i = 0, e = access_pattern.Dimensions().size(); i < e; ++i) {
+  shape.reserve(access_pattern.size());
+  for (int i = 0, e = access_pattern.size(); i < e; ++i) {
     int use_dimension = access_pattern.Dimension(i);
     assert(use_dimension != AccessPatternAttr::kNoDimension);
     DomainShapeDim shape_dim = Dimensions()[use_dimension];
@@ -183,191 +345,6 @@ DomainShapeAttr DomainShapeAttr::ProductAt(int pos,
   }
 
   return DomainShapeAttr::get(getContext(), shape);
-}
-
-// Private implementation/storage class for sair::AccessPatternAttr. Instances
-// of this class are allocated by MLIR type system in a dedicated arena. Not
-// intended for direct use.
-class impl::AccessPatternAttrStorage : public mlir::AttributeStorage {
- public:
-  // Key type uniquely identifying AccessPatternAttrStorage for MLIR attribute
-  // unique-ing. This specific name is required by mlir::AttributeUniquer.
-  using KeyTy = std::pair<int, llvm::ArrayRef<int>>;
-
-  // Creates an AccessPatternAttrStorage using the provided allocator. Hook for
-  // MLIR attribute system.
-  static AccessPatternAttrStorage *construct(
-      mlir::AttributeStorageAllocator &allocator, const KeyTy &key) {
-    return new (allocator.allocate<AccessPatternAttrStorage>())
-        AccessPatternAttrStorage(
-            std::make_pair(key.first, allocator.copyInto(key.second)));
-  }
-
-  // Compares the AccessPatternAttrStorage identification key with this object.
-  bool operator==(const KeyTy &key) const {
-    return key.first == use_domain_size_ && key.second == pattern_;
-  }
-
-  // Returns the number of dimensions in the use domain.
-  int use_domain_size() const { return use_domain_size_; }
-
-  // Returns the list of dimensions along which a variable is accessed.
-  // Dimensions are identified by their position in the domain definition.
-  llvm::ArrayRef<int> pattern() const { return pattern_; }
-
- private:
-  // Constructs a storage object from the provided key. Such objects must not be
-  // constructed directly but rather created by MLIR's type system within an
-  // arena allocator by calling ::construct.
-  explicit AccessPatternAttrStorage(KeyTy key)
-      : use_domain_size_(key.first), pattern_(key.second) {}
-
-  int use_domain_size_;
-
-  // The list of dimensions along which a Sair variable is accessed.
-  llvm::ArrayRef<int> pattern_;
-};
-
-AccessPatternAttr AccessPatternAttr::get(mlir::MLIRContext *context,
-                                         int use_domain_size,
-                                         llvm::ArrayRef<int> pattern) {
-  return Base::get(context, std::make_pair(use_domain_size, pattern));
-}
-
-AccessPatternAttr AccessPatternAttr::GetIdentity(mlir::MLIRContext *context,
-                                                 int num_dimensions,
-                                                 int use_domain_size) {
-  if (use_domain_size == -1) use_domain_size = num_dimensions;
-  assert(use_domain_size >= num_dimensions);
-  llvm::SmallVector<int, 4> pattern;
-  pattern.reserve(num_dimensions);
-  for (int i = 0; i < num_dimensions; ++i) pattern.push_back(i);
-  return AccessPatternAttr::get(context, use_domain_size, pattern);
-}
-
-AccessPatternAttr AccessPatternAttr::FromAffineMap(mlir::AffineMap map) {
-  assert(map.isProjectedPermutation());
-  llvm::SmallVector<int, 8> dimensions;
-
-  dimensions.reserve(map.getNumResults());
-  for (mlir::AffineExpr expr : map.getResults()) {
-    dimensions.push_back(expr.cast<mlir::AffineDimExpr>().getPosition());
-  }
-  return get(map.getContext(), map.getNumDims(), dimensions);
-}
-
-llvm::ArrayRef<int> AccessPatternAttr::Dimensions() const {
-  return getImpl()->pattern();
-}
-
-int AccessPatternAttr::UseDomainSize() const {
-  return getImpl()->use_domain_size();
-}
-
-AccessPatternAttr AccessPatternAttr::Compose(AccessPatternAttr other) const {
-  llvm::SmallVector<int, 4> new_access_pattern_dims;
-  new_access_pattern_dims.reserve(other.Dimensions().size());
-  for (int dimension : other.Dimensions()) {
-    if (dimension == kNoDimension) {
-      new_access_pattern_dims.push_back(kNoDimension);
-    } else {
-      new_access_pattern_dims.push_back(Dimensions()[dimension]);
-    }
-  }
-  return AccessPatternAttr::get(getContext(), UseDomainSize(),
-                                new_access_pattern_dims);
-}
-
-llvm::SmallBitVector AccessPatternAttr::Apply(
-    const llvm::SmallBitVector &mask) const {
-  llvm::SmallBitVector new_mask(UseDomainSize());
-  for (int dimension : mask.set_bits()) {
-    if (Dimension(dimension) == kNoDimension) continue;
-    new_mask.set(Dimension(dimension));
-  }
-  return new_mask;
-}
-
-llvm::SmallBitVector AccessPatternAttr::ApplyInverse(
-    const llvm::SmallBitVector &mask) const {
-  llvm::SmallBitVector new_mask(Dimensions().size());
-  for (int i = 0, e = Dimensions().size(); i < e; ++i) {
-    if (Dimension(i) == kNoDimension) continue;
-    if (mask.test(Dimension(i))) {
-      new_mask.set(i);
-    }
-  }
-  return new_mask;
-}
-
-mlir::AffineMap AccessPatternAttr::AsAffineMap() const {
-  llvm::SmallVector<mlir::AffineExpr, 4> affine_exprs;
-  affine_exprs.reserve(Dimensions().size());
-  for (int index : *this) {
-    affine_exprs.push_back(mlir::getAffineDimExpr(index, getContext()));
-  }
-  return mlir::AffineMap::get(UseDomainSize(), 0, affine_exprs, getContext());
-}
-
-mlir::AffineMap AccessPatternAttr::InverseAffineMap() const {
-  return mlir::inversePermutation(AsAffineMap());
-}
-
-bool AccessPatternAttr::DependsOnDimension(int dimension) const {
-  return llvm::any_of(getImpl()->pattern(), [dimension](int pattern_dim) {
-    return pattern_dim == dimension;
-  });
-}
-
-bool AccessPatternAttr::IsIdentity() const {
-  for (auto en : llvm::enumerate(getImpl()->pattern())) {
-    if (en.index() != en.value()) return false;
-  }
-  return true;
-}
-
-llvm::SmallBitVector AccessPatternAttr::DependencyMask() const {
-  llvm::SmallBitVector mask(UseDomainSize());
-  for (int dimension : Dimensions()) {
-    if (dimension != kNoDimension) mask.set(dimension);
-  }
-  return mask;
-}
-
-bool AccessPatternAttr::IsInjective(int num_dimensions) const {
-  llvm::SmallBitVector mask = DependencyMask();
-  mask.resize(num_dimensions);
-  return mask.all();
-}
-
-AccessPatternAttr AccessPatternAttr::ResizeUseDomain(int new_size) const {
-  assert(DependencyMask().find_last() < new_size);
-  if (new_size == UseDomainSize()) return *this;
-  return AccessPatternAttr::get(getContext(), new_size, Dimensions());
-}
-
-AccessPatternAttr AccessPatternAttr::Resize(int new_size) const {
-  int current_size = Dimensions().size();
-  if (new_size == current_size) return *this;
-  if (new_size < current_size) {
-    return AccessPatternAttr::get(getContext(), UseDomainSize(),
-                                  Dimensions().take_front(new_size));
-  }
-  llvm::SmallVector<int, 4> dimensions(Dimensions().begin(),
-                                       Dimensions().end());
-  dimensions.resize(new_size, kNoDimension);
-  return AccessPatternAttr::get(getContext(), UseDomainSize(), dimensions);
-}
-
-AccessPatternAttr AccessPatternAttr::ShiftRight(int offset, int start_from) {
-  llvm::SmallVector<int, 8> new_dimensions;
-  new_dimensions.reserve(Dimensions().size());
-  for (int dim : Dimensions()) {
-    new_dimensions.push_back(dim >= start_from ? dim + offset : dim);
-  }
-
-  return AccessPatternAttr::get(getContext(), UseDomainSize() + offset,
-                                new_dimensions);
 }
 
 // Private implementation/storage class for sair::IteratorAttr. Instances

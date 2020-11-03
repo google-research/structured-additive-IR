@@ -37,7 +37,7 @@ static mlir::ArrayAttr InferLoopNest(mlir::ArrayAttr loop_nest,
     }
 
     int dimension = loop.iter().Dimension();
-    if (dimension >= access_pattern.Dimensions().size()) {
+    if (dimension >= access_pattern.size()) {
       break;
     }
 
@@ -155,7 +155,7 @@ class LoopNestConstraintsAnalysis {
       const Constraints &parent_constraint =
           ComputeConstraints(value.getDefiningOp(), iteration_spaces);
       for (int closed_dim : parent_constraint.closed_dimensions.set_bits()) {
-        if (closed_dim > access_pattern.Dimensions().size()) break;
+        if (closed_dim > access_pattern.size()) break;
         int op_dimension = access_pattern.Dimension(closed_dim);
         constraints.closed_dimensions.set(op_dimension);
       }
@@ -447,7 +447,7 @@ static mlir::LogicalResult VerifyDependency(
     // or be in a separate loop nest.
     if (dep_loop.iter().Rematerialize()) continue;
     int dep_dimension = dep_loop.iter().Dimension();
-    if (dep_dimension >= access_pattern.Dimensions().size()) continue;
+    if (dep_dimension >= access_pattern.size()) continue;
     int mapped_dimension = access_pattern.Dimension(dep_dimension);
     if (mapped_dimension == AccessPatternAttr::kNoDimension) continue;
     if (op_loop.iter().Rematerialize() ||

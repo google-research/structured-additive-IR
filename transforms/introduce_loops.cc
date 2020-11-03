@@ -277,7 +277,7 @@ llvm::SmallVector<mlir::Value, 4> EraseValue(mlir::ValueRange range,
 AccessPatternAttr EraseDimension(AccessPatternAttr access_pattern,
                                  int dimension) {
   mlir::SmallVector<int, 4> dimensions;
-  for (int d : access_pattern.Dimensions()) {
+  for (int d : access_pattern) {
     if (d < dimension) {
       dimensions.push_back(d);
     } else if (d > dimension) {
@@ -296,7 +296,7 @@ DomainShapeAttr EraseDimension(DomainShapeAttr shape, int dimension) {
   appendRange(shape_dimensions, shape.Dimensions().take_front(dimension));
 
   for (auto shape_dim : shape.Dimensions().drop_front(dimension + 1)) {
-    assert(!shape_dim.dependency_pattern().DependsOnDimension(dimension));
+    assert(!shape_dim.DependencyMask().test(dimension));
     shape_dimensions.emplace_back(
         shape_dim.type(),
         EraseDimension(shape_dim.dependency_pattern(), dimension));

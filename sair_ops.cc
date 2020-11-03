@@ -69,7 +69,7 @@ OptionalParseResult ParseOptionalValueAccess(
 
   llvm::SMLoc loc = parser.getCurrentLocation();
   access_pattern = ParseOptionalAccessPattern(parser, num_dimensions);
-  if (access_pattern.DependsOnDimension(AccessPatternAttr::kNoDimension)) {
+  if (!access_pattern.IsFullySpecified()) {
     return parser.emitError(loc)
            << "expected access pattern to a concrete element, got 'none'";
   }
@@ -1136,7 +1136,7 @@ void Print(SairMapReduceOp op, mlir::OpAsmPrinter &printer) {
 mlir::LogicalResult VerifyReductionAccessPattern(AccessPatternAttr pattern,
                                                  int num_parallel_dimensions) {
   return mlir::failure(
-      llvm::any_of(pattern.Dimensions(), [num_parallel_dimensions](int dim) {
+      llvm::any_of(pattern, [num_parallel_dimensions](int dim) {
         return dim >= num_parallel_dimensions;
       }));
 }

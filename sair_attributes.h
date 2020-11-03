@@ -83,17 +83,12 @@ class AccessPatternAttr
   // Indicates if the pattern contains no dimensions.
   bool empty() const { return Dimensions().empty(); }
 
+  // Indicates the number of dimensions.
+  int size() const { return Dimensions().size(); }
+
   // Returns the access pattern resulting from applying `this` and then `other`
   // to the current set of indices.
   AccessPatternAttr Compose(AccessPatternAttr other) const;
-
-  // Applies the access pattern to a dependency mask. This converts a mask in
-  // the accessed domain of the access pattern to a mask in the accessing domain
-  // of the access pattern.
-  llvm::SmallBitVector Apply(const llvm::SmallBitVector &mask) const;
-
-  // Converts the mask from the use domain to the def domain.
-  llvm::SmallBitVector ApplyInverse(const llvm::SmallBitVector &mask) const;
 
   // Converts the access pattern into an affine map from the domain of the
   // operation to the domain of the access value.
@@ -103,11 +98,9 @@ class AccessPatternAttr
   // null affine map if the pattern is not invertible.
   mlir::AffineMap InverseAffineMap() const;
 
-  // Indicates if the accessed element depends on the given dimension. Also
-  // works if `kNoDimension` is passed as argument, in which case it indicates
-  // if any dimension of the def domain is not mapped to a dimension of the
-  // use domain.
-  bool DependsOnDimension(int dimension) const;
+  // Indicates if each dimension of the accessed domain are mapped to a
+  // dimension of the accessing domain.
+  bool IsFullySpecified() const;
 
   // Indicates whether the access pattern is an identity, e.g. does not
   // transpose or otherwise modify any dimension.
