@@ -347,7 +347,8 @@ ParseResult ParseProjection(mlir::OpAsmParser &parser,
                            static_cast<int64_t>(num_projection_dimensions),
                            static_cast<int64_t>(1)}));
 
-  ValueType type = ValueType::get(context, shape, element_type);
+  ValueType type =
+      ValueType::get(context, shape, element_type).AccessedType(access_pattern);
   return parser.resolveOperand(value, type, result.operands);
 }
 

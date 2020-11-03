@@ -378,6 +378,18 @@ func @proj_last(%arg0: f32) {
   return
 }
 
+// CHECK-LABEL: @proj_last_different_shape
+func @proj_last_different_shape(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.static_range 4 : !sair.range
+    // CHECK: sair.proj_last of[d0:%{{.*}}] %{{.*}} : #sair.shape<d0:range>, f32
+    %2 = sair.proj_last of[d0:%1] %0 : #sair.shape<d0:range>, f32
+    sair.exit
+  }
+  return
+}
+
 // CHECK-LABEL: @fby
 
 func @fby(%arg0: f32) {
