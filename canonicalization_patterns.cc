@@ -1,5 +1,6 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Casting.h"
 #include "mlir/IR/Attributes.h"
@@ -12,6 +13,7 @@
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
 #include "sair_traits.h"
+#include "sair_types.h"
 #include "utils.h"
 
 namespace sair {
@@ -225,6 +227,15 @@ class DeduplicateMapInputsOutputs : public OpRewritePattern<SairMapOp> {
   }
 };
 
+// Finds a ValueOperand that wraps the same Value as the given OpOperand. Value
+// operands immediately follow domain operands in Sair ops.
+ValueOperand ValueOperandForOpOperand(OpOperand &operand) {
+  auto owner = cast<SairOp>(operand.getOwner());
+  ValueOperand value_operand =
+      owner.ValueOperands()[operand.getOperandNumber() - owner.domain().size()];
+  return value_operand;
+}
+
 // Remove a followed-by operation that depends on its own result, i.e.
 //   %1 = sair.fby[...] %0(...) then[...] %1(d0, d1, ..., dn)
 // and make its users use the init value instead.
@@ -242,15 +253,8 @@ class RemoveCyclicFby : public OpRewritePattern<SairFbyOp> {
     // uses of the same value by the same operation.
     for (OpOperand &operand : op.result().getUses()) {
       if (operand.getOwner() == op) continue;
-      auto owner = cast<SairOp>(operand.getOwner());
-      auto iter = llvm::find_if(owner.ValueOperands(),
-                                [&operand](const ValueOperand &vop) {
-                                  return vop.value() == operand.get();
-                                });
-      assert(iter != owner.ValueOperands().end() &&
-             "expected a user of !sair.value to provide ValueOperand");
 
-      ValueOperand value_operand = *iter;
+      ValueOperand value_operand = ValueOperandForOpOperand(operand);
       AccessPatternAttr access_pattern =
           value_operand.AccessPattern().Compose(op.Init().AccessPattern());
       value_operand.set_value(op.init());
@@ -262,6 +266,152 @@ class RemoveCyclicFby : public OpRewritePattern<SairFbyOp> {
            "expected only the self-reference to remain");
     op.erase();
 
+    return mlir::success();
+  }
+};
+
+// Given a bit vector indicating which dimensions are actually in use, populate
+// `parallel_dimensions` and `other_dimensions` with values from
+// `parallel_domain` and `other_domain`, respectively, that correspond to the
+// domain dimensions that are in use. Assume `other_domain` immediately follows
+// `parallel_domain` in a sequential dimension indexing scheme. Also set
+// `direct_mapping` to be an access pattern mapping original (combined) domain
+// dimensions to the new dimensions, and `inverted_mapping` with its inverse
+// that uses `kNoDimension` for dimensions that were removed.
+void RemoveUnusedDomainDimensions(
+    mlir::MLIRContext *context, const llvm::SmallBitVector &used_dimensions,
+    mlir::ValueRange parallel_domain, mlir::ValueRange other_domain,
+    llvm::SmallVectorImpl<mlir::Value> &parallel_dimensions,
+    llvm::SmallVectorImpl<mlir::Value> &other_dimensions,
+    AccessPatternAttr &inverted_mapping, AccessPatternAttr &direct_mapping) {
+  assert(used_dimensions.size() ==
+         parallel_domain.size() + other_domain.size());
+
+  int num_parallel_dims = parallel_domain.size();
+  llvm::SmallVector<int, 4> remapping(num_parallel_dims + other_domain.size(),
+                                      AccessPatternAttr::kNoDimension);
+  llvm::SmallVector<int, 4> inverted;
+  int new_dim = 0;
+  for (int dimension : used_dimensions.set_bits()) {
+    if (dimension >= num_parallel_dims) {
+      other_dimensions.push_back(other_domain[dimension - num_parallel_dims]);
+    } else {
+      parallel_dimensions.push_back(parallel_domain[dimension]);
+    }
+    remapping[dimension] = new_dim++;
+    inverted.push_back(dimension);
+  }
+
+  inverted_mapping =
+      AccessPatternAttr::get(context, used_dimensions.count(), remapping);
+  direct_mapping = AccessPatternAttr::get(context, remapping.size(), inverted);
+}
+
+// Update all uses of `value` to use `newValue` instead, and compose the access
+// pattern with `patternComponent`.
+void UpdateValueUses(mlir::Value value, mlir::Value newValue,
+                     AccessPatternAttr patternComponent) {
+  for (OpOperand &operand : value.getUses()) {
+    ValueOperand value_operand = ValueOperandForOpOperand(operand);
+    value_operand.SetAccessPattern(
+        value_operand.AccessPattern().Compose(patternComponent));
+    value_operand.set_value(newValue);
+  }
+}
+
+// Canonicalization pattern that drops unused dimensions from projection ops.
+template <typename OpTy>
+class RemoveUnreferencedDims : public OpRewritePattern<OpTy> {
+  static_assert(llvm::is_one_of<OpTy, SairProjAnyOp, SairProjLastOp>::value,
+                "pattern applies to projection ops only");
+
+ public:
+  using OpRewritePattern<OpTy>::OpRewritePattern;
+
+  mlir::LogicalResult matchAndRewrite(
+      OpTy op, PatternRewriter &rewriter) const override {
+    // Collect dimensions that appear in the access pattern.
+    llvm::SmallBitVector used_dimensions(op.domain().size());
+    used_dimensions |= op.Value().AccessPattern().DependencyMask();
+    if (used_dimensions.all()) return mlir::failure();
+
+    // Prepare op components with unused dimensions removed.
+    AccessPatternAttr inverted_mapping, direct_mapping;
+    llvm::SmallVector<mlir::Value, 4> parallel_dimensions,
+        projection_dimensions;
+    RemoveUnusedDomainDimensions(op.getContext(), used_dimensions,
+                                 op.parallel_domain(), op.projection_domain(),
+                                 parallel_dimensions, projection_dimensions,
+                                 inverted_mapping, direct_mapping);
+
+    // The result type has the rank equal to that of the parallel domain. Trim
+    // the mapping accordingly.
+    AccessPatternAttr partial_direct_mapping =
+        direct_mapping.Resize(parallel_dimensions.size());
+
+    // Recreate the op because we may be changing the result type. The access
+    // patterns needs to be precomposed with the inverted mapping, i.e. the
+    // mapping from the old iteration space to the new iteration space is
+    // applied first.
+    auto new_op = rewriter.create<OpTy>(
+        op.getLoc(),
+        op.getType().template cast<ValueType>().AccessedType(
+            partial_direct_mapping),
+        parallel_dimensions, projection_dimensions,
+        rewriter.getArrayAttr(
+            inverted_mapping.Compose(op.Value().AccessPattern())),
+        op.value(), op.shape().Inverse(direct_mapping), op.memory_spaceAttr());
+    new_op.setDialectAttrs(op.getDialectAttrs());
+
+    // Replace the original op.
+    UpdateValueUses(op, new_op, partial_direct_mapping);
+    rewriter.eraseOp(op);
+
+    return mlir::success();
+  }
+};
+
+// Canonicalization pattern that drops unused dimensions from the followed-by
+// operation.
+template <>
+class RemoveUnreferencedDims<SairFbyOp> : public OpRewritePattern<SairFbyOp> {
+ public:
+  using OpRewritePattern<SairFbyOp>::OpRewritePattern;
+
+  mlir::LogicalResult matchAndRewrite(
+      SairFbyOp op, PatternRewriter &rewriter) const override {
+    // Collect dimensions that appear in access patterns.
+    llvm::SmallBitVector used_dimensions(op.domain().size());
+    used_dimensions |= op.Value().AccessPattern().DependencyMask();
+    used_dimensions |= op.Init().AccessPattern().DependencyMask();
+    if (used_dimensions.all()) return mlir::failure();
+
+    // Prepare op components with unused dimensions removed.
+    AccessPatternAttr inverted_mapping, direct_mapping;
+    llvm::SmallVector<mlir::Value, 4> parallel_dimensions,
+        sequential_dimensions;
+    RemoveUnusedDomainDimensions(op.getContext(), used_dimensions,
+                                 op.parallel_domain(), op.sequential_domain(),
+                                 parallel_dimensions, sequential_dimensions,
+                                 inverted_mapping, direct_mapping);
+
+    // Recreate the op because we may be changing the result type. The access
+    // patterns needs to be precomposed with the inverted mapping, i.e. the
+    // mapping from the old iteration space to the new iteration space is
+    // applied first.
+    auto new_op = rewriter.create<SairFbyOp>(
+        op.getLoc(),
+        op.getType().cast<ValueType>().AccessedType(direct_mapping),
+        parallel_dimensions, sequential_dimensions,
+        rewriter.getArrayAttr(
+            {inverted_mapping.Compose(op.Init().AccessPattern()),
+             inverted_mapping.Compose(op.Value().AccessPattern())}),
+        op.init(), op.value(), op.memory_spaceAttr());
+    new_op.setDialectAttrs(op.getDialectAttrs());
+
+    // Replace the original op.
+    UpdateValueUses(op, new_op, direct_mapping);
+    rewriter.eraseOp(op);
     return mlir::success();
   }
 };
@@ -286,7 +436,7 @@ void SairFromMemRefOp::getCanonicalizationPatterns(
 void SairFbyOp::getCanonicalizationPatterns(
     mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>();
-  patterns.insert<RemoveCyclicFby>(context);
+  patterns.insert<RemoveCyclicFby, RemoveUnreferencedDims<SairFbyOp>>(context);
 }
 
 void SairFromScalarOp::getCanonicalizationPatterns(
@@ -302,11 +452,13 @@ void SairMapReduceOp::getCanonicalizationPatterns(
 void SairProjAnyOp::getCanonicalizationPatterns(
     mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>();
+  patterns.insert<RemoveUnreferencedDims<SairProjAnyOp>>(context);
 }
 
 void SairProjLastOp::getCanonicalizationPatterns(
     mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>();
+  patterns.insert<RemoveUnreferencedDims<SairProjLastOp>>(context);
 }
 
 void SairDynRangeOp::getCanonicalizationPatterns(

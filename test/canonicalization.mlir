@@ -107,3 +107,68 @@ func @remove_cyclic_fby(%arg0: f32, %arg1: memref<?x?x?x?xf32>) {
   }
   return
 }
+
+// CHECK-LABEL: @remove_useless_dims_fby
+func @remove_useless_dims_fby(%arg0: f32, %arg1: memref<?x?x?x?x?xf32>) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    // CHECK: %[[R:.*]] = sair.static_range
+    %1 = sair.static_range 8 : !sair.range
+    %2 = sair.copy[d0:%1] %0 : !sair.value<d0:range, f32>
+    %3 = sair.copy[d0:%1, d1:%1] %0 : !sair.value<d0:range x d1:range, f32>
+    // CHECK: %[[FBY:.*]] = sair.fby[d0:%[[R]], d1:%[[R]]] %{{.*}}(d1)
+    // CHECK:                   then[d2:%[[R]]] %{{.*}}(d0, d2)
+    // CHECK:                   {test.foo = "bar"}
+    // CHECK:                   !sair.value<d0:range x d1:range x d2:range, f32>
+    %4 = sair.fby[d0:%1, d1:%1, d2:%1] %2(d2) then[d3:%1, d4:%1] %3(d0, d4) {test.foo="bar"} : !sair.value<d0:range x d1:range x d2:range x d3:range x d4:range, f32>
+    // CHECK: sair.to_memref[d0:%[[R]], d1:%[[R]], d2:%[[R]], d3:%[[R]], d4:%[[R]]]
+    // CHECK:               %[[FBY]](d4, d2, d0), %{{.*}}
+    sair.to_memref[d0:%1, d1:%1, d2:%1, d3:%1, d4:%1] %4(d4, d3, d2, d1, d0), %arg1 : memref<?x?x?x?x?xf32>
+    sair.exit
+  }
+  return
+}
+
+// CHECK-LABEL: @remove_useless_dims_proj
+func @remove_useless_dims_proj(%arg0: f32, %arg2: memref<?x?x?xf32>, %arg3: index) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    // CHECK: %[[R:.*]] = sair.static_range
+    %1 = sair.static_range 8 : !sair.range
+    %2 = sair.copy[d0:%1, d1:%1, d2:%1] %0 : !sair.value<d0:range x d1:range x d2:range, f32>
+    // CHECK: %[[PROJ:.*]] = sair.proj_any[d0:%[[R]], d1:%[[R]]]
+    // CHECK:                           of[d2:%[[R]]] %{{.*}}(d0, d2, d1)
+    // CHECK:                #sair.shape<d0:range x d1:range x d2:range>, f32
+    %3 = sair.proj_any[d0:%1, d1:%1, d2:%1] of[d3:%1, d4:%1] %2(d1, d4, d2) : #sair.shape<d0:range x d1:range x d2:range x d3:range x d4:range>, f32
+    // CHECK: sair.to_memref[d0:%[[R]], d1:%[[R]], d2:%[[R]]]
+    // CHECK:               %[[PROJ]](d1, d2), %{{.*}}
+    sair.to_memref[d0:%1, d1:%1, d2:%1] %3(d0, d1, d2), %arg2: memref<?x?x?xf32>
+    sair.exit
+  }
+  return
+}
+
+// CHECK-LABEL: @remove_useless_dims_proj_dependent
+func @remove_useless_dims_proj_dependent(%arg0: f32, %arg2: memref<?x?x?xf32>, %arg3: index) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    // CHECK: %[[R:.*]] = sair.static_range
+    %1 = sair.static_range 8 : !sair.range
+    %4 = sair.from_scalar %arg3 : !sair.value<(), index>
+    // CHECK: %[[DR:.*]] = sair.dyn_range
+    %5 = sair.dyn_range %4 : !sair.range
+    %6 = sair.copy[d0:%5] %4 : !sair.value<d0:range, index>
+    // CHECK: %[[DRD:.*]] = sair.dyn_range
+    %7 = sair.dyn_range[d0:%5] %6(d0) : !sair.range<d0:range>
+    %8 = sair.copy[d0:%5, d1:%7, d2:%1] %0 : !sair.value<d0:range x d1:range(d0) x d2:range, f32>
+    // CHECK: %[[PROJ:.*]] = sair.proj_any[d0:%[[DR]], d1:%[[R]]]
+    // CHECK:                           of[d2:%[[DRD]]] %{{.*}}(d0, d2, d1)
+    // CHECK:                #sair.shape<d0:range x d1:range x d2:range(d0)>, f32
+    %9 = sair.proj_any[d0:%1, d1:%5, d2:%1] of[d3:%1, d4:%7] %8(d1, d4, d2) : #sair.shape<d0:range x d1:range x d2:range x d3:range x d4:range(d1)>, f32
+    // CHECK: sair.to_memref[d0:%[[R]], d1:%[[DR]], d2:%[[R]]]
+    // CHECK:               %[[PROJ]](d1, d2), %{{.*}}
+    sair.to_memref[d0:%1, d1:%5, d2:%1] %9(d0, d1, d2), %arg2: memref<?x?x?xf32>
+    sair.exit
+  }
+  return
+}
