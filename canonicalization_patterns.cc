@@ -14,7 +14,6 @@
 #include "sair_ops.h"
 #include "sair_traits.h"
 #include "sair_types.h"
-#include "utils.h"
 
 namespace sair {
 
@@ -26,7 +25,7 @@ AccessPatternAttr ExtendWithIdentity(AccessPatternAttr old_pattern,
                                      int domain_size, int new_pattern_size) {
   llvm::SmallVector<int, 4> dimensions;
   dimensions.reserve(new_pattern_size);
-  appendRange(dimensions, old_pattern);
+  llvm::append_range(dimensions, old_pattern);
   for (int i = dimensions.size(); i < new_pattern_size; ++i) {
     dimensions.push_back(i);
   }
@@ -62,16 +61,16 @@ bool SimplifyProjOp(ValueOperand &use, ProjOp op,
   llvm::SmallVector<mlir::Value, 4> projection_domain;
   projection_domain.reserve(op.projection_domain().size() +
                             prev_op.projection_domain().size());
-  appendRange(projection_domain, op.projection_domain());
-  appendRange(projection_domain, prev_op.projection_domain());
+  llvm::append_range(projection_domain, op.projection_domain());
+  llvm::append_range(projection_domain, prev_op.projection_domain());
 
   llvm::SmallVector<DomainShapeDim, 4> shape_dims;
   shape_dims.reserve(op.shape().NumDimensions() +
                      prev_op.projection_domain().size());
-  appendRange(shape_dims, op.shape().Dimensions());
+  llvm::append_range(shape_dims, op.shape().Dimensions());
   llvm::ArrayRef<DomainShapeDim> prev_shape_dims = prev_op.shape().Dimensions();
-  appendRange(shape_dims,
-              prev_op.shape().Dimensions().drop_front(prev_op.results_rank()));
+  llvm::append_range(shape_dims, prev_op.shape().Dimensions().drop_front(
+                                     prev_op.results_rank()));
   DomainShapeAttr shape = DomainShapeAttr::get(op.getContext(), shape_dims);
 
   AccessPatternAttr new_access_pattern =

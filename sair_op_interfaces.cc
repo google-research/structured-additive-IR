@@ -38,7 +38,6 @@
 #include "sair_ops.h"
 #include "sair_traits.h"
 #include "sair_types.h"
-#include "utils.h"
 
 namespace sair {
 
@@ -126,7 +125,7 @@ void SetMemorySpace(int result, llvm::Optional<int> memory_space,
     auto unit_attr = mlir::UnitAttr::get(op->getContext());
     memory_spaces.resize(op->getNumResults(), unit_attr);
   } else {
-    appendRange(memory_spaces, old_attribute.getValue());
+    llvm::append_range(memory_spaces, old_attribute.getValue());
   }
   if (memory_space.hasValue()) {
     memory_spaces[result] = mlir::IntegerAttr::get(

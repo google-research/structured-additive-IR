@@ -30,7 +30,6 @@
 #include "sair_ops.h"
 #include "sair_types.h"
 #include "transforms/lowering_pass_classes.h"
-#include "utils.h"
 
 namespace sair {
 namespace {
@@ -114,7 +113,7 @@ SairCopyOp RecreateOp(SairCopyOp op, mlir::TypeRange result_types,
                       DomainShapeAttr domain_shape, mlir::OpBuilder &builder) {
   assert(result_types.size() == 1);
   auto domain = llvm::to_vector<8>(op.domain());
-  appendRange(domain, extra_domain);
+  llvm::append_range(domain, extra_domain);
   mlir::ArrayAttr access_patterns = AccessPatternsExtendUseDomain(
       op.access_pattern_array(), extra_domain.size());
   return builder.create<SairCopyOp>(op.getLoc(), result_types[0], domain,
@@ -131,7 +130,7 @@ SairMapOp RecreateOp(SairMapOp op, mlir::TypeRange result_types,
                      mlir::ArrayAttr loop_nest_attr,
                      DomainShapeAttr domain_shape, mlir::OpBuilder &builder) {
   auto domain = llvm::to_vector<8>(op.domain());
-  appendRange(domain, extra_domain);
+  llvm::append_range(domain, extra_domain);
   mlir::ArrayAttr access_patterns = AccessPatternsExtendUseDomain(
       op.access_pattern_array(), extra_domain.size());
   auto new_op = builder.create<SairMapOp>(
@@ -155,7 +154,7 @@ SairMapReduceOp RecreateOp(SairMapReduceOp op, mlir::TypeRange result_types,
   auto parallel_domain = llvm::to_vector<8>(op.parallel_domain());
   mlir::ArrayAttr access_pattern_attr = AccessPatternsInsertDims(
       op.access_pattern_array(), parallel_domain.size(), extra_domain.size());
-  appendRange(parallel_domain, extra_domain);
+  llvm::append_range(parallel_domain, extra_domain);
 
   auto new_op = builder.create<SairMapReduceOp>(
       op.getLoc(), result_types, parallel_domain, op.reduction_domain(),

@@ -15,6 +15,7 @@
 #include <memory>
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Function.h"
@@ -24,7 +25,6 @@
 #include "sair_attributes.h"
 #include "sair_ops.h"
 #include "transforms/lowering_pass_classes.h"
-#include "utils.h"
 
 namespace sair {
 namespace {
@@ -58,7 +58,8 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
   // reduction domains of the sair.map_reduce.
   llvm::SmallVector<Value, 8> domain;
   domain.reserve(parallel_domain.size() + reduction_domain.size());
-  appendRange(appendRange(domain, parallel_domain), reduction_domain);
+  llvm::append_range(domain, parallel_domain);
+  llvm::append_range(domain, reduction_domain);
 
   // Split the access pattern array into "initalizer" and "input" parts.
   llvm::ArrayRef<mlir::Attribute> op_access_patterns =
@@ -97,13 +98,13 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
   }
 
   // Forward sair.map_reduce inputs as trailing arguments of the sair.map.
-  appendRange(map_operands, op.inputs());
+  llvm::append_range(map_operands, op.inputs());
 
   // The values produced by sair.fby are accessed using identity patterns and
   // the original inputs retain their patterns.
   SmallVector<mlir::Attribute, 4> access_patterns(fbys.size(),
                                                   identity_access_pattern);
-  appendRange(access_patterns, input_access_patterns);
+  llvm::append_range(access_patterns, input_access_patterns);
   auto map_access_pattern = builder.getArrayAttr(access_patterns);
 
   // The shapes of new result types are same as the op shapes since we

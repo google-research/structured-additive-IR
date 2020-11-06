@@ -40,7 +40,6 @@
 #include "sair_ops.h"
 #include "sair_types.h"
 #include "transforms/lowering_pass_classes.h"
-#include "utils.h"
 
 namespace sair {
 namespace {
@@ -266,8 +265,8 @@ llvm::SmallVector<mlir::Value, 4> EraseValue(mlir::ValueRange range,
                                              int position) {
   llvm::SmallVector<mlir::Value, 4> new_range;
   new_range.reserve(range.size() - 1);
-  appendRange(new_range, range.take_front(position));
-  appendRange(new_range, range.drop_front(position + 1));
+  llvm::append_range(new_range, range.take_front(position));
+  llvm::append_range(new_range, range.drop_front(position + 1));
   return new_range;
 }
 
@@ -293,7 +292,8 @@ AccessPatternAttr EraseDimension(AccessPatternAttr access_pattern,
 DomainShapeAttr EraseDimension(DomainShapeAttr shape, int dimension) {
   llvm::SmallVector<DomainShapeDim, 4> shape_dimensions;
   shape_dimensions.reserve(shape.NumDimensions() - 1);
-  appendRange(shape_dimensions, shape.Dimensions().take_front(dimension));
+  llvm::append_range(shape_dimensions,
+                     shape.Dimensions().take_front(dimension));
 
   for (auto shape_dim : shape.Dimensions().drop_front(dimension + 1)) {
     assert(!shape_dim.DependencyMask().test(dimension));
@@ -631,11 +631,11 @@ void Fuse(SairMapOp first_op, SairMapOp second_op, Driver &driver) {
   }
 
   // Gather operands for the new operation.
-  appendRange(inputs, first_op.inputs());
+  llvm::append_range(inputs, first_op.inputs());
   AccessPatternAttr first_to_second_pattern_attr = AccessPatternAttr::get(
       driver.getContext(), first_op.domain().size(), first_to_second_pattern);
 
-  appendRange(access_patterns, first_op.access_pattern_array());
+  llvm::append_range(access_patterns, first_op.access_pattern_array());
   for (ValueOperand operand : second_op.ValueOperands()) {
     if (operand.value().getDefiningOp() == first_op) {
       auto it = llvm::find(first_op.getResults(), operand.value());
@@ -656,8 +656,8 @@ void Fuse(SairMapOp first_op, SairMapOp second_op, Driver &driver) {
   int num_results = first_op.getNumResults() + second_op.getNumResults();
   llvm::SmallVector<mlir::Value, 4> returned_scalars;
   returned_scalars.reserve(num_results);
-  appendRange(returned_scalars, first_return->getOperands());
-  appendRange(returned_scalars, second_return->getOperands());
+  llvm::append_range(returned_scalars, first_return->getOperands());
+  llvm::append_range(returned_scalars, second_return->getOperands());
   driver.setInsertionPoint(second_return);
   driver.replaceOpWithNewOp<SairReturnOp>(second_return, returned_scalars);
 
@@ -668,15 +668,16 @@ void Fuse(SairMapOp first_op, SairMapOp second_op, Driver &driver) {
   // Gather return types for the new sair.map operation.
   llvm::SmallVector<mlir::Type, 4> result_types;
   result_types.reserve(num_results);
-  appendRange(result_types, first_op.getResultTypes());
-  appendRange(result_types, second_op.getResultTypes());
+  llvm::append_range(result_types, first_op.getResultTypes());
+  llvm::append_range(result_types, second_op.getResultTypes());
 
   // Gather memory space attributes for the new sair.map operation.
   llvm::SmallVector<mlir::Attribute, 4> memory_spaces;
   memory_spaces.reserve(num_results);
   auto append_memory_spaces = [&](SairMapOp op) {
     if (op.memory_space().hasValue()) {
-      appendRange(memory_spaces, op.memory_space().getValue().getValue());
+      llvm::append_range(memory_spaces,
+                         op.memory_space().getValue().getValue());
     } else {
       memory_spaces.append(op.getNumResults(), driver.getUnitAttr());
     }

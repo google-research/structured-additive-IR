@@ -14,6 +14,7 @@
 
 #include <memory>
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/SCF/SCF.h"
@@ -31,7 +32,6 @@
 #include "sair_ops.h"
 #include "transforms/default_lowering_attributes.h"
 #include "transforms/lowering_pass_classes.h"
-#include "utils.h"
 
 namespace sair {
 namespace {
@@ -382,7 +382,7 @@ class InternMemRefsIntoMap : public mlir::OpConversionPattern<SairMapOp> {
     auto op = cast<SairMapOp>(original.getOperation());
     SairMapOpAdaptor adaptor(operands, op.getOperation()->getAttrDictionary());
     auto inputs = llvm::to_vector<8>(adaptor.inputs());
-    appendRange(inputs, memrefs);
+    llvm::append_range(inputs, memrefs);
     mlir::ArrayAttr access_patterns =
         Append0DAccesses(adaptor.access_pattern_array(), memrefs.size(),
                          op.domain().size(), ctx);
@@ -420,7 +420,7 @@ class InternMemRefsIntoMapReduce
     SairMapReduceOpAdaptor adaptor(operands,
                                    op.getOperation()->getAttrDictionary());
     auto inputs = llvm::to_vector<8>(adaptor.inputs());
-    appendRange(inputs, memrefs);
+    llvm::append_range(inputs, memrefs);
     mlir::ArrayAttr access_patterns =
         Append0DAccesses(adaptor.access_pattern_array(), memrefs.size(),
                          op.domain().size(), ctx);
@@ -566,27 +566,29 @@ void UpdateUseInPlaceAfterMaterialization(
 
   llvm::SmallVector<mlir::Type, 4> result_types;
   result_types.reserve(op.getNumResults() - 1);
-  appendRange(result_types, op.getResultTypes().take_front(init_position));
-  appendRange(result_types, op.getResultTypes().drop_front(init_position + 1));
+  llvm::append_range(result_types,
+                     op.getResultTypes().take_front(init_position));
+  llvm::append_range(result_types,
+                     op.getResultTypes().drop_front(init_position + 1));
 
   llvm::SmallVector<mlir::Value, 4> init_operands;
   init_operands.reserve(op.getNumResults() - 1);
-  appendRange(init_operands, op.inits().take_front(init_position));
-  appendRange(init_operands, op.inits().drop_front(init_position + 1));
+  llvm::append_range(init_operands, op.inits().take_front(init_position));
+  llvm::append_range(init_operands, op.inits().drop_front(init_position + 1));
 
   llvm::SmallVector<mlir::Value, 4> input_operands;
   input_operands.reserve(op.inputs().size() + 1);
-  appendRange(input_operands, op.inputs());
+  llvm::append_range(input_operands, op.inputs());
   input_operands.push_back(memref_value);
 
   llvm::SmallVector<mlir::Attribute, 8> access_pattern_array;
   access_pattern_array.reserve(op.access_pattern_array().size());
   llvm::ArrayRef<mlir::Attribute> old_access_patterns =
       op.access_pattern_array().getValue();
-  appendRange(access_pattern_array,
-              old_access_patterns.take_front(init_position));
-  appendRange(access_pattern_array,
-              old_access_patterns.drop_front(init_position + 1));
+  llvm::append_range(access_pattern_array,
+                     old_access_patterns.take_front(init_position));
+  llvm::append_range(access_pattern_array,
+                     old_access_patterns.drop_front(init_position + 1));
   access_pattern_array.push_back(
       AccessPatternAttr::get(op.getContext(), domain_size, {}));
   mlir::ArrayAttr access_pattern_attr =
@@ -596,8 +598,10 @@ void UpdateUseInPlaceAfterMaterialization(
   memory_spaces.reserve(op.getNumResults() - 1);
   llvm::ArrayRef<mlir::Attribute> old_memory_spaces =
       op.memory_space().getValue().getValue();
-  appendRange(memory_spaces, old_memory_spaces.take_front(init_position));
-  appendRange(memory_spaces, old_memory_spaces.drop_front(init_position + 1));
+  llvm::append_range(memory_spaces,
+                     old_memory_spaces.take_front(init_position));
+  llvm::append_range(memory_spaces,
+                     old_memory_spaces.drop_front(init_position + 1));
   mlir::ArrayAttr memory_space_attr = builder.getArrayAttr(memory_spaces);
 
   SairMapReduceOp new_op = builder.create<SairMapReduceOp>(
