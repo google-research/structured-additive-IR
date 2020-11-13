@@ -47,7 +47,8 @@ void sair::RegisterSairPasses() {
 
   mlir::registerPassPipeline(
       "convert-sair-to-loop", "converts Sair operations to Loop dialect",
-      [](mlir::OpPassManager &pm, llvm::StringRef options) {
+      [](mlir::OpPassManager &pm, llvm::StringRef options,
+         function_ref<LogicalResult(const Twine &)> errorHandler) {
         if (!options.empty()) return mlir::failure();
         sair::CreateSairToLoopConversionPipeline(&pm);
         return mlir::success();
@@ -56,7 +57,8 @@ void sair::RegisterSairPasses() {
 
   mlir::registerPassPipeline(
       "convert-sair-to-llvm", "converts Sair operations to LLVM",
-      [](mlir::OpPassManager &pm, llvm::StringRef options) {
+      [](mlir::OpPassManager &pm, llvm::StringRef options,
+         function_ref<LogicalResult(const Twine &)> errorHandler) {
         if (!options.empty()) return mlir::failure();
         sair::CreateSairToLLVMConversionPipeline(&pm);
         return mlir::success();
@@ -66,7 +68,8 @@ void sair::RegisterSairPasses() {
   mlir::registerPassPipeline(
       "sair-default-lowering-attributes",
       "annotates Sair operations with the default lowering strategy",
-      [](mlir::OpPassManager &pm, llvm::StringRef options) {
+      [](mlir::OpPassManager &pm, llvm::StringRef options,
+         function_ref<LogicalResult(const Twine &)> errorHandler) {
         if (!options.empty()) return mlir::failure();
         sair::CreateDefaultLoweringAttributesPipeline(&pm);
         return mlir::success();
