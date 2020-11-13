@@ -1,27 +1,27 @@
 // RUN: sair-opt -allow-unregistered-dialect %s | sair-opt -allow-unregistered-dialect | FileCheck %s
 
 // CHECK: -> !sair.range
-func @range_type() -> !sair.range
+func private @range_type() -> !sair.range
 
 // Make sure empty type-dependence list is dropped.
 // CHECK: -> !sair.range
 // CHECK-NOT: <()>
-func @independent_range_type() -> !sair.range<()>
+func private @independent_range_type() -> !sair.range<()>
 
 // CHECK: -> !sair.range<d0:range>
-func @dependent_range_type_1() -> !sair.range<d0:range>
+func private @dependent_range_type_1() -> !sair.range<d0:range>
 
 // CHECK: -> !sair.value<(), f32>
-func @value_type_empty_domain() -> !sair.value<(), f32>
+func private @value_type_empty_domain() -> !sair.value<(), f32>
 
 // CHECK: -> !sair.value<d0:range x d1:range, f32>
-func @value_type() -> !sair.value<d0:range x d1:range, f32>
+func private @value_type() -> !sair.value<d0:range x d1:range, f32>
 
 // CHECK: -> !sair.range<d0:range x d1:range(d0)>
-func @dependent_dimensions() -> !sair.range<d0:range x d1:range(d0)>
+func private @dependent_dimensions() -> !sair.range<d0:range x d1:range(d0)>
 
 // CHECK: -> !sair.range<d0:range x d1:range(d0) x d2:range(d0, d1)>
-func @dependent_dimensions_2()
+func private @dependent_dimensions_2()
   -> !sair.range<d0:range x d1:range(d0) x d2:range(d0, d1)>
 
 // CHECK-LABEL: @sair_program
