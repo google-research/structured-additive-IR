@@ -134,7 +134,7 @@ ValueType ValueType::get(mlir::MLIRContext *context, mlir::Type element_type) {
 mlir::Type ValueType::ElementType() const { return getImpl()->element_type(); }
 
 ValueType ValueType::AccessedType(AccessPatternAttr access_pattern) const {
-  return ValueType::get(getContext(), Shape().Inverse(access_pattern),
+  return ValueType::get(getContext(), Shape().AccessedShape(access_pattern),
                         ElementType());
 }
 

@@ -425,3 +425,11 @@ func @undef() {
   }
   return
 }
+
+// CHECK-LABEL: @access_pattern_expr_attr
+func @access_pattern_expr_attr() {
+  // CHECK: "foo"() {access_pattern_expr = #sair.pattern_expr<d0>}
+  "foo"() {access_pattern_expr = #sair.pattern_expr<d0>} : () -> ()
+  // CHECK: "bar"() {access_pattern_expr = #sair.pattern_expr<none>}
+  "bar"() {access_pattern_expr = #sair.pattern_expr<none>} : () -> ()
+}

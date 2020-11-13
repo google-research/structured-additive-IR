@@ -260,7 +260,9 @@ mlir::LogicalResult Rematerialize(
           assert(iter != loop_nest_array.end() &&
                  "rematerialized dimension depends on a dimension missing from "
                  "loop_nest attribute");
-          return iter->cast<LoopAttr>().iter().Dimension();
+          int dimension = iter->cast<LoopAttr>().iter().Dimension();
+          return AccessPatternDimExpr::get(dimension, ctx)
+              .cast<AccessPatternExpr>();
         });
     auto dependency_pattern = AccessPatternAttr::get(
         ctx, loop.iter().Dimension(), llvm::to_vector<4>(dependencies_range));

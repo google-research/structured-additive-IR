@@ -297,7 +297,7 @@ ParseResult ParseToMemRefOp(mlir::OpAsmParser &parser,
 
   mlir::MLIRContext *context = parser.getBuilder().getContext();
   auto shape = DomainShapeAttr::HyperRectangular(context, type.getRank());
-  DomainShapeAttr value_shape = shape.Inverse(access_pattern);
+  DomainShapeAttr value_shape = shape.AccessedShape(access_pattern);
   auto value_type = ValueType::get(context, value_shape, type.getElementType());
   return failure(ResolveDomain(parser, shape, domain, result) ||
                  parser.resolveOperand(value, value_type, result.operands) ||
@@ -401,8 +401,8 @@ ParseResult ParseExitOp(mlir::OpAsmParser &parser,
   auto domain_shape = DomainShapeAttr::get(builder.getContext());
   for (auto [operand, element_type, pattern] :
        llvm::zip(operands, element_types, patterns)) {
-    mlir::Type expected_type =
-        builder.getType<ValueType>(domain_shape.Inverse(pattern), element_type);
+    mlir::Type expected_type = builder.getType<ValueType>(
+        domain_shape.AccessedShape(pattern), element_type);
     if (failed(
             parser.resolveOperand(operand, expected_type, result.operands))) {
       return mlir::failure();
@@ -685,8 +685,7 @@ void PrintValueAccess(ValueOperand value, OpAsmPrinter &printer) {
   printer << value.value();
   if (value.AccessPattern().empty()) return;
   printer << "(";
-  llvm::interleaveComma(value.AccessPattern(), printer,
-                        [&](int dim) { printer << "d" << dim; });
+  PrintAccessPattern(value.AccessPattern(), printer.getStream());
   printer << ")";
 }
 
@@ -779,7 +778,7 @@ ParseResult ParseMapOp(mlir::OpAsmParser &parser,
   mlir::Builder &builder = parser.getBuilder();
   for (int i = 0, e = function_type.getNumInputs(); i < e; ++i) {
     mlir::Type type = builder.getType<ValueType>(
-        domain_shape.Inverse(patterns[i]), function_type.getInput(i));
+        domain_shape.AccessedShape(patterns[i]), function_type.getInput(i));
     if (mlir::failed(
             parser.resolveOperand(operands[i], type, result.operands))) {
       return mlir::failure();
@@ -1068,7 +1067,7 @@ ParseResult ParseMapReduceOp(mlir::OpAsmParser &parser,
   mlir::Builder &builder = parser.getBuilder();
   for (int i = 0, e = operand_element_types.size(); i < e; ++i) {
     mlir::Type type = builder.getType<ValueType>(
-        domain_shape.Inverse(patterns[i]), operand_element_types[i]);
+        domain_shape.AccessedShape(patterns[i]), operand_element_types[i]);
     if (mlir::failed(
             parser.resolveOperand(operands[i], type, result.operands))) {
       return mlir::failure();
@@ -1137,10 +1136,8 @@ void Print(SairMapReduceOp op, mlir::OpAsmPrinter &printer) {
 // referenced in the pattern.
 mlir::LogicalResult VerifyReductionAccessPattern(AccessPatternAttr pattern,
                                                  int num_parallel_dimensions) {
-  return mlir::failure(
-      llvm::any_of(pattern, [num_parallel_dimensions](int dim) {
-        return dim >= num_parallel_dimensions;
-      }));
+  llvm::SmallBitVector dependencies = pattern.DependencyMask();
+  return mlir::success(dependencies.find_next(num_parallel_dimensions) == -1);
 }
 
 // Verifies that a Sair MapReduce operation is well-formed. Prints error

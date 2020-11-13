@@ -236,6 +236,9 @@ mlir::LogicalResult RegisterOperations(SairProgramOp program, Driver &driver) {
                                       "eliminated before introducing loops";
     }
 
+    // TODO(ulysse): once we support different kinds of access pattern
+    // expression, ensure that they have been lowered to pointwise.
+
     driver.AddOperation(&operation);
     if (!isa<ComputeOp>(operation)) continue;
 
@@ -275,13 +278,15 @@ llvm::SmallVector<mlir::Value, 4> EraseValue(mlir::ValueRange range,
 // def domain is also removed.
 AccessPatternAttr EraseDimension(AccessPatternAttr access_pattern,
                                  int dimension) {
-  mlir::SmallVector<int, 4> dimensions;
-  for (int d : access_pattern) {
-    if (d < dimension) {
-      dimensions.push_back(d);
-    } else if (d > dimension) {
-      dimensions.push_back(d - 1);
+  mlir::SmallVector<AccessPatternExpr, 4> dimensions;
+  for (AccessPatternExpr expr : access_pattern) {
+    AccessPatternDimExpr dim_expr = expr.cast<AccessPatternDimExpr>();
+    if (dim_expr.dimension() < dimension) {
+      dimensions.push_back(expr);
     }
+    if (dim_expr.dimension() == dimension) continue;
+    dimensions.push_back(
+        AccessPatternDimExpr::get(dim_expr.dimension() - 1, expr.getContext()));
   }
   return AccessPatternAttr::get(access_pattern.getContext(),
                                 access_pattern.UseDomainSize() - 1, dimensions);
@@ -464,7 +469,9 @@ mlir::LogicalResult UpdateLoopUser(SairMapOp old_op, SairMapOp new_op,
 
     AccessPatternAttr access_pattern =
         user.ValueOperands()[operand_position].AccessPattern();
-    int user_dimension = access_pattern.Dimension(dimension);
+    int user_dimension = access_pattern.Dimension(dimension)
+                             .cast<AccessPatternDimExpr>()
+                             .dimension();
 
     if (auto proj_last = dyn_cast<SairProjLastOp>(use.getOwner())) {
       EraseDimension(proj_last, user_dimension, new_value, driver);
@@ -608,6 +615,7 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op, Driver &driver) {
 // attribute.
 void Fuse(SairMapOp first_op, SairMapOp second_op, Driver &driver) {
   mlir::OpBuilder::InsertionGuard insertion_guard(driver);
+  mlir::MLIRContext *context = driver.getContext();
 
   llvm::SmallVector<mlir::Value, 4> second_block_args;
   llvm::SmallVector<mlir::Value, 4> inputs;
@@ -617,15 +625,16 @@ void Fuse(SairMapOp first_op, SairMapOp second_op, Driver &driver) {
   mlir::Operation *second_return = second_op.block().getTerminator();
 
   // Map loop indexes of second_op to loop indexes of first_op.
-  llvm::SmallVector<int, 4> first_to_second_pattern;
+  llvm::SmallVector<AccessPatternExpr, 4> first_to_second_pattern;
   first_to_second_pattern.append(second_op.domain().size(),
-                                 AccessPatternAttr::kNoDimension);
+                                 AccessPatternNoneExpr::get(context));
   second_block_args.append(second_op.domain().size(), nullptr);
   for (auto [first_attr, second_attr] :
        llvm::zip(first_op.LoopNestLoops(), second_op.LoopNestLoops())) {
     int first_dimension = first_attr.cast<LoopAttr>().iter().Dimension();
     int second_dimension = second_attr.cast<LoopAttr>().iter().Dimension();
-    first_to_second_pattern[second_dimension] = first_dimension;
+    first_to_second_pattern[second_dimension] =
+        AccessPatternDimExpr::get(first_dimension, context);
     second_block_args[second_dimension] =
         first_op.block().getArgument(first_dimension);
   }

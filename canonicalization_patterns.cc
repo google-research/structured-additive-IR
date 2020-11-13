@@ -23,11 +23,12 @@ namespace {
 // of dimensions.
 AccessPatternAttr ExtendWithIdentity(AccessPatternAttr old_pattern,
                                      int domain_size, int new_pattern_size) {
-  llvm::SmallVector<int, 4> dimensions;
+  llvm::SmallVector<AccessPatternExpr, 4> dimensions;
   dimensions.reserve(new_pattern_size);
   llvm::append_range(dimensions, old_pattern);
   for (int i = dimensions.size(); i < new_pattern_size; ++i) {
-    dimensions.push_back(i);
+    dimensions.push_back(
+        AccessPatternDimExpr::get(i, old_pattern.getContext()));
   }
   return AccessPatternAttr::get(old_pattern.getContext(), domain_size,
                                 dimensions);
@@ -274,36 +275,29 @@ class RemoveCyclicFby : public OpRewritePattern<SairFbyOp> {
 // `parallel_domain` and `other_domain`, respectively, that correspond to the
 // domain dimensions that are in use. Assume `other_domain` immediately follows
 // `parallel_domain` in a sequential dimension indexing scheme. Also set
-// `direct_mapping` to be an access pattern mapping original (combined) domain
-// dimensions to the new dimensions, and `inverted_mapping` with its inverse
-// that uses `kNoDimension` for dimensions that were removed.
+// `mapping` to be an access pattern mapping original (combined) domain
+// dimensions to the new dimensions.
 void RemoveUnusedDomainDimensions(
     mlir::MLIRContext *context, const llvm::SmallBitVector &used_dimensions,
     mlir::ValueRange parallel_domain, mlir::ValueRange other_domain,
     llvm::SmallVectorImpl<mlir::Value> &parallel_dimensions,
     llvm::SmallVectorImpl<mlir::Value> &other_dimensions,
-    AccessPatternAttr &inverted_mapping, AccessPatternAttr &direct_mapping) {
+    AccessPatternAttr &mapping) {
   assert(used_dimensions.size() ==
          parallel_domain.size() + other_domain.size());
 
   int num_parallel_dims = parallel_domain.size();
-  llvm::SmallVector<int, 4> remapping(num_parallel_dims + other_domain.size(),
-                                      AccessPatternAttr::kNoDimension);
-  llvm::SmallVector<int, 4> inverted;
-  int new_dim = 0;
+  llvm::SmallVector<AccessPatternExpr, 4> exprs;
   for (int dimension : used_dimensions.set_bits()) {
     if (dimension >= num_parallel_dims) {
       other_dimensions.push_back(other_domain[dimension - num_parallel_dims]);
     } else {
       parallel_dimensions.push_back(parallel_domain[dimension]);
     }
-    remapping[dimension] = new_dim++;
-    inverted.push_back(dimension);
+    exprs.push_back(AccessPatternDimExpr::get(dimension, context));
   }
 
-  inverted_mapping =
-      AccessPatternAttr::get(context, used_dimensions.count(), remapping);
-  direct_mapping = AccessPatternAttr::get(context, remapping.size(), inverted);
+  mapping = AccessPatternAttr::get(context, used_dimensions.size(), exprs);
 }
 
 // Update all uses of `value` to use `newValue` instead, and compose the access
@@ -335,18 +329,18 @@ class RemoveUnreferencedDims : public OpRewritePattern<OpTy> {
     if (used_dimensions.all()) return mlir::failure();
 
     // Prepare op components with unused dimensions removed.
-    AccessPatternAttr inverted_mapping, direct_mapping;
+    AccessPatternAttr mapping;
     llvm::SmallVector<mlir::Value, 4> parallel_dimensions,
         projection_dimensions;
     RemoveUnusedDomainDimensions(op.getContext(), used_dimensions,
                                  op.parallel_domain(), op.projection_domain(),
                                  parallel_dimensions, projection_dimensions,
-                                 inverted_mapping, direct_mapping);
+                                 mapping);
 
     // The result type has the rank equal to that of the parallel domain. Trim
     // the mapping accordingly.
-    AccessPatternAttr partial_direct_mapping =
-        direct_mapping.Resize(parallel_dimensions.size());
+    AccessPatternAttr partial_mapping =
+        mapping.Resize(parallel_dimensions.size());
 
     // Recreate the op because we may be changing the result type. The access
     // patterns needs to be precomposed with the inverted mapping, i.e. the
@@ -354,16 +348,15 @@ class RemoveUnreferencedDims : public OpRewritePattern<OpTy> {
     // applied first.
     auto new_op = rewriter.create<OpTy>(
         op.getLoc(),
-        op.getType().template cast<ValueType>().AccessedType(
-            partial_direct_mapping),
+        op.getType().template cast<ValueType>().AccessedType(partial_mapping),
         parallel_dimensions, projection_dimensions,
         rewriter.getArrayAttr(
-            inverted_mapping.Compose(op.Value().AccessPattern())),
-        op.value(), op.shape().Inverse(direct_mapping), op.memory_spaceAttr());
+            mapping.Inverse().Compose(op.Value().AccessPattern())),
+        op.value(), op.shape().AccessedShape(mapping), op.memory_spaceAttr());
     new_op.setDialectAttrs(op.getDialectAttrs());
 
     // Replace the original op.
-    UpdateValueUses(op, new_op, partial_direct_mapping);
+    UpdateValueUses(op, new_op, partial_mapping);
     rewriter.eraseOp(op);
 
     return mlir::success();
@@ -386,13 +379,15 @@ class RemoveUnreferencedDims<SairFbyOp> : public OpRewritePattern<SairFbyOp> {
     if (used_dimensions.all()) return mlir::failure();
 
     // Prepare op components with unused dimensions removed.
-    AccessPatternAttr inverted_mapping, direct_mapping;
+    AccessPatternAttr direct_mapping;
     llvm::SmallVector<mlir::Value, 4> parallel_dimensions,
         sequential_dimensions;
     RemoveUnusedDomainDimensions(op.getContext(), used_dimensions,
                                  op.parallel_domain(), op.sequential_domain(),
                                  parallel_dimensions, sequential_dimensions,
-                                 inverted_mapping, direct_mapping);
+                                 direct_mapping);
+
+    AccessPatternAttr inverted_mapping = direct_mapping.Inverse();
 
     // Recreate the op because we may be changing the result type. The access
     // patterns needs to be precomposed with the inverted mapping, i.e. the

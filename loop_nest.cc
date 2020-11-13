@@ -41,8 +41,11 @@ static mlir::ArrayAttr InferLoopNest(mlir::ArrayAttr loop_nest,
       break;
     }
 
-    IteratorAttr new_iter =
-        IteratorAttr::get(context, access_pattern.Dimension(dimension));
+    // TODO(ulysse): replace IteratorAttr with AccessPatternExpr to support
+    // future cases automatically.
+    AccessPatternDimExpr dim_expr =
+        access_pattern.Dimension(dimension).cast<AccessPatternDimExpr>();
+    IteratorAttr new_iter = IteratorAttr::get(context, dim_expr.dimension());
     LoopAttr new_loop = LoopAttr::get(loop.name(), new_iter, context);
     new_loop_nest.push_back(new_loop);
   }
@@ -156,8 +159,8 @@ class LoopNestConstraintsAnalysis {
           ComputeConstraints(value.getDefiningOp(), iteration_spaces);
       for (int closed_dim : parent_constraint.closed_dimensions.set_bits()) {
         if (closed_dim > access_pattern.size()) break;
-        int op_dimension = access_pattern.Dimension(closed_dim);
-        constraints.closed_dimensions.set(op_dimension);
+        access_pattern.Dimension(closed_dim)
+            .SetDependenciesInMask(constraints.closed_dimensions);
       }
       if (loop_carried) return;
       constraints.open_loops.set_union(parent_constraint.open_loops);
@@ -448,10 +451,13 @@ static mlir::LogicalResult VerifyDependency(
     if (dep_loop.iter().Rematerialize()) continue;
     int dep_dimension = dep_loop.iter().Dimension();
     if (dep_dimension >= access_pattern.size()) continue;
-    int mapped_dimension = access_pattern.Dimension(dep_dimension);
-    if (mapped_dimension == AccessPatternAttr::kNoDimension) continue;
+    // TODO(ulysse): replace IteratorAttr with AccessPatternExpr to support
+    // future cases automatically.
+    AccessPatternDimExpr dim_expr = access_pattern.Dimension(dep_dimension)
+                                        .dyn_cast<AccessPatternDimExpr>();
+    if (dim_expr == nullptr) continue;
     if (op_loop.iter().Rematerialize() ||
-        op_loop.iter().Dimension() != mapped_dimension) {
+        op_loop.iter().Dimension() != dim_expr.dimension()) {
       return (op.emitError()
               << "loop " << op_loop.name() << " violates a data dependency")
                  .attachNote(dependency.getLoc())
@@ -479,11 +485,13 @@ static mlir::LogicalResult VerifyDependency(
   }
 
   for (int dep_dimension : constraints.closed_dimensions.set_bits()) {
-    int op_dimension = access_pattern.Dimension(dep_dimension);
-    if (carrying_dims.test(op_dimension)) {
+    llvm::SmallBitVector mapped_dims(access_pattern.UseDomainSize());
+    access_pattern.Dimension(dep_dimension).SetDependenciesInMask(mapped_dims);
+    if (carrying_dims.anyCommon(mapped_dims)) {
+      int dim = (carrying_dims & mapped_dims).find_first();
       return op.emitError()
-             << "cannot take the previous value of the operand along 'd"
-             << op_dimension << "' because of the operand loop nest";
+             << "cannot take the previous value of the operand along 'd" << dim
+             << "' because of the operand loop nest";
     }
   }
 

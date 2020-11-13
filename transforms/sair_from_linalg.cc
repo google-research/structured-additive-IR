@@ -387,8 +387,14 @@ void MoveBodyBlock(mlir::AffineMap linalg_to_sair_loops,
 
     // Permute indices to put those related to reductions last.
     if (has_indices) {
-      llvm::ArrayRef<int> index_permutation =
-          AccessPatternAttr::FromAffineMap(linalg_to_sair_loops).Dimensions();
+      llvm::SmallVector<int, 4> index_permutation;
+      index_permutation.reserve(linalg_to_sair_loops.getNumResults());
+      AccessPatternAttr linalg_to_sair_loops_pattern =
+          AccessPatternAttr::FromAffineMap(linalg_to_sair_loops);
+      for (AccessPatternExpr expr : linalg_to_sair_loops_pattern) {
+        index_permutation.push_back(
+            expr.cast<AccessPatternDimExpr>().dimension());
+      }
       PermuteBlockArguments(index_permutation, /*offset=*/0, body);
     }
   }

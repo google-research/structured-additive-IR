@@ -197,7 +197,7 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
       return mlir::emitError(op->getLoc()) << "invalid use domain size";
     }
     ::sair::DomainShapeAttr expected_shape =
-        sair_op.shape().Inverse(v.AccessPattern());
+        sair_op.shape().AccessedShape(v.AccessPattern());
     if (expected_shape != value_type.Shape()) {
       return mlir::emitError(v.value().getLoc())
              << "access pattern incompatible with the operand shape";

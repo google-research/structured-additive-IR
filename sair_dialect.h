@@ -69,51 +69,75 @@ class SairDialect : public mlir::Dialect {
                       mlir::DialectAsmPrinter &os) const override;
 };
 
+// Pretty-prints an access pattern, for use in custom printers. In particular,
+// the use domain size is omitted. This functions access a raw stream so that it
+// can be used with different flavors of printers.
+void PrintAccessPattern(AccessPatternAttr access_pattern,
+                        llvm::raw_ostream &os);
+
 // Parses a dimension name of the form 'd<id>' where <id> is an integer in the
-// half open interval [0, num_dimensions). Stores <id> in 'dimension_id'.
+// half open interval [0, num_dimensions). Stores <id> in `dimension`.
 template <typename Parser>
-mlir::ParseResult ParseDimensionName(
-    Parser &parser, int &dimension_id,
-    int num_dimensions = std::numeric_limits<int>::max()) {
+mlir::ParseResult ParseDimensionName(Parser &parser, int &dimension) {
   llvm::StringRef name;
   llvm::SMLoc loc = parser.getCurrentLocation();
   if (mlir::failed(parser.parseKeyword(&name))) return mlir::failure();
-  if (name == SairDialect::kNoneKeyword) {
-    dimension_id = AccessPatternAttr::kNoDimension;
-    return mlir::success();
-  }
-
-  if (!name.consume_front("d") || name.getAsInteger(10, dimension_id) ||
-      dimension_id < 0) {
+  if (!name.consume_front("d") || name.getAsInteger(10, dimension) ||
+      dimension < 0) {
     return parser.emitError(loc) << "invalid dimension name";
   }
 
-  if (dimension_id >= num_dimensions) {
-    return parser.emitError(loc)
-           << "dimension 'd" << dimension_id << "' is out of range ("
-           << num_dimensions << " dimensions)";
-  }
   return mlir::success();
+}
+
+// Parses an access pattern expression in a context with `num_dimensions`.
+// Returns `nullptr` on failure. Considers a context with an infinite number of
+// dimensions if `num_dimensions` is `-1`.
+template <typename Parser>
+AccessPatternExpr ParseAccessPatternExpr(Parser &parser,
+                                         int num_dimensions = -1) {
+  mlir::MLIRContext *context = parser.getBuilder().getContext();
+  if (mlir::succeeded(parser.parseOptionalKeyword(SairDialect::kNoneKeyword))) {
+    return AccessPatternNoneExpr::get(context);
+  }
+
+  int dimension_id;
+  llvm::SMLoc loc = parser.getCurrentLocation();
+  if (mlir::failed(ParseDimensionName(parser, dimension_id))) {
+    return AccessPatternExpr();
+  }
+
+  if (num_dimensions != -1 && dimension_id >= num_dimensions) {
+    parser.emitError(loc) << "dimension 'd" << dimension_id
+                          << "' is out of range (" << num_dimensions
+                          << " dimensions)";
+    return AccessPatternExpr();
+  }
+  return AccessPatternDimExpr::get(dimension_id, context);
 }
 
 // Parses a non-empty access pattern. Returns nullptr if the parsing fails.
 template <typename Parser>
 AccessPatternAttr ParseAccessPattern(Parser &parser, int num_dimensions) {
-  std::vector<int> dims;
+  std::vector<AccessPatternExpr> exprs;
+  llvm::SmallBitVector seen_dimensions(num_dimensions);
   do {
     llvm::SMLoc loc = parser.getCurrentLocation();
-    if (failed(
-            ParseDimensionName(parser, dims.emplace_back(), num_dimensions))) {
+    AccessPatternExpr expr = ParseAccessPatternExpr(parser, num_dimensions);
+    if (expr == nullptr) return nullptr;
+    llvm::SmallBitVector new_seen_dimensions(num_dimensions);
+    expr.SetDependenciesInMask(new_seen_dimensions);
+    exprs.push_back(expr);
+    if (seen_dimensions.anyCommon(new_seen_dimensions)) {
+      int dim = (seen_dimensions & new_seen_dimensions).find_first();
+      parser.emitError(loc) << "dimension d" << dim << " appears twice";
       return nullptr;
     }
-    if (std::count(dims.begin(), std::prev(dims.end()), dims.back())) {
-      parser.emitError(loc) << "dimension d" << dims.back() << " appears twice";
-      return nullptr;
-    }
+    seen_dimensions |= new_seen_dimensions;
   } while (succeeded(parser.parseOptionalComma()));
 
   return AccessPatternAttr::get(parser.getBuilder().getContext(),
-                                num_dimensions, dims);
+                                num_dimensions, exprs);
 }
 
 // Parses an access pattern surrounded by parenthesis or returns the empty

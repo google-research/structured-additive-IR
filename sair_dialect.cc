@@ -50,7 +50,8 @@ SairDialect::SairDialect(mlir::MLIRContext *context)
     : mlir::Dialect(getDialectNamespace(), context,
                     TypeID::get<SairDialect>()) {
   addTypes<RangeType, ValueType>();
-  addAttributes<DomainShapeAttr, AccessPatternAttr, IteratorAttr>();
+  addAttributes<DomainShapeAttr, AccessPatternAttr, IteratorAttr,
+                AccessPatternDimExpr, AccessPatternNoneExpr>();
   addOperations<
 #define GET_OP_LIST
 #include "sair_ops.cc.inc"
@@ -123,16 +124,23 @@ DomainShapeAttr ParseDomainShape(mlir::DialectAsmParser &parser) {
 
     std::vector<DomainShapeDim> arg_shape_dims;
     llvm::SmallBitVector seen_dimensions(dimensions.size());
-    for (int dimension : access_pattern) {
-      llvm::SmallBitVector dependencies =
-          dimensions[dimension].DependencyMask();
-      if ((~seen_dimensions).anyCommon(dependencies)) {
+    AccessPatternAttr inversed_pattern = access_pattern.Inverse();
+    for (AccessPatternExpr expr : access_pattern) {
+      llvm::SmallBitVector expr_dependencies(dimensions.size());
+      expr.SetDependenciesInMask(expr_dependencies);
+
+      llvm::SmallBitVector transitive_dependencies(dimensions.size());
+      for (int dimension : expr_dependencies.set_bits()) {
+        transitive_dependencies |= dimensions[dimension].DependencyMask();
+      }
+
+      if ((~seen_dimensions).anyCommon(transitive_dependencies)) {
         parser.emitError(loc) << "non-transitive dependency";
         return nullptr;
       }
-      seen_dimensions.set(dimension);
-      arg_shape_dims.push_back(
-          dimensions[dimension].Inverse(access_pattern, arg_shape_dims.size()));
+      seen_dimensions |= expr_dependencies;
+      arg_shape_dims.push_back(expr.AccessedShape(
+          dimensions, inversed_pattern.ResizeUseDomain(arg_shape_dims.size())));
     }
     RangeType arg_type =
         RangeType::get(context, DomainShapeAttr::get(context, arg_shape_dims));
@@ -205,6 +213,8 @@ mlir::Attribute sair::SairDialect::parseAttribute(
     }
   } else if (keyword == "iter") {
     attribute = ParseIterator(parser);
+  } else if (keyword == "pattern_expr") {
+    attribute = ParseAccessPatternExpr(parser);
   } else {
     parser.emitError(parser.getNameLoc())
         << "unexpected Sair attribute '" << keyword << "'";
@@ -216,17 +226,17 @@ mlir::Attribute sair::SairDialect::parseAttribute(
 
 namespace {
 
-// Prints an access pattern.
-mlir::DialectAsmPrinter &operator<<(mlir::DialectAsmPrinter &os,
-                                    AccessPatternAttr access_pattern) {
-  llvm::interleaveComma(access_pattern.getValue(), os, [&](int dimension) {
-    if (dimension == AccessPatternAttr::kNoDimension) {
-      os << SairDialect::kNoneKeyword;
-    } else {
-      os << "d" << dimension;
-    }
-  });
-  return os;
+// Prints an access pattern expression, without the `#sair.pattern_expr` prefix.
+// Accepts a ray stream so that it can be used from different flavors of
+// printers.
+void PrintAccessPatternExpr(AccessPatternExpr expr, llvm::raw_ostream &os) {
+  if (auto none_expr = expr.dyn_cast<AccessPatternNoneExpr>()) {
+    os << SairDialect::kNoneKeyword;
+  } else if (auto dim_expr = expr.dyn_cast<AccessPatternDimExpr>()) {
+    os << "d" << dim_expr.dimension();
+  } else {
+    llvm_unreachable("unknown access pattern expression");
+  }
 }
 
 // Prints the shape of an iteration domain. An iteration domain is a product of
@@ -243,7 +253,9 @@ mlir::DialectAsmPrinter &operator<<(mlir::DialectAsmPrinter &os,
         [&](const DomainShapeDim &dim) {
           os << "d" << i++ << ":" << RangeType::Name();
           if (dim.dependency_pattern().empty()) return;
-          os << "(" << dim.dependency_pattern() << ")";
+          os << "(";
+          PrintAccessPattern(dim.dependency_pattern(), os.getStream());
+          os << ")";
         },
         " x ");
   }
@@ -283,10 +295,18 @@ void PrintWithUseDomainSize(AccessPatternAttr access_pattern,
                             mlir::DialectAsmPrinter &os) {
   os << access_pattern.UseDomainSize();
   if (access_pattern.empty()) return;
-  os << " : " << access_pattern;
+  os << " : ";
+  PrintAccessPattern(access_pattern, os.getStream());
 }
 
 }  // namespace
+
+void PrintAccessPattern(AccessPatternAttr access_pattern,
+                        llvm::raw_ostream &os) {
+  llvm::interleaveComma(access_pattern, os, [&](AccessPatternExpr expr) {
+    PrintAccessPatternExpr(expr, os);
+  });
+}
 
 // Prints the Sair type using MLIR printing facilities.
 void sair::SairDialect::printType(mlir::Type type,
@@ -310,7 +330,12 @@ void sair::SairDialect::printAttribute(mlir::Attribute attr,
         os << ">";
       })
       .Case(
-          [&os](IteratorAttr iter_attr) { os << "iter<" << iter_attr << ">"; });
+          [&os](IteratorAttr iter_attr) { os << "iter<" << iter_attr << ">"; })
+      .Case([&os](AccessPatternExpr expr) {
+        os << "pattern_expr<";
+        PrintAccessPatternExpr(expr, os.getStream());
+        os << ">";
+      });
 }
 
 }  // namespace sair
