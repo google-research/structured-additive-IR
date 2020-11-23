@@ -67,8 +67,9 @@ static mlir::ArrayAttr InferLoopNest(mlir::ArrayAttr loop_nest,
   return mlir::ArrayAttr::get(new_loop_nest, context);
 }
 
-IterationSpaceAnalysis::IterationSpaceAnalysis(SairProgramOp program) {
-  for (mlir::Operation &op : program.body().front()) {
+IterationSpaceAnalysis::IterationSpaceAnalysis(SairProgramOp program_op) {
+  if (program_op == nullptr) return;
+  for (mlir::Operation &op : program_op.body().front()) {
     ComputeIterationSpace(&op);
   }
 }
@@ -283,33 +284,10 @@ class LoopNestState {
                              mlir::ArrayRef<mlir::Attribute> loop_nest) {
     // Find the number of common loops.
     int common_prefix_size = 0;
-    for (int e = std::min(loop_nest.size(), open_groups_.size());
+    for (int e = std::min(loop_nest.size(), open_loops_.size());
          common_prefix_size < e; ++common_prefix_size) {
       LoopAttr loop = loop_nest[common_prefix_size].cast<LoopAttr>();
-      FusionGroup &group = open_groups_[common_prefix_size];
-      if (loop.name() != group.name) break;
-
-      group.ops.push_back(op);
-      if (loop.iter().Rematerialize()) continue;
-
-      mlir::Value dimension = op.domain()[loop.iter().Dimension()];
-
-      // Set the group dimension if not already set.
-      if (group.dimension == nullptr) {
-        group.dimension = dimension;
-        group.step = loop.iter().Step();
-        group.defining_op = op;
-        continue;
-      }
-
-      // Ensure the loop definition matches the rest of the group.
-      if (group.dimension != dimension || group.step != loop.iter().Step()) {
-        return (op.emitError()
-                << "loop " << group.name
-                << " dimension does not match previous occurrences")
-                   .attachNote(group.defining_op.getLoc())
-               << "previous occurrence here";
-      }
+      if (loop.name() != open_loops_[common_prefix_size]) break;
     }
 
     // Reset the current fusion prefix to the number of common loops.
@@ -319,20 +297,13 @@ class LoopNestState {
     for (mlir::Attribute attribute : loop_nest.drop_front(common_prefix_size)) {
       LoopAttr loop = attribute.cast<LoopAttr>();
 
-      if (closed_groups_.count(loop.name()) > 0) {
+      if (closed_loops_.count(loop.name()) > 0) {
         return op.emitError()
                << "occurrences of loop " << loop.name()
                << " must be contiguous and nested in the same loops";
       }
 
-      FusionGroup &group = open_groups_.emplace_back();
-      group.name = loop.name();
-      group.defining_op = op;
-      group.ops.push_back(op);
-
-      if (loop.iter().Rematerialize()) continue;
-      group.dimension = op.domain()[loop.iter().Dimension()];
-      group.step = loop.iter().Step();
+      open_loops_.push_back(loop.name());
     }
     return mlir::success();
   }
@@ -340,24 +311,8 @@ class LoopNestState {
   // Mark loops as closed, starting from the innermost`, until only
   // `num_remaining_loops` are left open.
   mlir::LogicalResult CloseLoops(int num_remaining_loops = 0) {
-    while (open_groups_.size() > num_remaining_loops) {
-      FusionGroup group = open_groups_.pop_back_val();
-      if (group.dimension == nullptr) {
-        group.defining_op.emitError()
-            << "loop " << group.name
-            << " must have the 'iter' field set in at least one operation";
-        return mlir::failure();
-      }
-      for (SairOp op : group.ops) {
-        if (!group.dimension.getDefiningOp()->isBeforeInBlock(op)) {
-          (op.emitError() << "rematerialized loop " << group.name
-                          << " indirectly uses the range before it is defined")
-                  .attachNote(group.dimension.getLoc())
-              << "range defined here";
-          return mlir::failure();
-        }
-      }
-      closed_groups_.insert(group.name);
+    while (open_loops_.size() > num_remaining_loops) {
+      closed_loops_.insert(open_loops_.pop_back_val());
     }
     return mlir::success();
   };
@@ -366,32 +321,19 @@ class LoopNestState {
   mlir::LogicalResult VerifyLoopsOpen(
       const llvm::SetVector<mlir::Attribute> &loops, mlir::Location loc) const {
     for (mlir::Attribute loop : loops) {
-      if (closed_groups_.contains(loop)) continue;
-      if (llvm::any_of(open_groups_, [&](const FusionGroup &group) {
-            return group.name == loop;
-          })) {
-        continue;
+      if (llvm::count(open_loops_, loop) == 0 &&
+          !closed_loops_.contains(loop)) {
+        return mlir::emitError(loc)
+               << "loop " << loop
+               << " must be open at or before this operation";
       }
-      return mlir::emitError(loc)
-             << "loop " << loop << " must be open at or before this operation";
     }
     return mlir::success();
   }
 
  private:
-  struct FusionGroup {
-    mlir::StringAttr name;
-    mlir::Value dimension;
-    int step;
-    // If dimension == nullptr, contains the first operation referencing the
-    // loop. Otherwise, contains the first operation referencing the loop with
-    // the `iter` field set.
-    SairOp defining_op;
-    llvm::SmallVector<SairOp, 4> ops;
-  };
-
-  llvm::SmallVector<FusionGroup, 8> open_groups_;
-  llvm::DenseSet<mlir::Attribute> closed_groups_;
+  llvm::SmallVector<mlir::StringAttr, 8> open_loops_;
+  llvm::DenseSet<mlir::Attribute> closed_loops_;
 };
 
 }  // namespace
@@ -533,6 +475,33 @@ static mlir::LogicalResult VerifyDependencies(
   return mlir::success();
 }
 
+// Verifies that it is possible to compute the range of loops and that the
+// range is defined before it is used.
+static mlir::LogicalResult VerifyLoopRanges(
+    ComputeOp op, llvm::ArrayRef<mlir::Attribute> loop_nest,
+    const LoopFusionAnalysis &fusion_analysis) {
+  for (mlir::Attribute attr : loop_nest) {
+    LoopAttr loop = attr.cast<LoopAttr>();
+    const LoopFusionClass &fusion_class = fusion_analysis.GetClass(loop.name());
+    if (fusion_class.dimension == nullptr) {
+      return op.emitError()
+             << "loop " << loop.name()
+             << " must have the 'iter' field set in at least one operation";
+    }
+
+    if (op.getOperation()->isBeforeInBlock(
+            fusion_class.dimension.getDefiningOp())) {
+      return (op.emitError()
+              << "rematerialized loop " << loop.name()
+              << " indirectly uses the range before it is defined")
+                 .attachNote(fusion_class.dimension.getLoc())
+             << "range defined here";
+    }
+  }
+
+  return mlir::success();
+}
+
 mlir::LogicalResult VerifyLoopNests(SairProgramOp program) {
   // Verify operands of Sair operands are defined in the same program. This
   // check is performed here rather that in SairOp as it is needed for other
@@ -568,12 +537,20 @@ mlir::LogicalResult VerifyLoopNests(SairProgramOp program) {
   LoopNestConstraintsAnalysis loop_constraints_analysis(
       program, iteration_space_analysis);
 
-  // Verify that the loop structure forms a tree.
+  // Verify that the loop structure forms a tree, loops are open when they need
+  // to and loop ranges are well defined.
   LoopNestState loop_nest_state;
+  auto fusion_analysis_or_null = LoopFusionAnalysis::Create(program);
+  if (fusion_analysis_or_null == std::nullopt) return mlir::failure();
+  LoopFusionAnalysis fusion_analysis = fusion_analysis_or_null.value();
   result = program.walk([&](ComputeOp op) -> mlir::WalkResult {
     if (op.loop_nest().hasValue()) {
       if (mlir::failed(loop_nest_state.Update(cast<SairOp>(op.getOperation()),
                                               op.LoopNestLoops()))) {
+        return mlir::failure();
+      }
+      if (mlir::failed(
+              VerifyLoopRanges(op, op.LoopNestLoops(), fusion_analysis))) {
         return mlir::failure();
       }
     } else if (mlir::failed(loop_nest_state.CloseLoops())) {
@@ -591,6 +568,71 @@ mlir::LogicalResult VerifyLoopNests(SairProgramOp program) {
                               loop_constraints_analysis);
   });
   if (result.wasInterrupted()) return mlir::failure();
+
+  return mlir::success();
+}
+
+LoopFusionAnalysis::LoopFusionAnalysis(mlir::Operation *operation) {
+  SairProgramOp program_op = dyn_cast<SairProgramOp>(operation);
+  if (program_op == nullptr) return;
+  mlir::LogicalResult status = Init(program_op);
+  assert(mlir::succeeded(status));
+}
+
+std::optional<LoopFusionAnalysis> LoopFusionAnalysis::Create(
+    SairProgramOp program_op) {
+  LoopFusionAnalysis analysis;
+  if (mlir::failed(analysis.Init(program_op))) return std::nullopt;
+  return analysis;
+}
+
+mlir::LogicalResult LoopFusionAnalysis::Init(SairProgramOp program_op) {
+  auto status = program_op.walk([&](ComputeOp op) -> mlir::WalkResult {
+    if (!op.loop_nest().hasValue()) return mlir::success();
+    llvm::ArrayRef<mlir::Attribute> loop_nest = op.LoopNestLoops();
+    for (mlir::Attribute attr : loop_nest) {
+      if (mlir::failed(RegisterLoop(op, attr.cast<LoopAttr>(), loop_nest))) {
+        return mlir::failure();
+      }
+    }
+    return mlir::success();
+  });
+  return mlir::failure(status.wasInterrupted());
+}
+
+mlir::LogicalResult LoopFusionAnalysis::RegisterLoop(
+    ComputeOp op, LoopAttr loop, llvm::ArrayRef<mlir::Attribute> loop_nest) {
+  LoopFusionClass &fusion_class = fusion_classes_[loop.name()];
+  if (fusion_class.iter_expr == nullptr) {
+    fusion_class.iter_expr = IteratorAttr::get(op.getContext());
+  }
+
+  if (loop.iter().Rematerialize()) return mlir::success();
+  SairOp sair_op = cast<SairOp>(op.getOperation());
+  int dimension = loop.iter().Dimension();
+
+  if (!fusion_class.iter_expr.Rematerialize()) {
+    if (sair_op.domain()[dimension] != fusion_class.dimension ||
+        loop.iter().Step() != fusion_class.iter_expr.Step()) {
+      return op.emitError() << "loop " << loop.name()
+                            << " dimension does not match previous occurrences";
+    }
+    return mlir::success();
+  }
+
+  fusion_class.iter_expr = loop.iter();
+  fusion_class.dimension = sair_op.domain()[dimension];
+  llvm::SmallBitVector dependencies =
+      sair_op.shape().Dimension(dimension).DependencyMask();
+  for (mlir::Attribute attr : loop_nest) {
+    LoopAttr other_loop = attr.cast<LoopAttr>();
+    if (other_loop.iter().Rematerialize()) continue;
+    int other_dimension = other_loop.iter().Dimension();
+    if (other_dimension < dependencies.size() &&
+        dependencies.test(other_dimension)) {
+      fusion_class.dependencies.push_back(other_loop.name());
+    }
+  }
 
   return mlir::success();
 }

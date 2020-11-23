@@ -53,6 +53,8 @@ mlir::LogicalResult VerifyLoopNests(SairProgramOp program);
 class IterationSpaceAnalysis {
  public:
   explicit IterationSpaceAnalysis(SairProgramOp program_op);
+  explicit IterationSpaceAnalysis(mlir::Operation *operation)
+      : IterationSpaceAnalysis(dyn_cast<SairProgramOp>(operation)) {}
 
   // Computes or retrieves the loops `op` is nested in.
   mlir::ArrayAttr IterationSpace(SairOp op) const;
@@ -66,6 +68,44 @@ class IterationSpaceAnalysis {
   mlir::ArrayAttr ComputeIterationSpace(mlir::Operation *operation);
 
   llvm::DenseMap<mlir::Operation *, mlir::ArrayAttr> iteration_space_;
+};
+
+// A class of fused loops.
+struct LoopFusionClass {
+  // Iterator of the loop.
+  IteratorAttr iter_expr;
+  // Domain dimension the loop iterates on.
+  mlir::Value dimension;
+  // Loops the loop bound depends on.
+  llvm::SmallVector<mlir::StringAttr, 2> dependencies;
+};
+
+// Computes loop fusion classes in a sair program.
+class LoopFusionAnalysis {
+ public:
+  // Builds an analysis populated with all loops appearing in `program_op`.
+  explicit LoopFusionAnalysis(mlir::Operation *operation);
+
+  // Creates a LoopFusionAnalysis populated with the loops appearing in
+  // `program_op`. Returns `nullopt` if the analysis fails.
+  static std::optional<LoopFusionAnalysis> Create(SairProgramOp program_op);
+
+  // Retrieves the fusion class with the given name.
+  const LoopFusionClass &GetClass(mlir::StringAttr name) const {
+    return fusion_classes_.find(name)->second;
+  }
+
+ private:
+  LoopFusionAnalysis() {}
+
+  // Populates the analysis with the operations appearing in `program_op`.
+  mlir::LogicalResult Init(SairProgramOp program_op);
+
+  // Registers a loop of `op`.
+  mlir::LogicalResult RegisterLoop(ComputeOp op, LoopAttr loop,
+                                   llvm::ArrayRef<mlir::Attribute> loop_nest);
+
+  llvm::DenseMap<mlir::Attribute, LoopFusionClass> fusion_classes_;
 };
 
 }  // namespace sair

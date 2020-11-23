@@ -436,7 +436,7 @@ class IteratorAttr
   // Dimension to iterate on. Only defined if `Rematerialize` returns false.
   int Dimension();
   // Size of the chunks to iterate on. Only defined if `Dimensions` is.
-  int Step();
+  int Step() const;
 };
 
 }  // namespace sair

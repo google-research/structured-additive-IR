@@ -25,6 +25,7 @@
 #include "mlir/IR/Visitors.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
+#include "loop_nest.h"
 #include "sair_attributes.h"
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
@@ -33,21 +34,6 @@
 
 namespace sair {
 namespace {
-
-// Contains the loop bounds in the form of a variable range and constant step.
-// Additionally, this contains the name of other loops the bounds of this loop
-// depend on.
-struct LoopBounds {
-  LoopBounds(mlir::Value range, int step,
-             llvm::ArrayRef<mlir::StringAttr> dependencies)
-      : range(range),
-        step(step),
-        dependent_on(dependencies.begin(), dependencies.end()) {}
-
-  mlir::Value range;
-  int step;
-  llvm::SmallVector<mlir::StringAttr, 2> dependent_on;
-};
 
 // Creates Sair value types with the same elemental types as those in the given
 // range, and with the given shape. Appends these new types to result.
@@ -180,9 +166,8 @@ mlir::Operation::operand_range ParallelDomain(SairOp op) {
 // operands as `loops` and extends the shape of the result accordingly. The
 // `main_loops` map should contain the loop bounds for all dimensions to
 // rematerialize.
-mlir::LogicalResult Rematerialize(
-    ComputeOp op,
-    const llvm::DenseMap<mlir::Attribute, LoopBounds> &main_loops) {
+mlir::LogicalResult Rematerialize(ComputeOp op,
+                                  const LoopFusionAnalysis &fusion_analysis) {
   MLIRContext *ctx = op.getContext();
   auto sair_op = cast<SairOp>(op.getOperation());
 
@@ -224,13 +209,11 @@ mlir::LogicalResult Rematerialize(
 
     // For each loop to rematerialize, add the range as the last domain argument
     // and update the loop nest attribute accordingly.
-    auto bounds_iterator = main_loops.find(loop.name());
-    assert(bounds_iterator != main_loops.end() &&
-           "invalid loop_nest attribute");
-    const LoopBounds &bounds = bounds_iterator->getSecond();
-    extra_domain.push_back(bounds.range);
+    auto &fusion_class = fusion_analysis.GetClass(loop.name());
+    extra_domain.push_back(fusion_class.dimension);
     loop_nest_array[i] = LoopAttr::get(
-        loop.name(), IteratorAttr::get(ctx, position++, bounds.step), ctx);
+        loop.name(),
+        IteratorAttr::get(ctx, position++, fusion_class.iter_expr.Step()), ctx);
   }
 
   // Parallel shape dimensions of the original op are kept as is.
@@ -245,15 +228,15 @@ mlir::LogicalResult Rematerialize(
   // dimensions of the operation shape.
   for (auto en : llvm::enumerate(loops)) {
     auto loop = loop_nest_array[en.value()].cast<LoopAttr>();
-    const LoopBounds &bounds = main_loops.find(loop.name())->second;
+    const LoopFusionClass &fusion_class = fusion_analysis.GetClass(loop.name());
 
     // Find positions of the loops the bounds of the current rematerialized loop
     // depend on and use them to construct the dependency pattern. Make sure to
     // take positions from the current op, as the dimensions that are depended
     // upon may be already present. Use the range type of the domain dimension
     // to construct the shape.
-    auto dependencies_range =
-        llvm::map_range(bounds.dependent_on, [&](mlir::StringAttr dependee) {
+    auto dependencies_range = llvm::map_range(
+        fusion_class.dependencies, [&](mlir::StringAttr dependee) {
           auto iter = llvm::find_if(loop_nest_array, [&](mlir::Attribute attr) {
             return attr.cast<LoopAttr>().name() == dependee;
           });
@@ -331,49 +314,20 @@ mlir::LogicalResult Rematerialize(
 }
 
 // Rematerializes loops in all compute operations in the given program.
-mlir::LogicalResult RematerializeInProgram(SairProgramOp op) {
-  llvm::DenseMap<mlir::Attribute, LoopBounds> main_loops;
-  llvm::DenseSet<mlir::Operation *> pending_rematerializations;
-
-  // Perform a single walk across the program to collect both the information
-  // about actual loop bounds and the information about dimensions that require
-  // rematerialization.
-  op.walk([&main_loops, &pending_rematerializations](ComputeOp comp) {
-    if (!comp.loop_nest()) return;
-
-    llvm::ArrayRef<mlir::Attribute> loop_attr_range = comp.LoopNestLoops();
-    for (size_t i = 0, e = loop_attr_range.size(); i < e; ++i) {
-      auto loop = loop_attr_range[i].cast<LoopAttr>();
-      if (loop.iter().Rematerialize()) {
-        pending_rematerializations.insert(comp.getOperation());
-        continue;
-      }
-
-      int dimension = loop.iter().Dimension();
-      auto sair_op = cast<SairOp>(comp.getOperation());
-      Value range = sair_op.domain()[dimension];
-      llvm::SmallBitVector dependency =
-          sair_op.shape().Dimensions()[dimension].DependencyMask();
-      llvm::SmallVector<mlir::StringAttr, 2> depends_on;
-      depends_on.reserve(dependency.count());
-      for (int bit_idx : dependency.set_bits()) {
-        depends_on.push_back(loop_attr_range[bit_idx].cast<LoopAttr>().name());
-      }
-      main_loops.try_emplace(loop.name(), range, loop.iter().Step(),
-                             depends_on);
+mlir::LogicalResult RematerializeInProgram(
+    SairProgramOp op, const LoopFusionAnalysis &fusion_analysis) {
+  auto status = op.walk([&](ComputeOp comp) -> mlir::WalkResult {
+    if (!comp.loop_nest()) return mlir::success();
+    if (llvm::all_of(comp.LoopNestLoops(), [](mlir::Attribute attr) {
+          return !attr.cast<LoopAttr>().iter().Rematerialize();
+        })) {
+      return mlir::success();
     }
+
+    return Rematerialize(comp, fusion_analysis);
   });
 
-  // Rematrialize dimensions in each op where it is necessary. This operates on
-  // all dimensions of an op simultaneously because the op is erased in the
-  // process and we don't want to keep track of that.
-  for (mlir::Operation *operation : pending_rematerializations) {
-    if (mlir::failed(Rematerialize(cast<ComputeOp>(operation), main_loops))) {
-      return mlir::failure();
-    }
-  }
-
-  return mlir::success();
+  return mlir::failure(status.wasInterrupted());
 }
 
 // Pass that exercises rematerialization on Sair programs.
@@ -381,7 +335,9 @@ class RematerializePass : public RematerializePassBase<RematerializePass> {
  public:
   void runOnFunction() override {
     getFunction().walk([this](SairProgramOp program) {
-      if (mlir::failed(RematerializeInProgram(program)))
+      const LoopFusionAnalysis &fusion_analysis =
+          getChildAnalysis<LoopFusionAnalysis>(program.getOperation());
+      if (mlir::failed(RematerializeInProgram(program, fusion_analysis)))
         return signalPassFailure();
     });
   }

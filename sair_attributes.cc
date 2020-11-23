@@ -484,7 +484,7 @@ bool IteratorAttr::Rematerialize() {
   return getImpl()->dimension() == impl::IteratorAttrStorage::kRematerialize;
 }
 
-int IteratorAttr::Step() {
+int IteratorAttr::Step() const {
   assert(getImpl()->dimension() != impl::IteratorAttrStorage::kRematerialize);
   return getImpl()->step();
 }

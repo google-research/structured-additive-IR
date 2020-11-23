@@ -722,7 +722,6 @@ func @loop_definition_mismatch(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
 
     %1 = sair.static_range 8 : !sair.range
-    // expected-note @+1 {{previous occurrence here}}
     sair.copy[d0: %1] %0 {loop_nest = [{name = "A", iter=#sair.iter<d0>}]}
       : !sair.value<d0:range, f32>
 
