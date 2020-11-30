@@ -19,7 +19,7 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "mlir/IR/Attributes.h"
-#include "mlir/IR/Function.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
 #include "sair_ops.h"
 
