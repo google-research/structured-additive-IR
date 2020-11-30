@@ -492,7 +492,7 @@ int IteratorAttr::Step() const {
 int IteratorAttr::Dimension() {
   int dimension = getImpl()->dimension();
   assert(dimension != impl::IteratorAttrStorage::kRematerialize);
-  return getImpl()->dimension();
+  return dimension;
 }
 
 }  // namespace sair

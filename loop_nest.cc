@@ -577,6 +577,7 @@ LoopFusionAnalysis::LoopFusionAnalysis(mlir::Operation *operation) {
   if (program_op == nullptr) return;
   mlir::LogicalResult status = Init(program_op);
   assert(mlir::succeeded(status));
+  (void)status;
 }
 
 std::optional<LoopFusionAnalysis> LoopFusionAnalysis::Create(
