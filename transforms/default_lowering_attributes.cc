@@ -80,23 +80,26 @@ class DefaultLoopNest : public DefaultLoopNestPassBase<DefaultLoopNest> {
 mlir::ArrayAttr GetDefaultLoopNest(SairProgramOp program, int num_dimensions,
                                    llvm::ArrayRef<mlir::Attribute> prefix) {
   mlir::MLIRContext *context = program.getContext();
-  llvm::SmallVector<mlir::Attribute, 8> loop_nest(prefix.begin(), prefix.end());
-
-  // List dimensions that are already covered by the prefix.
-  llvm::BitVector covered_dims(num_dimensions);
-  for (mlir::Attribute attr : loop_nest) {
+  llvm::SmallVector<AccessPatternExpr, 4> iter_exprs;
+  for (mlir::Attribute attr : prefix) {
     LoopAttr loop = attr.cast<LoopAttr>();
-    if (loop.iter().Rematerialize()) continue;
-    if (loop.iter().Step() != 1) continue;
-    covered_dims.set(loop.iter().Dimension());
+    iter_exprs.push_back(loop.iter());
   }
 
-  for (int i = 0; i < num_dimensions; ++i) {
-    if (covered_dims.test(i)) continue;
-    IteratorAttr iterator = IteratorAttr::get(context, i);
+  // Inverse iter expressions and complete the resulting access pattern by
+  // allocating new loops. Then inverse again to obtain loop iterators.
+  AccessPatternAttr partial_inverse =
+      AccessPatternAttr::get(context, num_dimensions, iter_exprs).Inverse();
+  AccessPatternAttr full_inverse = partial_inverse.MakeFullySpecified();
+  AccessPatternAttr new_iter_exprs = full_inverse.Inverse();
+
+  llvm::SmallVector<mlir::Attribute, 8> loop_nest(prefix.begin(), prefix.end());
+  for (AccessPatternExpr expr :
+       new_iter_exprs.Dimensions().drop_front(prefix.size())) {
     mlir::StringAttr name = program.GenLoopName("loop");
-    loop_nest.push_back(LoopAttr::get(name, iterator, context));
+    loop_nest.push_back(LoopAttr::get(name, expr, context));
   }
+
   return mlir::ArrayAttr::get(loop_nest, context);
 }
 

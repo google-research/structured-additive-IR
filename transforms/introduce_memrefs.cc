@@ -204,8 +204,7 @@ class InsertCopies : public InsertCopiesPassBase<InsertCopies> {
         if (op.loop_nest().hasValue()) {
           auto loop_range = op.loop_nest().getValue().getAsRange<LoopAttr>();
           auto it = llvm::find_if(loop_range, [&](LoopAttr loop) {
-            return !loop.iter().Rematerialize() &&
-                   loop.iter().Dimension() >= parallel_domain_size;
+            return loop.iter().MinDomainSize() > parallel_domain_size;
           });
           first_reduce_loop = std::distance(it, loop_range.end());
         }

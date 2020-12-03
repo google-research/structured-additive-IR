@@ -184,7 +184,7 @@ mlir::LogicalResult Rematerialize(ComputeOp op,
   auto loop_nest_array = llvm::to_vector<4>(op.LoopNestLoops());
   for (size_t i = 0, e = loop_nest_array.size(); i < e; ++i) {
     auto loop = loop_nest_array[i].cast<LoopAttr>();
-    if (loop.iter().Rematerialize()) loops.push_back(i);
+    if (loop.iter().isa<AccessPatternNoneExpr>()) loops.push_back(i);
   }
   size_t num_remat = loops.size();
 
@@ -192,17 +192,24 @@ mlir::LogicalResult Rematerialize(ComputeOp op,
   // dimensions.
   llvm::SmallVector<mlir::Value, 4> extra_domain;
   extra_domain.reserve(num_remat);
+
+  llvm::SmallVector<AccessPatternExpr, 4> iter_substitutions;
+  iter_substitutions.reserve(sair_op.domain().size());
+  for (int i = 0; i < num_parallel_dims; ++i) {
+    iter_substitutions.push_back(AccessPatternDimExpr::get(i, ctx));
+  }
+  for (int i = num_parallel_dims, e = sair_op.domain().size(); i < e; ++i) {
+    iter_substitutions.push_back(AccessPatternDimExpr::get(i + num_remat, ctx));
+  }
+
   for (size_t i = 0, e = loop_nest_array.size(); i < e; ++i) {
     // If we are inserting domain dimensions in the middle of the dimension
     // list, update the indices of trailing dimensions.
     auto loop = loop_nest_array[i].cast<LoopAttr>();
-    if (!loop.iter().Rematerialize()) {
-      if (loop.iter().Dimension() >= num_parallel_dims) {
+    if (!loop.iter().isa<AccessPatternNoneExpr>()) {
+      if (loop.iter().MinDomainSize() > num_parallel_dims) {
         loop_nest_array[i] = LoopAttr::get(
-            loop.name(),
-            IteratorAttr::get(ctx, loop.iter().Dimension() + num_remat,
-                              loop.iter().Step()),
-            ctx);
+            loop.name(), loop.iter().SubstituteDims(iter_substitutions), ctx);
       }
       continue;
     }
@@ -210,10 +217,13 @@ mlir::LogicalResult Rematerialize(ComputeOp op,
     // For each loop to rematerialize, add the range as the last domain argument
     // and update the loop nest attribute accordingly.
     auto &fusion_class = fusion_analysis.GetClass(loop.name());
-    extra_domain.push_back(fusion_class.dimension);
+    if (!fusion_class.iter_expr.isa<AccessPatternDimExpr>()) {
+      // TODO(b/172908223): support all loop nests expressions.
+      return op.emitError() << "rematerialization only supports plain loops";
+    }
+    extra_domain.push_back(fusion_class.dimensions[0]);
     loop_nest_array[i] = LoopAttr::get(
-        loop.name(),
-        IteratorAttr::get(ctx, position++, fusion_class.iter_expr.Step()), ctx);
+        loop.name(), AccessPatternDimExpr::get(position++, ctx), ctx);
   }
 
   // Parallel shape dimensions of the original op are kept as is.
@@ -243,12 +253,12 @@ mlir::LogicalResult Rematerialize(ComputeOp op,
           assert(iter != loop_nest_array.end() &&
                  "rematerialized dimension depends on a dimension missing from "
                  "loop_nest attribute");
-          int dimension = iter->cast<LoopAttr>().iter().Dimension();
-          return AccessPatternDimExpr::get(dimension, ctx)
-              .cast<AccessPatternExpr>();
+          return iter->cast<LoopAttr>().iter();
         });
+    // We checked that the expression was a dimension above.
+    int dimension = loop.iter().cast<AccessPatternDimExpr>().dimension();
     auto dependency_pattern = AccessPatternAttr::get(
-        ctx, loop.iter().Dimension(), llvm::to_vector<4>(dependencies_range));
+        ctx, dimension, llvm::to_vector<4>(dependencies_range));
     domain_shape_dims.emplace_back(
         extra_domain[en.index()].getType().cast<RangeType>(),
         dependency_pattern);
@@ -319,7 +329,7 @@ mlir::LogicalResult RematerializeInProgram(
   auto status = op.walk([&](ComputeOp comp) -> mlir::WalkResult {
     if (!comp.loop_nest()) return mlir::success();
     if (llvm::all_of(comp.LoopNestLoops(), [](mlir::Attribute attr) {
-          return !attr.cast<LoopAttr>().iter().Rematerialize();
+          return !attr.cast<LoopAttr>().iter().isa<AccessPatternNoneExpr>();
         })) {
       return mlir::success();
     }

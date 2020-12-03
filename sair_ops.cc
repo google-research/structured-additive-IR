@@ -74,11 +74,6 @@ OptionalParseResult ParseOptionalValueAccess(
     return parser.emitError(loc)
            << "expected access pattern to a concrete element, got 'none'";
   }
-  for (AccessPatternExpr expr : access_pattern.Dimensions()) {
-    if (expr.isa<AccessPatternDimExpr>()) continue;
-    return parser.emitError(loc)
-           << "only pointwise access patterns are supported for now";
-  }
   return mlir::success(access_pattern != nullptr);
 }
 

@@ -61,33 +61,6 @@ SairDialect::SairDialect(mlir::MLIRContext *context)
 
 namespace {
 
-// Parses an iterator on a dimension of the domain. Returns nullptr in case of
-// failure.
-IteratorAttr ParseIterator(mlir::DialectAsmParser &parser) {
-  mlir::MLIRContext *context = parser.getBuilder().getContext();
-
-  int dimension;
-  if (mlir::succeeded(parser.parseOptionalKeyword("remat"))) {
-    return IteratorAttr::get(context);
-  }
-
-  if (mlir::failed(ParseDimensionName(parser, dimension))) {
-    return nullptr;
-  }
-
-  int step = 1;
-  if (mlir::succeeded(parser.parseOptionalKeyword("step"))) {
-    llvm::SMLoc loc = parser.getCurrentLocation();
-    if (mlir::failed(parser.parseInteger(step))) return nullptr;
-    if (step <= 0) {
-      parser.emitError(loc) << "step must be positive";
-      return nullptr;
-    }
-  }
-
-  return IteratorAttr::get(context, dimension, step);
-}
-
 // Parses the shape of a Sair domain, as expressed in Sair types. Returns
 // nullptr in case of failure. Domains shapes are composed of a list of
 // dimension types separated by 'x', with an optional dependency pattern for
@@ -212,8 +185,6 @@ mlir::Attribute sair::SairDialect::parseAttribute(
     } else {
       attribute = AccessPatternAttr::get(getContext(), num_dimensions, {});
     }
-  } else if (keyword == "iter") {
-    attribute = ParseIterator(parser);
   } else if (keyword == "pattern_expr") {
     attribute = ParseAccessPatternExpr(parser);
   } else {
@@ -280,20 +251,6 @@ mlir::DialectAsmPrinter &operator<<(mlir::DialectAsmPrinter &os,
   return os;
 }
 
-// Prints the description of a generated loop.
-mlir::DialectAsmPrinter &operator<<(mlir::DialectAsmPrinter &os,
-                                    IteratorAttr iterator) {
-  if (iterator.Rematerialize()) {
-    return os << "remat";
-  }
-
-  os << "d" << iterator.Dimension();
-  if (iterator.Step() > 1) {
-    os << " step " << iterator.Step();
-  }
-  return os;
-}
-
 // Prints the range type.
 void Print(RangeType type, mlir::DialectAsmPrinter *os) {
   *os << RangeType::Name();
@@ -347,8 +304,6 @@ void sair::SairDialect::printAttribute(mlir::Attribute attr,
         PrintWithUseDomainSize(pattern_attr, os);
         os << ">";
       })
-      .Case(
-          [&os](IteratorAttr iter_attr) { os << "iter<" << iter_attr << ">"; })
       .Case([&os](AccessPatternExpr expr) {
         os << "pattern_expr<";
         PrintAccessPatternExpr(expr, os.getStream());

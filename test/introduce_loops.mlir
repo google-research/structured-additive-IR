@@ -13,8 +13,8 @@ func @map(%arg0: index) {
     // CHECK: sair.map %[[V0]] attributes {loop_nest = []} {
     sair.map[d0: %1, d1: %2] attributes {
       loop_nest = [
-        {name = "A", iter = #sair.iter<d1>},
-        {name = "B", iter = #sair.iter<d0>}
+        {name = "A", iter = #sair.pattern_expr<d1>},
+        {name = "B", iter = #sair.pattern_expr<d0>}
       ]
     } {
       // CHECK: ^{{.*}}(%[[ARG1:.*]]: index):
@@ -46,7 +46,7 @@ func @proj_last(%arg0: f32) {
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // CHECK: %[[V0:.*]] = sair.map %{{.*}}
     %2 = sair.map[d0:%0] %1 attributes {
-      loop_nest = [{name = "A", iter = #sair.iter<d0>}]
+      loop_nest = [{name = "A", iter = #sair.pattern_expr<d0>}]
     } {
       ^bb0(%arg1: index, %arg2: f32):
         sair.return %arg2: f32
@@ -71,7 +71,7 @@ func @fby(%arg0: f32) {
     %2 = sair.fby %1 then[d0:%0] %3(d0) : !sair.value<d0:range, f32>
     // CHECK: %[[V1:.*]] = sair.map %[[V0]] attributes
     %3 = sair.map[d0: %0] %2(d0) attributes {
-      loop_nest = [{name = "A", iter = #sair.iter<d0>}]
+      loop_nest = [{name = "A", iter = #sair.pattern_expr<d0>}]
     } {
     // CHECK: ^bb0(%[[V2:.*]]: f32):
       ^bb0(%arg1: index, %5: f32):
@@ -94,8 +94,8 @@ func @fuse(%arg0: f32) {
     // CHECK: sair.map %[[V0]] attributes
     %3 = sair.map[d0:%0, d1:%1] attributes {
       loop_nest = [
-        {name = "A", iter = #sair.iter<d0>},
-        {name = "B", iter = #sair.iter<d1>}
+        {name = "A", iter = #sair.pattern_expr<d0>},
+        {name = "B", iter = #sair.pattern_expr<d1>}
       ]
     } {
     // CHECK: ^{{.*}}(%[[ARG0:.*]]: f32):
@@ -111,8 +111,8 @@ func @fuse(%arg0: f32) {
     // CHECK-NOT: sair.map
     sair.map[d0:%1, d1:%0] %2, %3(d1, d0) attributes {
       loop_nest = [
-        {name = "A", iter = #sair.iter<d1>},
-        {name = "B", iter = #sair.iter<d0>}
+        {name = "A", iter = #sair.pattern_expr<d1>},
+        {name = "B", iter = #sair.pattern_expr<d0>}
       ]
     } {
       ^bb0(%arg1:index, %arg2: index, %arg3: f32, %arg4: f32):

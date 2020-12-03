@@ -61,12 +61,12 @@ def SairEmptyDomainShapeAttr :
   let convertFromStorage = [{$_self}];
 }
 
-// Tests if an attribute is an IteratorAttr.
-def IsSairIteratorAttr : CPred<"$_self.isa<sair::IteratorAttr>()">;
+// Tests if an attribute is an AccessPatternExpr.
+def IsSairAccessPatternExpr : CPred<"$_self.isa<sair::AccessPatternExpr>()">;
 
 // Defines an iterator on a dimension of the domain of the current operation.
-def SairIteratorAttr : Attr<IsSairIteratorAttr, "iterator"> {
-  let storageType = [{IteratorAttr}];
+def SairAccessPatternExpr : Attr<IsSairAccessPatternExpr, "access_pattern_expr"> {
+  let storageType = [{AccessPatternExpr}];
   let returnType = storageType;
 }
 
@@ -82,11 +82,11 @@ class SairStructAttr<string name,
         c.description>
       )>;
 
-// An attribute describing a loop to generate when lowering an operation.
+// An attribute describing a loop to generate when lowering an operation. 
 def SairLoopAttr : SairStructAttr<"LoopAttr", [
   // Name of the loop to generate.
   StructFieldAttr<"name", StrAttr>,
-  StructFieldAttr<"iter", SairIteratorAttr>
+  StructFieldAttr<"iter", SairAccessPatternExpr>
 ]>;
 
 // A loop nest to generate when lowering an operation.

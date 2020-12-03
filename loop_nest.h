@@ -73,10 +73,15 @@ class IterationSpaceAnalysis {
 // A class of fused loops.
 struct LoopFusionClass {
   // Iterator of the loop.
-  IteratorAttr iter_expr;
-  // Domain dimension the loop iterates on.
-  mlir::Value dimension;
-  // Loops the loop bound depends on.
+  AccessPatternExpr iter_expr;
+  // Dimensions `iter_expr` depends on.
+  llvm::SmallVector<mlir::Value, 4> dimensions;
+  // Mapping from the domain of `dimensions` to the domain of each operation.
+  // Expressions are either AccessPatternNoneExpr or AccessPatternDimExpr.
+  llvm::DenseMap<mlir::Operation *, llvm::SmallVector<AccessPatternExpr, 4>>
+      op_dims_mappings;
+  // Loops this class depends on.
+  // TODO(ulysse): infer this from `op_dims_mapping`.
   llvm::SmallVector<mlir::StringAttr, 2> dependencies;
 };
 

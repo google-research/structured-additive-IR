@@ -5,7 +5,7 @@ func @must_lower_to_map() {
     %0 = sair.static_range 8 : !sair.range
     // expected-error @+1 {{operation must be lowered to sair.map}}
     sair.map_reduce reduce[d0: %0] attributes {
-      loop_nest = [{name = "A", iter = #sair.iter<d0>}]
+      loop_nest = [{name = "A", iter = #sair.pattern_expr<d0>}]
     } {
       ^bb0(%arg0: index):
         sair.return
@@ -36,7 +36,7 @@ func @proj_any_must_be_eliminated() {
   sair.program {
     %0 = sair.static_range 8 : !sair.range
     %1 = sair.map[d0:%0] attributes {
-      loop_nest=[{name = "A", iter = #sair.iter<d0>}]
+      loop_nest=[{name = "A", iter = #sair.pattern_expr<d0>}]
     } {
       ^bb0(%arg0: index):
         %2 = constant 1.0 : f32
@@ -57,8 +57,8 @@ func @strip_mined_loop() {
     // expected-error @+1 {{loop must not rematerialize or be strip-mined}}
     sair.map[d0:%0] attributes {
       loop_nest = [
-        {name = "A", iter = #sair.iter<d0 step 4>},
-        {name = "B", iter = #sair.iter<d0>}
+        {name = "A", iter = #sair.pattern_expr<stripe(d0, 4)>},
+        {name = "B", iter = #sair.pattern_expr<stripe(d0, 1 size 4)>}
       ]
     } {
       ^bb0(%arg0: index):
@@ -79,8 +79,8 @@ func @dependent_dimension(%arg0: index) {
     // expected-error @+1 {{lowering dependent dimensions is not supported yet}}
     sair.map[d0:%0, d1:%2] attributes {
       loop_nest = [
-        {name = "A", iter = #sair.iter<d0>},
-        {name = "B", iter = #sair.iter<d1>}
+        {name = "A", iter = #sair.pattern_expr<d0>},
+        {name = "B", iter = #sair.pattern_expr<d1>}
       ]
     } {
       ^bb0(%i: index, %j: index):
@@ -98,7 +98,7 @@ func @unable_to_create_default_value() {
     %1 = sair.static_range 8 : !sair.range
     // expected-error @+1 {{unable to create a default value of type 'memref<f32>'}}
     %2 = sair.map[d0:%1] attributes {
-      loop_nest = [{name = "A", iter = #sair.iter<d0>}]
+      loop_nest = [{name = "A", iter = #sair.pattern_expr<d0>}]
     } {
       ^bbo(%arg0: index):
         %3 = alloc() : memref<f32>
@@ -118,7 +118,7 @@ func @proj_of_fby(%arg0: f32) {
     %1 = sair.static_range 8 : !sair.range
     %2 = sair.fby %0 then[d0:%1] %3(d0) : !sair.value<d0:range, f32>
     %3 = sair.map[d0:%1] %2(d0) attributes {
-      loop_nest = [{name = "A", iter = #sair.iter<d0>}]
+      loop_nest = [{name = "A", iter = #sair.pattern_expr<d0>}]
     } {
       ^bb0(%arg1: index, %arg2: f32):
         sair.return %arg2 : f32

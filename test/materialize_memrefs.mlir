@@ -171,9 +171,9 @@ func @loop_nest(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range 8 : !sair.range
     // CHECK: sair.copy
-    // CHECK: loop_nest = [{iter = #sair.iter<d0>, name = "A"}]
+    // CHECK: loop_nest = [{iter = #sair.pattern_expr<d0>, name = "A"}]
     sair.copy[d0:%1] %0 {
-      loop_nest = [{name = "A", iter = #sair.iter<d0>}]
+      loop_nest = [{name = "A", iter = #sair.pattern_expr<d0>}]
     } : !sair.value<d0:range, f32>
 
     // CHECK: sair.map
@@ -181,15 +181,15 @@ func @loop_nest(%arg0: f32) {
     // CHECK: alloc
 
     // CHECK: sair.copy
-    // CHECK: loop_nest = [{iter = #sair.iter<d0>, name = "B"}]
+    // CHECK: loop_nest = [{iter = #sair.pattern_expr<d0>, name = "B"}]
     sair.copy[d0:%1] %0 {
-      loop_nest = [{name = "B", iter = #sair.iter<d0>}]
+      loop_nest = [{name = "B", iter = #sair.pattern_expr<d0>}]
     } : !sair.value<d0:range, f32>
 
     // CHECK: sair.map
-    // CHECK: loop_nest = [{iter = #sair.iter<d0>, name = "B"}]
+    // CHECK: loop_nest = [{iter = #sair.pattern_expr<d0>, name = "B"}]
     %2 = sair.map[d0:%1] attributes {
-      loop_nest = [{name = "B", iter = #sair.iter<d0>}],
+      loop_nest = [{name = "B", iter = #sair.pattern_expr<d0>}],
       memory_space = [1]
     } {
       ^bb0(%arg1: index):
@@ -198,18 +198,18 @@ func @loop_nest(%arg0: f32) {
     } : #sair.shape<d0:range>, () -> f32
 
     // CHECK: sair.map
-    // CHECK: loop_nest = [{iter = #sair.iter<d0>, name = "C"}]
+    // CHECK: loop_nest = [{iter = #sair.pattern_expr<d0>, name = "C"}]
     sair.map[d0:%1] %2(d0) attributes {
-      loop_nest = [{name = "C", iter = #sair.iter<d0>}]
+      loop_nest = [{name = "C", iter = #sair.pattern_expr<d0>}]
     } {
       ^bb0(%arg1: index, %arg2: f32):
         sair.return
     } : #sair.shape<d0:range>, (f32) -> ()
 
     // CHECK: sair.copy
-    // CHECK: loop_nest = [{iter = #sair.iter<d0>, name = "C"}]
+    // CHECK: loop_nest = [{iter = #sair.pattern_expr<d0>, name = "C"}]
     sair.copy[d0:%1] %0 {
-      loop_nest = [{name = "C", iter = #sair.iter<d0>}]
+      loop_nest = [{name = "C", iter = #sair.pattern_expr<d0>}]
     } : !sair.value<d0:range, f32>
 
     // CHECK: sair.map
@@ -217,9 +217,9 @@ func @loop_nest(%arg0: f32) {
     // CHECK: dealloc
 
     // CHECK: sair.copy
-    // CHECK: loop_nest = [{iter = #sair.iter<d0>, name = "D"}]
+    // CHECK: loop_nest = [{iter = #sair.pattern_expr<d0>, name = "D"}]
     sair.copy[d0:%1] %0 {
-      loop_nest = [{name = "D", iter = #sair.iter<d0>}]
+      loop_nest = [{name = "D", iter = #sair.pattern_expr<d0>}]
     } : !sair.value<d0:range, f32>
     sair.exit
   }

@@ -237,9 +237,6 @@ mlir::LogicalResult RegisterOperations(SairProgramOp program, Driver &driver) {
                                       "eliminated before introducing loops";
     }
 
-    // TODO(ulysse): once we support different kinds of access pattern
-    // expression, ensure that they have been lowered to pointwise.
-
     driver.AddOperation(&operation);
     if (!isa<ComputeOp>(operation)) continue;
 
@@ -254,7 +251,7 @@ mlir::LogicalResult RegisterOperations(SairProgramOp program, Driver &driver) {
 
     for (mlir::Attribute attr : map_op.LoopNestLoops()) {
       LoopAttr loop = attr.cast<LoopAttr>();
-      if (loop.iter().Rematerialize() || loop.iter().Step() != 1) {
+      if (!loop.iter().isa<AccessPatternDimExpr>()) {
         return map_op.emitError()
                << "loop must not rematerialize or be strip-mined";
       }
@@ -334,15 +331,16 @@ mlir::ArrayAttr EraseDimensionFromLoopNest(
   new_loop_nest.reserve(loop_nest.size());
   for (mlir::Attribute attr : loop_nest) {
     LoopAttr loop = attr.cast<LoopAttr>();
-    if (loop.iter().Rematerialize() || loop.iter().Dimension() < dimension) {
-      new_loop_nest.push_back(attr);
+    // This cast is always legal as `RegisterOperations` checks that loop
+    // iterators are AccessPatternDimExprs.
+    int old_dimension = loop.iter().cast<AccessPatternDimExpr>().dimension();
+    if (old_dimension < dimension) {
+      new_loop_nest.push_back(loop);
       continue;
     }
-
-    assert(loop.iter().Dimension() != dimension);
-    IteratorAttr iter = IteratorAttr::get(context, loop.iter().Dimension() - 1,
-                                          loop.iter().Step());
-    new_loop_nest.push_back(LoopAttr::get(loop.name(), iter, context));
+    new_loop_nest.push_back(LoopAttr::get(
+        loop.name(), AccessPatternDimExpr::get(old_dimension - 1, context),
+        context));
   }
   return mlir::ArrayAttr::get(new_loop_nest, context);
 }
@@ -501,7 +499,7 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op, Driver &driver) {
   llvm::ArrayRef<mlir::Attribute> loop_nest = op.LoopNestLoops();
   LoopAttr loop = loop_nest.back().cast<LoopAttr>();
 
-  int dimension = loop.iter().Dimension();
+  int dimension = loop.iter().cast<AccessPatternDimExpr>().dimension();
   RangeOp range = cast<RangeOp>(op.domain()[dimension].getDefiningOp());
   if (op.shape().Dimensions()[dimension].DependencyMask().any()) {
     return op.emitError()
@@ -632,10 +630,13 @@ void Fuse(SairMapOp first_op, SairMapOp second_op, Driver &driver) {
   second_block_args.append(second_op.domain().size(), nullptr);
   for (auto [first_attr, second_attr] :
        llvm::zip(first_op.LoopNestLoops(), second_op.LoopNestLoops())) {
-    int first_dimension = first_attr.cast<LoopAttr>().iter().Dimension();
-    int second_dimension = second_attr.cast<LoopAttr>().iter().Dimension();
-    first_to_second_pattern[second_dimension] =
-        AccessPatternDimExpr::get(first_dimension, context);
+    AccessPatternExpr first_iter = first_attr.cast<LoopAttr>().iter();
+    int first_dimension = first_iter.cast<AccessPatternDimExpr>().dimension();
+    int second_dimension = second_attr.cast<LoopAttr>()
+                               .iter()
+                               .cast<AccessPatternDimExpr>()
+                               .dimension();
+    first_to_second_pattern[second_dimension] = first_iter;
     second_block_args[second_dimension] =
         first_op.block().getArgument(first_dimension);
   }

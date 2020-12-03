@@ -308,16 +308,6 @@ func @from_scalar() {
   return
 }
 
-// CHECK-LABEL: @iterator_attr
-func @iterator_attr() {
-  "foo"() {
-    // CHECK: attr0 = #sair.iter<d0>
-    attr0 = #sair.iter<d0>,
-    // CHECK: attr1 = #sair.iter<d1 step 4>
-    attr1 = #sair.iter<d1 step 4>
-  } : () -> ()
-}
-
 // CHECK-LABEL: @loop_nest_attr
 func @loop_nest_attr(%arg0: f32) {
   sair.program {
@@ -326,16 +316,16 @@ func @loop_nest_attr(%arg0: f32) {
     // CHECK: sair.copy[d0:%{{.*}}, d1:%{{.*}}] %1 {
     sair.copy[d0:%0, d1:%0] %1 {
       loop_nest = [
-        // CHECK: {iter = #sair.iter<remat>, name = "loopA"}
-        {name = "loopA", iter = #sair.iter<remat>},
-        // CHECK: {iter = #sair.iter<d0>, name = "loopB"}
-        {name = "loopB", iter = #sair.iter<d0>},
-        // CHECK: {iter = #sair.iter<d1>, name = "loopC"}
-        {name = "loopC", iter = #sair.iter<d1>}
+        // CHECK: {iter = #sair.pattern_expr<none>, name = "loopA"}
+        {name = "loopA", iter = #sair.pattern_expr<none>},
+        // CHECK: {iter = #sair.pattern_expr<d0>, name = "loopB"}
+        {name = "loopB", iter = #sair.pattern_expr<d0>},
+        // CHECK: {iter = #sair.pattern_expr<d1>, name = "loopC"}
+        {name = "loopC", iter = #sair.pattern_expr<d1>}
       ]
     } : !sair.value<d0:range x d1:range, f32>
     sair.copy[d0:%0] %1 {
-      loop_nest = [{name = "loopA", iter = #sair.iter<d0>}]
+      loop_nest = [{name = "loopA", iter = #sair.pattern_expr<d0>}]
     } : !sair.value<d0:range, f32>
     sair.exit
   }
@@ -438,4 +428,51 @@ func @access_pattern_expr_attr() {
   "foo"() {access_pattern_expr = #sair.pattern_expr<stripe(d0, 1 size 4)>} : () -> ()
   // CHECK: "foo"() {access_pattern_expr = #sair.pattern_expr<unstripe(d0, d1, [4])>}
   "foo"() {access_pattern_expr = #sair.pattern_expr<unstripe(d0, d1, [4])>} : () -> ()
+}
+
+func @stripe_mined_loop() {
+  sair.program {
+    %0 = sair.static_range 8 : !sair.range
+    sair.map[d0:%0] attributes {
+      loop_nest = [
+        {name = "A", iter = #sair.pattern_expr<stripe(d0, 4)>},
+        {name = "B", iter = #sair.pattern_expr<stripe(d0, 1 size 4)>}
+      ]
+    } {
+      ^bb0(%arg0: index):
+        sair.return
+    } : #sair.shape<d0:range>, () -> ()
+    sair.exit
+  }
+  return
+}
+
+func @stripe_access_pattern(%arg0: f32) {
+  sair.program {
+    // CHECK: %[[D0:.*]] = sair.static_range 8
+    %0 = sair.static_range 8 : !sair.range
+    // CHECK: %[[D1:.*]] = sair.static_range 8 step 2
+    %1 = sair.static_range 8 step 2 : !sair.range
+    // CHECK: %[[I0:.*]]:2 = sair.map
+    %2, %3 = sair.map[d0:%1] {
+      ^bb0(%arg1: index):
+        %c2 = constant 2 : index
+        %4 = addi %arg1, %c2 : index
+        sair.return %arg1, %4 : index, index
+    } : #sair.shape<d0:range>, () -> (index, index)
+    // CHECK: %[[D2:.*]] = sair.dyn_range[d0:%[[D1]]] %[[I0]]#0(d0), %[[I0]]#1(d0)
+    %4 = sair.dyn_range[d0:%1] %2(d0), %3(d0) : !sair.range<d0:range>
+    // CHECK: %[[V0:.*]] = sair.from_scalar
+    %5 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    // CHECK: %[[V1:.*]] = sair.copy[d0:%[[D0]]] %[[V0]]
+    %6 = sair.copy[d0:%0] %5 : !sair.value<d0:range, f32>
+    // CHECK: %[[V2:.*]] = sair.copy[d0:%[[D1]], d1:%[[D2]]] %[[V1]](unstripe(d0, d1, [2]))
+    %7 = sair.copy[d0:%1, d1:%4] %6(unstripe(d0, d1, [2]))
+      : !sair.value<d0:range x d1:range(d0), f32>
+    // CHECK: sair.copy[d0:%[[D0]]] %[[V2]](stripe(d0, 2), stripe(d0, 1 size 2))
+    %8 = sair.copy[d0:%0] %7(stripe(d0, 2), stripe(d0, 1 size 2))
+      : !sair.value<d0:range, f32>
+    sair.exit
+  }
+  return
 }

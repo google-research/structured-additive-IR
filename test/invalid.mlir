@@ -559,13 +559,6 @@ func @sair_exit_type_operands_mismatch() {
 
 // -----
 
-func @sair_iterator_step_non_positive() {
-  // expected-error @+1 {{step must be positive}}
-  "foo"() { attr = #sair.iter<d0 step 0> } : () -> ()
-}
-
-// -----
-
 func @expected_loop_attr() {
   sair.program {
     // expected-error @+1 {{expected a `Loop` attribute}}
@@ -586,8 +579,8 @@ func @loop_name_used_twice(%arg0: f32) {
     // expected-error @+1 {{name "A" used twice in the same loop nest}}
     sair.copy[d0: %0, d1:%0] %1 {
       loop_nest = [
-        {name = "A", iter = #sair.iter<d0>},
-        {name = "A", iter = #sair.iter<d1>}
+        {name = "A", iter = #sair.pattern_expr<d0>},
+        {name = "A", iter = #sair.pattern_expr<d1>}
       ]
     } : !sair.value<d0:range x d1:range, f32>
     sair.exit
@@ -617,11 +610,11 @@ func @loop_dependencies_not_covered(%arg0: index, %arg1: f32) {
     %2 = sair.dyn_range[d0:%0] %1 : !sair.range<d0:range>
     %3 = sair.from_scalar %arg1 : !sair.value<(), f32>
 
-    // expected-error @+1 {{dimension 'd1' must be nested in dimension 'd0'}}
+    // expected-error @+1 {{dimension d1 in loop "A" is used before its dependencies}}
     sair.copy[d0: %0, d1: %2] %3 {
       loop_nest = [
-        {name = "A", iter = #sair.iter<d1>},
-        {name = "B", iter = #sair.iter<d0>}
+        {name = "A", iter = #sair.pattern_expr<d1>},
+        {name = "B", iter = #sair.pattern_expr<d0>}
       ]
     } : !sair.value<d0:range x d1:range(d0), f32>
     sair.exit
@@ -636,7 +629,7 @@ func @unknown_dim_in_loop_nest(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{dimension 'd0' is out of range of the domain}}
     sair.copy %0 {
-      loop_nest = [{name = "A", iter = #sair.iter<d0>}]
+      loop_nest = [{name = "A", iter = #sair.pattern_expr<d0>}]
     } : !sair.value<(), f32>
     sair.exit
   }
@@ -649,11 +642,11 @@ func @loop_step_increasing(%arg0: f32) {
   sair.program {
     %0 = sair.static_range 8 : !sair.range
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    // expected-error @+1 {{loop "B" step must be less than in outer loops}}
+    // expected-error @+1 {{loop "A" must be nested inside "B"}}
     sair.copy[d0: %0] %1 {
       loop_nest = [
-        {name = "A", iter = #sair.iter<d0 step 2>},
-        {name = "B", iter = #sair.iter<d0 step 4>}
+        {name = "A", iter = #sair.pattern_expr<stripe(d0, 1 size 4)>},
+        {name = "B", iter = #sair.pattern_expr<stripe(d0, 4)>}
       ]
     } : !sair.value<d0:range, f32>
     sair.exit
@@ -669,15 +662,15 @@ func @loop_fusion_different_prefix(%arg0: f32) {
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     sair.copy[d0: %0, d1: %0] %1 {
       loop_nest = [
-        {name = "A", iter=#sair.iter<d0>},
-        {name = "B", iter=#sair.iter<d1>}
+        {name = "A", iter=#sair.pattern_expr<d0>},
+        {name = "B", iter=#sair.pattern_expr<d1>}
       ]
     } : !sair.value<d0:range x d1:range, f32>
     // expected-error @+1 {{occurrences of loop "B" must be contiguous and nested in the same loops}}
     sair.copy[d0: %0, d1: %0] %1 {
       loop_nest = [
-        {name = "C", iter=#sair.iter<d0>},
-        {name = "B", iter=#sair.iter<d1>}
+        {name = "C", iter=#sair.pattern_expr<d0>},
+        {name = "B", iter=#sair.pattern_expr<d1>}
       ]
     } : !sair.value<d0:range x d1:range, f32>
     sair.exit
@@ -691,11 +684,11 @@ func @loop_fusion_not_contiguous(%arg0: f32) {
   sair.program {
     %0 = sair.static_range 8 : !sair.range
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    sair.copy[d0: %0] %1 { loop_nest = [{name = "A", iter=#sair.iter<d0>}] }
+    sair.copy[d0: %0] %1 { loop_nest = [{name = "A", iter=#sair.pattern_expr<d0>}] }
       : !sair.value<d0:range, f32>
     sair.copy %1 : !sair.value<(), f32>
     // expected-error @+1 {{occurrences of loop "A" must be contiguous and nested in the same loops}}
-    sair.copy[d0: %0] %1 { loop_nest = [{name = "A", iter=#sair.iter<d0>}] }
+    sair.copy[d0: %0] %1 { loop_nest = [{name = "A", iter=#sair.pattern_expr<d0>}] }
       : !sair.value<d0:range, f32>
     sair.exit
   }
@@ -707,8 +700,8 @@ func @loop_fusion_not_contiguous(%arg0: f32) {
 func @iter_field_missing(%arg0: f32) {
   sair.program {
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    // expected-error @+1 {{loop "A" must have the 'iter' field set in at least one operation}}
-    sair.copy %1 { loop_nest = [{name = "A", iter=#sair.iter<remat>}] }
+    // expected-error @+1 {{loop "A" iterator is not fully specified}}
+    sair.copy %1 { loop_nest = [{name = "A", iter=#sair.pattern_expr<none>}] }
       : !sair.value<(), f32>
     sair.exit
   }
@@ -722,12 +715,12 @@ func @loop_definition_mismatch(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
 
     %1 = sair.static_range 8 : !sair.range
-    sair.copy[d0: %1] %0 {loop_nest = [{name = "A", iter=#sair.iter<d0>}]}
+    sair.copy[d0: %1] %0 {loop_nest = [{name = "A", iter=#sair.pattern_expr<d0>}]}
       : !sair.value<d0:range, f32>
 
     %2 = sair.static_range 8 : !sair.range
-    // expected-error @+1 {{loop "A" dimension does not match previous occurrences}}
-    sair.copy[d0: %2] %0 {loop_nest = [{name = "A", iter=#sair.iter<d0>}]}
+    // expected-error @+1 {{dimension d0 in loop "A" does not match previous occurrences}}
+    sair.copy[d0: %2] %0 {loop_nest = [{name = "A", iter=#sair.pattern_expr<d0>}]}
       : !sair.value<d0:range, f32>
     sair.exit
   }
@@ -742,7 +735,7 @@ func @loop_name_not_registered(%arg0: f32) {
 
     %1 = sair.static_range 8 : !sair.range
     // expected-error @+1 {{loop "A" is not declared in the parent operation}}
-    sair.copy[d0: %1] %0 {loop_nest = [{name = "A", iter=#sair.iter<d0>}]}
+    sair.copy[d0: %1] %0 {loop_nest = [{name = "A", iter=#sair.pattern_expr<d0>}]}
       : !sair.value<d0:range, f32>
     sair.exit
   }) {
@@ -759,11 +752,11 @@ func @init_nested_in_reduction_loop(%arg0: f32) {
     %1 = sair.static_range 8 : !sair.range
     // expected-error @+1 {{operation cannot be nested in loop "A"}}
     %2 = sair.copy %0 {
-      loop_nest = [{name = "A", iter = #sair.iter<remat>}]
+      loop_nest = [{name = "A", iter = #sair.pattern_expr<none>}]
     } : !sair.value<(), f32>
     // expected-note @+1 {{because of this operation}}
     sair.map_reduce %2 reduce[d0:%1] attributes {
-      loop_nest = [{name = "A", iter = #sair.iter<d0>}]
+      loop_nest = [{name = "A", iter = #sair.pattern_expr<d0>}]
     } {
       ^bb0(%arg1: index, %arg2: f32):
          sair.return %arg2 : f32
@@ -781,12 +774,12 @@ func @dimension_defined_in_loop_nest(%arg0: index, %arg1: f32) {
     %1 = sair.from_scalar %arg1 : !sair.value<(), f32>
     // expected-error @+1 {{rematerialized loop "A" indirectly uses the range before it is defined}}
     %2 = sair.copy %0 {
-      loop_nest = [{name = "A", iter = #sair.iter<remat>}]
+      loop_nest = [{name = "A", iter = #sair.pattern_expr<none>}]
     } : !sair.value<(), index>
     // expected-note @+1 {{range defined here}}
     %3 = sair.dyn_range %2 : !sair.range
     %4 = sair.copy[d0:%3] %1 {
-      loop_nest = [{name = "A", iter = #sair.iter<d0>}],
+      loop_nest = [{name = "A", iter = #sair.pattern_expr<d0>}],
       memory_space = [1]
     } : !sair.value<d0:range, f32>
     sair.exit
@@ -801,12 +794,12 @@ func @proj_last_dependency(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range 8 : !sair.range
     %2 = sair.copy[d0:%1] %0 {
-      loop_nest = [{name = "A", iter = #sair.iter<d0>}]
+      loop_nest = [{name = "A", iter = #sair.pattern_expr<d0>}]
     } : !sair.value<d0:range, f32>
     %3 = sair.proj_last of[d0:%1] %2(d0) : #sair.shape<d0:range>, f32
     // expected-error @+1 {{loop "A" must be closed before this operation}}
     %4 = sair.copy %3 {
-      loop_nest = [{name = "A", iter = #sair.iter<remat>}]
+      loop_nest = [{name = "A", iter = #sair.pattern_expr<none>}]
     } : !sair.value<(), f32>
     sair.exit
   }
@@ -822,15 +815,15 @@ func @mapped_dimensions(%arg0: f32) {
     // expected-note @+1 {{dependency from this operation}}
     %2 = sair.copy[d0:%1, d1:%1] %0 {
       loop_nest = [
-        {name = "A", iter = #sair.iter<d0>},
-        {name = "B", iter = #sair.iter<d1>}
+        {name = "A", iter = #sair.pattern_expr<d0>},
+        {name = "B", iter = #sair.pattern_expr<d1>}
       ]
     } : !sair.value<d0:range x d1:range, f32>
     // expected-error @+1 {{loop "A" violates a data dependency}}
     %3 = sair.copy[d0:%1, d1:%1] %2(d1, d0) {
       loop_nest = [
-        {name = "A", iter = #sair.iter<d0>},
-        {name = "B", iter = #sair.iter<d1>}
+        {name = "A", iter = #sair.pattern_expr<d0>},
+        {name = "B", iter = #sair.pattern_expr<d1>}
       ]
     } : !sair.value<d0:range x d1:range, f32>
     sair.exit
@@ -847,15 +840,15 @@ func @dimension_size_loop_nest(%arg0: index, %arg1: f32) {
     %2 = sair.static_range 8 : !sair.range
 
     %3 = sair.copy %0 {
-      loop_nest = [{name = "A", iter = #sair.iter<remat>}]
+      loop_nest = [{name = "A", iter = #sair.pattern_expr<none>}]
     } : !sair.value<(), index>
     %4 = sair.dyn_range %3 : !sair.range
 
     // expected-error @+1 {{operation cannot be nested in loop "A"}}
     %5 = sair.copy[d0:%2, d1:%4] %1 {
       loop_nest = [
-        {name = "A", iter = #sair.iter<d0>},
-        {name = "B", iter = #sair.iter<d1>}
+        {name = "A", iter = #sair.pattern_expr<d0>},
+        {name = "B", iter = #sair.pattern_expr<d1>}
       ],
       memory_space = [1]
     } : !sair.value<d0:range x d1:range, f32>
@@ -873,10 +866,10 @@ func @fby_must_fuse(%arg0: f32) {
     %2 = sair.fby %0 then[d0:%1] %4(d0) : !sair.value<d0:range, f32>
     // expected-error @+1 {{loop "B" must be open at or before this operation}}
     %3 = sair.copy[d0:%1] %2(d0) {
-      loop_nest = [{name = "A", iter = #sair.iter<d0>}]
+      loop_nest = [{name = "A", iter = #sair.pattern_expr<d0>}]
     } : !sair.value<d0:range, f32>
     %4 = sair.copy[d0:%1] %3(d0) {
-      loop_nest = [{name = "B", iter = #sair.iter<d0>}]
+      loop_nest = [{name = "B", iter = #sair.pattern_expr<d0>}]
     } : !sair.value<d0:range, f32>
     sair.exit
   }
@@ -893,8 +886,8 @@ func @fby_of_proj_dependency(%arg0: f32) {
     %2 = sair.fby %0 then[d0:%1] %4(d0) : !sair.value<d0:range, f32>
     %3 = sair.map[d0:%1, d1:%1] %2(d0) attributes {
       loop_nest = [
-        {name = "A", iter = #sair.iter<d1>},
-        {name = "B", iter = #sair.iter<d0>}
+        {name = "A", iter = #sair.pattern_expr<d1>},
+        {name = "B", iter = #sair.pattern_expr<d0>}
       ]
     } {
       ^bb0(%arg1: index, %arg2: index, %arg3: f32):
@@ -919,8 +912,8 @@ func @fby_of_fby_dependency(%arg0: f32) {
       : !sair.value<d0:range x d1:range, f32>
     %4 = sair.copy[d0:%1, d1:%1] %3(d0, d1) {
       loop_nest = [
-        {name = "A", iter = #sair.iter<d1>},
-        {name = "B", iter = #sair.iter<d0>}
+        {name = "A", iter = #sair.pattern_expr<d1>},
+        {name = "B", iter = #sair.pattern_expr<d0>}
       ]
     } : !sair.value<d0:range x d1:range, f32>
     %5 = sair.proj_last[d0:%1] of[d1:%1] %4(d0, d1)
@@ -952,12 +945,76 @@ func @wrong_order_for_remat(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{rematerialized loop "A" indirectly uses the range before it is defined}}
     %2 = sair.copy %0 {
-      loop_nest = [{name = "A", iter = #sair.iter<remat>}]
+      loop_nest = [{name = "A", iter = #sair.pattern_expr<none>}]
     } : !sair.value<(), f32>
     // expected-note @+1 {{range defined here}}
     %1 = sair.static_range 8 : !sair.range
     %3 = sair.copy[d0:%1] %2 {
-      loop_nest = [{name = "A", iter = #sair.iter<d0>}]
+      loop_nest = [{name = "A", iter = #sair.pattern_expr<d0>}]
+    } : !sair.value<d0:range, f32>
+    sair.exit
+  }
+  return
+}
+
+
+// -----
+
+func @loop_unification_failed(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.static_range 8 : !sair.range
+    %2 = sair.copy[d0:%1] %0 {
+      loop_nest = [
+        {name = "A", iter = #sair.pattern_expr<stripe(d0, 4)>},
+        {name = "B", iter = #sair.pattern_expr<stripe(d0, 1 size 4)>}
+      ]
+    } : !sair.value<d0:range, f32>
+    // expected-error @+1 {{failed to unify loop "A" iterators}}
+    %3 = sair.copy[d0:%1] %2(d0) {
+      loop_nest = [
+        {name = "A", iter = #sair.pattern_expr<stripe(d0, 2)>},
+        {name = "B", iter = #sair.pattern_expr<stripe(d0, 1 size 2)>}
+      ]
+    } : !sair.value<d0:range, f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @loop_unification_failed_subexpr(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.static_range 8 : !sair.range
+    %2 = sair.copy[d0:%1] %0 {
+      loop_nest = [
+        {name = "A", iter = #sair.pattern_expr<stripe(d0, 2)>},
+        {name = "B", iter = #sair.pattern_expr<stripe(d0, 1 size 2)>}
+      ]
+    } : !sair.value<d0:range, f32>
+    // expected-error @+1 {{cannot unify d0 with '#sair.pattern_expr<stripe(d0, 2)>' in loop "A"}}
+    %3 = sair.copy[d0:%1] %2(d0) {
+      loop_nest = [{name = "A", iter = #sair.pattern_expr<d0>}]
+    } : !sair.value<d0:range, f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @incompatible_loop_iterators(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.static_range 8 : !sair.range
+    // expected-error @+1 {{incompatible loop iterators}}
+    %2 = sair.copy[d0:%1] %0 {
+      loop_nest = [
+        {name = "A", iter = #sair.pattern_expr<d0>},
+        {name = "B", iter = #sair.pattern_expr<d0>}
+      ]
     } : !sair.value<d0:range, f32>
     sair.exit
   }
@@ -983,19 +1040,4 @@ func @invalid_unstripe() {
 func @invalid_pattern() {
   // expected-error @+1 {{invalid access pattern}}
   "foo"() { bar = #sair.pattern<1: d0, d0> } : () -> ()
-}
-
-// -----
-
-func @unsupported_pattern(%arg0: f32) {
-  sair.program {
-    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %1 = sair.static_range 8 : !sair.range
-    %2 = sair.copy[d0:%1] %0 : !sair.value<d0:range, f32>
-    // expected-error @+1 {{only pointwise access patterns are supported for now}}
-    %3 = sair.copy[d0:%1] %2(unstripe(stripe(d0, 4), stripe(d0, 1 size 4), [4]))
-      : !sair.value<d0:range, f32>
-    sair.exit
-  }
-  return
 }
