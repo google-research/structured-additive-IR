@@ -28,6 +28,10 @@ namespace sair {
 namespace impl {
 // Private implementation for sair::AccessPatternDimExpr
 class AccessPatternDimExprStorage;
+// Private implementation for sair::AccessPatternStripeExpr
+class AccessPatternStripeExprStorage;
+// Private implementation for sair::AccessPatternUnStripeExpr
+class AccessPatternUnStripeExprStorage;
 // Private implementation for sair::AccessPatternAttr
 class AccessPatternAttrStorage;
 // Private implementation for sair::DomainShapeAttr
@@ -56,9 +60,17 @@ class AccessPatternAttr
   // Constructs an instance of AccessPatternAttr in the given context.
   static AccessPatternAttr get(mlir::MLIRContext *context, int domain_size,
                                llvm::ArrayRef<AccessPatternExpr> pattern);
-  // Returns the access pattern that accesses `num_dimensions` pointwise without
-  // transposing any of them, and has the given size of the use domain. If use
-  // domain size is `-1`, it is considered equal to `num_dimensions`.
+
+  // Constructs an instance of AccessPatternAttr and checks it is valid. Returns
+  // nullptr in case of failure.
+  static AccessPatternAttr getChecked(
+      mlir::MLIRContext *context, int domain_size,
+      llvm::ArrayRef<AccessPatternExpr> pattern);
+
+  // Returns the access pattern that accesses `num_dimensions` pointwise
+  // without transposing any of them, and has the given size of the use
+  // domain. If use domain size is `-1`, it is considered equal to
+  // `num_dimensions`.
   static AccessPatternAttr GetIdentity(mlir::MLIRContext *context,
                                        int num_dimensions,
                                        int use_domain_size = -1);
@@ -103,6 +115,10 @@ class AccessPatternAttr
   // Returns `true` if access pattern expression does not contain `none`.
   bool IsFullySpecified() const;
 
+  // Completes the access pattern to make it fully specified by allocating new
+  // dimensions in the use domain.
+  AccessPatternAttr MakeFullySpecified() const;
+
   // Indicates whether the access pattern is an identity, e.g. does not
   // transpose or otherwise modify any dimension.
   bool IsIdentity() const;
@@ -132,7 +148,7 @@ class AccessPatternAttr
   //   (d0,d1,d2).ShiftRight(2,1) => (d0,d1,d4)
   AccessPatternAttr ShiftRight(int offset, int start_from = 0) const;
 
-  // Inverse the access pattern.
+  // Inverses the access pattern.
   AccessPatternAttr Inverse() const;
 
   using iterator = llvm::ArrayRef<AccessPatternExpr>::iterator;
@@ -251,6 +267,12 @@ struct AccessPatternExprInterfaceTraits {
     // Returns `true` if the expression do not contain `none`.
     virtual bool IsFullySpecified(mlir::Attribute attr) const = 0;
 
+    // Replaces occurences of `none` by freshly allocated dimensions. Starts
+    // allocating at `num_dimensions` and increase it each time a new dimension
+    // is allocated.
+    virtual mlir::Attribute MakeFullySpecified(mlir::Attribute attr,
+                                               int &num_dimensions) const = 0;
+
     // Sets the dimensions referenced by the expression in `mask`.
     virtual void SetDependenciesInMask(mlir::Attribute attr,
                                        llvm::SmallBitVector &mask) const = 0;
@@ -260,25 +282,62 @@ struct AccessPatternExprInterfaceTraits {
         mlir::Attribute attr,
         mlir::ArrayRef<AccessPatternExpr> exprs) const = 0;
 
-    // Returns the shape of the dimension accessed by the given expression,
-    // given the shape of the current domain, the inversed access pattern and
-    // the number of dimensions the final shape should have.
+    // Returns the shape of the dimension accessed by the given expression.
+    // `accessing_shape` must be the shape of the current domain and
+    // `inversed_pattern` the inverse of the full access pattern.
     virtual DomainShapeDim AccessedShape(
         mlir::Attribute attr, llvm::ArrayRef<DomainShapeDim> accessing_shape,
         AccessPatternAttr inversed_pattern) const = 0;
 
     // Sets `inverses[i]` to the inverse of the current expression (and its
-    // context) with regard to `di`. `context_inverse` is the inverse of the
-    // context of the current expression.
-    virtual void SetInverse(
-        mlir::Attribute attr, AccessPatternExpr &context_inverse,
+    // context) with regard to the i-th dimension of the domain. `inverses` size
+    // must be equal to the size of the domain.
+    //
+    // `context_inverse` is the inverse of the surrounding sub-expression. If
+    // the current sub-expression is `e` in `C(e)`, then `context_inverse` is
+    // the inverse of `C(x)`.
+    //
+    // Returns a failure if the inverse of this expression cannot be unified
+    // with inverses already set in `inverses`.
+    virtual mlir::LogicalResult SetInverse(
+        mlir::Attribute attr, AccessPatternExpr context_inverse,
         llvm::MutableArrayRef<AccessPatternExpr> inverses) const = 0;
+
+    // Unifies two expressions by replacing the `none` of each expr by the
+    // corresponding sub-expression of the other expr. Returns nullptr if
+    // expressions cannot be unified.
+    virtual AccessPatternExpr Unify(mlir::Attribute expr,
+                                    AccessPatternExpr other_expr) const = 0;
+
+    // Fills `constraints` with expression such that
+    // `this.SubstituteDims(constraints).Unify(other_expr)` is valid. Expects
+    // `contraints` to be initially filled with `none`. Leaves `constraints[i]`
+    // untouched if dimension i generates no constraints. Returns a failure
+    // if expressions cannot be unified.
+    virtual mlir::LogicalResult UnificationConstraints(
+        mlir::Attribute expr, AccessPatternExpr other_expr,
+        llvm::MutableArrayRef<AccessPatternExpr> constraints) const = 0;
+
+    // Returns the minimal domain size for the expression to be valid.
+    virtual int MinDomainSize(mlir::Attribute expr) const = 0;
+
+    // Finds the subexpression corresponding to the inverse of this expression
+    // in `inverse`. Expects the expression to be fully specified. `inverse`
+    // must be the inverse of the access pattern using this sub-expression.
+    virtual mlir::Attribute FindInInverse(
+        mlir::Attribute expr,
+        llvm::ArrayRef<AccessPatternExpr> inverse) const = 0;
   };
 
   template <typename ConcreteAttr>
   struct Model : public Concept {
     bool IsFullySpecified(mlir::Attribute attr) const final {
       return attr.cast<ConcreteAttr>().IsFullySpecified();
+    }
+
+    mlir::Attribute MakeFullySpecified(mlir::Attribute attr,
+                                       int &num_dimensions) const {
+      return attr.cast<ConcreteAttr>().MakeFullySpecified(num_dimensions);
     }
 
     void SetDependenciesInMask(mlir::Attribute attr,
@@ -299,10 +358,25 @@ struct AccessPatternExprInterfaceTraits {
                                                      inversed_pattern);
     }
 
-    void SetInverse(
-        mlir::Attribute attr, AccessPatternExpr &context_inverse,
-        llvm::MutableArrayRef<AccessPatternExpr> inverses) const final {
-      return attr.cast<ConcreteAttr>().SetInverse(context_inverse, inverses);
+    mlir::LogicalResult SetInverse(
+        mlir::Attribute attr, AccessPatternExpr context_inverse,
+        llvm::MutableArrayRef<AccessPatternExpr> inverses) const final;
+
+    AccessPatternExpr Unify(mlir::Attribute expr,
+                            AccessPatternExpr other_expr) const final;
+
+    mlir::LogicalResult UnificationConstraints(
+        mlir::Attribute expr, AccessPatternExpr other_expr,
+        llvm::MutableArrayRef<AccessPatternExpr> constraints) const final;
+
+    int MinDomainSize(mlir::Attribute expr) const final {
+      return expr.cast<ConcreteAttr>().MinDomainSize();
+    }
+
+    mlir::Attribute FindInInverse(
+        mlir::Attribute expr,
+        llvm::ArrayRef<AccessPatternExpr> inverse) const final {
+      return expr.cast<ConcreteAttr>().FindInInverse(inverse);
     }
   };
 };
@@ -318,10 +392,20 @@ class AccessPatternExpr
   // Returns `true` if the expression do not contain `none`.
   bool IsFullySpecified() const { return getImpl()->IsFullySpecified(*this); }
 
+  // Replaces occurences of `none` by freshly allocated dimensions. Starts
+  // allocating at `num_dimensions` and increase it each time a new dimension is
+  // allocated.
+  AccessPatternExpr MakeFullySpecified(int &num_dimensions) const {
+    return getImpl()->MakeFullySpecified(*this, num_dimensions);
+  }
+
   // Sets the dimensions referenced by the expression in `mask`.
   void SetDependenciesInMask(llvm::SmallBitVector &mask) const {
     return getImpl()->SetDependenciesInMask(*this, mask);
   }
+
+  // Returns a mask of the dimensions referenced by the expression.
+  llvm::SmallBitVector DependencyMask(int domain_size) const;
 
   // Substitutes dimension expressions by the given expressions.
   AccessPatternExpr SubstituteDims(
@@ -338,13 +422,70 @@ class AccessPatternExpr
   }
 
   // Sets `inverses[i]` to the inverse of the current expression (and its
-  // context) with regard to `di`. `context_inverse` is the inverse of the
-  // context of the current expression.
-  void SetInverse(AccessPatternExpr context_inverse,
-                  llvm::MutableArrayRef<AccessPatternExpr> inverses) const {
+  // context) with regard to the i-th dimension. `context_inverse` is the
+  // inverse of the context of the current expression. Returns a failure if the
+  // the inverse of this expression is cannot be unified with inverses already
+  // set in `inverses`.
+  mlir::LogicalResult SetInverse(
+      AccessPatternExpr context_inverse,
+      llvm::MutableArrayRef<AccessPatternExpr> inverses) const {
     return getImpl()->SetInverse(*this, context_inverse, inverses);
   }
+
+  // Unifies two expressions by replacing the `none` of each expr by the
+  // corresponding sub-expression of the other expr. Returns nullptr if
+  // expressions cannot be unified.
+  AccessPatternExpr Unify(AccessPatternExpr other_expr) const {
+    mlir::Attribute result = getImpl()->Unify(*this, other_expr);
+    return result == nullptr ? AccessPatternExpr(nullptr)
+                             : result.cast<AccessPatternExpr>();
+  }
+
+  // Fills `constraints` with expression such that
+  // `this.SubstituteDims(constraints).Unify(other_expr)` is valid. Expects
+  // `contraints` to be initially filled with `none`. Leaves `constraints[i]`
+  // untouched if dimension i generates no constraints. Returns a failure if
+  // expressions cannot be unified.
+  mlir::LogicalResult UnificationConstraints(
+      AccessPatternExpr other_expr,
+      llvm::MutableArrayRef<AccessPatternExpr> constraints) const {
+    return getImpl()->UnificationConstraints(*this, other_expr, constraints);
+  }
+
+  // Returns the minimal domain size for the expression to be valid.
+  int MinDomainSize() const { return getImpl()->MinDomainSize(*this); }
+
+  // Finds the subexpression corresponding to the inverse of this expression in
+  // `inverse`. Expects the expression to be fully specified.
+  AccessPatternExpr FindInInverse(
+      llvm::ArrayRef<AccessPatternExpr> inverse) const {
+    return getImpl()->FindInInverse(*this, inverse).cast<AccessPatternExpr>();
+  }
 };
+
+template <typename ConcreteAttr>
+inline mlir::LogicalResult
+AccessPatternExprInterfaceTraits::Model<ConcreteAttr>::SetInverse(
+    mlir::Attribute attr, AccessPatternExpr context_inverse,
+    llvm::MutableArrayRef<AccessPatternExpr> inverses) const {
+  return attr.cast<ConcreteAttr>().SetInverse(context_inverse, inverses);
+}
+
+template <typename ConcreteAttr>
+inline AccessPatternExpr
+AccessPatternExprInterfaceTraits::Model<ConcreteAttr>::Unify(
+    mlir::Attribute attr, AccessPatternExpr other_expr) const {
+  return attr.cast<ConcreteAttr>().Unify(other_expr);
+}
+
+template <typename ConcreteAttr>
+inline mlir::LogicalResult
+AccessPatternExprInterfaceTraits::Model<ConcreteAttr>::UnificationConstraints(
+    mlir::Attribute expr, AccessPatternExpr other_expr,
+    llvm::MutableArrayRef<AccessPatternExpr> constraints) const {
+  return expr.cast<ConcreteAttr>().UnificationConstraints(other_expr,
+                                                          constraints);
+}
 
 // Access pattern expression that maps to a dimension of the domain.
 class AccessPatternDimExpr
@@ -366,17 +507,31 @@ class AccessPatternDimExpr
 
   bool IsFullySpecified() const { return true; }
 
-  mlir::Attribute SubstituteDims(
-      mlir::ArrayRef<AccessPatternExpr> exprs) const {
-    return exprs[dimension()];
+  AccessPatternExpr MakeFullySpecified(int &num_dimensions) const {
+    return *this;
   }
+
+  AccessPatternExpr SubstituteDims(
+      mlir::ArrayRef<AccessPatternExpr> exprs) const;
 
   DomainShapeDim AccessedShape(llvm::ArrayRef<DomainShapeDim> accessing_shape,
                                AccessPatternAttr inversed_pattern) const;
 
-  void SetInverse(AccessPatternExpr context_inverse,
-                  llvm::MutableArrayRef<AccessPatternExpr> inverses) const {
-    inverses[dimension()] = context_inverse;
+  mlir::LogicalResult SetInverse(
+      AccessPatternExpr context_inverse,
+      llvm::MutableArrayRef<AccessPatternExpr> inverses) const;
+
+  AccessPatternExpr Unify(AccessPatternExpr other_expr) const;
+
+  mlir::LogicalResult UnificationConstraints(
+      AccessPatternExpr other_expr,
+      llvm::MutableArrayRef<AccessPatternExpr> constraints) const;
+
+  int MinDomainSize() const { return dimension() + 1; }
+
+  AccessPatternExpr FindInInverse(
+      llvm::ArrayRef<AccessPatternExpr> inverse) const {
+    return inverse[dimension()];
   }
 };
 
@@ -389,13 +544,17 @@ class AccessPatternNoneExpr
  public:
   using Base::Base;
 
+  static constexpr llvm::StringRef kAttrName = "none";
+
   static AccessPatternNoneExpr get(mlir::MLIRContext *context);
 
   bool IsFullySpecified() const { return false; }
 
+  AccessPatternExpr MakeFullySpecified(int &num_dimensions) const;
+
   void SetDependenciesInMask(llvm::SmallBitVector &mask) const {}
 
-  mlir::Attribute SubstituteDims(
+  AccessPatternExpr SubstituteDims(
       mlir::ArrayRef<AccessPatternExpr> exprs) const {
     return *this;
   }
@@ -406,8 +565,136 @@ class AccessPatternNoneExpr
         "'none' access pattern expression cannot be used to access values");
   }
 
-  void SetInverse(AccessPatternExpr context_inverse,
-                  llvm::ArrayRef<AccessPatternExpr> inverses) const {}
+  mlir::LogicalResult SetInverse(
+      AccessPatternExpr context_inverse,
+      llvm::MutableArrayRef<AccessPatternExpr> inverses) const {
+    return mlir::success();
+  }
+
+  AccessPatternExpr Unify(AccessPatternExpr other_expr) const {
+    return other_expr;
+  }
+
+  mlir::LogicalResult UnificationConstraints(
+      AccessPatternExpr other_expr,
+      llvm::MutableArrayRef<AccessPatternExpr> constraints) const {
+    return mlir::success();
+  }
+
+  int MinDomainSize() const { return 0; }
+
+  AccessPatternExpr FindInInverse(
+      llvm::ArrayRef<AccessPatternExpr> inverse) const {
+    llvm_unreachable(
+        "cannot call `FindInInverse` on partially-specified expressions");
+  }
+};
+
+// Applies stripe-mining to an expression. Iterates on its operand with step
+// `step()`, on a strip of size `size()`. If it iterates of the full expression,
+// `size()` is none.
+class AccessPatternStripeExpr
+    : public mlir::Attribute::AttrBase<AccessPatternStripeExpr, mlir::Attribute,
+                                       impl::AccessPatternStripeExprStorage,
+                                       AccessPatternExpr::Trait> {
+ public:
+  using Base::Base;
+
+  static constexpr llvm::StringRef kAttrName = "stripe";
+
+  static AccessPatternStripeExpr get(AccessPatternExpr operand, int step,
+                                     llvm::Optional<int> size);
+
+  // The striped expression.
+  AccessPatternExpr operand() const;
+
+  // Iteration step. This is 1 for point expressions.
+  int step() const;
+
+  // The range of the expression. This is the stripe factor for point
+  // expressions and none for outer stripe expressions.
+  llvm::Optional<int> size() const;
+
+  bool IsFullySpecified() const { return operand().IsFullySpecified(); }
+
+  AccessPatternExpr MakeFullySpecified(int &num_dimensions) const;
+
+  int MinDomainSize() const { return operand().MinDomainSize(); }
+
+  void SetDependenciesInMask(llvm::SmallBitVector &mask) const {
+    operand().SetDependenciesInMask(mask);
+  }
+
+  AccessPatternExpr SubstituteDims(
+      mlir::ArrayRef<AccessPatternExpr> exprs) const;
+
+  DomainShapeDim AccessedShape(llvm::ArrayRef<DomainShapeDim> accessing_shape,
+                               AccessPatternAttr inverted_pattern) const;
+
+  mlir::LogicalResult SetInverse(
+      AccessPatternExpr context_inverse,
+      llvm::MutableArrayRef<AccessPatternExpr> inverses) const;
+
+  AccessPatternExpr Unify(AccessPatternExpr other_expr) const;
+
+  mlir::LogicalResult UnificationConstraints(
+      AccessPatternExpr other_expr,
+      llvm::MutableArrayRef<AccessPatternExpr> constraints) const;
+
+  AccessPatternExpr FindInInverse(
+      llvm::ArrayRef<AccessPatternExpr> inverse) const;
+};
+
+// Stiches together stripe expressions to iterate on a full dimension. Specifies
+// the step of stripe expressions, except for the innermost which always has
+// step 1.
+class AccessPatternUnStripeExpr
+    : public mlir::Attribute::AttrBase<
+          AccessPatternUnStripeExpr, mlir::Attribute,
+          impl::AccessPatternUnStripeExprStorage, AccessPatternExpr::Trait> {
+ public:
+  using Base::Base;
+
+  static constexpr llvm::StringRef kAttrName = "unstripe";
+
+  // Constructs an unstripe access pattern expression. `stripes` must not be
+  // empty.
+  static AccessPatternUnStripeExpr get(
+      llvm::ArrayRef<AccessPatternExpr> stripes, llvm::ArrayRef<int> factors);
+
+  // The stripe expressions that are combined to obtain the unstriped
+  // expression.
+  llvm::ArrayRef<AccessPatternExpr> operands() const;
+
+  // Stripe expression sizes.
+  llvm::ArrayRef<int> factors() const;
+
+  bool IsFullySpecified() const;
+
+  AccessPatternExpr MakeFullySpecified(int &num_dimensions) const;
+
+  void SetDependenciesInMask(llvm::SmallBitVector &mask) const;
+
+  int MinDomainSize() const;
+
+  AccessPatternExpr SubstituteDims(
+      mlir::ArrayRef<AccessPatternExpr> exprs) const;
+
+  DomainShapeDim AccessedShape(llvm::ArrayRef<DomainShapeDim> accessing_shape,
+                               AccessPatternAttr inverted_pattern) const;
+
+  mlir::LogicalResult SetInverse(
+      AccessPatternExpr context_inverse,
+      llvm::MutableArrayRef<AccessPatternExpr> inverses) const;
+
+  AccessPatternExpr Unify(AccessPatternExpr other_expr) const;
+
+  mlir::LogicalResult UnificationConstraints(
+      AccessPatternExpr other_expr,
+      llvm::MutableArrayRef<AccessPatternExpr> constraints) const;
+
+  AccessPatternExpr FindInInverse(
+      llvm::ArrayRef<AccessPatternExpr> inverse) const;
 };
 
 // An iterator on a Sair iteration dimension.

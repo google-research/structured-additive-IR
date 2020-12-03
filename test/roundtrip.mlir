@@ -430,6 +430,12 @@ func @undef() {
 func @access_pattern_expr_attr() {
   // CHECK: "foo"() {access_pattern_expr = #sair.pattern_expr<d0>}
   "foo"() {access_pattern_expr = #sair.pattern_expr<d0>} : () -> ()
-  // CHECK: "bar"() {access_pattern_expr = #sair.pattern_expr<none>}
-  "bar"() {access_pattern_expr = #sair.pattern_expr<none>} : () -> ()
+  // CHECK: "foo"() {access_pattern_expr = #sair.pattern_expr<none>}
+  "foo"() {access_pattern_expr = #sair.pattern_expr<none>} : () -> ()
+  // CHECK: "foo"() {access_pattern_expr = #sair.pattern_expr<stripe(d0, 4)>}
+  "foo"() {access_pattern_expr = #sair.pattern_expr<stripe(d0, 4)>} : () -> ()
+  // CHECK: "foo"() {access_pattern_expr = #sair.pattern_expr<stripe(d0, 1 size 4)>}
+  "foo"() {access_pattern_expr = #sair.pattern_expr<stripe(d0, 1 size 4)>} : () -> ()
+  // CHECK: "foo"() {access_pattern_expr = #sair.pattern_expr<unstripe(d0, d1, [4])>}
+  "foo"() {access_pattern_expr = #sair.pattern_expr<unstripe(d0, d1, [4])>} : () -> ()
 }

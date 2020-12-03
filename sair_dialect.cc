@@ -51,7 +51,8 @@ SairDialect::SairDialect(mlir::MLIRContext *context)
                     TypeID::get<SairDialect>()) {
   addTypes<RangeType, ValueType>();
   addAttributes<DomainShapeAttr, AccessPatternAttr, IteratorAttr,
-                AccessPatternDimExpr, AccessPatternNoneExpr>();
+                AccessPatternDimExpr, AccessPatternNoneExpr,
+                AccessPatternStripeExpr, AccessPatternUnStripeExpr>();
   addOperations<
 #define GET_OP_LIST
 #include "sair_ops.cc.inc"
@@ -126,8 +127,8 @@ DomainShapeAttr ParseDomainShape(mlir::DialectAsmParser &parser) {
     llvm::SmallBitVector seen_dimensions(dimensions.size());
     AccessPatternAttr inversed_pattern = access_pattern.Inverse();
     for (AccessPatternExpr expr : access_pattern) {
-      llvm::SmallBitVector expr_dependencies(dimensions.size());
-      expr.SetDependenciesInMask(expr_dependencies);
+      llvm::SmallBitVector expr_dependencies =
+          expr.DependencyMask(dimensions.size());
 
       llvm::SmallBitVector transitive_dependencies(dimensions.size());
       for (int dimension : expr_dependencies.set_bits()) {
@@ -231,9 +232,26 @@ namespace {
 // printers.
 void PrintAccessPatternExpr(AccessPatternExpr expr, llvm::raw_ostream &os) {
   if (auto none_expr = expr.dyn_cast<AccessPatternNoneExpr>()) {
-    os << SairDialect::kNoneKeyword;
+    os << AccessPatternNoneExpr::kAttrName;
   } else if (auto dim_expr = expr.dyn_cast<AccessPatternDimExpr>()) {
     os << "d" << dim_expr.dimension();
+  } else if (auto stripe_expr = expr.dyn_cast<AccessPatternStripeExpr>()) {
+    os << AccessPatternStripeExpr::kAttrName << "(";
+    PrintAccessPatternExpr(stripe_expr.operand(), os);
+    os << ", " << stripe_expr.step();
+    if (stripe_expr.size().hasValue()) {
+      os << " size " << stripe_expr.size().getValue();
+    }
+    os << ")";
+  } else if (auto unstripe_expr = expr.dyn_cast<AccessPatternUnStripeExpr>()) {
+    os << AccessPatternUnStripeExpr::kAttrName << "(";
+    for (auto operand : unstripe_expr.operands()) {
+      PrintAccessPatternExpr(operand, os);
+      os << ", ";
+    }
+    os << "[";
+    llvm::interleaveComma(unstripe_expr.factors(), os);
+    os << "])";
   } else {
     llvm_unreachable("unknown access pattern expression");
   }

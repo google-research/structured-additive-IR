@@ -41,10 +41,6 @@ class SairDialect : public mlir::Dialect {
   // The string identifier used for shape attribute in Sair ops.
   static constexpr llvm::StringRef kShapeAttrName = "shape";
 
-  // String identifier used for dimensions of the accessed domain that do no map
-  // to a dimension of the use domain in access patterns.
-  static constexpr llvm::StringRef kNoneKeyword = "none";
-
   // Constructs the dialect in the provided context.
   explicit SairDialect(mlir::MLIRContext *context);
 
@@ -75,6 +71,24 @@ class SairDialect : public mlir::Dialect {
 void PrintAccessPattern(AccessPatternAttr access_pattern,
                         llvm::raw_ostream &os);
 
+// Parses an integer in [min, max). Stores the result in `result`.
+template <typename Parser>
+mlir::ParseResult ParseInteger(
+    Parser &parser, int &result, int min,
+    llvm::Optional<int> max = llvm::Optional<int>()) {
+  llvm::SMLoc loc = parser.getCurrentLocation();
+  mlir::IntegerAttr attr;
+  if (mlir::failed(parser.parseAttribute(attr))) return mlir::failure();
+  result = attr.getInt();
+  if (result < min) {
+    return parser.emitError(loc) << "expected an integer >= " << min;
+  }
+  if (max.hasValue() && result >= max.getValue()) {
+    return parser.emitError(loc) << "expected an integer < " << max.getValue();
+  }
+  return mlir::success();
+}
+
 // Parses a dimension name of the form 'd<id>' where <id> is an integer in the
 // half open interval [0, num_dimensions). Stores <id> in `dimension`.
 template <typename Parser>
@@ -97,8 +111,60 @@ template <typename Parser>
 AccessPatternExpr ParseAccessPatternExpr(Parser &parser,
                                          int num_dimensions = -1) {
   mlir::MLIRContext *context = parser.getBuilder().getContext();
-  if (mlir::succeeded(parser.parseOptionalKeyword(SairDialect::kNoneKeyword))) {
+  if (mlir::succeeded(
+          parser.parseOptionalKeyword(AccessPatternNoneExpr::kAttrName))) {
     return AccessPatternNoneExpr::get(context);
+  } else if (mlir::succeeded(parser.parseOptionalKeyword(
+                 AccessPatternStripeExpr::kAttrName))) {
+    // Parse a stripe expression of the form:
+    // `stripe` `(` <operand>`,` <step> (`size` <size>)? `)`
+    if (mlir::failed(parser.parseLParen())) return AccessPatternExpr();
+    AccessPatternExpr operand = ParseAccessPatternExpr(parser, num_dimensions);
+    int step;
+    if (parser.parseComma() || ParseInteger(parser, step, 1)) {
+      return AccessPatternExpr();
+    }
+    llvm::Optional<int> size_opt;
+    if (mlir::succeeded(parser.parseOptionalKeyword("size"))) {
+      int size;
+      if (mlir::failed(ParseInteger(parser, size, step))) {
+        return AccessPatternExpr();
+      }
+      size_opt = size;
+    }
+    if (mlir::failed(parser.parseRParen())) return AccessPatternExpr();
+    return AccessPatternStripeExpr::get(operand, step, size_opt);
+  } else if (mlir::succeeded(parser.parseOptionalKeyword(
+                 AccessPatternUnStripeExpr::kAttrName))) {
+    // Parse an unstrip expression of the form:
+    // `unstripe` `(` (<operand> `,`)+ `[` (<factor> (`,` <factor>)*)? `]` `)`
+    llvm::SmallVector<int, 3> factors;
+    llvm::SmallVector<AccessPatternExpr, 4> operands;
+    if (mlir::failed(parser.parseLParen())) return AccessPatternExpr();
+    do {
+      AccessPatternExpr operand =
+          ParseAccessPatternExpr(parser, num_dimensions);
+      if (operand == nullptr || mlir::failed(parser.parseComma())) {
+        return AccessPatternExpr();
+      }
+      operands.push_back(operand);
+    } while (mlir::failed(parser.parseOptionalLSquare()));
+
+    if (operands.size() > 1 &&
+        mlir::failed(ParseInteger(parser, factors.emplace_back(), 1))) {
+      return AccessPatternExpr();
+    }
+    for (int i = 1, e = operands.size() - 1; i < e; ++i) {
+      int last_factor = factors.back();
+      if (parser.parseComma() ||
+          ParseInteger(parser, factors.emplace_back(), 1, last_factor)) {
+        return AccessPatternExpr();
+      }
+    }
+    if (parser.parseRSquare() || parser.parseRParen()) {
+      return AccessPatternExpr();
+    }
+    return AccessPatternUnStripeExpr::get(operands, factors);
   }
 
   int dimension_id;
@@ -121,23 +187,21 @@ template <typename Parser>
 AccessPatternAttr ParseAccessPattern(Parser &parser, int num_dimensions) {
   std::vector<AccessPatternExpr> exprs;
   llvm::SmallBitVector seen_dimensions(num_dimensions);
+  llvm::SMLoc pattern_loc = parser.getCurrentLocation();
   do {
     llvm::SMLoc loc = parser.getCurrentLocation();
     AccessPatternExpr expr = ParseAccessPatternExpr(parser, num_dimensions);
     if (expr == nullptr) return nullptr;
-    llvm::SmallBitVector new_seen_dimensions(num_dimensions);
-    expr.SetDependenciesInMask(new_seen_dimensions);
     exprs.push_back(expr);
-    if (seen_dimensions.anyCommon(new_seen_dimensions)) {
-      int dim = (seen_dimensions & new_seen_dimensions).find_first();
-      parser.emitError(loc) << "dimension d" << dim << " appears twice";
-      return nullptr;
-    }
-    seen_dimensions |= new_seen_dimensions;
   } while (succeeded(parser.parseOptionalComma()));
 
-  return AccessPatternAttr::get(parser.getBuilder().getContext(),
-                                num_dimensions, exprs);
+  auto pattern = AccessPatternAttr::getChecked(parser.getBuilder().getContext(),
+                                               num_dimensions, exprs);
+  if (pattern == nullptr) {
+    parser.emitError(pattern_loc) << "invalid access pattern";
+    return nullptr;
+  }
+  return pattern;
 }
 
 // Parses an access pattern surrounded by parenthesis or returns the empty

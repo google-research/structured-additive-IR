@@ -33,3 +33,25 @@ add_lit_testsuite(check-sair
 
 add_lit_testsuites(SAIR ${CMAKE_CURRENT_SOURCE_DIR}
   DEPENDS ${SAIR_TEST_DEPS})
+
+# Generate test passes declaration
+set(LLVM_TARGET_DEFINITIONS passes.td)
+mlir_tablegen(passes.h.inc -gen-pass-decls -name Test)
+add_public_tablegen_target(sair_test_passes_inc_gen)
+
+# Test passes library
+add_mlir_library(sair_test_passes
+  passes.cc
+
+  DEPENDS
+  sair_test_passes_inc_gen
+
+  LINK_LIBS PUBLIC
+  MLIRIR
+  MLIRPass
+  MLIRTransforms
+  MLIRLinalgOps
+  MLIRStandardOps
+  MLIRSupport
+  sair_dialect
+  )

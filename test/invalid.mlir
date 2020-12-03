@@ -29,7 +29,7 @@ func @non_transitive_dependency() -> !sair.range<d0:range x d1:range(d0) x d2:ra
 
 // -----
 
-// expected-error @+1 {{dimension d0 appears twice}}
+// expected-error @+1 {{invalid access pattern}}
 func @duplicate_dependency() -> !sair.range<d0:range x d1:range(d0, d0)>
 
 // -----
@@ -964,3 +964,38 @@ func @wrong_order_for_remat(%arg0: f32) {
   return
 }
 
+// -----
+
+func @invalid_stripe() {
+  // expected-error @+1 {{expected an integer >= 4}}
+  "foo"() { bar = #sair.pattern_expr<stripe(d0, 4 size 2)> } : () -> ()
+}
+
+// -----
+
+func @invalid_unstripe() {
+  // expected-error @+1 {{expected an integer < 2}}
+  "foo"() { bar = #sair.pattern_expr<unstripe(d0, d1, d2, [2, 4])> } : () -> ()
+}
+
+// -----
+
+func @invalid_pattern() {
+  // expected-error @+1 {{invalid access pattern}}
+  "foo"() { bar = #sair.pattern<1: d0, d0> } : () -> ()
+}
+
+// -----
+
+func @unsupported_pattern(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.static_range 8 : !sair.range
+    %2 = sair.copy[d0:%1] %0 : !sair.value<d0:range, f32>
+    // expected-error @+1 {{only pointwise access patterns are supported for now}}
+    %3 = sair.copy[d0:%1] %2(unstripe(stripe(d0, 4), stripe(d0, 1 size 4), [4]))
+      : !sair.value<d0:range, f32>
+    sair.exit
+  }
+  return
+}

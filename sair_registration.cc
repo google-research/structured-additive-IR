@@ -21,6 +21,7 @@
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Support/LogicalResult.h"
 #include "sair_dialect.h"
+#include "test/passes.h"
 #include "transforms/default_lowering_attributes.h"
 #include "transforms/lowering.h"
 #include "transforms/sair_from_linalg.h"
@@ -38,12 +39,15 @@ namespace {
 #include "transforms/sair_from_linalg.h.inc"
 #define GEN_PASS_REGISTRATION
 #include "transforms/default_lowering_attributes.h.inc"
+#define GEN_PASS_REGISTRATION
+#include "test/passes.h.inc"
 }
 
 void sair::RegisterSairPasses() {
   registerDefaultLoweringAttributesPasses();
   registerLoweringPasses();
   registerSAIRFromLinalgPasses();
+  registerTestPasses();
 
   mlir::registerPassPipeline(
       "convert-sair-to-loop", "converts Sair operations to Loop dialect",

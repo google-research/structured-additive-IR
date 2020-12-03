@@ -102,6 +102,7 @@ add_mlir_library(sair_registration
   sair_dialect
   sair_from_linalg
   sair_lowering
+  sair_test_passes
   )
 
 # sair-opt pass driver.
