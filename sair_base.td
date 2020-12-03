@@ -36,6 +36,97 @@ def SairDialect : Dialect {
 // Sair Attributes
 //===----------------------------------------------------------------------===//
 
+def AccessPatternExpr : AttrInterface<"AccessPatternExpr"> {
+  let description = [{
+    Interface class for access pattern expressions. Access pattern expressions
+    specify how to access a dimension of another domain given the index along
+    dimensions of the current domain.
+  }];
+
+  let methods = [
+    InterfaceMethod<
+      "Indicates if the expression does not contain `none`",
+      "bool", "IsFullySpecified"
+    >,
+    InterfaceMethod<
+      [{Replaces occurences of `none` by freshly allocated dimensions. Starts
+        allocating at `num_dimensions` and increase it each time a new dimension
+        is allocated.}],
+      "AccessPatternExpr", "MakeFullySpecified", (ins "int&":$num_dimensions)
+    >,
+    InterfaceMethod<
+      "Sets the dimensions referenced by the expression in `mask`",
+      "void", "SetDependenciesInMask", (ins "llvm::SmallBitVector&":$mask)
+    >,
+    InterfaceMethod<
+      "Returns a mask of the dimensions referenced by the expression.",
+      "llvm::SmallBitVector", "DependencyMask", (ins "int":$domain_size), [{
+        llvm::SmallBitVector mask(domain_size);
+        $_attr.SetDependenciesInMask(mask);
+        return mask;
+      }]
+    >,
+    InterfaceMethod<
+      "Returns the minimal domain size for the expression to be valid.",
+      "int", "MinDomainSize"
+    >,
+    InterfaceMethod<
+      "Substitutes dimension expressions by the given expressions",
+      "AccessPatternExpr", "SubstituteDims",
+      (ins "mlir::ArrayRef<AccessPatternExpr>":$exprs)
+    >,
+    InterfaceMethod<
+      [{Returns the shape of the dimension accessed by the given expression.
+        `accessing_shape` must be the shape of the current domain and
+        `inversed_pattern` the inverse of the full access pattern.}],
+      "DomainShapeDim", "AccessedShape", (ins
+        "llvm::ArrayRef<DomainShapeDim>":$accessing_shape,
+        "AccessPatternAttr":$inversed_pattern
+      )
+    >,
+    InterfaceMethod<
+      [{Sets `inverses[i]` to the inverse of the current expression (and its
+      context) with regard to the i-th dimension of the domain. `inverses` size
+      must be equal to the size of the domain.
+
+      `context_inverse` is the inverse of the surrounding sub-expression. If
+      the current sub-expression is `e` in `C(e)`, then `context_inverse` is
+      the inverse of `C(x)`.
+
+      Returns a failure if the inverse of this expression cannot be unified
+      with inverses already set in `inverses`.}],
+      "mlir::LogicalResult", "SetInverse", (ins
+        "AccessPatternExpr":$context_inverse,
+        "llvm::MutableArrayRef<AccessPatternExpr>":$inverses
+      )
+    >,
+    InterfaceMethod<
+      [{Finds the subexpression corresponding to the inverse of this expression
+        in `inverse`. Expects the expression to be fully specified. `inverse`
+        must be the inverse of the access pattern using this sub-expression.}],
+      "AccessPatternExpr", "FindInInverse",
+      (ins "llvm::ArrayRef<AccessPatternExpr>":$inverse)
+    >,
+    InterfaceMethod<
+      [{Unifies two expressions by replacing the `none` of each expr by the
+        corresponding sub-expression of the other expr. Returns nullptr if
+        expressions cannot be unified.}],
+      "AccessPatternExpr", "Unify", (ins "AccessPatternExpr":$other_expr)
+    >,
+    InterfaceMethod<
+      [{Fills `constraints` with expression such that
+        `this.SubstituteDims(constraints).Unify(other_expr)` is valid. Expects
+        `contraints` to be initially filled with `none`. Leaves `constraints[i]`
+        untouched if dimension i generates no constraints. Returns a failure if
+        expressions cannot be unified.}],
+      "mlir::LogicalResult", "UnificationConstraints", (ins
+        "AccessPatternExpr":$other_expr,
+        "llvm::MutableArrayRef<AccessPatternExpr>":$constraints
+      )
+    >
+  ];
+}
+
 // Tests if an attribute is an AccessPatternAttr.
 def IsSairAccessPatternAttr : CPred<"$_self.isa<AccessPatternAttr>()">;
 
@@ -82,7 +173,7 @@ class SairStructAttr<string name,
         c.description>
       )>;
 
-// An attribute describing a loop to generate when lowering an operation. 
+// An attribute describing a loop to generate when lowering an operation.
 def SairLoopAttr : SairStructAttr<"LoopAttr", [
   // Name of the loop to generate.
   StructFieldAttr<"name", StrAttr>,

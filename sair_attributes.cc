@@ -26,15 +26,7 @@
 
 namespace sair {
 
-//===----------------------------------------------------------------------===//
-// AccessPatternExpr
-//===----------------------------------------------------------------------===//
-
-llvm::SmallBitVector AccessPatternExpr::DependencyMask(int domain_size) const {
-  llvm::SmallBitVector mask(domain_size);
-  SetDependenciesInMask(mask);
-  return mask;
-}
+#include "sair_attr_interfaces.cc.inc"
 
 //===----------------------------------------------------------------------===//
 // AccessPatternDimExpr
