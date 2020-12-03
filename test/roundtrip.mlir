@@ -124,18 +124,18 @@ func @dependent_range_op(%arg0 : index) {
   return
 }
 
-// CHECK-LABEL: @generic_access_pattern
-func @generic_access_pattern() {
-  // CHECK: "foo"() {access_pattern = #sair.pattern<3 : d0, d2, d1, none>}
-  "foo"() {access_pattern = #sair.pattern<3 : d0, d2, d1, none>} : () -> ()
-  // CHECK: "bar"() {access_pattern = #sair.pattern<4 : d0, d1, d2>}
-  "bar"() {access_pattern = #sair.pattern<4 : d0, d1, d2>} : () -> ()
+// CHECK-LABEL: @generic_mapping
+func @generic_mapping() {
+  // CHECK: "foo"() {mapping = #sair.mapping<3 : d0, d2, d1, none>}
+  "foo"() {mapping = #sair.mapping<3 : d0, d2, d1, none>} : () -> ()
+  // CHECK: "bar"() {mapping = #sair.mapping<4 : d0, d1, d2>}
+  "bar"() {mapping = #sair.mapping<4 : d0, d1, d2>} : () -> ()
 }
 
-// CHECK-LABEL: @generic_access_pattern_empty
-func @generic_access_pattern_empty() {
-  // CHECK: "foo"() {access_pattern = #sair.pattern<0>}
-  "foo"() {access_pattern = #sair.pattern<0>} : () -> ()
+// CHECK-LABEL: @generic_mapping_empty
+func @generic_mapping_empty() {
+  // CHECK: "foo"() {mapping = #sair.mapping<0>}
+  "foo"() {mapping = #sair.mapping<0>} : () -> ()
 }
 
 // CHECK-LABEL: @shape_attribute
@@ -316,16 +316,16 @@ func @loop_nest_attr(%arg0: f32) {
     // CHECK: sair.copy[d0:%{{.*}}, d1:%{{.*}}] %1 {
     sair.copy[d0:%0, d1:%0] %1 {
       loop_nest = [
-        // CHECK: {iter = #sair.pattern_expr<none>, name = "loopA"}
-        {name = "loopA", iter = #sair.pattern_expr<none>},
-        // CHECK: {iter = #sair.pattern_expr<d0>, name = "loopB"}
-        {name = "loopB", iter = #sair.pattern_expr<d0>},
-        // CHECK: {iter = #sair.pattern_expr<d1>, name = "loopC"}
-        {name = "loopC", iter = #sair.pattern_expr<d1>}
+        // CHECK: {iter = #sair.mapping_expr<none>, name = "loopA"}
+        {name = "loopA", iter = #sair.mapping_expr<none>},
+        // CHECK: {iter = #sair.mapping_expr<d0>, name = "loopB"}
+        {name = "loopB", iter = #sair.mapping_expr<d0>},
+        // CHECK: {iter = #sair.mapping_expr<d1>, name = "loopC"}
+        {name = "loopC", iter = #sair.mapping_expr<d1>}
       ]
     } : !sair.value<d0:range x d1:range, f32>
     sair.copy[d0:%0] %1 {
-      loop_nest = [{name = "loopA", iter = #sair.pattern_expr<d0>}]
+      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
     } : !sair.value<d0:range, f32>
     sair.exit
   }
@@ -416,18 +416,18 @@ func @undef() {
   return
 }
 
-// CHECK-LABEL: @access_pattern_expr_attr
-func @access_pattern_expr_attr() {
-  // CHECK: "foo"() {access_pattern_expr = #sair.pattern_expr<d0>}
-  "foo"() {access_pattern_expr = #sair.pattern_expr<d0>} : () -> ()
-  // CHECK: "foo"() {access_pattern_expr = #sair.pattern_expr<none>}
-  "foo"() {access_pattern_expr = #sair.pattern_expr<none>} : () -> ()
-  // CHECK: "foo"() {access_pattern_expr = #sair.pattern_expr<stripe(d0, 4)>}
-  "foo"() {access_pattern_expr = #sair.pattern_expr<stripe(d0, 4)>} : () -> ()
-  // CHECK: "foo"() {access_pattern_expr = #sair.pattern_expr<stripe(d0, 1 size 4)>}
-  "foo"() {access_pattern_expr = #sair.pattern_expr<stripe(d0, 1 size 4)>} : () -> ()
-  // CHECK: "foo"() {access_pattern_expr = #sair.pattern_expr<unstripe(d0, d1, [4])>}
-  "foo"() {access_pattern_expr = #sair.pattern_expr<unstripe(d0, d1, [4])>} : () -> ()
+// CHECK-LABEL: @mapping_expr_attr
+func @mapping_expr_attr() {
+  // CHECK: "foo"() {mapping_expr = #sair.mapping_expr<d0>}
+  "foo"() {mapping_expr = #sair.mapping_expr<d0>} : () -> ()
+  // CHECK: "foo"() {mapping_expr = #sair.mapping_expr<none>}
+  "foo"() {mapping_expr = #sair.mapping_expr<none>} : () -> ()
+  // CHECK: "foo"() {mapping_expr = #sair.mapping_expr<stripe(d0, 4)>}
+  "foo"() {mapping_expr = #sair.mapping_expr<stripe(d0, 4)>} : () -> ()
+  // CHECK: "foo"() {mapping_expr = #sair.mapping_expr<stripe(d0, 1 size 4)>}
+  "foo"() {mapping_expr = #sair.mapping_expr<stripe(d0, 1 size 4)>} : () -> ()
+  // CHECK: "foo"() {mapping_expr = #sair.mapping_expr<unstripe(d0, d1, [4])>}
+  "foo"() {mapping_expr = #sair.mapping_expr<unstripe(d0, d1, [4])>} : () -> ()
 }
 
 func @stripe_mined_loop() {
@@ -435,8 +435,8 @@ func @stripe_mined_loop() {
     %0 = sair.static_range 8 : !sair.range
     sair.map[d0:%0] attributes {
       loop_nest = [
-        {name = "A", iter = #sair.pattern_expr<stripe(d0, 4)>},
-        {name = "B", iter = #sair.pattern_expr<stripe(d0, 1 size 4)>}
+        {name = "A", iter = #sair.mapping_expr<stripe(d0, 4)>},
+        {name = "B", iter = #sair.mapping_expr<stripe(d0, 1 size 4)>}
       ]
     } {
       ^bb0(%arg0: index):
@@ -447,7 +447,7 @@ func @stripe_mined_loop() {
   return
 }
 
-func @stripe_access_pattern(%arg0: f32) {
+func @stripe_mapping(%arg0: f32) {
   sair.program {
     // CHECK: %[[D0:.*]] = sair.static_range 8
     %0 = sair.static_range 8 : !sair.range

@@ -32,24 +32,24 @@ namespace sair {
 // AccessPatternDimExpr
 //===----------------------------------------------------------------------===//
 
-// Private implementation/storage class for sair::AccessPatternDimExpr.
+// Private implementation/storage class for sair::MappingDimExpr.
 // Instances of this class are allocate by MLIR type system in a dedicated
 // arena. Not intended for direct use.
-class impl::AccessPatternDimExprStorage : public mlir::AttributeStorage {
+class impl::MappingDimExprStorage : public mlir::AttributeStorage {
  public:
-  // Key type uniquely identifies AccessPatternDimExpr for MLIR attribute
+  // Key type uniquely identifies MappingDimExpr for MLIR attribute
   // unique-ing. This specific name is required by mlir::AttributeUniquer.
   using KeyTy = int;
 
-  // Creates a AccessPatternDimExprStorage using the provided allocator. Hook
+  // Creates a MappingDimExprStorage using the provided allocator. Hook
   // for MLIR attribute system.
-  static AccessPatternDimExprStorage *construct(
+  static MappingDimExprStorage *construct(
       mlir::AttributeStorageAllocator &allocator, const KeyTy &key) {
-    return new (allocator.allocate<AccessPatternDimExprStorage>())
-        AccessPatternDimExprStorage(key);
+    return new (allocator.allocate<MappingDimExprStorage>())
+        MappingDimExprStorage(key);
   }
 
-  // Compares the AccessPatternDimExprStorage identification key with this
+  // Compares the MappingDimExprStorage identification key with this
   // object.
   bool operator==(const KeyTy &key) const { return key == dimension_; }
 
@@ -60,56 +60,54 @@ class impl::AccessPatternDimExprStorage : public mlir::AttributeStorage {
   // Constructs a storage object for the provided key. such objects must not be
   // constructed directly but rather created by MLIR's type system within an
   // arena allocator by calling ::construct.
-  explicit AccessPatternDimExprStorage(KeyTy key) : dimension_(key) {}
+  explicit MappingDimExprStorage(KeyTy key) : dimension_(key) {}
 
   int dimension_;
 };
 
-AccessPatternDimExpr AccessPatternDimExpr::get(int dimension,
-                                               mlir::MLIRContext *context) {
+MappingDimExpr MappingDimExpr::get(int dimension, mlir::MLIRContext *context) {
   return Base::get(context, dimension);
 }
 
-int AccessPatternDimExpr::dimension() const { return getImpl()->dimension(); }
+int MappingDimExpr::dimension() const { return getImpl()->dimension(); }
 
-AccessPatternExpr AccessPatternDimExpr::SubstituteDims(
-    mlir::ArrayRef<AccessPatternExpr> exprs) const {
+MappingExpr MappingDimExpr::SubstituteDims(
+    mlir::ArrayRef<MappingExpr> exprs) const {
   if (dimension() >= exprs.size()) {
-    return AccessPatternNoneExpr::get(getContext());
+    return MappingNoneExpr::get(getContext());
   }
   return exprs[dimension()];
 }
 
-DomainShapeDim AccessPatternDimExpr::AccessedShape(
+DomainShapeDim MappingDimExpr::AccessedShape(
     llvm::ArrayRef<DomainShapeDim> accessing_shape,
-    AccessPatternAttr inverted_pattern) const {
-  return accessing_shape[dimension()].Apply(inverted_pattern);
+    MappingAttr inverted_mapping) const {
+  return accessing_shape[dimension()].Apply(inverted_mapping);
 }
 
-mlir::LogicalResult AccessPatternDimExpr::SetInverse(
-    AccessPatternExpr context_inverse,
-    llvm::MutableArrayRef<AccessPatternExpr> inverses) const {
-  AccessPatternExpr inverse = inverses[dimension()].Unify(context_inverse);
+mlir::LogicalResult MappingDimExpr::SetInverse(
+    MappingExpr context_inverse,
+    llvm::MutableArrayRef<MappingExpr> inverses) const {
+  MappingExpr inverse = inverses[dimension()].Unify(context_inverse);
   if (inverse == nullptr) return mlir::failure();
   inverses[dimension()] = inverse;
   return mlir::success();
 }
 
-AccessPatternExpr AccessPatternDimExpr::Unify(
-    AccessPatternExpr other_expr) const {
+MappingExpr MappingDimExpr::Unify(MappingExpr other_expr) const {
   if (other_expr == *this) return *this;
-  if (other_expr.isa<AccessPatternNoneExpr>()) return *this;
-  return AccessPatternExpr(nullptr);
+  if (other_expr.isa<MappingNoneExpr>()) return *this;
+  return MappingExpr(nullptr);
 }
 
-mlir::LogicalResult AccessPatternDimExpr::UnificationConstraints(
-    AccessPatternExpr other_expr,
-    llvm::MutableArrayRef<AccessPatternExpr> constraints) const {
-  if (other_expr.isa<AccessPatternNoneExpr>()) return mlir::success();
+mlir::LogicalResult MappingDimExpr::UnificationConstraints(
+    MappingExpr other_expr,
+    llvm::MutableArrayRef<MappingExpr> constraints) const {
+  if (other_expr.isa<MappingNoneExpr>()) return mlir::success();
 
-  AccessPatternExpr &constraint = constraints[dimension()];
+  MappingExpr &constraint = constraints[dimension()];
   if (constraint == other_expr) return mlir::success();
-  if (!constraint.isa<AccessPatternNoneExpr>()) return mlir::failure();
+  if (!constraint.isa<MappingNoneExpr>()) return mlir::failure();
   constraint = other_expr;
   return mlir::success();
 }
@@ -118,44 +116,43 @@ mlir::LogicalResult AccessPatternDimExpr::UnificationConstraints(
 // AccessPatternNoneExpr
 //===----------------------------------------------------------------------===//
 
-AccessPatternNoneExpr AccessPatternNoneExpr::get(mlir::MLIRContext *context) {
+MappingNoneExpr MappingNoneExpr::get(mlir::MLIRContext *context) {
   return Base::get(context);
 }
 
-AccessPatternExpr AccessPatternNoneExpr::MakeFullySpecified(
-    int &num_dimensions) const {
-  return AccessPatternDimExpr::get(num_dimensions++, getContext());
+MappingExpr MappingNoneExpr::MakeFullySpecified(int &num_dimensions) const {
+  return MappingDimExpr::get(num_dimensions++, getContext());
 }
 
 //===----------------------------------------------------------------------===//
 // AccessPatternStripeExpr
 //===----------------------------------------------------------------------===//
 
-// Private implementation/storage class for sair::AccessPatternStripeExpr.
+// Private implementation/storage class for sair::MappingStripeExpr.
 // Instances of this class are allocate by MLIR type system in a dedicated
 // arena. Not intended for direct use.
-class impl::AccessPatternStripeExprStorage : public mlir::AttributeStorage {
+class impl::MappingStripeExprStorage : public mlir::AttributeStorage {
  public:
-  // Key type uniquely identifies AccessPatternStripeExpr for MLIR attribute
+  // Key type uniquely identifies MappingStripeExpr for MLIR attribute
   // unique-ing. This specific name is required by mlir::AttributeUniquer.
   using KeyTy = std::tuple<mlir::Attribute, int, int>;
 
-  // Creates a AccessPatternStripeExprStorage using the provided allocator. Hook
+  // Creates a MappingStripeExprStorage using the provided allocator. Hook
   // for MLIR attribute system.
-  static AccessPatternStripeExprStorage *construct(
+  static MappingStripeExprStorage *construct(
       mlir::AttributeStorageAllocator &allocator, const KeyTy &key) {
-    return new (allocator.allocate<AccessPatternStripeExprStorage>())
-        AccessPatternStripeExprStorage(key);
+    return new (allocator.allocate<MappingStripeExprStorage>())
+        MappingStripeExprStorage(key);
   }
 
-  // Compares the AccessPatternStripeExpr identification key with this object.
+  // Compares the MappingStripeExpr identification key with this object.
   bool operator==(const KeyTy &key) const {
     return std::get<0>(key) == operand_ && std::get<1>(key) == step_ &&
            std::get<2>(key) == size_;
   }
 
   // The striped expression.
-  AccessPatternExpr operand() const { return operand_; }
+  MappingExpr operand() const { return operand_; }
 
   // The stripe step. This is one for point expressions.
   int step() const { return step_; }
@@ -172,69 +169,62 @@ class impl::AccessPatternStripeExprStorage : public mlir::AttributeStorage {
   // Constructs a storage object for the provided key. such objects must not be
   // constructed directly but rather created by MLIR's type system within an
   // arena allocator by calling ::construct.
-  explicit AccessPatternStripeExprStorage(KeyTy key)
+  explicit MappingStripeExprStorage(KeyTy key)
       : operand_(std::get<0>(key)),
         step_(std::get<1>(key)),
         size_(std::get<2>(key)) {}
 
-  AccessPatternExpr operand_;
+  MappingExpr operand_;
   int step_;
   int size_;
 };
 
-AccessPatternStripeExpr AccessPatternStripeExpr::get(AccessPatternExpr operand,
-                                                     int step,
-                                                     llvm::Optional<int> size) {
+MappingStripeExpr MappingStripeExpr::get(MappingExpr operand, int step,
+                                         llvm::Optional<int> size) {
   assert(operand != nullptr);
   assert(!size.hasValue() || size.getValue() >= step);
-  int int_size = size.hasValue()
-                     ? size.getValue()
-                     : impl::AccessPatternStripeExprStorage::kNoSize;
+  int int_size = size.hasValue() ? size.getValue()
+                                 : impl::MappingStripeExprStorage::kNoSize;
   return Base::get(operand.getContext(),
                    std::make_tuple(operand, step, int_size));
 }
 
-AccessPatternExpr AccessPatternStripeExpr::operand() const {
-  return getImpl()->operand();
-}
+MappingExpr MappingStripeExpr::operand() const { return getImpl()->operand(); }
 
-int AccessPatternStripeExpr::step() const { return getImpl()->step(); }
+int MappingStripeExpr::step() const { return getImpl()->step(); }
 
-llvm::Optional<int> AccessPatternStripeExpr::size() const {
+llvm::Optional<int> MappingStripeExpr::size() const {
   return getImpl()->size();
 }
 
-AccessPatternExpr AccessPatternStripeExpr::MakeFullySpecified(
-    int &num_dimensions) const {
-  return AccessPatternStripeExpr::get(
-      operand().MakeFullySpecified(num_dimensions), step(), size());
+MappingExpr MappingStripeExpr::MakeFullySpecified(int &num_dimensions) const {
+  return MappingStripeExpr::get(operand().MakeFullySpecified(num_dimensions),
+                                step(), size());
 }
 
-AccessPatternExpr AccessPatternStripeExpr::SubstituteDims(
-    llvm::ArrayRef<AccessPatternExpr> exprs) const {
-  return AccessPatternStripeExpr::get(operand().SubstituteDims(exprs), step(),
-                                      size());
+MappingExpr MappingStripeExpr::SubstituteDims(
+    llvm::ArrayRef<MappingExpr> exprs) const {
+  return MappingStripeExpr::get(operand().SubstituteDims(exprs), step(),
+                                size());
 }
 
-AccessPatternExpr AccessPatternStripeExpr::Unify(
-    AccessPatternExpr other_expr) const {
-  if (other_expr.isa<AccessPatternNoneExpr>()) return *this;
-  AccessPatternStripeExpr other_stripe =
-      other_expr.dyn_cast<AccessPatternStripeExpr>();
+MappingExpr MappingStripeExpr::Unify(MappingExpr other_expr) const {
+  if (other_expr.isa<MappingNoneExpr>()) return *this;
+  MappingStripeExpr other_stripe = other_expr.dyn_cast<MappingStripeExpr>();
   if (other_stripe == nullptr || size() != other_stripe.size() ||
       step() != other_stripe.step()) {
-    return AccessPatternExpr(nullptr);
+    return MappingExpr(nullptr);
   }
-  AccessPatternExpr unified_operand = operand().Unify(other_stripe.operand());
-  if (unified_operand == nullptr) return AccessPatternExpr(nullptr);
-  return AccessPatternStripeExpr::get(unified_operand, step(), size());
+  MappingExpr unified_operand = operand().Unify(other_stripe.operand());
+  if (unified_operand == nullptr) return MappingExpr(nullptr);
+  return MappingStripeExpr::get(unified_operand, step(), size());
 }
 
-mlir::LogicalResult AccessPatternStripeExpr::UnificationConstraints(
-    AccessPatternExpr other_expr,
-    llvm::MutableArrayRef<AccessPatternExpr> constraints) const {
-  if (other_expr.isa<AccessPatternNoneExpr>()) return mlir::success();
-  auto other_stripe = other_expr.dyn_cast<AccessPatternStripeExpr>();
+mlir::LogicalResult MappingStripeExpr::UnificationConstraints(
+    MappingExpr other_expr,
+    llvm::MutableArrayRef<MappingExpr> constraints) const {
+  if (other_expr.isa<MappingNoneExpr>()) return mlir::success();
+  auto other_stripe = other_expr.dyn_cast<MappingStripeExpr>();
   if (other_stripe == nullptr || size() != other_stripe.size() ||
       step() != other_stripe.step()) {
     return mlir::failure();
@@ -242,21 +232,21 @@ mlir::LogicalResult AccessPatternStripeExpr::UnificationConstraints(
   return operand().UnificationConstraints(other_stripe.operand(), constraints);
 }
 
-DomainShapeDim AccessPatternStripeExpr::AccessedShape(
+DomainShapeDim MappingStripeExpr::AccessedShape(
     llvm::ArrayRef<DomainShapeDim> accessing_shape,
-    AccessPatternAttr inverted_pattern) const {
+    MappingAttr inverted_mapping) const {
   mlir::MLIRContext *context = getContext();
 
   DomainShapeDim inner_shape =
-      operand().AccessedShape(accessing_shape, inverted_pattern);
+      operand().AccessedShape(accessing_shape, inverted_mapping);
   auto inverse_subexpr = operand()
-                             .FindInInverse(inverted_pattern.Dimensions())
-                             .cast<AccessPatternUnStripeExpr>();
+                             .FindInInverse(inverted_mapping.Dimensions())
+                             .cast<MappingUnStripeExpr>();
 
-  // Append dependencies to larger stripes to the dependency pattern.
-  llvm::SmallVector<AccessPatternExpr, 4> dependency_pattern_exprs;
-  llvm::append_range(dependency_pattern_exprs,
-                     inner_shape.dependency_pattern());
+  // Append dependencies to larger stripes to the dependency mapping.
+  llvm::SmallVector<MappingExpr, 4> dependency_mapping_exprs;
+  llvm::append_range(dependency_mapping_exprs,
+                     inner_shape.dependency_mapping());
 
   llvm::SmallVector<DomainShapeDim, 4> type_shape;
   llvm::append_range(type_shape, inner_shape.type().Shape().Dimensions());
@@ -266,21 +256,21 @@ DomainShapeDim AccessPatternStripeExpr::AccessedShape(
        llvm::zip(inverse_subexpr.operands(), inverse_subexpr.factors())) {
     if (step == this->step()) break;
     type_shape.emplace_back(
-        type, AccessPatternAttr::GetIdentity(context, type_shape.size()));
+        type, MappingAttr::GetIdentity(context, type_shape.size()));
     type = RangeType::get(context, DomainShapeAttr::get(context, type_shape));
-    dependency_pattern_exprs.push_back(expr);
+    dependency_mapping_exprs.push_back(expr);
   }
 
-  auto dependency_pattern = AccessPatternAttr::get(
-      context, inverted_pattern.UseDomainSize(), dependency_pattern_exprs);
-  return DomainShapeDim(type, dependency_pattern);
+  auto dependency_mapping = MappingAttr::get(
+      context, inverted_mapping.UseDomainSize(), dependency_mapping_exprs);
+  return DomainShapeDim(type, dependency_mapping);
 }
 
-mlir::LogicalResult AccessPatternStripeExpr::SetInverse(
-    AccessPatternExpr context_inverse,
-    llvm::MutableArrayRef<AccessPatternExpr> inverses) const {
-  AccessPatternExpr none = AccessPatternNoneExpr::get(getContext());
-  llvm::SmallVector<AccessPatternExpr, 3> operands;
+mlir::LogicalResult MappingStripeExpr::SetInverse(
+    MappingExpr context_inverse,
+    llvm::MutableArrayRef<MappingExpr> inverses) const {
+  MappingExpr none = MappingNoneExpr::get(getContext());
+  llvm::SmallVector<MappingExpr, 3> operands;
   llvm::SmallVector<int, 2> factors;
 
   if (size().hasValue()) {
@@ -293,14 +283,14 @@ mlir::LogicalResult AccessPatternStripeExpr::SetInverse(
     factors.push_back(step());
   }
 
-  return operand().SetInverse(AccessPatternUnStripeExpr::get(operands, factors),
+  return operand().SetInverse(MappingUnStripeExpr::get(operands, factors),
                               inverses);
 }
 
-AccessPatternExpr AccessPatternStripeExpr::FindInInverse(
-    llvm::ArrayRef<AccessPatternExpr> inverse) const {
+MappingExpr MappingStripeExpr::FindInInverse(
+    llvm::ArrayRef<MappingExpr> inverse) const {
   auto unstripe_expr =
-      operand().FindInInverse(inverse).cast<AccessPatternUnStripeExpr>();
+      operand().FindInInverse(inverse).cast<MappingUnStripeExpr>();
   auto factor_it = llvm::find(unstripe_expr.factors(), step());
   int pos = std::distance(unstripe_expr.factors().begin(), factor_it);
   return unstripe_expr.operands()[pos];
@@ -310,33 +300,32 @@ AccessPatternExpr AccessPatternStripeExpr::FindInInverse(
 // AccessPatternUnStripeExpr
 //===----------------------------------------------------------------------===//
 
-// Private implementation/storage class for sair::AccessPatternUnStripeExpr.
+// Private implementation/storage class for sair::MappingUnStripeExpr.
 // Instances of this class are allocate by MLIR type system in a dedicated
 // arena. Not intended for direct use.
-class impl::AccessPatternUnStripeExprStorage : public mlir::AttributeStorage {
+class impl::MappingUnStripeExprStorage : public mlir::AttributeStorage {
  public:
-  // Key type uniquely identifies AccessPatternUnStripeExpr for MLIR attribute
+  // Key type uniquely identifies MappingUnStripeExpr for MLIR attribute
   // unique-ing. This specific name is required by mlir::AttributeUniquer.
-  using KeyTy =
-      std::pair<llvm::ArrayRef<AccessPatternExpr>, llvm::ArrayRef<int>>;
+  using KeyTy = std::pair<llvm::ArrayRef<MappingExpr>, llvm::ArrayRef<int>>;
 
-  // Creates a AccessPatternUnStripeExprStorage using the provided allocator.
+  // Creates a MappingUnStripeExprStorage using the provided allocator.
   // Hook for MLIR attribute system.
-  static AccessPatternUnStripeExprStorage *construct(
+  static MappingUnStripeExprStorage *construct(
       mlir::AttributeStorageAllocator &allocator, const KeyTy &key) {
-    return new (allocator.allocate<AccessPatternUnStripeExprStorage>())
-        AccessPatternUnStripeExprStorage(allocator.copyInto(key.first),
-                                         allocator.copyInto(key.second));
+    return new (allocator.allocate<MappingUnStripeExprStorage>())
+        MappingUnStripeExprStorage(allocator.copyInto(key.first),
+                                   allocator.copyInto(key.second));
   }
 
-  // Compares the AccessPatternUnStripeExprStorage identification key with this
+  // Compares the MappingUnStripeExprStorage identification key with this
   // object.
   bool operator==(const KeyTy &key) const {
     return key.first == operands_ && key.second == factors_;
   }
 
   // Stripe expressions that are combined to obtain the unstriped expression.
-  llvm::ArrayRef<AccessPatternExpr> operands() const { return operands_; }
+  llvm::ArrayRef<MappingExpr> operands() const { return operands_; }
 
   // Stripe expression sizes.
   llvm::ArrayRef<int> factors() const { return factors_; }
@@ -345,16 +334,16 @@ class impl::AccessPatternUnStripeExprStorage : public mlir::AttributeStorage {
   // Constructs a storage object for the provided key. such objects must not be
   // constructed directly but rather created by MLIR's type system within an
   // arena allocator by calling ::construct.
-  explicit AccessPatternUnStripeExprStorage(
-      llvm::ArrayRef<AccessPatternExpr> operands, llvm::ArrayRef<int> factors)
+  explicit MappingUnStripeExprStorage(llvm::ArrayRef<MappingExpr> operands,
+                                      llvm::ArrayRef<int> factors)
       : operands_(operands), factors_(factors) {}
 
-  llvm::ArrayRef<AccessPatternExpr> operands_;
+  llvm::ArrayRef<MappingExpr> operands_;
   llvm::ArrayRef<int> factors_;
 };
 
-AccessPatternUnStripeExpr AccessPatternUnStripeExpr::get(
-    llvm::ArrayRef<AccessPatternExpr> stripes, llvm::ArrayRef<int> factors) {
+MappingUnStripeExpr MappingUnStripeExpr::get(
+    llvm::ArrayRef<MappingExpr> stripes, llvm::ArrayRef<int> factors) {
   assert(factors.empty() || factors[0] > 1);
   assert(stripes.size() == factors.size() + 1);
 #ifndef NDEBUG
@@ -365,89 +354,85 @@ AccessPatternUnStripeExpr AccessPatternUnStripeExpr::get(
   return Base::get(stripes[0].getContext(), std::make_pair(stripes, factors));
 }
 
-llvm::ArrayRef<AccessPatternExpr> AccessPatternUnStripeExpr::operands() const {
+llvm::ArrayRef<MappingExpr> MappingUnStripeExpr::operands() const {
   return getImpl()->operands();
 }
 
-llvm::ArrayRef<int> AccessPatternUnStripeExpr::factors() const {
+llvm::ArrayRef<int> MappingUnStripeExpr::factors() const {
   return getImpl()->factors();
 }
 
-bool AccessPatternUnStripeExpr::IsFullySpecified() const {
-  return llvm::all_of(operands(), [](AccessPatternExpr expr) {
-    return expr.IsFullySpecified();
-  });
+bool MappingUnStripeExpr::IsFullySpecified() const {
+  return llvm::all_of(operands(),
+                      [](MappingExpr expr) { return expr.IsFullySpecified(); });
 }
 
-void AccessPatternUnStripeExpr::SetDependenciesInMask(
+void MappingUnStripeExpr::SetDependenciesInMask(
     llvm::SmallBitVector &mask) const {
-  for (AccessPatternExpr expr : operands()) {
+  for (MappingExpr expr : operands()) {
     expr.SetDependenciesInMask(mask);
   }
 }
 
-int AccessPatternUnStripeExpr::MinDomainSize() const {
+int MappingUnStripeExpr::MinDomainSize() const {
   int max = 0;
-  for (AccessPatternExpr expr : operands()) {
+  for (MappingExpr expr : operands()) {
     max = std::max(max, expr.MinDomainSize());
   }
   return max;
 }
 
-AccessPatternExpr AccessPatternUnStripeExpr::MakeFullySpecified(
-    int &num_dimensions) const {
-  llvm::SmallVector<AccessPatternExpr, 4> new_exprs;
+MappingExpr MappingUnStripeExpr::MakeFullySpecified(int &num_dimensions) const {
+  llvm::SmallVector<MappingExpr, 4> new_exprs;
   new_exprs.reserve(operands().size());
-  for (AccessPatternExpr expr : operands()) {
+  for (MappingExpr expr : operands()) {
     new_exprs.push_back(expr.MakeFullySpecified(num_dimensions));
   }
-  return AccessPatternUnStripeExpr::get(new_exprs, factors());
+  return MappingUnStripeExpr::get(new_exprs, factors());
 }
 
-AccessPatternExpr AccessPatternUnStripeExpr::SubstituteDims(
-    llvm::ArrayRef<AccessPatternExpr> exprs) const {
-  llvm::SmallVector<AccessPatternExpr, 4> new_exprs;
+MappingExpr MappingUnStripeExpr::SubstituteDims(
+    llvm::ArrayRef<MappingExpr> exprs) const {
+  llvm::SmallVector<MappingExpr, 4> new_exprs;
   new_exprs.reserve(operands().size());
-  for (AccessPatternExpr expr : operands()) {
+  for (MappingExpr expr : operands()) {
     new_exprs.push_back(expr.SubstituteDims(exprs));
   }
-  return AccessPatternUnStripeExpr::get(new_exprs, factors());
+  return MappingUnStripeExpr::get(new_exprs, factors());
 }
 
-DomainShapeDim AccessPatternUnStripeExpr::AccessedShape(
+DomainShapeDim MappingUnStripeExpr::AccessedShape(
     llvm::ArrayRef<DomainShapeDim> accessing_shape,
-    AccessPatternAttr inverted_pattern) const {
+    MappingAttr inverted_mapping) const {
   // The shape of the unstriped dimension is the shape of the outer-most striped
   // dimensions. Other striped dimensions have similar shape, but with
   // additional dependencies to outer striped dimensions.
-  return operands().front().AccessedShape(accessing_shape, inverted_pattern);
+  return operands().front().AccessedShape(accessing_shape, inverted_mapping);
 }
 
-mlir::LogicalResult AccessPatternUnStripeExpr::SetInverse(
-    AccessPatternExpr context_inverse,
-    llvm::MutableArrayRef<AccessPatternExpr> inverses) const {
+mlir::LogicalResult MappingUnStripeExpr::SetInverse(
+    MappingExpr context_inverse,
+    llvm::MutableArrayRef<MappingExpr> inverses) const {
   for (int i = 0, e = factors().size(); i <= e; ++i) {
     int step = i == e ? 1 : factors()[i];
     llvm::Optional<int> size =
         i == 0 ? llvm::Optional<int>() : factors()[i - 1];
-    auto stripe_expr =
-        AccessPatternStripeExpr::get(context_inverse, step, size);
-    if (mlir::failed(operands()[i].SetInverse(
-            stripe_expr.cast<AccessPatternExpr>(), inverses))) {
+    auto stripe_expr = MappingStripeExpr::get(context_inverse, step, size);
+    if (mlir::failed(operands()[i].SetInverse(stripe_expr.cast<MappingExpr>(),
+                                              inverses))) {
       return mlir::failure();
     }
   }
   return mlir::success();
 }
 
-AccessPatternExpr AccessPatternUnStripeExpr::Unify(
-    AccessPatternExpr other_expr) const {
-  if (other_expr.isa<AccessPatternNoneExpr>()) return *this;
-  AccessPatternUnStripeExpr other_unstripe =
-      other_expr.dyn_cast<AccessPatternUnStripeExpr>();
-  if (other_unstripe == nullptr) return AccessPatternExpr(nullptr);
+MappingExpr MappingUnStripeExpr::Unify(MappingExpr other_expr) const {
+  if (other_expr.isa<MappingNoneExpr>()) return *this;
+  MappingUnStripeExpr other_unstripe =
+      other_expr.dyn_cast<MappingUnStripeExpr>();
+  if (other_unstripe == nullptr) return MappingExpr(nullptr);
 
-  llvm::SmallVector<AccessPatternExpr, 4> new_exprs;
+  llvm::SmallVector<MappingExpr, 4> new_exprs;
   llvm::SmallVector<int, 3> new_factors;
 
   int this_cursor = 0;
@@ -459,17 +444,16 @@ AccessPatternExpr AccessPatternUnStripeExpr::Unify(
                          : 1;
     if (this_step < other_step) {
       // We can only subdivide none exprs.
-      if (!operands()[this_cursor].isa<AccessPatternNoneExpr>()) {
-        return AccessPatternExpr(nullptr);
+      if (!operands()[this_cursor].isa<MappingNoneExpr>()) {
+        return MappingExpr(nullptr);
       }
       new_factors.push_back(other_step);
       new_exprs.push_back(other_unstripe.operands()[other_cursor]);
       ++other_cursor;
     } else if (this_step > other_step) {
       // We can only subdivide none exprs.
-      if (!other_unstripe.operands()[other_cursor]
-               .isa<AccessPatternNoneExpr>()) {
-        return AccessPatternExpr(nullptr);
+      if (!other_unstripe.operands()[other_cursor].isa<MappingNoneExpr>()) {
+        return MappingExpr(nullptr);
       }
       new_factors.push_back(this_step);
       new_exprs.push_back(operands()[this_cursor]);
@@ -484,15 +468,15 @@ AccessPatternExpr AccessPatternUnStripeExpr::Unify(
       ++other_cursor;
     }
   }
-  return AccessPatternUnStripeExpr::get(new_exprs, new_factors);
+  return MappingUnStripeExpr::get(new_exprs, new_factors);
 }
 
-mlir::LogicalResult AccessPatternUnStripeExpr::UnificationConstraints(
-    AccessPatternExpr other_expr,
-    llvm::MutableArrayRef<AccessPatternExpr> constraints) const {
-  if (other_expr.isa<AccessPatternNoneExpr>()) return mlir::success();
-  AccessPatternUnStripeExpr other_unstripe =
-      other_expr.dyn_cast<AccessPatternUnStripeExpr>();
+mlir::LogicalResult MappingUnStripeExpr::UnificationConstraints(
+    MappingExpr other_expr,
+    llvm::MutableArrayRef<MappingExpr> constraints) const {
+  if (other_expr.isa<MappingNoneExpr>()) return mlir::success();
+  MappingUnStripeExpr other_unstripe =
+      other_expr.dyn_cast<MappingUnStripeExpr>();
   if (other_unstripe == nullptr) return mlir::failure();
 
   int this_cursor = 0;
@@ -504,14 +488,13 @@ mlir::LogicalResult AccessPatternUnStripeExpr::UnificationConstraints(
                          : 1;
     if (this_step < other_step) {
       // We can only subdivide none exprs.
-      if (!operands()[this_cursor].isa<AccessPatternNoneExpr>()) {
+      if (!operands()[this_cursor].isa<MappingNoneExpr>()) {
         return mlir::failure();
       }
       ++other_cursor;
     } else if (this_step > other_step) {
       // We can only subdivide none exprs.
-      if (!other_unstripe.operands()[other_cursor]
-               .isa<AccessPatternNoneExpr>()) {
+      if (!other_unstripe.operands()[other_cursor].isa<MappingNoneExpr>()) {
         return mlir::failure();
       }
       ++this_cursor;
@@ -527,11 +510,11 @@ mlir::LogicalResult AccessPatternUnStripeExpr::UnificationConstraints(
   return mlir::success();
 }
 
-AccessPatternExpr AccessPatternUnStripeExpr::FindInInverse(
-    llvm::ArrayRef<AccessPatternExpr> inverse) const {
+MappingExpr MappingUnStripeExpr::FindInInverse(
+    llvm::ArrayRef<MappingExpr> inverse) const {
   return operands()[0]
       .FindInInverse(inverse)
-      .cast<AccessPatternStripeExpr>()
+      .cast<MappingStripeExpr>()
       .operand();
 }
 
@@ -539,27 +522,26 @@ AccessPatternExpr AccessPatternUnStripeExpr::FindInInverse(
 // AccessPatternAttr
 //===----------------------------------------------------------------------===//
 
-// Private implementation/storage class for sair::AccessPatternAttr. Instances
+// Private implementation/storage class for sair::MappingAttr. Instances
 // of this class are allocated by MLIR type system in a dedicated arena. Not
 // intended for direct use.
-class impl::AccessPatternAttrStorage : public mlir::AttributeStorage {
+class impl::MappingAttrStorage : public mlir::AttributeStorage {
  public:
-  // Key type uniquely identifying AccessPatternAttrStorage for MLIR attribute
+  // Key type uniquely identifying MappingAttrStorage for MLIR attribute
   // unique-ing. This specific name is required by mlir::AttributeUniquer.
-  using KeyTy = std::pair<int, llvm::ArrayRef<AccessPatternExpr>>;
+  using KeyTy = std::pair<int, llvm::ArrayRef<MappingExpr>>;
 
-  // Creates an AccessPatternAttrStorage using the provided allocator. Hook for
+  // Creates an MappingAttrStorage using the provided allocator. Hook for
   // MLIR attribute system.
-  static AccessPatternAttrStorage *construct(
+  static MappingAttrStorage *construct(
       mlir::AttributeStorageAllocator &allocator, const KeyTy &key) {
-    return new (allocator.allocate<AccessPatternAttrStorage>())
-        AccessPatternAttrStorage(
-            std::make_pair(key.first, allocator.copyInto(key.second)));
+    return new (allocator.allocate<MappingAttrStorage>()) MappingAttrStorage(
+        std::make_pair(key.first, allocator.copyInto(key.second)));
   }
 
-  // Compares the AccessPatternAttrStorage identification key with this object.
+  // Compares the MappingAttrStorage identification key with this object.
   bool operator==(const KeyTy &key) const {
-    return key.first == use_domain_size_ && key.second == pattern_;
+    return key.first == use_domain_size_ && key.second == mapping_;
   }
 
   // Returns the number of dimensions in the use domain.
@@ -567,258 +549,249 @@ class impl::AccessPatternAttrStorage : public mlir::AttributeStorage {
 
   // Returns the list of dimensions along which a variable is accessed.
   // Dimensions are identified by their position in the domain definition.
-  llvm::ArrayRef<AccessPatternExpr> pattern() const { return pattern_; }
+  llvm::ArrayRef<MappingExpr> mapping() const { return mapping_; }
 
  private:
   // Constructs a storage object from the provided key. Such objects must not be
   // constructed directly but rather created by MLIR's type system within an
   // arena allocator by calling ::construct.
-  explicit AccessPatternAttrStorage(KeyTy key)
-      : use_domain_size_(key.first), pattern_(key.second) {}
+  explicit MappingAttrStorage(KeyTy key)
+      : use_domain_size_(key.first), mapping_(key.second) {}
 
   int use_domain_size_;
 
   // The list of dimensions along which a Sair variable is accessed.
-  llvm::ArrayRef<AccessPatternExpr> pattern_;
+  llvm::ArrayRef<MappingExpr> mapping_;
 };
 
-// Verifies that the expressions form a valid access pattern
-static mlir::LogicalResult VerifyPatternExprs(
+// Verifies that the expressions form a valid access mapping.
+static mlir::LogicalResult VerifyMappingExprs(
     mlir::MLIRContext *context, int use_domain_size,
-    llvm::ArrayRef<AccessPatternExpr> pattern_exprs) {
-  llvm::SmallVector<AccessPatternExpr, 4> inverted_exprs(
-      use_domain_size, AccessPatternNoneExpr::get(context));
-  for (int i = 0, e = pattern_exprs.size(); i < e; ++i) {
-    AccessPatternExpr dim_expr = AccessPatternDimExpr::get(i, context);
-    if (mlir::failed(pattern_exprs[i].SetInverse(dim_expr, inverted_exprs))) {
+    llvm::ArrayRef<MappingExpr> mapping_exprs) {
+  llvm::SmallVector<MappingExpr, 4> inverted_exprs(
+      use_domain_size, MappingNoneExpr::get(context));
+  for (int i = 0, e = mapping_exprs.size(); i < e; ++i) {
+    MappingExpr dim_expr = MappingDimExpr::get(i, context);
+    if (mlir::failed(mapping_exprs[i].SetInverse(dim_expr, inverted_exprs))) {
       return mlir::failure();
     }
   }
   return mlir::success();
 }
 
-AccessPatternAttr AccessPatternAttr::get(
-    mlir::MLIRContext *context, int use_domain_size,
-    llvm::ArrayRef<AccessPatternExpr> pattern) {
+MappingAttr MappingAttr::get(mlir::MLIRContext *context, int use_domain_size,
+                             llvm::ArrayRef<MappingExpr> mapping) {
   assert(
-      mlir::succeeded(VerifyPatternExprs(context, use_domain_size, pattern)));
-  return Base::get(context, std::make_pair(use_domain_size, pattern));
+      mlir::succeeded(VerifyMappingExprs(context, use_domain_size, mapping)));
+  return Base::get(context, std::make_pair(use_domain_size, mapping));
 }
 
-AccessPatternAttr AccessPatternAttr::getChecked(
-    mlir::MLIRContext *context, int use_domain_size,
-    llvm::ArrayRef<AccessPatternExpr> pattern) {
-  if (mlir::failed(VerifyPatternExprs(context, use_domain_size, pattern))) {
+MappingAttr MappingAttr::getChecked(mlir::MLIRContext *context,
+                                    int use_domain_size,
+                                    llvm::ArrayRef<MappingExpr> mapping) {
+  if (mlir::failed(VerifyMappingExprs(context, use_domain_size, mapping))) {
     return nullptr;
   }
-  return Base::get(context, std::make_pair(use_domain_size, pattern));
+  return Base::get(context, std::make_pair(use_domain_size, mapping));
 }
 
-AccessPatternAttr AccessPatternAttr::GetIdentity(mlir::MLIRContext *context,
-                                                 int num_dimensions,
-                                                 int use_domain_size) {
+MappingAttr MappingAttr::GetIdentity(mlir::MLIRContext *context,
+                                     int num_dimensions, int use_domain_size) {
   if (use_domain_size == -1) use_domain_size = num_dimensions;
   assert(use_domain_size >= num_dimensions);
-  llvm::SmallVector<AccessPatternExpr, 4> pattern;
-  pattern.reserve(num_dimensions);
+  llvm::SmallVector<MappingExpr, 4> mapping;
+  mapping.reserve(num_dimensions);
   for (int i = 0; i < num_dimensions; ++i) {
-    pattern.push_back(AccessPatternDimExpr::get(i, context));
+    mapping.push_back(MappingDimExpr::get(i, context));
   }
-  return AccessPatternAttr::get(context, use_domain_size, pattern);
+  return MappingAttr::get(context, use_domain_size, mapping);
 }
 
-AccessPatternAttr AccessPatternAttr::FromAffineMap(mlir::AffineMap map) {
+MappingAttr MappingAttr::FromAffineMap(mlir::AffineMap map) {
   assert(map.isProjectedPermutation());
-  llvm::SmallVector<AccessPatternExpr, 8> dimensions;
+  llvm::SmallVector<MappingExpr, 8> dimensions;
 
   dimensions.reserve(map.getNumResults());
   for (mlir::AffineExpr expr : map.getResults()) {
-    dimensions.push_back(AccessPatternDimExpr::get(
+    dimensions.push_back(MappingDimExpr::get(
         expr.cast<mlir::AffineDimExpr>().getPosition(), map.getContext()));
   }
   return get(map.getContext(), map.getNumDims(), dimensions);
 }
 
-llvm::ArrayRef<AccessPatternExpr> AccessPatternAttr::Dimensions() const {
-  return getImpl()->pattern();
+llvm::ArrayRef<MappingExpr> MappingAttr::Dimensions() const {
+  return getImpl()->mapping();
 }
 
-int AccessPatternAttr::UseDomainSize() const {
-  return getImpl()->use_domain_size();
-}
+int MappingAttr::UseDomainSize() const { return getImpl()->use_domain_size(); }
 
-AccessPatternAttr AccessPatternAttr::Compose(AccessPatternAttr other) const {
-  llvm::SmallVector<AccessPatternExpr, 4> new_access_pattern_dims;
-  new_access_pattern_dims.reserve(other.size());
-  for (AccessPatternExpr other_expr : other) {
-    new_access_pattern_dims.push_back(other_expr.SubstituteDims(Dimensions()));
+MappingAttr MappingAttr::Compose(MappingAttr other) const {
+  llvm::SmallVector<MappingExpr, 4> new_mapping_dims;
+  new_mapping_dims.reserve(other.size());
+  for (MappingExpr other_expr : other) {
+    new_mapping_dims.push_back(other_expr.SubstituteDims(Dimensions()));
   }
-  return AccessPatternAttr::get(getContext(), UseDomainSize(),
-                                new_access_pattern_dims);
+  return MappingAttr::get(getContext(), UseDomainSize(), new_mapping_dims);
 }
 
 // TODO(b/339834234): move this to the memref introduction pass
-static mlir::AffineExpr AsAffineExpr(AccessPatternExpr expr) {
-  if (auto dim_expr = expr.dyn_cast<AccessPatternDimExpr>()) {
+static mlir::AffineExpr AsAffineExpr(MappingExpr expr) {
+  if (auto dim_expr = expr.dyn_cast<MappingDimExpr>()) {
     return getAffineDimExpr(dim_expr.dimension(), dim_expr.getContext());
-  } else if (auto stripe_expr = expr.dyn_cast<AccessPatternStripeExpr>()) {
+  } else if (auto stripe_expr = expr.dyn_cast<MappingStripeExpr>()) {
     mlir::AffineExpr inner_expr = AsAffineExpr(stripe_expr.operand());
     auto step = mlir::getAffineConstantExpr(stripe_expr.step(),
                                             stripe_expr.getContext());
     auto floor_div = mlir::AffineExprKind::FloorDiv;
     return mlir::getAffineBinaryOpExpr(floor_div, inner_expr, step) * step;
-  } else if (auto unstripe_expr = expr.dyn_cast<AccessPatternUnStripeExpr>()) {
+  } else if (auto unstripe_expr = expr.dyn_cast<MappingUnStripeExpr>()) {
     return AsAffineExpr(unstripe_expr.operands().back());
   }
   llvm_unreachable("unsupported expression");
 }
 
-mlir::AffineMap AccessPatternAttr::AsAffineMap() const {
+mlir::AffineMap MappingAttr::AsAffineMap() const {
   llvm::SmallVector<mlir::AffineExpr, 4> affine_exprs;
   affine_exprs.reserve(Dimensions().size());
-  for (AccessPatternExpr expr : *this) {
+  for (MappingExpr expr : *this) {
     affine_exprs.push_back(AsAffineExpr(expr));
   }
   return mlir::AffineMap::get(UseDomainSize(), 0, affine_exprs, getContext());
 }
 
-mlir::AffineMap AccessPatternAttr::InverseAffineMap() const {
+mlir::AffineMap MappingAttr::InverseAffineMap() const {
   return mlir::inversePermutation(AsAffineMap());
 }
 
-bool AccessPatternAttr::IsFullySpecified() const {
-  return llvm::all_of(getImpl()->pattern(), [](AccessPatternExpr expr) {
-    return expr.IsFullySpecified();
-  });
+bool MappingAttr::IsFullySpecified() const {
+  return llvm::all_of(getImpl()->mapping(),
+                      [](MappingExpr expr) { return expr.IsFullySpecified(); });
 }
 
-AccessPatternAttr AccessPatternAttr::MakeFullySpecified() const {
+MappingAttr MappingAttr::MakeFullySpecified() const {
   int num_dimensions = UseDomainSize();
-  llvm::SmallVector<AccessPatternExpr, 4> new_exprs;
+  llvm::SmallVector<MappingExpr, 4> new_exprs;
   new_exprs.reserve(size());
-  for (AccessPatternExpr expr : Dimensions()) {
+  for (MappingExpr expr : Dimensions()) {
     new_exprs.push_back(expr.MakeFullySpecified(num_dimensions));
   }
-  return AccessPatternAttr::get(getContext(), num_dimensions, new_exprs);
+  return MappingAttr::get(getContext(), num_dimensions, new_exprs);
 }
 
-bool AccessPatternAttr::IsIdentity() const {
-  for (auto en : llvm::enumerate(getImpl()->pattern())) {
-    auto dim_expr = en.value().dyn_cast<AccessPatternDimExpr>();
+bool MappingAttr::IsIdentity() const {
+  for (auto en : llvm::enumerate(getImpl()->mapping())) {
+    auto dim_expr = en.value().dyn_cast<MappingDimExpr>();
     if (dim_expr == nullptr || dim_expr.dimension() != en.index()) return false;
   }
   return true;
 }
 
-llvm::SmallBitVector AccessPatternAttr::DependencyMask() const {
+llvm::SmallBitVector MappingAttr::DependencyMask() const {
   llvm::SmallBitVector mask(UseDomainSize());
-  for (AccessPatternExpr expr : *this) {
+  for (MappingExpr expr : *this) {
     expr.SetDependenciesInMask(mask);
   }
   return mask;
 }
 
-bool AccessPatternAttr::IsInjective(int num_dimensions) const {
+bool MappingAttr::IsInjective(int num_dimensions) const {
   llvm::SmallBitVector mask = DependencyMask();
   mask.resize(num_dimensions);
   return mask.all();
 }
 
-AccessPatternAttr AccessPatternAttr::ResizeUseDomain(int new_size) const {
+MappingAttr MappingAttr::ResizeUseDomain(int new_size) const {
   int old_size = UseDomainSize();
   if (new_size == old_size) return *this;
   if (new_size >= old_size) {
-    return AccessPatternAttr::get(getContext(), new_size, Dimensions());
+    return MappingAttr::get(getContext(), new_size, Dimensions());
   }
 
   mlir::MLIRContext *context = getContext();
-  AccessPatternExpr none = AccessPatternNoneExpr::get(context);
-  llvm::SmallVector<AccessPatternExpr, 4> substitutions(old_size, none);
+  MappingExpr none = MappingNoneExpr::get(context);
+  llvm::SmallVector<MappingExpr, 4> substitutions(old_size, none);
   substitutions.reserve(old_size);
   for (int i = 0; i < new_size; ++i) {
-    substitutions[i] = AccessPatternDimExpr::get(i, context);
+    substitutions[i] = MappingDimExpr::get(i, context);
   }
 
-  llvm::SmallVector<AccessPatternExpr, 4> new_exprs;
+  llvm::SmallVector<MappingExpr, 4> new_exprs;
   new_exprs.reserve(size());
-  for (AccessPatternExpr expr : *this) {
+  for (MappingExpr expr : *this) {
     new_exprs.push_back(expr.SubstituteDims(substitutions));
   }
 
-  return AccessPatternAttr::get(getContext(), new_size, new_exprs);
+  return MappingAttr::get(getContext(), new_size, new_exprs);
 }
 
-AccessPatternAttr AccessPatternAttr::Resize(int new_size) const {
+MappingAttr MappingAttr::Resize(int new_size) const {
   int current_size = Dimensions().size();
   if (new_size == current_size) return *this;
   if (new_size < current_size) {
-    return AccessPatternAttr::get(getContext(), UseDomainSize(),
-                                  Dimensions().take_front(new_size));
+    return MappingAttr::get(getContext(), UseDomainSize(),
+                            Dimensions().take_front(new_size));
   }
-  llvm::SmallVector<AccessPatternExpr, 4> dimensions(Dimensions().begin(),
-                                                     Dimensions().end());
-  dimensions.resize(new_size, AccessPatternNoneExpr::get(getContext()));
-  return AccessPatternAttr::get(getContext(), UseDomainSize(), dimensions);
+  llvm::SmallVector<MappingExpr, 4> dimensions(Dimensions().begin(),
+                                               Dimensions().end());
+  dimensions.resize(new_size, MappingNoneExpr::get(getContext()));
+  return MappingAttr::get(getContext(), UseDomainSize(), dimensions);
 }
 
-AccessPatternAttr AccessPatternAttr::ShiftRight(int offset,
-                                                int start_from) const {
+MappingAttr MappingAttr::ShiftRight(int offset, int start_from) const {
   mlir::MLIRContext *context = getContext();
 
-  llvm::SmallVector<AccessPatternExpr, 4> substitutions;
+  llvm::SmallVector<MappingExpr, 4> substitutions;
   substitutions.reserve(UseDomainSize());
   for (int i = 0; i < start_from; ++i) {
-    substitutions.push_back(AccessPatternDimExpr::get(i, context));
+    substitutions.push_back(MappingDimExpr::get(i, context));
   }
   for (int i = start_from, e = UseDomainSize(); i < e; ++i) {
-    substitutions.push_back(AccessPatternDimExpr::get(i + offset, context));
+    substitutions.push_back(MappingDimExpr::get(i + offset, context));
   }
 
-  llvm::SmallVector<AccessPatternExpr, 8> new_dimensions;
+  llvm::SmallVector<MappingExpr, 8> new_dimensions;
   new_dimensions.reserve(Dimensions().size());
-  for (AccessPatternExpr dim : Dimensions()) {
+  for (MappingExpr dim : Dimensions()) {
     new_dimensions.push_back(dim.SubstituteDims(substitutions));
   }
 
-  return AccessPatternAttr::get(context, UseDomainSize() + offset,
-                                new_dimensions);
+  return MappingAttr::get(context, UseDomainSize() + offset, new_dimensions);
 }
 
-AccessPatternAttr AccessPatternAttr::Inverse() const {
+MappingAttr MappingAttr::Inverse() const {
   mlir::MLIRContext *context = getContext();
-  llvm::SmallVector<AccessPatternExpr, 4> inverted_exprs(
-      UseDomainSize(), AccessPatternNoneExpr::get(context));
+  llvm::SmallVector<MappingExpr, 4> inverted_exprs(
+      UseDomainSize(), MappingNoneExpr::get(context));
   for (int i = 0, e = size(); i < e; ++i) {
-    AccessPatternExpr dim_expr = AccessPatternDimExpr::get(i, context);
+    MappingExpr dim_expr = MappingDimExpr::get(i, context);
     auto status = Dimension(i).SetInverse(dim_expr, inverted_exprs);
     assert(mlir::succeeded(status));
   }
-  return AccessPatternAttr::get(context, size(), inverted_exprs);
+  return MappingAttr::get(context, size(), inverted_exprs);
 }
 
 //===----------------------------------------------------------------------===//
 // DomainShapeDim
 //===----------------------------------------------------------------------===//
 
-DomainShapeDim::DomainShapeDim(RangeType type,
-                               AccessPatternAttr dependency_pattern)
-    : type_(type), dependency_pattern_(dependency_pattern) {
+DomainShapeDim::DomainShapeDim(RangeType type, MappingAttr dependency_mapping)
+    : type_(type), dependency_mapping_(dependency_mapping) {
   assert(type != nullptr);
-  assert(dependency_pattern != nullptr);
-  assert(dependency_pattern.IsFullySpecified());
+  assert(dependency_mapping != nullptr);
+  assert(dependency_mapping.IsFullySpecified());
 }
 
-DomainShapeDim DomainShapeDim::Apply(AccessPatternAttr access_pattern) const {
-  return DomainShapeDim(type_, access_pattern.Compose(dependency_pattern_));
+DomainShapeDim DomainShapeDim::Apply(MappingAttr mapping) const {
+  return DomainShapeDim(type_, mapping.Compose(dependency_mapping_));
 }
 
 bool operator==(const DomainShapeDim &lhs, const DomainShapeDim &rhs) {
   return lhs.type() == rhs.type() &&
-         lhs.dependency_pattern() == rhs.dependency_pattern();
+         lhs.dependency_mapping() == rhs.dependency_mapping();
 }
 
 unsigned hash_value(const DomainShapeDim &shape_dim) {
-  return llvm::hash_combine(shape_dim.type(), shape_dim.dependency_pattern());
+  return llvm::hash_combine(shape_dim.type(), shape_dim.dependency_mapping());
 }
 
 //===----------------------------------------------------------------------===//
@@ -863,7 +836,7 @@ DomainShapeAttr DomainShapeAttr::get(mlir::MLIRContext *context,
   // We omit the use domain size when printing dimensions, so we ensure it
   // has a fixed value.
   for (int i = 0, e = dims.size(); i < e; ++i) {
-    assert(dims[i].dependency_pattern().UseDomainSize() == i);
+    assert(dims[i].dependency_mapping().UseDomainSize() == i);
     (void) i;
   }
 
@@ -877,8 +850,8 @@ DomainShapeAttr DomainShapeAttr::HyperRectangular(mlir::MLIRContext *context,
   llvm::SmallVector<DomainShapeDim, 4> dims;
   dims.reserve(rank);
   for (int i = 0; i < rank; ++i) {
-    AccessPatternAttr access_pattern = AccessPatternAttr::get(context, i, {});
-    dims.emplace_back(range_type, access_pattern);
+    MappingAttr mapping = MappingAttr::get(context, i, {});
+    dims.emplace_back(range_type, mapping);
   }
   return DomainShapeAttr::get(context, dims);
 }
@@ -909,15 +882,14 @@ bool DomainShapeAttr::IsPrefixOf(DomainShapeAttr other) {
   return Dimensions() == other.Dimensions().take_front(NumDimensions());
 }
 
-DomainShapeAttr DomainShapeAttr::AccessedShape(
-    AccessPatternAttr access_pattern) const {
+DomainShapeAttr DomainShapeAttr::AccessedShape(MappingAttr mapping) const {
   llvm::SmallVector<DomainShapeDim, 4> shape;
-  shape.reserve(access_pattern.size());
-  AccessPatternAttr inverted_pattern = access_pattern.Inverse();
-  for (int i = 0, e = access_pattern.size(); i < e; ++i) {
-    DomainShapeDim shape_dim = access_pattern.Dimension(i).AccessedShape(
-        Dimensions(), inverted_pattern.ResizeUseDomain(i));
-    assert(shape_dim.dependency_pattern().UseDomainSize() == i);
+  shape.reserve(mapping.size());
+  MappingAttr inverted_mapping = mapping.Inverse();
+  for (int i = 0, e = mapping.size(); i < e; ++i) {
+    DomainShapeDim shape_dim = mapping.Dimension(i).AccessedShape(
+        Dimensions(), inverted_mapping.ResizeUseDomain(i));
+    assert(shape_dim.dependency_mapping().UseDomainSize() == i);
     shape.push_back(shape_dim);
   }
   return DomainShapeAttr::get(getContext(), shape);
@@ -930,20 +902,20 @@ DomainShapeAttr DomainShapeAttr::Product(DomainShapeAttr other) const {
 DomainShapeAttr DomainShapeAttr::ProductAt(int pos,
                                            DomainShapeAttr other) const {
   // The leftmost `pos` domain dimensions are kept as is, with the same
-  // dependency pattern.
+  // dependency mapping.
   auto shape = llvm::to_vector<8>(Dimensions().take_front(pos));
   shape.reserve(NumDimensions() + other.NumDimensions());
 
   // All dimensions coming from the other domain must have their dependencies
   // shifted by `pos` to make sure their refer their new positions.
   for (const DomainShapeDim &dim : other.Dimensions()) {
-    shape.emplace_back(dim.type(), dim.dependency_pattern().ShiftRight(pos));
+    shape.emplace_back(dim.type(), dim.dependency_mapping().ShiftRight(pos));
   }
 
   // The remaining original dimensions must have their dependencies update to
   // account for the inserted dimensions.
   for (const DomainShapeDim &dim : Dimensions().drop_front(pos)) {
-    shape.emplace_back(dim.type(), dim.dependency_pattern().ShiftRight(
+    shape.emplace_back(dim.type(), dim.dependency_mapping().ShiftRight(
                                        other.NumDimensions(), pos));
   }
 

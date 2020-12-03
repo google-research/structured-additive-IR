@@ -19,9 +19,9 @@
 
 namespace sair {
 
-// Returns a pass that tests access pattern expressions methods.
+// Returns a pass that tests mapping expressions methods.
 std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>>
-CreateTestAccessPatternExprsPass();
+CreateTestMappingExprsPass();
 
 // Returns a pass that tests DomainShapeAttr methods.
 std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>>

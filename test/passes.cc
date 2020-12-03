@@ -47,12 +47,12 @@ mlir::ArrayAttr GetArrayAttr(llvm::SmallVectorImpl<T> &attributes,
   return builder.getArrayAttr(array);
 }
 
-// Walks a module and dispatch each operation to an access pattern expression
+// Walks a module and dispatch each operation to an mapping expression
 // method call based on the operation name.
-class TestAccessPatternExprsPass
-    : public TestAccessPatternExprsPassBase<TestAccessPatternExprsPass> {
+class TestMappingExprsPass
+    : public TestMappingExprsPassBase<TestMappingExprsPass> {
  public:
-  mlir::Attribute DispatchTest(llvm::StringRef op_name, AccessPatternExpr expr,
+  mlir::Attribute DispatchTest(llvm::StringRef op_name, MappingExpr expr,
                                mlir::Operation *op) {
     mlir::Builder builder(&getContext());
     if (op_name == "is_fully_specified") {
@@ -62,31 +62,31 @@ class TestAccessPatternExprsPass
       return expr.MakeFullySpecified(num_dimensions);
     } else if (op_name == "substitute_dims") {
       return expr.SubstituteDims(
-          GetAttrVector<AccessPatternExpr>("substitutions", op));
+          GetAttrVector<MappingExpr>("substitutions", op));
     } else if (op_name == "set_inverse") {
-      llvm::SmallVector<AccessPatternExpr, 4> inverses =
-          GetAttrVector<AccessPatternExpr>("inverses", op);
-      auto context = op->getAttrOfType<AccessPatternExpr>("context");
+      llvm::SmallVector<MappingExpr, 4> inverses =
+          GetAttrVector<MappingExpr>("inverses", op);
+      auto context = op->getAttrOfType<MappingExpr>("context");
       assert(context != nullptr);
       if (mlir::failed(expr.SetInverse(context, inverses))) return nullptr;
       return GetArrayAttr(inverses, builder);
     } else if (op_name == "unify") {
-      auto other = op->getAttrOfType<AccessPatternExpr>("other");
+      auto other = op->getAttrOfType<MappingExpr>("other");
       assert(other != nullptr);
       return expr.Unify(other);
     } else if (op_name == "unification_constraints") {
-      auto other = op->getAttrOfType<AccessPatternExpr>("other");
+      auto other = op->getAttrOfType<MappingExpr>("other");
       auto domain_size = op->getAttrOfType<mlir::IntegerAttr>("domain_size");
       assert(other != nullptr);
       assert(domain_size != nullptr);
-      llvm::SmallVector<AccessPatternExpr, 4> constraints(
-          domain_size.getInt(), AccessPatternNoneExpr::get(&getContext()));
+      llvm::SmallVector<MappingExpr, 4> constraints(
+          domain_size.getInt(), MappingNoneExpr::get(&getContext()));
       if (mlir::failed(expr.UnificationConstraints(other, constraints))) {
         return nullptr;
       }
       return GetArrayAttr(constraints, builder);
     } else if (op_name == "find_in_inverse") {
-      auto inverse = op->getAttrOfType<AccessPatternAttr>("inverse");
+      auto inverse = op->getAttrOfType<MappingAttr>("inverse");
       assert(inverse != nullptr);
       return expr.FindInInverse(inverse.Dimensions());
     } else if (op_name == "min_domain_size") {
@@ -99,7 +99,7 @@ class TestAccessPatternExprsPass
     getOperation().walk([&](mlir::Operation *op) {
       if (op->getName().getDialect() != "test") return;
       llvm::StringRef name = op->getName().stripDialect();
-      auto expr = op->getAttrOfType<AccessPatternExpr>("expr");
+      auto expr = op->getAttrOfType<MappingExpr>("expr");
       assert(expr != nullptr);
       mlir::Attribute result = DispatchTest(name, expr, op);
       // Replace nullptr by unit so that we can serialize it.
@@ -118,8 +118,8 @@ class TestAccessPatternExprsPass
 };
 
 std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>>
-CreateTestAccessPatternExprsPass() {
-  return std::make_unique<TestAccessPatternExprsPass>();
+CreateTestMappingExprsPass() {
+  return std::make_unique<TestMappingExprsPass>();
 }
 
 // Walks a module and dispatch each operation to a DomainShapeAttr method call
@@ -131,9 +131,9 @@ class TestDomainShapePass
                                mlir::Operation *op) {
     mlir::Builder builder(&getContext());
     if (op_name == "accessed_shape") {
-      auto pattern = op->getAttrOfType<AccessPatternAttr>("pattern");
-      assert(pattern != nullptr);
-      return shape.AccessedShape(pattern);
+      auto mapping = op->getAttrOfType<MappingAttr>("mapping");
+      assert(mapping != nullptr);
+      return shape.AccessedShape(mapping);
     }
     llvm_unreachable("unknown test name");
   }

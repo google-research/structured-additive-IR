@@ -14,10 +14,10 @@
 
 include "mlir/Pass/PassBase.td"
 
-def TestAccessPatternExprsPass
-    : Pass<"test-access-pattern-exprs", "mlir::ModuleOp"> {
-  let summary = "Calls access pattern expression methods to test them";
-  let constructor = [{ ::sair::CreateTestAccessPatternExprsPass(); }];
+def TestMappingExprsPass
+    : Pass<"test-mapping-exprs", "mlir::ModuleOp"> {
+  let summary = "Calls mapping expression methods to test them";
+  let constructor = [{ ::sair::CreateTestMappingExprsPass(); }];
   let dependentDialects = ["::sair::SairDialect"];
 }
 

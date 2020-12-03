@@ -61,15 +61,14 @@ ParseResult ResolveDomain(mlir::OpAsmParser &parser,
                           DomainShapeAttr expected_shape,
                           llvm::ArrayRef<mlir::OpAsmParser::OperandType> domain,
                           mlir::OperationState &result);
-// Parses an access to a Sair value, composed of an SSA-value and an access
-// pattern.
+// Parses an access to a Sair value, composed of an SSA-value and a mapping.
 ParseResult ParseValueAccess(int num_dimensions, mlir::OpAsmParser &parser,
                              mlir::OpAsmParser::OperandType &value,
-                             AccessPatternAttr &access_pattern);
+                             MappingAttr &mapping);
 
 // Prints access to a Sair value, composed of the name of the SSA value and of
-// the access pattern along the dimensions of the operation. Dimensions are
-// assigned names based on their position in the domain, following the pattern
+// the mapping along the dimensions of the operation. Dimensions are
+// assigned names based on their position in the domain, following the mapping
 // d<position>.
 void PrintValueAccess(ValueOperand value, OpAsmPrinter &printer);
 // Prints an iteration domain. A domain is a list of dimensions between square
@@ -85,10 +84,10 @@ bool IsSameElementType(mlir::Value lhs, mlir::Value rhs);
 bool IsSameRank(mlir::Value sair_value, mlir::Value mlir_value);
 // Verifies that the domain matches the domain shape in the operation.
 mlir::LogicalResult VerifyDomain(SairOp op);
-// Verifies that the access pattern does not reference dimensions beyond
+// Verifies that the mapping does not reference dimensions beyond
 // "num_parallel_dimensions", which are interpreted as reduction dimensions.
-mlir::LogicalResult VerifyReductionAccessPattern(AccessPatternAttr pattern,
-                                                 int num_parallel_dimensions);
+mlir::LogicalResult VerifyReductionMapping(MappingAttr mapping,
+                                           int num_parallel_dimensions);
 
 }  // namespace sair
 

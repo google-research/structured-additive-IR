@@ -34,9 +34,8 @@ namespace sair {
 // parsing and printing facilities.
 class SairDialect : public mlir::Dialect {
  public:
-  // The string identifier used for access pattern attribute in Sair ops.
-  static constexpr llvm::StringRef kAccessPatternAttrName =
-      "access_pattern_array";
+  // The string identifier used for mapping attribute in Sair ops.
+  static constexpr llvm::StringRef kMappingAttrName = "mapping_array";
 
   // The string identifier used for shape attribute in Sair ops.
   static constexpr llvm::StringRef kShapeAttrName = "shape";
@@ -65,11 +64,10 @@ class SairDialect : public mlir::Dialect {
                       mlir::DialectAsmPrinter &os) const override;
 };
 
-// Pretty-prints an access pattern, for use in custom printers. In particular,
+// Pretty-prints an mapping, for use in custom printers. In particular,
 // the use domain size is omitted. This functions access a raw stream so that it
 // can be used with different flavors of printers.
-void PrintAccessPattern(AccessPatternAttr access_pattern,
-                        llvm::raw_ostream &os);
+void PrintMapping(MappingAttr mapping, llvm::raw_ostream &os);
 
 // Parses an integer in [min, max). Stores the result in `result`.
 template <typename Parser>
@@ -104,120 +102,117 @@ mlir::ParseResult ParseDimensionName(Parser &parser, int &dimension) {
   return mlir::success();
 }
 
-// Parses an access pattern expression in a context with `num_dimensions`.
+// Parses an mapping expression in a context with `num_dimensions`.
 // Returns `nullptr` on failure. Considers a context with an infinite number of
 // dimensions if `num_dimensions` is `-1`.
 template <typename Parser>
-AccessPatternExpr ParseAccessPatternExpr(Parser &parser,
-                                         int num_dimensions = -1) {
+MappingExpr ParseMappingExpr(Parser &parser, int num_dimensions = -1) {
   mlir::MLIRContext *context = parser.getBuilder().getContext();
   if (mlir::succeeded(
-          parser.parseOptionalKeyword(AccessPatternNoneExpr::kAttrName))) {
-    return AccessPatternNoneExpr::get(context);
-  } else if (mlir::succeeded(parser.parseOptionalKeyword(
-                 AccessPatternStripeExpr::kAttrName))) {
+          parser.parseOptionalKeyword(MappingNoneExpr::kAttrName))) {
+    return MappingNoneExpr::get(context);
+  } else if (mlir::succeeded(
+                 parser.parseOptionalKeyword(MappingStripeExpr::kAttrName))) {
     // Parse a stripe expression of the form:
     // `stripe` `(` <operand>`,` <step> (`size` <size>)? `)`
-    if (mlir::failed(parser.parseLParen())) return AccessPatternExpr();
-    AccessPatternExpr operand = ParseAccessPatternExpr(parser, num_dimensions);
+    if (mlir::failed(parser.parseLParen())) return MappingExpr();
+    MappingExpr operand = ParseMappingExpr(parser, num_dimensions);
     int step;
     if (parser.parseComma() || ParseInteger(parser, step, 1)) {
-      return AccessPatternExpr();
+      return MappingExpr();
     }
     llvm::Optional<int> size_opt;
     if (mlir::succeeded(parser.parseOptionalKeyword("size"))) {
       int size;
       if (mlir::failed(ParseInteger(parser, size, step))) {
-        return AccessPatternExpr();
+        return MappingExpr();
       }
       size_opt = size;
     }
-    if (mlir::failed(parser.parseRParen())) return AccessPatternExpr();
-    return AccessPatternStripeExpr::get(operand, step, size_opt);
-  } else if (mlir::succeeded(parser.parseOptionalKeyword(
-                 AccessPatternUnStripeExpr::kAttrName))) {
+    if (mlir::failed(parser.parseRParen())) return MappingExpr();
+    return MappingStripeExpr::get(operand, step, size_opt);
+  } else if (mlir::succeeded(
+                 parser.parseOptionalKeyword(MappingUnStripeExpr::kAttrName))) {
     // Parse an unstrip expression of the form:
     // `unstripe` `(` (<operand> `,`)+ `[` (<factor> (`,` <factor>)*)? `]` `)`
     llvm::SmallVector<int, 3> factors;
-    llvm::SmallVector<AccessPatternExpr, 4> operands;
-    if (mlir::failed(parser.parseLParen())) return AccessPatternExpr();
+    llvm::SmallVector<MappingExpr, 4> operands;
+    if (mlir::failed(parser.parseLParen())) return MappingExpr();
     do {
-      AccessPatternExpr operand =
-          ParseAccessPatternExpr(parser, num_dimensions);
+      MappingExpr operand = ParseMappingExpr(parser, num_dimensions);
       if (operand == nullptr || mlir::failed(parser.parseComma())) {
-        return AccessPatternExpr();
+        return MappingExpr();
       }
       operands.push_back(operand);
     } while (mlir::failed(parser.parseOptionalLSquare()));
 
     if (operands.size() > 1 &&
         mlir::failed(ParseInteger(parser, factors.emplace_back(), 1))) {
-      return AccessPatternExpr();
+      return MappingExpr();
     }
     for (int i = 1, e = operands.size() - 1; i < e; ++i) {
       int last_factor = factors.back();
       if (parser.parseComma() ||
           ParseInteger(parser, factors.emplace_back(), 1, last_factor)) {
-        return AccessPatternExpr();
+        return MappingExpr();
       }
     }
     if (parser.parseRSquare() || parser.parseRParen()) {
-      return AccessPatternExpr();
+      return MappingExpr();
     }
-    return AccessPatternUnStripeExpr::get(operands, factors);
+    return MappingUnStripeExpr::get(operands, factors);
   }
 
   int dimension_id;
   llvm::SMLoc loc = parser.getCurrentLocation();
   if (mlir::failed(ParseDimensionName(parser, dimension_id))) {
-    return AccessPatternExpr();
+    return MappingExpr();
   }
 
   if (num_dimensions != -1 && dimension_id >= num_dimensions) {
     parser.emitError(loc) << "dimension 'd" << dimension_id
                           << "' is out of range (" << num_dimensions
                           << " dimensions)";
-    return AccessPatternExpr();
+    return MappingExpr();
   }
-  return AccessPatternDimExpr::get(dimension_id, context);
+  return MappingDimExpr::get(dimension_id, context);
 }
 
-// Parses a non-empty access pattern. Returns nullptr if the parsing fails.
+// Parses a non-empty mapping. Returns nullptr if the parsing fails.
 template <typename Parser>
-AccessPatternAttr ParseAccessPattern(Parser &parser, int num_dimensions) {
-  std::vector<AccessPatternExpr> exprs;
+MappingAttr ParseMapping(Parser &parser, int num_dimensions) {
+  std::vector<MappingExpr> exprs;
   llvm::SmallBitVector seen_dimensions(num_dimensions);
-  llvm::SMLoc pattern_loc = parser.getCurrentLocation();
+  llvm::SMLoc mapping_loc = parser.getCurrentLocation();
   do {
     llvm::SMLoc loc = parser.getCurrentLocation();
-    AccessPatternExpr expr = ParseAccessPatternExpr(parser, num_dimensions);
+    MappingExpr expr = ParseMappingExpr(parser, num_dimensions);
     if (expr == nullptr) return nullptr;
     exprs.push_back(expr);
   } while (succeeded(parser.parseOptionalComma()));
 
-  auto pattern = AccessPatternAttr::getChecked(parser.getBuilder().getContext(),
-                                               num_dimensions, exprs);
-  if (pattern == nullptr) {
-    parser.emitError(pattern_loc) << "invalid access pattern";
+  auto mapping = MappingAttr::getChecked(parser.getBuilder().getContext(),
+                                         num_dimensions, exprs);
+  if (mapping == nullptr) {
+    parser.emitError(mapping_loc) << "invalid mapping";
     return nullptr;
   }
-  return pattern;
+  return mapping;
 }
 
-// Parses an access pattern surrounded by parenthesis or returns the empty
-// access pattern if the next token is not a parenthesis. Returns nullptr if the
+// Parses an mapping surrounded by parenthesis or returns the empty
+// mapping if the next token is not a parenthesis. Returns nullptr if the
 // parsing fails.
 template <typename Parser>
-AccessPatternAttr ParseOptionalAccessPattern(Parser &parser,
-                                             int num_dimensions) {
+MappingAttr ParseOptionalMapping(Parser &parser, int num_dimensions) {
   mlir::MLIRContext *context = parser.getBuilder().getContext();
   if (failed(parser.parseOptionalLParen())) {
-    return AccessPatternAttr::get(context, num_dimensions, {});
+    return MappingAttr::get(context, num_dimensions, {});
   }
 
-  AccessPatternAttr access_pattern = ParseAccessPattern(parser, num_dimensions);
+  MappingAttr mapping = ParseMapping(parser, num_dimensions);
   if (failed(parser.parseRParen())) return nullptr;
-  return access_pattern;
+  return mapping;
 }
 
 }  // namespace sair

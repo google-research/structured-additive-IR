@@ -133,8 +133,8 @@ ValueType ValueType::get(mlir::MLIRContext *context, mlir::Type element_type) {
 // Forwards the request to the implementation class.
 mlir::Type ValueType::ElementType() const { return getImpl()->element_type(); }
 
-ValueType ValueType::AccessedType(AccessPatternAttr access_pattern) const {
-  return ValueType::get(getContext(), Shape().AccessedShape(access_pattern),
+ValueType ValueType::AccessedType(MappingAttr mapping) const {
+  return ValueType::get(getContext(), Shape().AccessedShape(mapping),
                         ElementType());
 }
 

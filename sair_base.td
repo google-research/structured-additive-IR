@@ -36,9 +36,9 @@ def SairDialect : Dialect {
 // Sair Attributes
 //===----------------------------------------------------------------------===//
 
-def AccessPatternExpr : AttrInterface<"AccessPatternExpr"> {
+def MappingExpr : AttrInterface<"MappingExpr"> {
   let description = [{
-    Interface class for access pattern expressions. Access pattern expressions
+    Interface class for mapping expressions. Mapping expressions
     specify how to access a dimension of another domain given the index along
     dimensions of the current domain.
   }];
@@ -52,7 +52,7 @@ def AccessPatternExpr : AttrInterface<"AccessPatternExpr"> {
       [{Replaces occurences of `none` by freshly allocated dimensions. Starts
         allocating at `num_dimensions` and increase it each time a new dimension
         is allocated.}],
-      "AccessPatternExpr", "MakeFullySpecified", (ins "int&":$num_dimensions)
+      "MappingExpr", "MakeFullySpecified", (ins "int&":$num_dimensions)
     >,
     InterfaceMethod<
       "Sets the dimensions referenced by the expression in `mask`",
@@ -72,16 +72,16 @@ def AccessPatternExpr : AttrInterface<"AccessPatternExpr"> {
     >,
     InterfaceMethod<
       "Substitutes dimension expressions by the given expressions",
-      "AccessPatternExpr", "SubstituteDims",
-      (ins "mlir::ArrayRef<AccessPatternExpr>":$exprs)
+      "MappingExpr", "SubstituteDims",
+      (ins "mlir::ArrayRef<MappingExpr>":$exprs)
     >,
     InterfaceMethod<
       [{Returns the shape of the dimension accessed by the given expression.
         `accessing_shape` must be the shape of the current domain and
-        `inversed_pattern` the inverse of the full access pattern.}],
+        `inverted_mapping` the inverse of the full mapping.}],
       "DomainShapeDim", "AccessedShape", (ins
         "llvm::ArrayRef<DomainShapeDim>":$accessing_shape,
-        "AccessPatternAttr":$inversed_pattern
+        "MappingAttr":$inversed_mapping
       )
     >,
     InterfaceMethod<
@@ -96,22 +96,22 @@ def AccessPatternExpr : AttrInterface<"AccessPatternExpr"> {
       Returns a failure if the inverse of this expression cannot be unified
       with inverses already set in `inverses`.}],
       "mlir::LogicalResult", "SetInverse", (ins
-        "AccessPatternExpr":$context_inverse,
-        "llvm::MutableArrayRef<AccessPatternExpr>":$inverses
+        "MappingExpr":$context_inverse,
+        "llvm::MutableArrayRef<MappingExpr>":$inverses
       )
     >,
     InterfaceMethod<
       [{Finds the subexpression corresponding to the inverse of this expression
         in `inverse`. Expects the expression to be fully specified. `inverse`
-        must be the inverse of the access pattern using this sub-expression.}],
-      "AccessPatternExpr", "FindInInverse",
-      (ins "llvm::ArrayRef<AccessPatternExpr>":$inverse)
+        must be the inverse of the mapping using this sub-expression.}],
+      "MappingExpr", "FindInInverse",
+      (ins "llvm::ArrayRef<MappingExpr>":$inverse)
     >,
     InterfaceMethod<
       [{Unifies two expressions by replacing the `none` of each expr by the
         corresponding sub-expression of the other expr. Returns nullptr if
         expressions cannot be unified.}],
-      "AccessPatternExpr", "Unify", (ins "AccessPatternExpr":$other_expr)
+      "MappingExpr", "Unify", (ins "MappingExpr":$other_expr)
     >,
     InterfaceMethod<
       [{Fills `constraints` with expression such that
@@ -120,19 +120,19 @@ def AccessPatternExpr : AttrInterface<"AccessPatternExpr"> {
         untouched if dimension i generates no constraints. Returns a failure if
         expressions cannot be unified.}],
       "mlir::LogicalResult", "UnificationConstraints", (ins
-        "AccessPatternExpr":$other_expr,
-        "llvm::MutableArrayRef<AccessPatternExpr>":$constraints
+        "MappingExpr":$other_expr,
+        "llvm::MutableArrayRef<MappingExpr>":$constraints
       )
     >
   ];
 }
 
-// Tests if an attribute is an AccessPatternAttr.
-def IsSairAccessPatternAttr : CPred<"$_self.isa<AccessPatternAttr>()">;
+// Tests if an attribute is an MappingAttr.
+def IsSairMappingAttr : CPred<"$_self.isa<MappingAttr>()">;
 
 // Specifies how a Sair value is accessed in the domain of another operation.
-def SairAccessPatternAttr : Attr<IsSairAccessPatternAttr, "access pattern"> {
-  let storageType = [{AccessPatternAttr}];
+def SairMappingAttr : Attr<IsSairMappingAttr, "mapping"> {
+  let storageType = [{MappingAttr}];
   let returnType = storageType;
 }
 
@@ -152,12 +152,12 @@ def SairEmptyDomainShapeAttr :
   let convertFromStorage = [{$_self}];
 }
 
-// Tests if an attribute is an AccessPatternExpr.
-def IsSairAccessPatternExpr : CPred<"$_self.isa<sair::AccessPatternExpr>()">;
+// Tests if an attribute is an MappingExpr.
+def IsSairMappingExpr : CPred<"$_self.isa<sair::MappingExpr>()">;
 
 // Defines an iterator on a dimension of the domain of the current operation.
-def SairAccessPatternExpr : Attr<IsSairAccessPatternExpr, "access_pattern_expr"> {
-  let storageType = [{AccessPatternExpr}];
+def SairMappingExpr : Attr<IsSairMappingExpr, "mapping_expr"> {
+  let storageType = [{MappingExpr}];
   let returnType = storageType;
 }
 
@@ -177,7 +177,7 @@ class SairStructAttr<string name,
 def SairLoopAttr : SairStructAttr<"LoopAttr", [
   // Name of the loop to generate.
   StructFieldAttr<"name", StrAttr>,
-  StructFieldAttr<"iter", SairAccessPatternExpr>
+  StructFieldAttr<"iter", SairMappingExpr>
 ]>;
 
 // A loop nest to generate when lowering an operation.
@@ -212,9 +212,9 @@ class SairValueOf<Type type>
   : Type<And<[SairValue.predicate, SairElementTypePred<type>]>,
       "sair.value with " # type.description # " elements">;
 
-// Type for arrays of access patterns.
-def SairAccessPatternArrayAttr :
-  TypedArrayAttrBase<SairAccessPatternAttr, "access patterns array">;
+// Type for arrays of mappings.
+def SairMappingArrayAttr :
+  TypedArrayAttrBase<SairMappingAttr, "mappings array">;
 
 //===----------------------------------------------------------------------===//
 // Sair Traits
@@ -249,7 +249,7 @@ def SairOpInterface : OpInterface<"SairOp"> {
     Common interface for Sair operations, that requires them to expose their
     iteration domain.
 
-    The operation must have an "access_pattern_attr" attribute unless
+    The operation must have an "mapping_attr" attribute unless
     ValueOperands returns an empty range.
   }];
 
@@ -271,16 +271,16 @@ def SairOpInterface : OpInterface<"SairOp"> {
       }]
     >,
     InterfaceMethod<
-      "Returns the access patterns for the !sair.value operands",
-      "mlir::ArrayAttr", "access_pattern_array", (ins), [{}], [{
+      "Returns the mappings for the !sair.value operands",
+      "mlir::ArrayAttr", "mapping_array", (ins), [{}], [{
         return mlir::ArrayAttr::get({}, this->getOperation()->getContext());
       }]
     >,
     InterfaceMethod<
-      "Sets the access pattern for the given Sair value operand",
-      "void", "SetAccessPattern",
-      (ins "int":$position, "AccessPatternAttr":$access_pattern), [{}], [{
-        ::sair::SetAccessPattern(ConcreteOp($_op), position, access_pattern);
+      "Sets the mapping for the given Sair value operand",
+      "void", "SetMapping",
+      (ins "int":$position, "MappingAttr":$mapping), [{}], [{
+        ::sair::SetMapping(ConcreteOp($_op), position, mapping);
       }]
     >,
     InterfaceMethod<

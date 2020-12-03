@@ -50,9 +50,8 @@ SairDialect::SairDialect(mlir::MLIRContext *context)
     : mlir::Dialect(getDialectNamespace(), context,
                     TypeID::get<SairDialect>()) {
   addTypes<RangeType, ValueType>();
-  addAttributes<DomainShapeAttr, AccessPatternAttr, IteratorAttr,
-                AccessPatternDimExpr, AccessPatternNoneExpr,
-                AccessPatternStripeExpr, AccessPatternUnStripeExpr>();
+  addAttributes<DomainShapeAttr, MappingAttr, MappingDimExpr, MappingNoneExpr,
+                MappingStripeExpr, MappingUnStripeExpr>();
   addOperations<
 #define GET_OP_LIST
 #include "sair_ops.cc.inc"
@@ -63,7 +62,7 @@ namespace {
 
 // Parses the shape of a Sair domain, as expressed in Sair types. Returns
 // nullptr in case of failure. Domains shapes are composed of a list of
-// dimension types separated by 'x', with an optional dependency pattern for
+// dimension types separated by 'x', with an optional dependency mapping for
 // each dimensions, as shown below.
 //
 //   d0:range x d1:range(d0) x d2:range(d0, d1)
@@ -88,18 +87,17 @@ DomainShapeAttr ParseDomainShape(mlir::DialectAsmParser &parser) {
       return nullptr;
     }
     llvm::SMLoc loc = parser.getCurrentLocation();
-    AccessPatternAttr access_pattern =
-        ParseOptionalAccessPattern(parser, dimensions.size());
-    if (access_pattern == nullptr) return nullptr;
-    if (!access_pattern.IsFullySpecified()) {
-      parser.emitError(loc) << "the access pattern must map all dimensions";
+    MappingAttr mapping = ParseOptionalMapping(parser, dimensions.size());
+    if (mapping == nullptr) return nullptr;
+    if (!mapping.IsFullySpecified()) {
+      parser.emitError(loc) << "the mapping must map all dimensions";
       return nullptr;
     }
 
     std::vector<DomainShapeDim> arg_shape_dims;
     llvm::SmallBitVector seen_dimensions(dimensions.size());
-    AccessPatternAttr inversed_pattern = access_pattern.Inverse();
-    for (AccessPatternExpr expr : access_pattern) {
+    MappingAttr inversed_mapping = mapping.Inverse();
+    for (MappingExpr expr : mapping) {
       llvm::SmallBitVector expr_dependencies =
           expr.DependencyMask(dimensions.size());
 
@@ -114,11 +112,11 @@ DomainShapeAttr ParseDomainShape(mlir::DialectAsmParser &parser) {
       }
       seen_dimensions |= expr_dependencies;
       arg_shape_dims.push_back(expr.AccessedShape(
-          dimensions, inversed_pattern.ResizeUseDomain(arg_shape_dims.size())));
+          dimensions, inversed_mapping.ResizeUseDomain(arg_shape_dims.size())));
     }
     RangeType arg_type =
         RangeType::get(context, DomainShapeAttr::get(context, arg_shape_dims));
-    dimensions.emplace_back(arg_type, access_pattern);
+    dimensions.emplace_back(arg_type, mapping);
   } while (succeeded(parser.parseOptionalKeyword("x")));
   return DomainShapeAttr::get(context, dimensions);
 }
@@ -177,16 +175,16 @@ mlir::Attribute sair::SairDialect::parseAttribute(
   mlir::Attribute attribute;
   if (keyword == "shape") {
     attribute = ParseDomainShape(parser);
-  } else if (keyword == "pattern") {
+  } else if (keyword == "mapping") {
     int num_dimensions;
     if (failed(parser.parseInteger(num_dimensions))) return nullptr;
     if (succeeded(parser.parseOptionalColon())) {
-      attribute = ParseAccessPattern(parser, num_dimensions);
+      attribute = ParseMapping(parser, num_dimensions);
     } else {
-      attribute = AccessPatternAttr::get(getContext(), num_dimensions, {});
+      attribute = MappingAttr::get(getContext(), num_dimensions, {});
     }
-  } else if (keyword == "pattern_expr") {
-    attribute = ParseAccessPatternExpr(parser);
+  } else if (keyword == "mapping_expr") {
+    attribute = ParseMappingExpr(parser);
   } else {
     parser.emitError(parser.getNameLoc())
         << "unexpected Sair attribute '" << keyword << "'";
@@ -198,33 +196,33 @@ mlir::Attribute sair::SairDialect::parseAttribute(
 
 namespace {
 
-// Prints an access pattern expression, without the `#sair.pattern_expr` prefix.
+// Prints an mapping expression, without the `#sair.mapping_expr` prefix.
 // Accepts a ray stream so that it can be used from different flavors of
 // printers.
-void PrintAccessPatternExpr(AccessPatternExpr expr, llvm::raw_ostream &os) {
-  if (auto none_expr = expr.dyn_cast<AccessPatternNoneExpr>()) {
-    os << AccessPatternNoneExpr::kAttrName;
-  } else if (auto dim_expr = expr.dyn_cast<AccessPatternDimExpr>()) {
+void PrintMappingExpr(MappingExpr expr, llvm::raw_ostream &os) {
+  if (auto none_expr = expr.dyn_cast<MappingNoneExpr>()) {
+    os << MappingNoneExpr::kAttrName;
+  } else if (auto dim_expr = expr.dyn_cast<MappingDimExpr>()) {
     os << "d" << dim_expr.dimension();
-  } else if (auto stripe_expr = expr.dyn_cast<AccessPatternStripeExpr>()) {
-    os << AccessPatternStripeExpr::kAttrName << "(";
-    PrintAccessPatternExpr(stripe_expr.operand(), os);
+  } else if (auto stripe_expr = expr.dyn_cast<MappingStripeExpr>()) {
+    os << MappingStripeExpr::kAttrName << "(";
+    PrintMappingExpr(stripe_expr.operand(), os);
     os << ", " << stripe_expr.step();
     if (stripe_expr.size().hasValue()) {
       os << " size " << stripe_expr.size().getValue();
     }
     os << ")";
-  } else if (auto unstripe_expr = expr.dyn_cast<AccessPatternUnStripeExpr>()) {
-    os << AccessPatternUnStripeExpr::kAttrName << "(";
+  } else if (auto unstripe_expr = expr.dyn_cast<MappingUnStripeExpr>()) {
+    os << MappingUnStripeExpr::kAttrName << "(";
     for (auto operand : unstripe_expr.operands()) {
-      PrintAccessPatternExpr(operand, os);
+      PrintMappingExpr(operand, os);
       os << ", ";
     }
     os << "[";
     llvm::interleaveComma(unstripe_expr.factors(), os);
     os << "])";
   } else {
-    llvm_unreachable("unknown access pattern expression");
+    llvm_unreachable("unknown mapping expression");
   }
 }
 
@@ -241,9 +239,9 @@ mlir::DialectAsmPrinter &operator<<(mlir::DialectAsmPrinter &os,
         shape.Dimensions(), os,
         [&](const DomainShapeDim &dim) {
           os << "d" << i++ << ":" << RangeType::Name();
-          if (dim.dependency_pattern().empty()) return;
+          if (dim.dependency_mapping().empty()) return;
           os << "(";
-          PrintAccessPattern(dim.dependency_pattern(), os.getStream());
+          PrintMapping(dim.dependency_mapping(), os.getStream());
           os << ")";
         },
         " x ");
@@ -265,22 +263,19 @@ void Print(ValueType type, mlir::DialectAsmPrinter *os) {
       << ">";
 }
 
-// Prints an access pattern with the use domain size in front.
-void PrintWithUseDomainSize(AccessPatternAttr access_pattern,
-                            mlir::DialectAsmPrinter &os) {
-  os << access_pattern.UseDomainSize();
-  if (access_pattern.empty()) return;
+// Prints an mapping with the use domain size in front.
+void PrintWithUseDomainSize(MappingAttr mapping, mlir::DialectAsmPrinter &os) {
+  os << mapping.UseDomainSize();
+  if (mapping.empty()) return;
   os << " : ";
-  PrintAccessPattern(access_pattern, os.getStream());
+  PrintMapping(mapping, os.getStream());
 }
 
 }  // namespace
 
-void PrintAccessPattern(AccessPatternAttr access_pattern,
-                        llvm::raw_ostream &os) {
-  llvm::interleaveComma(access_pattern, os, [&](AccessPatternExpr expr) {
-    PrintAccessPatternExpr(expr, os);
-  });
+void PrintMapping(MappingAttr mapping, llvm::raw_ostream &os) {
+  llvm::interleaveComma(mapping, os,
+                        [&](MappingExpr expr) { PrintMappingExpr(expr, os); });
 }
 
 // Prints the Sair type using MLIR printing facilities.
@@ -299,14 +294,14 @@ void sair::SairDialect::printAttribute(mlir::Attribute attr,
       .Case([&os](DomainShapeAttr shape_attr) {
         os << "shape<" << shape_attr << ">";
       })
-      .Case([&os](AccessPatternAttr pattern_attr) {
-        os << "pattern<";
-        PrintWithUseDomainSize(pattern_attr, os);
+      .Case([&os](MappingAttr mapping_attr) {
+        os << "mapping<";
+        PrintWithUseDomainSize(mapping_attr, os);
         os << ">";
       })
-      .Case([&os](AccessPatternExpr expr) {
-        os << "pattern_expr<";
-        PrintAccessPatternExpr(expr, os.getStream());
+      .Case([&os](MappingExpr expr) {
+        os << "mapping_expr<";
+        PrintMappingExpr(expr, os.getStream());
         os << ">";
       });
 }

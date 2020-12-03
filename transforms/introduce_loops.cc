@@ -251,7 +251,7 @@ mlir::LogicalResult RegisterOperations(SairProgramOp program, Driver &driver) {
 
     for (mlir::Attribute attr : map_op.LoopNestLoops()) {
       LoopAttr loop = attr.cast<LoopAttr>();
-      if (!loop.iter().isa<AccessPatternDimExpr>()) {
+      if (!loop.iter().isa<MappingDimExpr>()) {
         return map_op.emitError()
                << "loop must not rematerialize or be strip-mined";
       }
@@ -271,23 +271,22 @@ llvm::SmallVector<mlir::Value, 4> EraseValue(mlir::ValueRange range,
   return new_range;
 }
 
-// Erases a dimension from the use domain of the access pattern. If the
+// Erases a dimension from the use domain of the mapping. If the
 // dimension is mapped to a dimension of the def domain, the dimension from the
 // def domain is also removed.
-AccessPatternAttr EraseDimension(AccessPatternAttr access_pattern,
-                                 int dimension) {
-  mlir::SmallVector<AccessPatternExpr, 4> dimensions;
-  for (AccessPatternExpr expr : access_pattern) {
-    AccessPatternDimExpr dim_expr = expr.cast<AccessPatternDimExpr>();
+MappingAttr EraseDimension(MappingAttr mapping, int dimension) {
+  mlir::SmallVector<MappingExpr, 4> dimensions;
+  for (MappingExpr expr : mapping) {
+    MappingDimExpr dim_expr = expr.cast<MappingDimExpr>();
     if (dim_expr.dimension() < dimension) {
       dimensions.push_back(expr);
     }
     if (dim_expr.dimension() == dimension) continue;
     dimensions.push_back(
-        AccessPatternDimExpr::get(dim_expr.dimension() - 1, expr.getContext()));
+        MappingDimExpr::get(dim_expr.dimension() - 1, expr.getContext()));
   }
-  return AccessPatternAttr::get(access_pattern.getContext(),
-                                access_pattern.UseDomainSize() - 1, dimensions);
+  return MappingAttr::get(mapping.getContext(), mapping.UseDomainSize() - 1,
+                          dimensions);
 }
 
 // Erases a dimension for a shape attribute. Remaining dimensions must not
@@ -302,7 +301,7 @@ DomainShapeAttr EraseDimension(DomainShapeAttr shape, int dimension) {
     assert(!shape_dim.DependencyMask().test(dimension));
     shape_dimensions.emplace_back(
         shape_dim.type(),
-        EraseDimension(shape_dim.dependency_pattern(), dimension));
+        EraseDimension(shape_dim.dependency_mapping(), dimension));
   }
   return DomainShapeAttr::get(shape.getContext(), shape_dimensions);
 }
@@ -332,15 +331,14 @@ mlir::ArrayAttr EraseDimensionFromLoopNest(
   for (mlir::Attribute attr : loop_nest) {
     LoopAttr loop = attr.cast<LoopAttr>();
     // This cast is always legal as `RegisterOperations` checks that loop
-    // iterators are AccessPatternDimExprs.
-    int old_dimension = loop.iter().cast<AccessPatternDimExpr>().dimension();
+    // iterators are MappingDimExprs.
+    int old_dimension = loop.iter().cast<MappingDimExpr>().dimension();
     if (old_dimension < dimension) {
       new_loop_nest.push_back(loop);
       continue;
     }
     new_loop_nest.push_back(LoopAttr::get(
-        loop.name(), AccessPatternDimExpr::get(old_dimension - 1, context),
-        context));
+        loop.name(), MappingDimExpr::get(old_dimension - 1, context), context));
   }
   return mlir::ArrayAttr::get(new_loop_nest, context);
 }
@@ -353,15 +351,14 @@ void EraseDimension(SairProjLastOp op, int dimension, mlir::Value new_value,
   assert(dimension >= op.parallel_domain().size());
 
   int dim_pos = dimension - op.parallel_domain().size();
-  AccessPatternAttr access_pattern =
-      EraseDimension(op.Value().AccessPattern(), dimension);
+  MappingAttr mapping = EraseDimension(op.Value().Mapping(), dimension);
 
   driver.setInsertionPoint(op);
   driver.replaceOpWithNewOp<SairProjLastOp>(
       op, /*result_type=*/op.getType(),
       /*parallel_domain=*/op.parallel_domain(),
       /*projection_domain=*/EraseValue(op.projection_domain(), dim_pos),
-      /*access_pattern_array*/ driver.getArrayAttr({access_pattern}),
+      /*mapping_array*/ driver.getArrayAttr({mapping}),
       /*value=*/new_value,
       /*shape=*/EraseDimension(op.shape(), dimension),
       /*memory_space=*/op.memory_spaceAttr());
@@ -378,8 +375,7 @@ void EraseDimension(SairFbyOp op, int dimension, mlir::Value new_value,
   mlir::Type element_type = type.ElementType();
   DomainShapeAttr shape = EraseDimension(type.Shape(), dimension);
   int dim_pos = dimension - op.parallel_domain().size();
-  AccessPatternAttr access_pattern =
-      EraseDimension(op.Value().AccessPattern(), dimension);
+  MappingAttr mapping = EraseDimension(op.Value().Mapping(), dimension);
 
   driver.setInsertionPoint(op);
   driver.replaceOpWithNewOp<SairFbyOp>(
@@ -387,8 +383,8 @@ void EraseDimension(SairFbyOp op, int dimension, mlir::Value new_value,
       /*result_type=*/ValueType::get(op.getContext(), shape, element_type),
       /*parallel_domain=*/op.parallel_domain(),
       /*sequential_domain=*/EraseValue(op.sequential_domain(), dim_pos),
-      /*access_pattern_array*/
-      driver.getArrayAttr({op.Init().AccessPattern(), access_pattern}),
+      /*mapping_array*/
+      driver.getArrayAttr({op.Init().Mapping(), mapping}),
       /*init=*/op.init(), /*value=*/new_value,
       /*memory_space=*/op.memory_spaceAttr());
 }
@@ -466,11 +462,9 @@ mlir::LogicalResult UpdateLoopUser(SairMapOp old_op, SairMapOp new_op,
     SairOp user = cast<SairOp>(use.getOwner());
     int operand_position = use.getOperandNumber() - user.domain().size();
 
-    AccessPatternAttr access_pattern =
-        user.ValueOperands()[operand_position].AccessPattern();
-    int user_dimension = access_pattern.Dimension(dimension)
-                             .cast<AccessPatternDimExpr>()
-                             .dimension();
+    MappingAttr mapping = user.ValueOperands()[operand_position].Mapping();
+    int user_dimension =
+        mapping.Dimension(dimension).cast<MappingDimExpr>().dimension();
 
     if (auto proj_last = dyn_cast<SairProjLastOp>(use.getOwner())) {
       EraseDimension(proj_last, user_dimension, new_value, driver);
@@ -499,7 +493,7 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op, Driver &driver) {
   llvm::ArrayRef<mlir::Attribute> loop_nest = op.LoopNestLoops();
   LoopAttr loop = loop_nest.back().cast<LoopAttr>();
 
-  int dimension = loop.iter().cast<AccessPatternDimExpr>().dimension();
+  int dimension = loop.iter().cast<MappingDimExpr>().dimension();
   RangeOp range = cast<RangeOp>(op.domain()[dimension].getDefiningOp());
   if (op.shape().Dimensions()[dimension].DependencyMask().any()) {
     return op.emitError()
@@ -508,11 +502,11 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op, Driver &driver) {
 
   // Get the inputs of the new operation.
   llvm::SmallVector<mlir::Value, 4> inputs = op.inputs();
-  llvm::SmallVector<mlir::Attribute, 4> access_patterns;
-  access_patterns.reserve(access_patterns.size());
-  for (mlir::Attribute attr : op.access_pattern_array()) {
-    AccessPatternAttr access_pattern = attr.cast<AccessPatternAttr>();
-    access_patterns.push_back(EraseDimension(access_pattern, dimension));
+  llvm::SmallVector<mlir::Attribute, 4> mappings;
+  mappings.reserve(mappings.size());
+  for (mlir::Attribute attr : op.mapping_array()) {
+    MappingAttr mapping = attr.cast<MappingAttr>();
+    mappings.push_back(EraseDimension(mapping, dimension));
   }
 
   // Retrieve the loop size.
@@ -522,9 +516,9 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op, Driver &driver) {
       return driver.create<ConstantOp>(op.getLoc(), bound.constant());
     }
     inputs.push_back(bound.value());
-    assert(bound.access_pattern().UseDomainSize() == 0);
-    access_patterns.push_back(
-        AccessPatternAttr::get(op.getContext(), op.domain().size() - 1, {}));
+    assert(bound.mapping().UseDomainSize() == 0);
+    mappings.push_back(
+        MappingAttr::get(op.getContext(), op.domain().size() - 1, {}));
     return op.block().addArgument(driver.getIndexType());
   };
 
@@ -541,7 +535,7 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op, Driver &driver) {
       op.getLoc(),
       /*result_types=*/EraseDimension(op.getResultTypes(), dimension),
       /*domain=*/EraseValue(op.domain(), dimension),
-      /*access_patterns_array=*/driver.getArrayAttr(access_patterns),
+      /*mappings_array=*/driver.getArrayAttr(mappings),
       /*inputs=*/inputs,
       /*shape=*/EraseDimension(op.shape(), dimension),
       /*loop_nest=*/new_loop_nest,
@@ -618,35 +612,33 @@ void Fuse(SairMapOp first_op, SairMapOp second_op, Driver &driver) {
 
   llvm::SmallVector<mlir::Value, 4> second_block_args;
   llvm::SmallVector<mlir::Value, 4> inputs;
-  llvm::SmallVector<mlir::Attribute, 4> access_patterns;
+  llvm::SmallVector<mlir::Attribute, 4> mappings;
 
   mlir::Operation *first_return = first_op.block().getTerminator();
   mlir::Operation *second_return = second_op.block().getTerminator();
 
   // Map loop indexes of second_op to loop indexes of first_op.
-  llvm::SmallVector<AccessPatternExpr, 4> first_to_second_pattern;
-  first_to_second_pattern.append(second_op.domain().size(),
-                                 AccessPatternNoneExpr::get(context));
+  llvm::SmallVector<MappingExpr, 4> first_to_second_mapping;
+  first_to_second_mapping.append(second_op.domain().size(),
+                                 MappingNoneExpr::get(context));
   second_block_args.append(second_op.domain().size(), nullptr);
   for (auto [first_attr, second_attr] :
        llvm::zip(first_op.LoopNestLoops(), second_op.LoopNestLoops())) {
-    AccessPatternExpr first_iter = first_attr.cast<LoopAttr>().iter();
-    int first_dimension = first_iter.cast<AccessPatternDimExpr>().dimension();
-    int second_dimension = second_attr.cast<LoopAttr>()
-                               .iter()
-                               .cast<AccessPatternDimExpr>()
-                               .dimension();
-    first_to_second_pattern[second_dimension] = first_iter;
+    MappingExpr first_iter = first_attr.cast<LoopAttr>().iter();
+    int first_dimension = first_iter.cast<MappingDimExpr>().dimension();
+    int second_dimension =
+        second_attr.cast<LoopAttr>().iter().cast<MappingDimExpr>().dimension();
+    first_to_second_mapping[second_dimension] = first_iter;
     second_block_args[second_dimension] =
         first_op.block().getArgument(first_dimension);
   }
 
   // Gather operands for the new operation.
   llvm::append_range(inputs, first_op.inputs());
-  AccessPatternAttr first_to_second_pattern_attr = AccessPatternAttr::get(
-      driver.getContext(), first_op.domain().size(), first_to_second_pattern);
+  MappingAttr first_to_second_mapping_attr = MappingAttr::get(
+      driver.getContext(), first_op.domain().size(), first_to_second_mapping);
 
-  llvm::append_range(access_patterns, first_op.access_pattern_array());
+  llvm::append_range(mappings, first_op.mapping_array());
   for (ValueOperand operand : second_op.ValueOperands()) {
     if (operand.value().getDefiningOp() == first_op) {
       auto it = llvm::find(first_op.getResults(), operand.value());
@@ -656,8 +648,7 @@ void Fuse(SairMapOp first_op, SairMapOp second_op, Driver &driver) {
     }
 
     inputs.push_back(operand.value());
-    access_patterns.push_back(
-        first_to_second_pattern_attr.Compose(operand.AccessPattern()));
+    mappings.push_back(first_to_second_mapping_attr.Compose(operand.Mapping()));
     mlir::Value block_argument =
         first_op.block().addArgument(operand.GetType().ElementType());
     second_block_args.push_back(block_argument);
@@ -702,7 +693,7 @@ void Fuse(SairMapOp first_op, SairMapOp second_op, Driver &driver) {
       /*location=*/first_op.getLoc(),
       /*result_types=*/result_types,
       /*domain=*/first_op.domain(),
-      /*access_patterns_array=*/driver.getArrayAttr(access_patterns),
+      /*mappings_array=*/driver.getArrayAttr(mappings),
       /*inputs=*/inputs,
       /*shape=*/first_op.shape(),
       /*loop_nest=*/first_op.loop_nestAttr(),

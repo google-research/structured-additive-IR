@@ -49,7 +49,7 @@ def SairDynRangeOp : SairOp<"dyn_range",
 
   let arguments = (ins
     Variadic<SairRange>:$domain,
-    SairAccessPatternArrayAttr:$access_pattern_array,
+    SairMappingArrayAttr:$mapping_array,
     Optional<SairValueOf<Index>>:$lower_bound,
     SairValueOf<Index>:$upper_bound,
     DefaultValuedAttr<IndexAttr, "1">:$step
@@ -129,7 +129,7 @@ def SairCopyOp : SairOp<"copy", [
 
   let arguments = (ins
     Variadic<SairRange>:$domain,
-    SairAccessPatternArrayAttr:$access_pattern_array,
+    SairMappingArrayAttr:$mapping_array,
     SairValue:$value,
     SairLoopNestAttr:$loop_nest,
     SairMemorySpaceAttr:$memory_space
@@ -236,14 +236,13 @@ def SairToMemRefOp : SairOp<"to_memref", [
     The general syntax for the to_memref operation is the following.
 
     ```
-    sair.to_memref[<domain>] <value-name> <access-pattern>, <memref-name>
-      : <memref-type>
+    sair.to_memref[<domain>] <value-name> <mapping>, <memref-name> : <memref-type>
     ```
   }];
 
   let arguments = (ins
     Variadic<SairRange>:$domain,
-    SairAccessPatternArrayAttr:$access_pattern_array,
+    SairMappingArrayAttr:$mapping_array,
     SairValue:$value,
     AnyMemRef:$memref
   );
@@ -289,7 +288,7 @@ def SairMapOp : SairOp<"map", [
     as many times as the domain has elements. Each execution of the body has
     access to the current indices of the domain dimensions and, additionally, to
     scalar values extracted from 'inputs' by transforming the current indices
-    using the access patterns provided in 'access_pattern_array'. The body must
+    using the mappings provided in 'mapping_array'. The body must
     contain a single block terminated with SairReturnOp that takes as many
     operands as the SairMapOp has results. The types of thoes operands must
     match the element types of the SairMapOp results.
@@ -301,12 +300,12 @@ def SairMapOp : SairOp<"map", [
                        : <sair-shape-attr>, <function-type>
     ```
     where `<input-list>` is a potentially empty comma-separated list of
-    `<value-name> <access-pattern>`.
+    `<value-name> <mapping>`.
   }];
 
   let arguments = (ins
     Variadic<SairRange>:$domain,
-    SairAccessPatternArrayAttr:$access_pattern_array,
+    SairMappingArrayAttr:$mapping_array,
     Variadic<SairValue>:$inputs,
     SairDomainShapeAttr:$shape,
     SairLoopNestAttr:$loop_nest,
@@ -321,7 +320,7 @@ def SairMapOp : SairOp<"map", [
     // Builds a sair.map operation and setups its block with the right arguments.
     // Input values must have !sair.value types.
     OpBuilderDAG<(ins "mlir::TypeRange":$result_types,
-      "mlir::ValueRange":$domain, "mlir::ArrayAttr":$access_patterns_array,
+      "mlir::ValueRange":$domain, "mlir::ArrayAttr":$mappings_array,
       "mlir::ValueRange":$inputs, "DomainShapeAttr":$shape,
       CArg<"/*optional*/ ArrayAttr", "nullptr">:$loop_nest,
       CArg<"/*optional*/ ArrayAttr", "nullptr">:$memory_space)>
@@ -354,7 +353,7 @@ def SairMapReduceOp : SairOp<"map_reduce", [
     forms the domain of the resulting values. The values are reduced along the
     dimensions of the reduction domain. The operation takes as operands a list
     of Sair values that serve as inputs, and another list of Sair values that
-    serve as initial values of reductions. The access patterns of the latter
+    serve as initial values of reductions. The mappings of the latter
     must not involve dimensions from the reduction domain. The body contains a
     single block with the following arguments. First, "index" type arguments
     corresponding to the coordinates in the parallel domain and the reduction
@@ -374,13 +373,13 @@ def SairMapReduceOp : SairOp<"map_reduce", [
                               : <sair-shape-attr>, <function-type>
     ```
     where `<input-list>` is a potentially empty comma-separated list of
-    `<value-name> <access-pattern>`.
+    `<value-name> <mapping>`.
   }];
 
   let arguments = (ins
     Variadic<SairRange>:$parallel_domain,
     Variadic<SairRange>:$reduction_domain,
-    SairAccessPatternArrayAttr:$access_pattern_array,
+    SairMappingArrayAttr:$mapping_array,
     Variadic<SairValue>:$inits,
     Variadic<SairValue>:$inputs,
     SairDomainShapeAttr:$shape,
@@ -421,7 +420,7 @@ class SairProjectionOp<string name> : SairOp<name, [
   let arguments = (ins
     Variadic<SairRange>:$parallel_domain,
     Variadic<SairRange>:$projection_domain,
-    SairAccessPatternArrayAttr:$access_pattern_array,
+    SairMappingArrayAttr:$mapping_array,
     SairValue:$value,
     SairDomainShapeAttr:$shape,
     SairMemorySpaceAttr:$memory_space
@@ -508,7 +507,7 @@ def SairFbyOp : SairOp<"fby", [
   let arguments = (ins
     Variadic<SairRange>:$parallel_domain,
     Variadic<SairRange>:$sequential_domain,
-    SairAccessPatternArrayAttr:$access_pattern_array,
+    SairMappingArrayAttr:$mapping_array,
     SairValue:$init,
     SairValue:$value,
     SairMemorySpaceAttr:$memory_space
@@ -598,13 +597,13 @@ def SairExitOp : SairOp<"exit", [Terminator]> {
 
     The custom syntax for the operation is the following.
     ```
-    sair.exit (<ssa-value> <access-pattern>),* <attr-dict>
+    sair.exit (<ssa-value> <mapping>),* <attr-dict>
       (':' <element-type> (, <element-type>)*)?
     ```
   }];
 
   let arguments = (ins
-    SairAccessPatternArrayAttr:$access_pattern_array,
+    SairMappingArrayAttr:$mapping_array,
     Variadic<SairValue>:$inputs
   );
 

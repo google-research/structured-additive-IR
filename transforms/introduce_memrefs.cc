@@ -129,24 +129,24 @@ SairCopyOp MaterializeOperand(DomainShapeAttr shape, mlir::OperandRange domain,
   // Build the copy operation.
   mlir::Type type =
       builder.getType<ValueType>(shape, operand.GetType().ElementType());
-  auto access_patterns = builder.getArrayAttr(
-      operand.AccessPattern().ResizeUseDomain(shape.NumDimensions()));
+  auto mappings = builder.getArrayAttr(
+      operand.Mapping().ResizeUseDomain(shape.NumDimensions()));
   mlir::Location loc = operand.getOwner()->getLoc();
   mlir::ArrayAttr memory_space_attr;
   if (memory_space.hasValue()) {
     memory_space_attr = builder.getArrayAttr(
         {builder.getI64IntegerAttr(memory_space.getValue())});
   }
-  SairCopyOp copy_op = builder.create<SairCopyOp>(
-      loc, type, domain, access_patterns, operand.value(),
-      /*loop_nest=*/insertion_point.loop_nest,
-      /*memory_space=*/memory_space_attr);
+  SairCopyOp copy_op =
+      builder.create<SairCopyOp>(loc, type, domain, mappings, operand.value(),
+                                 /*loop_nest=*/insertion_point.loop_nest,
+                                 /*memory_space=*/memory_space_attr);
   // Point the operand to the result of the copy operation.
   operand.set_value(copy_op.result());
   int use_domain_size =
       cast<SairOp>(operand.getOwner()).shape().NumDimensions();
-  operand.SetAccessPattern(AccessPatternAttr::GetIdentity(
-      builder.getContext(), domain.size(), use_domain_size));
+  operand.SetMapping(MappingAttr::GetIdentity(builder.getContext(),
+                                              domain.size(), use_domain_size));
   return copy_op;
 }
 
@@ -154,18 +154,18 @@ SairCopyOp MaterializeOperand(DomainShapeAttr shape, mlir::OperandRange domain,
 // operations in order to ensure that they can operate in place. No copy is
 // inserted if the operation can already execute in place.
 class InsertCopies : public InsertCopiesPassBase<InsertCopies> {
-  // Inserts sair.copy operations in order to ensure that the access pattern of
+  // Inserts sair.copy operations in order to ensure that the mapping of
   // sair.to_memref operations are invertible and that sair.to_memref operations
   // are not using a value produced by a sair.from_memeref operation.
   void runOnFunction() override {
     mlir::OpBuilder builder(&getContext());
 
     // Insert copies before sair.to_memref if the value is produced by a
-    // sair.from_memref operation or if the access pattern is not invertible.
+    // sair.from_memref operation or if the mapping is not invertible.
     getFunction().walk([&builder](SairToMemRefOp op) {
       mlir::Operation *defining_op = op.value().getDefiningOp();
       if (!isa<SairFromMemRefOp>(defining_op) &&
-          op.Value().AccessPattern().InverseAffineMap()) {
+          op.Value().Mapping().InverseAffineMap()) {
         return;
       }
       ValueOperand operand = op.Value();
@@ -185,13 +185,13 @@ class InsertCopies : public InsertCopiesPassBase<InsertCopies> {
     });
 
     // Copy initializing operands of sair.map_reduce operations if they have
-    // another use later in the Sair program or if the access pattern is not
+    // another use later in the Sair program or if the mapping is not
     // injective.
     getFunction().walk([&builder](SairMapReduceOp op) {
       for (int i = 0, e = op.inits().size(); i < e; ++i) {
         ValueOperand operand = op.ValueOperands()[i];
         bool is_access_injective =
-            operand.AccessPattern().IsInjective(op.parallel_domain().size());
+            operand.Mapping().IsInjective(op.parallel_domain().size());
         bool memory_space_match =
             GetMemorySpace(operand.value()) == op.GetMemorySpace(i);
         if (is_access_injective && GetLastUse(operand.value()) == op &&
@@ -294,7 +294,7 @@ mlir::LogicalResult internMemRefs(
     for (mlir::Operation *user : result.getUsers()) {
       if (auto to_memref = dyn_cast<SairToMemRefOp>(user)) {
         mlir::AffineMap inverse_access =
-            to_memref.Value().AccessPattern().InverseAffineMap();
+            to_memref.Value().Mapping().InverseAffineMap();
         if (!inverse_access) {
           return rewriter.notifyMatchFailure(user, "non-invertible access map");
         }
@@ -356,15 +356,14 @@ mlir::LogicalResult internMemRefs(
   return mlir::success();
 }
 
-// Appends `num` access patterns accessing scalar (0D) values with the given
-// `use_domain_size` to the list of access patterns.
+// Appends `num` mappings accessing scalar (0D) values with the given
+// `use_domain_size` to the list of mappings.
 mlir::ArrayAttr Append0DAccesses(mlir::ArrayAttr original, size_t num,
                                  size_t use_domain_size,
                                  mlir::MLIRContext *ctx) {
-  auto access_pattern_list = llvm::to_vector<8>(original.getValue());
-  access_pattern_list.append(num,
-                             AccessPatternAttr::get(ctx, use_domain_size, {}));
-  return ArrayAttr::get(access_pattern_list, ctx);
+  auto mapping_list = llvm::to_vector<8>(original.getValue());
+  mapping_list.append(num, MappingAttr::get(ctx, use_domain_size, {}));
+  return ArrayAttr::get(mapping_list, ctx);
 }
 
 // Rewrites sair.map ops producing values written to memrefs to store individual
@@ -382,13 +381,11 @@ class InternMemRefsIntoMap : public mlir::OpConversionPattern<SairMapOp> {
     SairMapOpAdaptor adaptor(operands, op.getOperation()->getAttrDictionary());
     auto inputs = llvm::to_vector<8>(adaptor.inputs());
     llvm::append_range(inputs, memrefs);
-    mlir::ArrayAttr access_patterns =
-        Append0DAccesses(adaptor.access_pattern_array(), memrefs.size(),
-                         op.domain().size(), ctx);
+    mlir::ArrayAttr mappings = Append0DAccesses(
+        adaptor.mapping_array(), memrefs.size(), op.domain().size(), ctx);
     auto new_map = builder.create<SairMapOp>(
-        original.getLoc(), op.getResultTypes(), adaptor.domain(),
-        access_patterns, inputs, op.shape(), op.loop_nestAttr(),
-        op.memory_spaceAttr());
+        original.getLoc(), op.getResultTypes(), adaptor.domain(), mappings,
+        inputs, op.shape(), op.loop_nestAttr(), op.memory_spaceAttr());
     return cast<SairOpWithBody>(new_map.getOperation());
   }
 
@@ -420,13 +417,12 @@ class InternMemRefsIntoMapReduce
                                    op.getOperation()->getAttrDictionary());
     auto inputs = llvm::to_vector<8>(adaptor.inputs());
     llvm::append_range(inputs, memrefs);
-    mlir::ArrayAttr access_patterns =
-        Append0DAccesses(adaptor.access_pattern_array(), memrefs.size(),
-                         op.domain().size(), ctx);
+    mlir::ArrayAttr mappings = Append0DAccesses(
+        adaptor.mapping_array(), memrefs.size(), op.domain().size(), ctx);
     auto new_map = builder.create<SairMapReduceOp>(
         op.getLoc(), op.getResultTypes(), op.parallel_domain(),
-        op.reduction_domain(), access_patterns, adaptor.inits(), inputs,
-        op.shape(), op.loop_nestAttr(), op.memory_spaceAttr());
+        op.reduction_domain(), mappings, adaptor.inits(), inputs, op.shape(),
+        op.loop_nestAttr(), op.memory_spaceAttr());
 
     // Create the body of the map_reduce.
     // TODO: this should be moved to the constructor of map_reduce.
@@ -461,7 +457,7 @@ class InternMemRefsIntoMapReduce
 // operation producing the stored value.
 //
 // Fails if the producing operation is not a SairOperationWithRegion or if the
-// access pattern of the sair.to_memref operation is not invertible.
+// mapping of the sair.to_memref operation is not invertible.
 class LowerToMemRef : public LowerToMemRefPassBase<LowerToMemRef> {
   void runOnFunction() override {
     mlir::OwningRewritePatternList patterns;
@@ -524,12 +520,10 @@ void UpdateUseAfterMaterialization(mlir::Value memref_value,
   const int operand_number = use.getOperandNumber();
   const int domain_size = sair_op.domain().size();
   const int input_position = operand_number - domain_size;
-  AccessPatternAttr old_access_pattern =
-      sair_op.ValueOperands()[input_position].AccessPattern();
-  // Set the new value and access pattern.
-  auto new_access_pattern =
-      AccessPatternAttr::get(builder.getContext(), domain_size, {});
-  sair_op.SetAccessPattern(input_position, new_access_pattern);
+  MappingAttr old_mapping = sair_op.ValueOperands()[input_position].Mapping();
+  // Set the new value and mapping.
+  auto new_mapping = MappingAttr::get(builder.getContext(), domain_size, {});
+  sair_op.SetMapping(input_position, new_mapping);
   use.set(memref_value);
   // Update the body of the map.
   mlir::BlockArgument scalar_argument = body->getArgument(operand_number);
@@ -537,8 +531,7 @@ void UpdateUseAfterMaterialization(mlir::Value memref_value,
       body->insertArgument(operand_number, memref_type);
   mlir::OpBuilder::InsertionGuard insertion_guard(builder);
   builder.setInsertionPointToStart(body);
-  mlir::AffineMap load_map =
-      memref_layout.compose(old_access_pattern.AsAffineMap());
+  mlir::AffineMap load_map = memref_layout.compose(old_mapping.AsAffineMap());
   auto load_indices = body->getArguments().take_front(domain_size);
   auto load_op = EmitPseudoAffineLoad(sair_op.getLoc(), memref_argument,
                                       load_map, load_indices, builder);
@@ -580,18 +573,13 @@ void UpdateUseInPlaceAfterMaterialization(
   llvm::append_range(input_operands, op.inputs());
   input_operands.push_back(memref_value);
 
-  llvm::SmallVector<mlir::Attribute, 8> access_pattern_array;
-  access_pattern_array.reserve(op.access_pattern_array().size());
-  llvm::ArrayRef<mlir::Attribute> old_access_patterns =
-      op.access_pattern_array().getValue();
-  llvm::append_range(access_pattern_array,
-                     old_access_patterns.take_front(init_position));
-  llvm::append_range(access_pattern_array,
-                     old_access_patterns.drop_front(init_position + 1));
-  access_pattern_array.push_back(
-      AccessPatternAttr::get(op.getContext(), domain_size, {}));
-  mlir::ArrayAttr access_pattern_attr =
-      builder.getArrayAttr(access_pattern_array);
+  llvm::SmallVector<mlir::Attribute, 8> mapping_array;
+  mapping_array.reserve(op.mapping_array().size());
+  llvm::ArrayRef<mlir::Attribute> old_mappings = op.mapping_array().getValue();
+  llvm::append_range(mapping_array, old_mappings.take_front(init_position));
+  llvm::append_range(mapping_array, old_mappings.drop_front(init_position + 1));
+  mapping_array.push_back(MappingAttr::get(op.getContext(), domain_size, {}));
+  mlir::ArrayAttr mapping_attr = builder.getArrayAttr(mapping_array);
 
   llvm::SmallVector<mlir::Attribute, 4> memory_spaces;
   memory_spaces.reserve(op.getNumResults() - 1);
@@ -605,7 +593,7 @@ void UpdateUseInPlaceAfterMaterialization(
 
   SairMapReduceOp new_op = builder.create<SairMapReduceOp>(
       op.getLoc(), result_types, op.parallel_domain(), op.reduction_domain(),
-      access_pattern_attr, init_operands, input_operands, op.shape(),
+      mapping_attr, init_operands, input_operands, op.shape(),
       op.loop_nestAttr(), memory_space_attr);
 
   // Forward attributes.
@@ -620,7 +608,7 @@ void UpdateUseInPlaceAfterMaterialization(
 
   // Load from the memref.
   mlir::AffineMap access_map = memref_layout.compose(
-      op.ValueOperands()[init_position].AccessPattern().AsAffineMap());
+      op.ValueOperands()[init_position].Mapping().AsAffineMap());
   builder.setInsertionPointToStart(&new_op.block());
   auto load_op = EmitPseudoAffineLoad(op.getLoc(), memref_argument, access_map,
                                       access_indices, builder);
@@ -691,13 +679,12 @@ mlir::LogicalResult UpdateUsersAfterMaterialization(mlir::Value old_value,
       // Handle the special case where the user updates the argument in place.
       int init_number =
           operand_number - reduce_op.inits().getBeginOperandIndex();
-      AccessPatternAttr access_pattern =
-          reduce_op.ValueOperands()[init_number].AccessPattern();
+      MappingAttr mapping = reduce_op.ValueOperands()[init_number].Mapping();
       mlir::AffineMap result_layout = layout.compose(
-          access_pattern.ResizeUseDomain(reduce_op.parallel_domain().size())
+          mapping.ResizeUseDomain(reduce_op.parallel_domain().size())
               .AsAffineMap());
 
-      // We can only perform an in-place update if the access pattern is
+      // We can only perform an in-place update if the mapping is
       // injective and if 'op' is the last use of the variable.
       if (!result_layout.isPermutation()) {
         reduce_op.emitError("layout incompatible with an in-place update")
@@ -733,12 +720,12 @@ mlir::LogicalResult UpdateUsersAfterMaterialization(mlir::Value old_value,
 // Converts a Sair iteration dimension into a memref dimension. Appends the size
 // of `dimension` to `memref_shape` if it is statically known. Otherwise,
 // appends mlir::MemRefType::kDynamicSize to `memref_shape` and appends a Sair
-// value containing the size to `alloc_operands` as well as the access pattern
-// for accessing the size to 'alloc_access_pattern'.
+// value containing the size to `alloc_operands` as well as the mapping
+// for accessing the size to 'alloc_mapping'.
 void GetMemRefDimension(
     mlir::Value dimension, llvm::SmallVectorImpl<int64_t> &memref_shape,
     llvm::SmallVectorImpl<mlir::Value> &alloc_operands,
-    llvm::SmallVectorImpl<mlir::Attribute> &alloc_access_patterns) {
+    llvm::SmallVectorImpl<mlir::Attribute> &alloc_mappings) {
   mlir::Operation *defining_op = dimension.getDefiningOp();
   // Sair ensures dimensions are defined in the region they are used.
   assert(defining_op);
@@ -754,8 +741,7 @@ void GetMemRefDimension(
   int dynamic_size = mlir::MemRefType::kDynamicSize;
   memref_shape.push_back(dynamic_size);
   alloc_operands.push_back(range.upper_bound());
-  alloc_access_patterns.push_back(
-      AccessPatternAttr::get(defining_op->getContext(), 0, {}));
+  alloc_mappings.push_back(MappingAttr::get(defining_op->getContext(), 0, {}));
 }
 
 // Returns the last ComputeOp using 'value' or one of the variables aliasing
@@ -807,10 +793,9 @@ void CreateMemRefForValue(mlir::Value value, SairMapOp producer,
   llvm::SmallVector<int64_t, 4> memref_shape;
   memref_shape.reserve(producer.domain().size());
   llvm::SmallVector<mlir::Value, 4> alloc_operands;
-  llvm::SmallVector<mlir::Attribute, 4> alloc_access_patterns;
+  llvm::SmallVector<mlir::Attribute, 4> alloc_mappings;
   for (mlir::Value dimension : producer.domain()) {
-    GetMemRefDimension(dimension, memref_shape, alloc_operands,
-                       alloc_access_patterns);
+    GetMemRefDimension(dimension, memref_shape, alloc_operands, alloc_mappings);
   }
 
   // Compute the memref type.
@@ -822,15 +807,14 @@ void CreateMemRefForValue(mlir::Value value, SairMapOp producer,
 
   // Create a sair.map operation that allocates the memref.
   llvm::ArrayRef<mlir::Value> alloc_domain;
-  mlir::ArrayAttr alloc_access_pattern_attr =
-      builder.getArrayAttr(alloc_access_patterns);
+  mlir::ArrayAttr alloc_mapping_attr = builder.getArrayAttr(alloc_mappings);
   InsertionPoint alloc_insertion_point =
       FindInsertionPoint(0, 0, cast<ComputeOp>(producer.getOperation()));
   alloc_insertion_point.Set(builder);
   mlir::ArrayAttr memory_space_attr = builder.getArrayAttr(
       {builder.getI64IntegerAttr(ValueProducerOp::kRegister)});
   SairMapOp alloc_map_op = builder.create<SairMapOp>(
-      value.getLoc(), alloc_type, alloc_domain, alloc_access_pattern_attr,
+      value.getLoc(), alloc_type, alloc_domain, alloc_mapping_attr,
       alloc_operands, alloc_shape, alloc_insertion_point.loop_nest,
       memory_space_attr);
   // The pointer to the memory is stored in registers.
@@ -845,15 +829,14 @@ void CreateMemRefForValue(mlir::Value value, SairMapOp producer,
   if (last_use == nullptr) {
     last_use = cast<ComputeOp>(producer.getOperation());
   }
-  mlir::ArrayAttr dealloc_access_pattern =
-      builder.getArrayAttr(AccessPatternAttr::get(
-          builder.getContext(), /*domain_size =*/0, /*pattern =*/{}));
+  mlir::ArrayAttr dealloc_mapping = builder.getArrayAttr(MappingAttr::get(
+      builder.getContext(), /*domain_size =*/0, /*mapping =*/{}));
   InsertionPoint dealloc_insertion_point =
       FindInsertionPoint(0, 0, last_use, Direction::kAfter);
   dealloc_insertion_point.Set(builder);
   SairMapOp dealloc_map_op = builder.create<SairMapOp>(
       value.getLoc(), llvm::ArrayRef<mlir::Type>(), alloc_domain,
-      dealloc_access_pattern, alloc_map_op.getResult(0), alloc_shape,
+      dealloc_mapping, alloc_map_op.getResult(0), alloc_shape,
       dealloc_insertion_point.loop_nest, builder.getArrayAttr({}));
   builder.setInsertionPointToStart(&dealloc_map_op.block());
   builder.create<mlir::DeallocOp>(value.getLoc(),
@@ -889,10 +872,10 @@ mlir::LogicalResult IntroduceMemRef(SairMapOp op, mlir::OpBuilder &builder) {
 
   // Create the new memref.
   llvm::SmallVector<mlir::Value, 4> operands(op.inputs());
-  llvm::SmallVector<mlir::Attribute, 4> access_patterns(
-      op.access_pattern_array().getAsRange<mlir::Attribute>());
+  llvm::SmallVector<mlir::Attribute, 4> mappings(
+      op.mapping_array().getAsRange<mlir::Attribute>());
   operands.reserve(operands.size() + op.getNumResults());
-  access_patterns.reserve(operands.size() + op.getNumResults());
+  mappings.reserve(operands.size() + op.getNumResults());
   llvm::SmallVector<mlir::Type, 4> memref_types;
   memref_types.reserve(op.getNumResults());
 
@@ -914,16 +897,16 @@ mlir::LogicalResult IntroduceMemRef(SairMapOp op, mlir::OpBuilder &builder) {
                                                builder))) {
       return mlir::failure();
     }
-    access_patterns.push_back(
-        AccessPatternAttr::get(builder.getContext(), op.domain().size(), {}));
+    mappings.push_back(
+        MappingAttr::get(builder.getContext(), op.domain().size(), {}));
   }
 
   // Replace 'op' with a new operation that writes into the memrefs instead of
   // returning values.
-  mlir::ArrayAttr access_pattern_attr = builder.getArrayAttr(access_patterns);
+  mlir::ArrayAttr mapping_attr = builder.getArrayAttr(mappings);
   SairMapOp new_op = builder.create<SairMapOp>(
-      op.getLoc(), llvm::ArrayRef<mlir::Type>(), op.domain(),
-      access_pattern_attr, operands, op.shape(), op.loop_nestAttr(),
+      op.getLoc(), llvm::ArrayRef<mlir::Type>(), op.domain(), mapping_attr,
+      operands, op.shape(), op.loop_nestAttr(),
       /*memory_space=*/builder.getArrayAttr({}));
 
   // Set the body of the new operation.

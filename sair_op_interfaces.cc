@@ -41,15 +41,16 @@
 
 namespace sair {
 
-AccessPatternAttr ValueOperand::AccessPattern() {
-  return cast<SairOp>(operand_->getOwner()).access_pattern_array()
+MappingAttr ValueOperand::Mapping() {
+  return cast<SairOp>(operand_->getOwner())
+      .mapping_array()
       .getValue()[index_]
-      .template cast<::sair::AccessPatternAttr>();
+      .template cast<::sair::MappingAttr>();
 }
 
-void ValueOperand::SetAccessPattern(AccessPatternAttr access_pattern) {
+void ValueOperand::SetMapping(MappingAttr mapping) {
   SairOp op = cast<SairOp>(operand_->getOwner());
-  op.SetAccessPattern(index_, access_pattern);
+  op.SetMapping(index_, mapping);
 }
 
 ValueOperandRange::ValueOperandRange()
@@ -166,20 +167,20 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
   }
   // Check that there is enough operands.
   int min_num_operands =
-      sair_op.shape().NumDimensions() + sair_op.access_pattern_array().size();
+      sair_op.shape().NumDimensions() + sair_op.mapping_array().size();
   if (op->getNumOperands() < min_num_operands) {
     return sair_op.emitError() << "unexpected number of operands";
   }
 
   if (!sair_op.ValueOperands().empty()) {
-    // Verify that the "access_pattern_array" attribute exists.
-    if (!op->getAttr(::sair::SairDialect::kAccessPatternAttrName)) {
+    // Verify that the "mapping_array" attribute exists.
+    if (!op->getAttr(::sair::SairDialect::kMappingAttrName)) {
       return mlir::emitError(op->getLoc())
-             << "missing " << ::sair::SairDialect::kAccessPatternAttrName
+             << "missing " << ::sair::SairDialect::kMappingAttrName
              << " attribute";
     }
-    for (mlir::Attribute pattern : sair_op.access_pattern_array()) {
-      if (!pattern.cast<::sair::AccessPatternAttr>().IsFullySpecified()) {
+    for (mlir::Attribute mapping : sair_op.mapping_array()) {
+      if (!mapping.cast<::sair::MappingAttr>().IsFullySpecified()) {
         return mlir::emitError(op->getLoc())
                << "all dimensions of the accessed domain must be mapped";
       }
@@ -193,14 +194,14 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
       return mlir::emitError(v.value().getLoc())
              << "expected a !sair.value operand";
     }
-    if (v.AccessPattern().UseDomainSize() != sair_op.domain().size()) {
+    if (v.Mapping().UseDomainSize() != sair_op.domain().size()) {
       return mlir::emitError(op->getLoc()) << "invalid use domain size";
     }
     ::sair::DomainShapeAttr expected_shape =
-        sair_op.shape().AccessedShape(v.AccessPattern());
+        sair_op.shape().AccessedShape(v.Mapping());
     if (expected_shape != value_type.Shape()) {
       return mlir::emitError(v.value().getLoc())
-             << "access pattern incompatible with the operand shape";
+             << "mapping incompatible with the operand shape";
     }
     mlir::Operation *defining_op = v.value().getDefiningOp();
     if (!defining_op->isBeforeInBlock(op) && !v.AllowUseBeforeDef()) {
@@ -209,9 +210,9 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
              << "definition here";
     }
 
-    llvm::SmallBitVector dependency_mask = v.AccessPattern().DependencyMask();
+    llvm::SmallBitVector dependency_mask = v.Mapping().DependencyMask();
     if (dependency_mask.anyCommon(v.DependingDims())) {
-      return op->emitError() << "an operand access pattern references a "
+      return op->emitError() << "an operand mapping references a "
                                 "dimension that depends on the operand";
     }
   }

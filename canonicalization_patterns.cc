@@ -19,26 +19,24 @@ namespace sair {
 
 namespace {
 
-// Extends an access pattern with the identity pattern to match the given number
+// Extends an mapping with the identity mapping to match the given number
 // of dimensions.
-AccessPatternAttr ExtendWithIdentity(AccessPatternAttr old_pattern,
-                                     int domain_size, int new_pattern_size) {
-  llvm::SmallVector<AccessPatternExpr, 4> dimensions;
-  dimensions.reserve(new_pattern_size);
-  llvm::append_range(dimensions, old_pattern);
-  for (int i = dimensions.size(); i < new_pattern_size; ++i) {
-    dimensions.push_back(
-        AccessPatternDimExpr::get(i, old_pattern.getContext()));
+MappingAttr ExtendWithIdentity(MappingAttr old_mapping, int domain_size,
+                               int new_mapping_size) {
+  llvm::SmallVector<MappingExpr, 4> dimensions;
+  dimensions.reserve(new_mapping_size);
+  llvm::append_range(dimensions, old_mapping);
+  for (int i = dimensions.size(); i < new_mapping_size; ++i) {
+    dimensions.push_back(MappingDimExpr::get(i, old_mapping.getContext()));
   }
-  return AccessPatternAttr::get(old_pattern.getContext(), domain_size,
-                                dimensions);
+  return MappingAttr::get(old_mapping.getContext(), domain_size, dimensions);
 }
 
 // Redirects `use` to the `init` operand of `op` if `op` has an empty sequential
 // domain. Returns true if any change was made.
 bool SimplifyFbyOp(ValueOperand &use, SairFbyOp op) {
   if (!op.sequential_domain().empty()) return false;
-  use.SetAccessPattern(use.AccessPattern().Compose(op.Init().AccessPattern()));
+  use.SetMapping(use.Mapping().Compose(op.Init().Mapping()));
   use.set_value(op.init());
   return true;
 }
@@ -50,8 +48,7 @@ template <typename ProjOp>
 bool SimplifyProjOp(ValueOperand &use, ProjOp op,
                     mlir::PatternRewriter &rewriter) {
   if (op.projection_domain().empty()) {
-    use.SetAccessPattern(
-        use.AccessPattern().Compose(op.Value().AccessPattern()));
+    use.SetMapping(use.Mapping().Compose(op.Value().Mapping()));
     use.set_value(op.value());
     return true;
   }
@@ -74,17 +71,16 @@ bool SimplifyProjOp(ValueOperand &use, ProjOp op,
                                      prev_op.results_rank()));
   DomainShapeAttr shape = DomainShapeAttr::get(op.getContext(), shape_dims);
 
-  AccessPatternAttr new_access_pattern =
-      ExtendWithIdentity(op.Value().AccessPattern(), shape_dims.size(),
+  MappingAttr new_mapping =
+      ExtendWithIdentity(op.Value().Mapping(), shape_dims.size(),
                          prev_op.domain().size())
-          .Compose(prev_op.Value().AccessPattern());
-  mlir::ArrayAttr access_pattern_array =
-      rewriter.getArrayAttr({new_access_pattern});
+          .Compose(prev_op.Value().Mapping());
+  mlir::ArrayAttr mapping_array = rewriter.getArrayAttr({new_mapping});
 
   rewriter.setInsertionPoint(op);
   ProjOp new_op = rewriter.create<ProjOp>(
       op.getLoc(), op.getType(), op.parallel_domain(), projection_domain,
-      access_pattern_array, prev_op.value(), shape, op.memory_spaceAttr());
+      mapping_array, prev_op.value(), shape, op.memory_spaceAttr());
   use.set_value(new_op.result());
 
   return true;
@@ -138,7 +134,7 @@ class DeduplicateMapInputsOutputs : public OpRewritePattern<SairMapOp> {
       SairMapOp op, mlir::PatternRewriter &rewriter) const override {
     int domain_size = op.domain().size();
     llvm::SmallVector<mlir::Value, 4> new_operands;
-    llvm::SmallVector<mlir::Attribute, 4> new_access_patterns;
+    llvm::SmallVector<mlir::Attribute, 4> new_mappings;
 
     llvm::SmallVector<mlir::Value, 4> old_results_to_keep;
     llvm::SmallVector<mlir::Value, 4> new_scalar_results;
@@ -154,8 +150,7 @@ class DeduplicateMapInputsOutputs : public OpRewritePattern<SairMapOp> {
           op.ValueOperands().take_front(operand.position());
       for (ValueOperand previous_operand : previous_operands) {
         if (operand.value() != previous_operand.value()) continue;
-        if (operand.AccessPattern() != previous_operand.AccessPattern())
-          continue;
+        if (operand.Mapping() != previous_operand.Mapping()) continue;
         mlir::Value previous_argument =
             op.block().getArgument(domain_size + previous_operand.position());
         argument.replaceAllUsesWith(previous_argument);
@@ -169,7 +164,7 @@ class DeduplicateMapInputsOutputs : public OpRewritePattern<SairMapOp> {
       }
 
       new_operands.push_back(operand.value());
-      new_access_patterns.push_back(operand.AccessPattern());
+      new_mappings.push_back(operand.Mapping());
     }
 
     SairReturnOp return_op = cast<SairReturnOp>(op.block().getTerminator());
@@ -213,7 +208,7 @@ class DeduplicateMapInputsOutputs : public OpRewritePattern<SairMapOp> {
     rewriter.setInsertionPoint(op);
     SairMapOp new_op = rewriter.create<SairMapOp>(
         op.getLoc(), new_result_types, op.domain(),
-        rewriter.getArrayAttr(new_access_patterns), new_operands, op.shape(),
+        rewriter.getArrayAttr(new_mappings), new_operands, op.shape(),
         op.loop_nestAttr(), rewriter.getArrayAttr(new_memory_spaces));
     new_op.body().takeBody(op.body());
 
@@ -245,8 +240,8 @@ class RemoveCyclicFby : public OpRewritePattern<SairFbyOp> {
 
   mlir::LogicalResult matchAndRewrite(
       SairFbyOp op, PatternRewriter &rewriter) const override {
-    // Only apply to cycling followed-by with identity patterns.
-    if (op.result() != op.value() || !op.Value().AccessPattern().IsIdentity())
+    // Only apply to cycling followed-by with identity mappings.
+    if (op.result() != op.value() || !op.Value().Mapping().IsIdentity())
       return mlir::failure();
 
     // Update the users. The list of uses contains all uses, including multiple
@@ -255,10 +250,10 @@ class RemoveCyclicFby : public OpRewritePattern<SairFbyOp> {
       if (operand.getOwner() == op) continue;
 
       ValueOperand value_operand = ValueOperandForOpOperand(operand);
-      AccessPatternAttr access_pattern =
-          value_operand.AccessPattern().Compose(op.Init().AccessPattern());
+      MappingAttr mapping =
+          value_operand.Mapping().Compose(op.Init().Mapping());
       value_operand.set_value(op.init());
-      value_operand.SetAccessPattern(access_pattern);
+      value_operand.SetMapping(mapping);
     }
 
     assert(llvm::hasSingleElement(op.result().getUses()) &&
@@ -275,39 +270,38 @@ class RemoveCyclicFby : public OpRewritePattern<SairFbyOp> {
 // `parallel_domain` and `other_domain`, respectively, that correspond to the
 // domain dimensions that are in use. Assume `other_domain` immediately follows
 // `parallel_domain` in a sequential dimension indexing scheme. Also set
-// `mapping` to be an access pattern mapping original (combined) domain
+// `mapping` to be an mapping mapping original (combined) domain
 // dimensions to the new dimensions.
 void RemoveUnusedDomainDimensions(
     mlir::MLIRContext *context, const llvm::SmallBitVector &used_dimensions,
     mlir::ValueRange parallel_domain, mlir::ValueRange other_domain,
     llvm::SmallVectorImpl<mlir::Value> &parallel_dimensions,
     llvm::SmallVectorImpl<mlir::Value> &other_dimensions,
-    AccessPatternAttr &mapping) {
+    MappingAttr &mapping) {
   assert(used_dimensions.size() ==
          parallel_domain.size() + other_domain.size());
 
   int num_parallel_dims = parallel_domain.size();
-  llvm::SmallVector<AccessPatternExpr, 4> exprs;
+  llvm::SmallVector<MappingExpr, 4> exprs;
   for (int dimension : used_dimensions.set_bits()) {
     if (dimension >= num_parallel_dims) {
       other_dimensions.push_back(other_domain[dimension - num_parallel_dims]);
     } else {
       parallel_dimensions.push_back(parallel_domain[dimension]);
     }
-    exprs.push_back(AccessPatternDimExpr::get(dimension, context));
+    exprs.push_back(MappingDimExpr::get(dimension, context));
   }
 
-  mapping = AccessPatternAttr::get(context, used_dimensions.size(), exprs);
+  mapping = MappingAttr::get(context, used_dimensions.size(), exprs);
 }
 
 // Update all uses of `value` to use `newValue` instead, and compose the access
-// pattern with `patternComponent`.
+// mapping with `mappingComponent`.
 void UpdateValueUses(mlir::Value value, mlir::Value newValue,
-                     AccessPatternAttr patternComponent) {
+                     MappingAttr mappingComponent) {
   for (OpOperand &operand : value.getUses()) {
     ValueOperand value_operand = ValueOperandForOpOperand(operand);
-    value_operand.SetAccessPattern(
-        value_operand.AccessPattern().Compose(patternComponent));
+    value_operand.SetMapping(value_operand.Mapping().Compose(mappingComponent));
     value_operand.set_value(newValue);
   }
 }
@@ -323,13 +317,13 @@ class RemoveUnreferencedDims : public OpRewritePattern<OpTy> {
 
   mlir::LogicalResult matchAndRewrite(
       OpTy op, PatternRewriter &rewriter) const override {
-    // Collect dimensions that appear in the access pattern.
+    // Collect dimensions that appear in the mapping.
     llvm::SmallBitVector used_dimensions(op.domain().size());
-    used_dimensions |= op.Value().AccessPattern().DependencyMask();
+    used_dimensions |= op.Value().Mapping().DependencyMask();
     if (used_dimensions.all()) return mlir::failure();
 
     // Prepare op components with unused dimensions removed.
-    AccessPatternAttr mapping;
+    MappingAttr mapping;
     llvm::SmallVector<mlir::Value, 4> parallel_dimensions,
         projection_dimensions;
     RemoveUnusedDomainDimensions(op.getContext(), used_dimensions,
@@ -339,19 +333,16 @@ class RemoveUnreferencedDims : public OpRewritePattern<OpTy> {
 
     // The result type has the rank equal to that of the parallel domain. Trim
     // the mapping accordingly.
-    AccessPatternAttr partial_mapping =
-        mapping.Resize(parallel_dimensions.size());
+    MappingAttr partial_mapping = mapping.Resize(parallel_dimensions.size());
 
-    // Recreate the op because we may be changing the result type. The access
-    // patterns needs to be precomposed with the inverted mapping, i.e. the
-    // mapping from the old iteration space to the new iteration space is
-    // applied first.
+    // Recreate the op because we may be changing the result type. Mappings
+    // needs to be precomposed with the inverted mapping, i.e. the mapping from
+    // the old iteration space to the new iteration space is applied first.
     auto new_op = rewriter.create<OpTy>(
         op.getLoc(),
         op.getType().template cast<ValueType>().AccessedType(partial_mapping),
         parallel_dimensions, projection_dimensions,
-        rewriter.getArrayAttr(
-            mapping.Inverse().Compose(op.Value().AccessPattern())),
+        rewriter.getArrayAttr(mapping.Inverse().Compose(op.Value().Mapping())),
         op.value(), op.shape().AccessedShape(mapping), op.memory_spaceAttr());
     new_op.setDialectAttrs(op.getDialectAttrs());
 
@@ -372,14 +363,14 @@ class RemoveUnreferencedDims<SairFbyOp> : public OpRewritePattern<SairFbyOp> {
 
   mlir::LogicalResult matchAndRewrite(
       SairFbyOp op, PatternRewriter &rewriter) const override {
-    // Collect dimensions that appear in access patterns.
+    // Collect dimensions that appear in mappings.
     llvm::SmallBitVector used_dimensions(op.domain().size());
-    used_dimensions |= op.Value().AccessPattern().DependencyMask();
-    used_dimensions |= op.Init().AccessPattern().DependencyMask();
+    used_dimensions |= op.Value().Mapping().DependencyMask();
+    used_dimensions |= op.Init().Mapping().DependencyMask();
     if (used_dimensions.all()) return mlir::failure();
 
     // Prepare op components with unused dimensions removed.
-    AccessPatternAttr direct_mapping;
+    MappingAttr direct_mapping;
     llvm::SmallVector<mlir::Value, 4> parallel_dimensions,
         sequential_dimensions;
     RemoveUnusedDomainDimensions(op.getContext(), used_dimensions,
@@ -387,19 +378,17 @@ class RemoveUnreferencedDims<SairFbyOp> : public OpRewritePattern<SairFbyOp> {
                                  parallel_dimensions, sequential_dimensions,
                                  direct_mapping);
 
-    AccessPatternAttr inverted_mapping = direct_mapping.Inverse();
+    MappingAttr inverted_mapping = direct_mapping.Inverse();
 
-    // Recreate the op because we may be changing the result type. The access
-    // patterns needs to be precomposed with the inverted mapping, i.e. the
-    // mapping from the old iteration space to the new iteration space is
-    // applied first.
+    // Recreate the op because we may be changing the result type. Mappings
+    // needs to be precomposed with the inverted mapping, i.e. the mapping from
+    // the old iteration space to the new iteration space is applied first.
     auto new_op = rewriter.create<SairFbyOp>(
         op.getLoc(),
         op.getType().cast<ValueType>().AccessedType(direct_mapping),
         parallel_dimensions, sequential_dimensions,
-        rewriter.getArrayAttr(
-            {inverted_mapping.Compose(op.Init().AccessPattern()),
-             inverted_mapping.Compose(op.Value().AccessPattern())}),
+        rewriter.getArrayAttr({inverted_mapping.Compose(op.Init().Mapping()),
+                               inverted_mapping.Compose(op.Value().Mapping())}),
         op.init(), op.value(), op.memory_spaceAttr());
     new_op.setDialectAttrs(op.getDialectAttrs());
 

@@ -32,7 +32,7 @@ namespace sair {
 class ValueOperand {
  public:
   // Builds a 'ValueOperand' from a pointer to the MLIR operand and the index of
-  // the access pattern in the array of access patterns of the Sair operation.
+  // the mapping in the array of mappings of the Sair operation.
   //
   // Stores the 'operand' pointer without taking ownership.
   ValueOperand(mlir::OpOperand *operand, int index)
@@ -49,8 +49,8 @@ class ValueOperand {
   // Returns the operation owning the operand.
   mlir::Operation *getOwner() { return operand_->getOwner(); }
 
-  // Returns the access pattern associated to the operand.
-  AccessPatternAttr AccessPattern();
+  // Returns the mapping associated to the operand.
+  MappingAttr Mapping();
 
   // Returns the position of the operand.
   int position() const { return index_; }
@@ -58,8 +58,8 @@ class ValueOperand {
   // Sets the value referenced by the operand.
   void set_value(mlir::Value value) { operand_->set(value); }
 
-  // Sets the access pattern associated to the operand.
-  void SetAccessPattern(AccessPatternAttr access_pattern);
+  // Sets the mapping associated to the operand.
+  void SetMapping(MappingAttr mapping);
 
   // Returns a mask of dimensions that must execute after the operand is
   // computed.
@@ -90,7 +90,7 @@ class ValueOperandRange
   ValueOperandRange();
 
   // Constructs a range from the list of !sair.value operands and the
-  // corresponding list of access patterns. Both arguments must have the same
+  // corresponding list of mappings. Both arguments must have the same
   // size.
   explicit ValueOperandRange(llvm::MutableArrayRef<mlir::OpOperand> operands);
 
@@ -109,11 +109,11 @@ class ValueOperandRange
 // Represents wither a Sair value or a constant.
 class ValueOrConstant {
  public:
-  ValueOrConstant(mlir::Value value, AccessPatternAttr access_pattern)
-      : value_(value), attribute_(access_pattern) {}
+  ValueOrConstant(mlir::Value value, MappingAttr mapping)
+      : value_(value), attribute_(mapping) {}
   ValueOrConstant(mlir::Attribute constant) : attribute_(constant) {}
   ValueOrConstant(ValueOperand &&operand)
-      : ValueOrConstant(operand.value(), operand.AccessPattern()) { }
+      : ValueOrConstant(operand.value(), operand.Mapping()) {}
 
   bool is_constant() const { return value_ == nullptr; }
   bool is_value() const { return !is_constant(); }
@@ -123,9 +123,9 @@ class ValueOrConstant {
     return value_;
   }
 
-  AccessPatternAttr access_pattern() const {
+  MappingAttr mapping() const {
     assert(is_value());
-    return attribute_.cast<AccessPatternAttr>();
+    return attribute_.cast<MappingAttr>();
   }
 
   mlir::Attribute constant() const {
@@ -162,24 +162,24 @@ mlir::LogicalResult VerifyComputeOp(mlir::Operation *op);
 mlir::LogicalResult VerifyRangeOp(mlir::Operation *op);
 
 // Returns the Sair value accessed by the operation, along with the
-// corresponding access patterns.
+// corresponding mappings.
 template<typename ConcreteType>
 ::sair::ValueOperandRange ValueOperands(ConcreteType op) {
-  auto operands = op.getOperation()->getOpOperands()
+  auto operands = op.getOperation()
+                      ->getOpOperands()
                       .drop_front(op.domain().size())
-                      .take_front(op.access_pattern_array().size());
+                      .take_front(op.mapping_array().size());
   return ::sair::ValueOperandRange(operands);
 }
 
-// Sets the access pattern at the given position.
-template<typename ConcreteType>
-void SetAccessPattern(ConcreteType op, int position,
-                      ::sair::AccessPatternAttr access_pattern) {
+// Sets the mapping at the given position.
+template <typename ConcreteType>
+void SetMapping(ConcreteType op, int position, ::sair::MappingAttr mapping) {
   llvm::SmallVector<mlir::Attribute, 4> new_array =
-      llvm::to_vector<4>(op.access_pattern_array());
-  new_array[position] = access_pattern;
+      llvm::to_vector<4>(op.mapping_array());
+  new_array[position] = mapping;
   mlir::ArrayAttr new_attr = mlir::ArrayAttr::get(new_array, op.getContext());
-  op.setAttr(::sair::SairDialect::kAccessPatternAttrName, new_attr);
+  op.setAttr(::sair::SairDialect::kMappingAttrName, new_attr);
 }
 
 using namespace mlir;  // NOLINT

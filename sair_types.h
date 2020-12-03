@@ -63,7 +63,7 @@ class RangeType : public mlir::Type::TypeBase<RangeType, SairShapedType,
   static llvm::StringRef Name() { return "range"; }
 };
 
-class AccessPatternAttr;
+class MappingAttr;
 
 // Types for n-dimensional values produced and consumed by sair operators. A
 // value type specifies the shape of the domain of the value and its element
@@ -93,9 +93,8 @@ class ValueType : public mlir::Type::TypeBase<ValueType, SairShapedType,
   // Returns the type of the value elements.
   mlir::Type ElementType() const;
 
-  // Converts the type from the use domain to the def domain of the access
-  // pattern.
-  ValueType AccessedType(AccessPatternAttr access_pattern) const;
+  // Converts the type from the use domain to the def domain of the mapping.
+  ValueType AccessedType(MappingAttr mapping) const;
 };
 
 }  // end namespace sair

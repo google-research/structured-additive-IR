@@ -34,7 +34,7 @@ namespace {
 void RewriteCopyToMap(SairCopyOp op, mlir::OpBuilder &builder) {
   mlir::OperandRange inputs = op.getOperands().slice(op.domain().size(), 1);
   SairMapOp new_op = builder.create<SairMapOp>(
-      op.getLoc(), op.getType(), op.domain(), op.access_pattern_array(), inputs,
+      op.getLoc(), op.getType(), op.domain(), op.mapping_array(), inputs,
       op.shape(), op.loop_nestAttr(), op.memory_spaceAttr());
 
   // Set the block of code in the sair.map operation to return its argument
@@ -61,17 +61,15 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
   llvm::append_range(domain, parallel_domain);
   llvm::append_range(domain, reduction_domain);
 
-  // Split the access pattern array into "initalizer" and "input" parts.
-  llvm::ArrayRef<mlir::Attribute> op_access_patterns =
-      op.access_pattern_array().getValue();
-  auto init_access_patterns = op_access_patterns.drop_back(op.inputs().size());
-  auto input_access_patterns = op_access_patterns.take_back(op.inputs().size());
+  // Split the mapping array into "initalizer" and "input" parts.
+  llvm::ArrayRef<mlir::Attribute> op_mappings = op.mapping_array().getValue();
+  auto init_mappings = op_mappings.drop_back(op.inputs().size());
+  auto input_mappings = op_mappings.take_back(op.inputs().size());
 
   // Assume the value produced by sair.fby is always indexed using the identity
-  // pattern (there is no control of the output pattern, so just make sure the
+  // mapping (there is no control of the output mapping, so just make sure the
   // value is read in the identity order as it was produced).
-  auto identity_access_pattern =
-      AccessPatternAttr::GetIdentity(ctx, domain.size());
+  auto identity_mapping = MappingAttr::GetIdentity(ctx, domain.size());
 
   // For each initializer, create a separate sair.fby operation. The results of
   // these operations will be the leading arguments of sair.map in order to keep
@@ -82,8 +80,8 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
   map_operands.reserve(op.getNumResults() + op.inputs().size());
   for (unsigned i = 0, e = op.getNumResults(); i < e; ++i) {
     Value init_value = op.inits()[i];
-    auto access_pattern_attr = builder.getArrayAttr(
-        {init_access_patterns[i], identity_access_pattern});
+    auto mapping_attr =
+        builder.getArrayAttr({init_mappings[i], identity_mapping});
     // This produces a value that of the same rank as the domain.
     auto fby_type = ValueType::get(
         ctx, op.shape(), init_value.getType().cast<ValueType>().ElementType());
@@ -91,7 +89,7 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
     // Use `init_value` as both arguments temporarily, the second argument will
     // be updated later. Keep memory space undefined for the produced value.
     auto fby = builder.create<SairFbyOp>(loc, fby_type, parallel_domain,
-                                         reduction_domain, access_pattern_attr,
+                                         reduction_domain, mapping_attr,
                                          init_value, init_value, nullptr);
     fbys.push_back(fby);
     map_operands.push_back(fby.getResult());
@@ -100,12 +98,11 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
   // Forward sair.map_reduce inputs as trailing arguments of the sair.map.
   llvm::append_range(map_operands, op.inputs());
 
-  // The values produced by sair.fby are accessed using identity patterns and
-  // the original inputs retain their patterns.
-  SmallVector<mlir::Attribute, 4> access_patterns(fbys.size(),
-                                                  identity_access_pattern);
-  llvm::append_range(access_patterns, input_access_patterns);
-  auto map_access_pattern = builder.getArrayAttr(access_patterns);
+  // The values produced by sair.fby are accessed using identity mappings and
+  // the original inputs retain their mappings.
+  SmallVector<mlir::Attribute, 4> mappings(fbys.size(), identity_mapping);
+  llvm::append_range(mappings, input_mappings);
+  auto map_mapping = builder.getArrayAttr(mappings);
 
   // The shapes of new result types are same as the op shapes since we
   // reintroduced the reduction dimensions in them.
@@ -116,9 +113,9 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
       }));
 
   // Keep memory space undefined for the produced value.
-  auto map = builder.create<SairMapOp>(loc, result_types, domain,
-                                       map_access_pattern, map_operands,
-                                       op.shape(), op.loop_nestAttr(), nullptr);
+  auto map = builder.create<SairMapOp>(loc, result_types, domain, map_mapping,
+                                       map_operands, op.shape(),
+                                       op.loop_nestAttr(), nullptr);
   map.getRegion().takeBody(op.getRegion());
 
   // For each original result of sair.map_reduce, create a sair.proj_last that
@@ -134,7 +131,7 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
                                : nullptr;
     auto proj = builder.create<SairProjLastOp>(
         loc, op.getResultTypes()[i], op.parallel_domain(),
-        op.reduction_domain(), builder.getArrayAttr(identity_access_pattern),
+        op.reduction_domain(), builder.getArrayAttr(identity_mapping),
         map.getResult(i), op.shape(), memory_space);
     op.results()[i].replaceAllUsesWith(proj.result());
   }

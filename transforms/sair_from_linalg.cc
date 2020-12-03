@@ -89,9 +89,8 @@ mlir::Value CreateSairRange(mlir::Location loc, const LoopBound &bound,
 
   // Otherwise, extract the dynamic dimension of the shaped type, construct a 0d
   // Sair value, and use this value to create a dependent range.
-  auto access_pattern =
-      AccessPatternAttr::GetIdentity(context, /*num_dimensions=*/0);
-  auto access_pattern_array = rewriter.getArrayAttr(access_pattern);
+  auto mapping = MappingAttr::GetIdentity(context, /*num_dimensions=*/0);
+  auto mapping_array = rewriter.getArrayAttr(mapping);
   auto index_type = rewriter.getType<IndexType>();
   auto value_type = rewriter.getType<ValueType>(domain_0d, index_type);
 
@@ -107,7 +106,7 @@ mlir::Value CreateSairRange(mlir::Location loc, const LoopBound &bound,
   mlir::Value bound_value =
       rewriter.create<SairFromScalarOp>(loc, value_type, bound_dim);
   return rewriter.create<SairDynRangeOp>(loc, range_type, mlir::ValueRange(),
-                                         access_pattern_array,
+                                         mapping_array,
                                          /*begin=*/nullptr,
                                          /*end=*/bound_value,
                                          /*step=*/rewriter.getIndexAttr(1));
@@ -159,29 +158,28 @@ llvm::SmallVector<mlir::Value, 4> CreateSairDomain(
   return ranges;
 }
 
-// Converts Linalg indexing maps into Sair access patterns. Populates
-// "operand_access_patterns" with the results, using the same array indices as
+// Converts Linalg indexing maps into Sair mappings. Populates
+// "operand_mappings" with the results, using the same array indices as
 // "indexing_maps". Uses "sair_to_linalg_loops" to reshuffle the dimensions so
 // that reduction loops always come last, as expected by Sair. This map is
 // expected to be a bijective map between Sair loop order and Linalg loop order.
 // Additionally, computes the mapping from value subscripts to surrounding loops
 // and returns it in "subscripts_to_loops". If there is no subscript
 // corresponding to a loop, return failure.
-mlir::LogicalResult ConvertOperandAccessPatterns(
+mlir::LogicalResult ConvertOperandMappings(
     mlir::ArrayAttr indexing_maps, mlir::AffineMap sair_to_linalg_loops,
-    llvm::SmallVectorImpl<mlir::Attribute> &operand_access_patterns,
+    llvm::SmallVectorImpl<mlir::Attribute> &operand_mappings,
     mlir::AffineMap &subscripts_to_loops) {
-  // Affine maps are straightforwardly converted to access patterns. Also
+  // Affine maps are straightforwardly converted to mappings. Also
   // accumulate the maps extracted from the attribute.
   int num_operands = indexing_maps.size();
-  operand_access_patterns.reserve(num_operands);
+  operand_mappings.reserve(num_operands);
   llvm::SmallVector<mlir::AffineMap, 4> loops_to_subscripts;
   loops_to_subscripts.reserve(num_operands);
   for (mlir::Attribute attr : indexing_maps.getValue()) {
     mlir::AffineMap indexing = attr.cast<AffineMapAttr>().getValue();
     indexing = indexing.compose(sair_to_linalg_loops);
-    operand_access_patterns.push_back(
-        AccessPatternAttr::FromAffineMap(indexing));
+    operand_mappings.push_back(MappingAttr::FromAffineMap(indexing));
     loops_to_subscripts.push_back(indexing);
   }
 
@@ -196,18 +194,18 @@ mlir::LogicalResult ConvertOperandAccessPatterns(
   return mlir::success();
 }
 
-// Converts Linalg indexing maps into Sair access patterns suitable for casting
+// Converts Linalg indexing maps into Sair mappings suitable for casting
 // Sair value back to memref used in Linalg. The iteration domain of this
 // casting lives in the space of the memref, and the value lives in the loop
 // space, so this needs to invert the indexing maps defined in "loop->memref"
 // space.
-mlir::LogicalResult ConvertResultAccessPatterns(
+mlir::LogicalResult ConvertResultMappings(
     llvm::ArrayRef<mlir::Attribute> indexing_maps,
     mlir::AffineMap parallel_to_positions,
-    llvm::SmallVectorImpl<mlir::Attribute> &access_patterns) {
-  // Invert indexing maps and transform them into access patterns. If some maps
+    llvm::SmallVectorImpl<mlir::Attribute> &mappings) {
+  // Invert indexing maps and transform them into mappings. If some maps
   // are not invertible, return failure.
-  access_patterns.reserve(indexing_maps.size());
+  mappings.reserve(indexing_maps.size());
   for (mlir::Attribute attr : indexing_maps) {
     mlir::AffineMap indexing = attr.cast<AffineMapAttr>().getValue();
     indexing = indexing.compose(parallel_to_positions);
@@ -215,7 +213,7 @@ mlir::LogicalResult ConvertResultAccessPatterns(
     if (!inverted) {
       return mlir::failure();
     }
-    access_patterns.push_back(AccessPatternAttr::FromAffineMap(inverted));
+    mappings.push_back(MappingAttr::FromAffineMap(inverted));
   }
 
   return mlir::success();
@@ -267,24 +265,24 @@ void EmitMemRefToValue(
 
 // Emits operations storing the content of "sair_values" to the given memrefs,
 // using "rewriter" to create the operations and positioning them at "loc".
-// Values are indexed with "access_patterns" and have the provided "ranges".
-// Expects equal number of Sair values, memrefs, access patterns and ranges
+// Values are indexed with "mappings" and have the provided "ranges".
+// Expects equal number of Sair values, memrefs, mappings and ranges
 // to be passed.
 void EmitValueToMemRef(mlir::Location loc, mlir::ValueRange sair_values,
                        mlir::ValueRange memrefs,
-                       llvm::ArrayRef<mlir::Attribute> access_patterns,
+                       llvm::ArrayRef<mlir::Attribute> mappings,
                        llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> ranges,
                        mlir::OpBuilder &rewriter) {
   assert(sair_values.size() == memrefs.size());
-  assert(sair_values.size() == access_patterns.size());
+  assert(sair_values.size() == mappings.size());
   assert(sair_values.size() == ranges.size());
 
   mlir::MLIRContext *context = loc.getContext();
   int num_results = sair_values.size();
   for (int i = 0; i < num_results; ++i) {
-    auto access_pattern = ArrayAttr::get(access_patterns[i], context);
-    rewriter.create<SairToMemRefOp>(loc, ranges[i], access_pattern,
-                                    sair_values[i], memrefs[i]);
+    auto mapping = ArrayAttr::get(mappings[i], context);
+    rewriter.create<SairToMemRefOp>(loc, ranges[i], mapping, sair_values[i],
+                                    memrefs[i]);
   }
 }
 
@@ -389,11 +387,10 @@ void MoveBodyBlock(mlir::AffineMap linalg_to_sair_loops,
     if (has_indices) {
       llvm::SmallVector<int, 4> index_permutation;
       index_permutation.reserve(linalg_to_sair_loops.getNumResults());
-      AccessPatternAttr linalg_to_sair_loops_pattern =
-          AccessPatternAttr::FromAffineMap(linalg_to_sair_loops);
-      for (AccessPatternExpr expr : linalg_to_sair_loops_pattern) {
-        index_permutation.push_back(
-            expr.cast<AccessPatternDimExpr>().dimension());
+      MappingAttr linalg_to_sair_loops_mapping =
+          MappingAttr::FromAffineMap(linalg_to_sair_loops);
+      for (MappingExpr expr : linalg_to_sair_loops_mapping) {
+        index_permutation.push_back(expr.cast<MappingDimExpr>().dimension());
       }
       PermuteBlockArguments(index_permutation, /*offset=*/0, body);
     }
@@ -491,7 +488,7 @@ void ComputePermutationMaps(mlir::ArrayAttr attr,
 mlir::Operation *CreateMapReduceOp(
     mlir::Location loc, llvm::ArrayRef<mlir::Type> result_types,
     mlir::ValueRange domain, mlir::ValueRange linalg_operands,
-    llvm::ArrayRef<mlir::Attribute> operand_access_patterns,
+    llvm::ArrayRef<mlir::Attribute> operand_mappings,
     DomainShapeAttr domain_shape, int num_reduction_loops, int num_outputs,
     mlir::OpBuilder &rewriter) {
   // Split domain and operand lists into reduction and parallel parts.
@@ -500,18 +497,16 @@ mlir::Operation *CreateMapReduceOp(
   mlir::ValueRange init_operands = linalg_operands.take_back(num_outputs);
   mlir::ValueRange input_operands = linalg_operands.drop_back(num_outputs);
 
-  // Reorder access patterns to match the expected order in Sair "map_reduce".
-  llvm::SmallVector<mlir::Attribute, 8> access_patterns;
-  access_patterns.reserve(operand_access_patterns.size());
-  llvm::append_range(access_patterns,
-                     operand_access_patterns.drop_front(num_outputs));
-  llvm::append_range(access_patterns,
-                     operand_access_patterns.take_front(num_outputs));
-  mlir::ArrayAttr access_patterns_attr = rewriter.getArrayAttr(access_patterns);
+  // Reorder mappings to match the expected order in Sair "map_reduce".
+  llvm::SmallVector<mlir::Attribute, 8> mappings;
+  mappings.reserve(operand_mappings.size());
+  llvm::append_range(mappings, operand_mappings.drop_front(num_outputs));
+  llvm::append_range(mappings, operand_mappings.take_front(num_outputs));
+  mlir::ArrayAttr mappings_attr = rewriter.getArrayAttr(mappings);
 
   return rewriter.create<SairMapReduceOp>(
-      loc, result_types, parallel_domain, reduction_domain,
-      access_patterns_attr, init_operands, input_operands, domain_shape,
+      loc, result_types, parallel_domain, reduction_domain, mappings_attr,
+      init_operands, input_operands, domain_shape,
       /*loop_nest=*/nullptr, /*memory_space=*/nullptr);
 }
 
@@ -542,13 +537,13 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
   mlir::AffineMap sair_to_linalg_loops =
       mlir::inversePermutation(linalg_to_sair_loops);
 
-  // Convert Linalg indexing maps to Sair access patterns and keep track of the
+  // Convert Linalg indexing maps to Sair mappings and keep track of the
   // mapping between value access subscripts and iteration domain dimensions.
-  llvm::SmallVector<mlir::Attribute, 4> operand_access_patterns;
+  llvm::SmallVector<mlir::Attribute, 4> operand_mappings;
   mlir::AffineMap subscripts_to_loops;
-  if (mlir::failed(ConvertOperandAccessPatterns(
-          op.indexing_maps(), sair_to_linalg_loops, operand_access_patterns,
-          subscripts_to_loops))) {
+  if (mlir::failed(
+          ConvertOperandMappings(op.indexing_maps(), sair_to_linalg_loops,
+                                 operand_mappings, subscripts_to_loops))) {
     return mlir::failure();
   }
 
@@ -557,23 +552,22 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
   int num_parallel_loops = op.getNumParallelLoops();
   int num_operands = op.getNumInputsAndOutputBuffers();
   for (int i = op.getNumInputs(); i < num_operands; ++i) {
-    auto pattern = operand_access_patterns[i].cast<AccessPatternAttr>();
-    if (mlir::failed(
-            VerifyReductionAccessPattern(pattern, num_parallel_loops))) {
+    auto mapping = operand_mappings[i].cast<MappingAttr>();
+    if (mlir::failed(VerifyReductionMapping(mapping, num_parallel_loops))) {
       return mlir::failure();
     }
   }
 
-  // Convert Linalg indexing maps to Sair access patterns usable in "to_memref".
-  // Some patterns may not be convertible, so return before we start
-  // constructing any new IR.
-  llvm::SmallVector<mlir::Attribute, 4> result_access_patterns;
+  // Convert Linalg indexing maps to Sair mappings usable in "to_memref".  Some
+  // mappings may not be convertible, so return before we start constructing any
+  // new IR.
+  llvm::SmallVector<mlir::Attribute, 4> result_mappings;
   llvm::ArrayRef<mlir::Attribute> all_indexing_maps =
       op.indexing_maps().getValue();
   int num_outputs = op.getNumOutputs();
-  if (mlir::failed(ConvertResultAccessPatterns(
-          all_indexing_maps.take_back(num_outputs), parallel_to_positions,
-          result_access_patterns))) {
+  if (mlir::failed(
+          ConvertResultMappings(all_indexing_maps.take_back(num_outputs),
+                                parallel_to_positions, result_mappings))) {
     return mlir::failure();
   }
 
@@ -606,18 +600,18 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
   if (num_reduction_dims == 0) {
     map_op = rewriter.create<SairMapOp>(
         loc, result_types, domain_ranges,
-        rewriter.getArrayAttr(operand_access_patterns), map_operands,
-        domain_shape, /*loop_nest=*/nullptr, /*memory_space=*/nullptr);
+        rewriter.getArrayAttr(operand_mappings), map_operands, domain_shape,
+        /*loop_nest=*/nullptr, /*memory_space=*/nullptr);
   } else {
     map_op = CreateMapReduceOp(
-        loc, result_types, domain_ranges, map_operands, operand_access_patterns,
+        loc, result_types, domain_ranges, map_operands, operand_mappings,
         domain_shape, num_reduction_dims, op.getNumOutputs(), rewriter);
   }
   MoveBodyBlock(linalg_to_sair_loops, rewriter, map_op->getRegion(0), op);
 
   // Convert output values to input/output MemRefs used by Linalg.
   EmitValueToMemRef(loc, map_op->getResults(), op.getOutputBuffers(),
-                    result_access_patterns, result_ranges, rewriter);
+                    result_mappings, result_ranges, rewriter);
 
   // Add the sair.program terminator.
   rewriter.create<SairExitOp>(loc);

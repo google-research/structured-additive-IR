@@ -46,20 +46,17 @@ void AdaptTypesToShape(mlir::TypeRange types, DomainShapeAttr shape,
   result.append(range.begin(), range.end());
 }
 
-// Creates a new access pattern array by shifting all the accessed dimensions
+// Creates a new mapping array by shifting all the accessed dimensions
 // starting from `insert_pos` right by `num_dims`. This reflects `num_dims`
 // dimensions being inserted at `insert_pos` into the domain.
-mlir::ArrayAttr AccessPatternsInsertDims(mlir::ArrayAttr access_pattern_array,
-                                         size_t insert_pos, size_t num_dims) {
-  llvm::SmallVector<mlir::Attribute, 4> new_access_patterns;
-  new_access_patterns.reserve(access_pattern_array.size());
-  for (auto access_pattern :
-       access_pattern_array.getAsRange<AccessPatternAttr>()) {
-    new_access_patterns.push_back(
-        access_pattern.ShiftRight(num_dims, insert_pos));
+mlir::ArrayAttr MappingsInsertDims(mlir::ArrayAttr mapping_array,
+                                   size_t insert_pos, size_t num_dims) {
+  llvm::SmallVector<mlir::Attribute, 4> new_mappings;
+  new_mappings.reserve(mapping_array.size());
+  for (auto mapping : mapping_array.getAsRange<MappingAttr>()) {
+    new_mappings.push_back(mapping.ShiftRight(num_dims, insert_pos));
   }
-  return mlir::ArrayAttr::get(new_access_patterns,
-                              access_pattern_array.getContext());
+  return mlir::ArrayAttr::get(new_mappings, mapping_array.getContext());
 }
 
 // Moves the body of the source operation to the target operation and inserts
@@ -74,24 +71,22 @@ OpTy TakeBodyAdjustArguments(OpTy target, OpTy source, int pos, int num,
   return target;
 }
 
-// Given an array of Sair access patterns, creates a new array containing the
-// same patterns with use domain extended by `num_extra_dims`.
-mlir::ArrayAttr AccessPatternsExtendUseDomain(
-    mlir::ArrayAttr access_pattern_array, size_t num_extra_dims) {
-  llvm::SmallVector<mlir::Attribute, 4> new_access_patterns;
-  new_access_patterns.reserve(access_pattern_array.size());
-  for (auto access_pattern :
-       access_pattern_array.getAsRange<AccessPatternAttr>()) {
-    new_access_patterns.push_back(access_pattern.ResizeUseDomain(
-        access_pattern.UseDomainSize() + num_extra_dims));
+// Given an array of Sair mappings, creates a new array containing the
+// same mappings with use domain extended by `num_extra_dims`.
+mlir::ArrayAttr MappingsExtendUseDomain(mlir::ArrayAttr mapping_array,
+                                        size_t num_extra_dims) {
+  llvm::SmallVector<mlir::Attribute, 4> new_mappings;
+  new_mappings.reserve(mapping_array.size());
+  for (auto mapping : mapping_array.getAsRange<MappingAttr>()) {
+    new_mappings.push_back(
+        mapping.ResizeUseDomain(mapping.UseDomainSize() + num_extra_dims));
   }
-  return mlir::ArrayAttr::get(new_access_patterns,
-                              access_pattern_array.getContext());
+  return mlir::ArrayAttr::get(new_mappings, mapping_array.getContext());
 }
 
 // Creates a new sair.copy operation that is intended to replace `op`. Takes the
 // additional domain dimensions, the updated result type and loop nest attribute
-// supplied as arguments, extracts the value being copied and the access pattern
+// supplied as arguments, extracts the value being copied and the mapping
 // from `op`,
 SairCopyOp RecreateOp(SairCopyOp op, mlir::TypeRange result_types,
                       mlir::ValueRange extra_domain,
@@ -100,28 +95,28 @@ SairCopyOp RecreateOp(SairCopyOp op, mlir::TypeRange result_types,
   assert(result_types.size() == 1);
   auto domain = llvm::to_vector<8>(op.domain());
   llvm::append_range(domain, extra_domain);
-  mlir::ArrayAttr access_patterns = AccessPatternsExtendUseDomain(
-      op.access_pattern_array(), extra_domain.size());
+  mlir::ArrayAttr mappings =
+      MappingsExtendUseDomain(op.mapping_array(), extra_domain.size());
   return builder.create<SairCopyOp>(op.getLoc(), result_types[0], domain,
-                                    access_patterns, op.value(), loop_nest_attr,
+                                    mappings, op.value(), loop_nest_attr,
                                     op.memory_spaceAttr());
 }
 
 // Creates a new sair.map operation that is intended to replace `op`. Takes the
 // additional domain dimensions, the updated result types and the loop nest
 // attribute supplied as arguments; moves the body and copies the access
-// patterns from `op`.
+// mappings from `op`.
 SairMapOp RecreateOp(SairMapOp op, mlir::TypeRange result_types,
                      mlir::ValueRange extra_domain,
                      mlir::ArrayAttr loop_nest_attr,
                      DomainShapeAttr domain_shape, mlir::OpBuilder &builder) {
   auto domain = llvm::to_vector<8>(op.domain());
   llvm::append_range(domain, extra_domain);
-  mlir::ArrayAttr access_patterns = AccessPatternsExtendUseDomain(
-      op.access_pattern_array(), extra_domain.size());
+  mlir::ArrayAttr mappings =
+      MappingsExtendUseDomain(op.mapping_array(), extra_domain.size());
   auto new_op = builder.create<SairMapOp>(
-      op.getLoc(), result_types, domain, access_patterns, op.inputs(),
-      domain_shape, loop_nest_attr, op.memory_spaceAttr());
+      op.getLoc(), result_types, domain, mappings, op.inputs(), domain_shape,
+      loop_nest_attr, op.memory_spaceAttr());
 
   return TakeBodyAdjustArguments(new_op, op, op.domain().size(),
                                  extra_domain.size(), builder.getIndexType());
@@ -130,7 +125,7 @@ SairMapOp RecreateOp(SairMapOp op, mlir::TypeRange result_types,
 // Creates a new sair.map_reduce operation that is intended to replace `op`.
 // Takes the additional parallel domain dimensions, the updated result types and
 // the loop nest attribute supplied as arguments; moves the body and copies the
-// reduction domain from `op`; takes the access patterns from `op` and changes
+// reduction domain from `op`; takes the mappings from `op` and changes
 // them to account for the inserted parallel dimensions.
 SairMapReduceOp RecreateOp(SairMapReduceOp op, mlir::TypeRange result_types,
                            mlir::ValueRange extra_domain,
@@ -138,14 +133,14 @@ SairMapReduceOp RecreateOp(SairMapReduceOp op, mlir::TypeRange result_types,
                            DomainShapeAttr domain_shape,
                            mlir::OpBuilder &builder) {
   auto parallel_domain = llvm::to_vector<8>(op.parallel_domain());
-  mlir::ArrayAttr access_pattern_attr = AccessPatternsInsertDims(
-      op.access_pattern_array(), parallel_domain.size(), extra_domain.size());
+  mlir::ArrayAttr mapping_attr = MappingsInsertDims(
+      op.mapping_array(), parallel_domain.size(), extra_domain.size());
   llvm::append_range(parallel_domain, extra_domain);
 
   auto new_op = builder.create<SairMapReduceOp>(
       op.getLoc(), result_types, parallel_domain, op.reduction_domain(),
-      access_pattern_attr, op.inits(), op.inputs(), domain_shape,
-      loop_nest_attr, op.memory_spaceAttr());
+      mapping_attr, op.inits(), op.inputs(), domain_shape, loop_nest_attr,
+      op.memory_spaceAttr());
 
   return TakeBodyAdjustArguments(new_op, op, op.parallel_domain().size(),
                                  extra_domain.size(), builder.getIndexType());
@@ -184,7 +179,7 @@ mlir::LogicalResult Rematerialize(ComputeOp op,
   auto loop_nest_array = llvm::to_vector<4>(op.LoopNestLoops());
   for (size_t i = 0, e = loop_nest_array.size(); i < e; ++i) {
     auto loop = loop_nest_array[i].cast<LoopAttr>();
-    if (loop.iter().isa<AccessPatternNoneExpr>()) loops.push_back(i);
+    if (loop.iter().isa<MappingNoneExpr>()) loops.push_back(i);
   }
   size_t num_remat = loops.size();
 
@@ -193,20 +188,20 @@ mlir::LogicalResult Rematerialize(ComputeOp op,
   llvm::SmallVector<mlir::Value, 4> extra_domain;
   extra_domain.reserve(num_remat);
 
-  llvm::SmallVector<AccessPatternExpr, 4> iter_substitutions;
+  llvm::SmallVector<MappingExpr, 4> iter_substitutions;
   iter_substitutions.reserve(sair_op.domain().size());
   for (int i = 0; i < num_parallel_dims; ++i) {
-    iter_substitutions.push_back(AccessPatternDimExpr::get(i, ctx));
+    iter_substitutions.push_back(MappingDimExpr::get(i, ctx));
   }
   for (int i = num_parallel_dims, e = sair_op.domain().size(); i < e; ++i) {
-    iter_substitutions.push_back(AccessPatternDimExpr::get(i + num_remat, ctx));
+    iter_substitutions.push_back(MappingDimExpr::get(i + num_remat, ctx));
   }
 
   for (size_t i = 0, e = loop_nest_array.size(); i < e; ++i) {
     // If we are inserting domain dimensions in the middle of the dimension
     // list, update the indices of trailing dimensions.
     auto loop = loop_nest_array[i].cast<LoopAttr>();
-    if (!loop.iter().isa<AccessPatternNoneExpr>()) {
+    if (!loop.iter().isa<MappingNoneExpr>()) {
       if (loop.iter().MinDomainSize() > num_parallel_dims) {
         loop_nest_array[i] = LoopAttr::get(
             loop.name(), loop.iter().SubstituteDims(iter_substitutions), ctx);
@@ -217,13 +212,13 @@ mlir::LogicalResult Rematerialize(ComputeOp op,
     // For each loop to rematerialize, add the range as the last domain argument
     // and update the loop nest attribute accordingly.
     auto &fusion_class = fusion_analysis.GetClass(loop.name());
-    if (!fusion_class.iter_expr.isa<AccessPatternDimExpr>()) {
+    if (!fusion_class.iter_expr.isa<MappingDimExpr>()) {
       // TODO(b/172908223): support all loop nests expressions.
       return op.emitError() << "rematerialization only supports plain loops";
     }
     extra_domain.push_back(fusion_class.dimensions[0]);
-    loop_nest_array[i] = LoopAttr::get(
-        loop.name(), AccessPatternDimExpr::get(position++, ctx), ctx);
+    loop_nest_array[i] =
+        LoopAttr::get(loop.name(), MappingDimExpr::get(position++, ctx), ctx);
   }
 
   // Parallel shape dimensions of the original op are kept as is.
@@ -241,7 +236,7 @@ mlir::LogicalResult Rematerialize(ComputeOp op,
     const LoopFusionClass &fusion_class = fusion_analysis.GetClass(loop.name());
 
     // Find positions of the loops the bounds of the current rematerialized loop
-    // depend on and use them to construct the dependency pattern. Make sure to
+    // depend on and use them to construct the dependency mapping. Make sure to
     // take positions from the current op, as the dimensions that are depended
     // upon may be already present. Use the range type of the domain dimension
     // to construct the shape.
@@ -256,12 +251,12 @@ mlir::LogicalResult Rematerialize(ComputeOp op,
           return iter->cast<LoopAttr>().iter();
         });
     // We checked that the expression was a dimension above.
-    int dimension = loop.iter().cast<AccessPatternDimExpr>().dimension();
-    auto dependency_pattern = AccessPatternAttr::get(
+    int dimension = loop.iter().cast<MappingDimExpr>().dimension();
+    auto dependency_mapping = MappingAttr::get(
         ctx, dimension, llvm::to_vector<4>(dependencies_range));
     domain_shape_dims.emplace_back(
         extra_domain[en.index()].getType().cast<RangeType>(),
-        dependency_pattern);
+        dependency_mapping);
   }
 
   // Non-parallel shape dimensions (trailing) of the original op need to be
@@ -269,7 +264,7 @@ mlir::LogicalResult Rematerialize(ComputeOp op,
   for (const DomainShapeDim &dim : orig_dims.drop_front(num_parallel_dims)) {
     domain_shape_dims.emplace_back(
         dim.type(),
-        dim.dependency_pattern().ShiftRight(num_remat, num_parallel_dims));
+        dim.dependency_mapping().ShiftRight(num_remat, num_parallel_dims));
   }
 
   // Create the new domain shape and derive the result shape from it by removing
@@ -302,16 +297,16 @@ mlir::LogicalResult Rematerialize(ComputeOp op,
     mlir::Value orig_result = orig_operation->getResult(i);
     mlir::Value remat_result = new_operation->getResult(i);
 
-    // Use the identity access pattern here since defs and uses conserved their
-    // patterns. In this case, the shape of the projection operation is equal to
+    // Use the identity mapping here since defs and uses conserved their
+    // mappings. In this case, the shape of the projection operation is equal to
     // the shape of its argument.
-    auto access_pattern = builder.getArrayAttr(AccessPatternAttr::GetIdentity(
+    auto mapping = builder.getArrayAttr(MappingAttr::GetIdentity(
         op.getContext(), num_parallel_dims + num_remat));
     DomainShapeAttr shape = remat_result.getType().cast<ValueType>().Shape();
 
     auto proj_op = builder.create<SairProjAnyOp>(
         op.getLoc(), orig_result.getType(), parallel_domain, extra_domain,
-        access_pattern, remat_result, shape, /*memory_space=*/nullptr);
+        mapping, remat_result, shape, /*memory_space=*/nullptr);
     if (llvm::Optional<int> memory_space = value_producer.GetMemorySpace(i)) {
       proj_op.SetMemorySpace(i, memory_space);
     }
@@ -329,7 +324,7 @@ mlir::LogicalResult RematerializeInProgram(
   auto status = op.walk([&](ComputeOp comp) -> mlir::WalkResult {
     if (!comp.loop_nest()) return mlir::success();
     if (llvm::all_of(comp.LoopNestLoops(), [](mlir::Attribute attr) {
-          return !attr.cast<LoopAttr>().iter().isa<AccessPatternNoneExpr>();
+          return !attr.cast<LoopAttr>().iter().isa<MappingNoneExpr>();
         })) {
       return mlir::success();
     }

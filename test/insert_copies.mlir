@@ -127,26 +127,26 @@ func @reduce_loop_nest(%arg0: f32) {
     // CHECK: %[[V1:.*]] = sair.static_range
     %1 = sair.static_range 8 : !sair.range
     // CHECK: %[[V2:.*]] = sair.copy[d0:%[[V1]]] %[[V0]]
-    // CHECK:   loop_nest = [{iter = #sair.pattern_expr<d0>, name = "A"}]
+    // CHECK:   loop_nest = [{iter = #sair.mapping_expr<d0>, name = "A"}]
     // GENERIC:      "sair.copy"
-    // GENERIC-SAME: access_pattern_array = [#sair.pattern<1>]
+    // GENERIC-SAME: mapping_array = [#sair.mapping<1>]
 
     // CHECK: sair.copy[d0:%[[V1]], d1:%[[V1]]] %[[V0]]
     // GENERIC:      "sair.copy"
-    // GENERIC-SAME: access_pattern_array = [#sair.pattern<2>]
+    // GENERIC-SAME: mapping_array = [#sair.mapping<2>]
     sair.copy[d0:%1, d1:%1] %0 {
       loop_nest = [
-        {name = "A", iter = #sair.pattern_expr<d0>},
-        {name = "B", iter = #sair.pattern_expr<d1>}
+        {name = "A", iter = #sair.mapping_expr<d0>},
+        {name = "B", iter = #sair.mapping_expr<d1>}
       ]
     } : !sair.value<d0:range x d1:range, f32>
     // CHECK: sair.map_reduce[d0:%[[V1]]] %[[V2]](d0) reduce[d1:%[[V1]]]
     // GENERIC: "sair.map_reduce"
-    // GENERIC: access_pattern_array = [#sair.pattern<2 : d0>]
+    // GENERIC: mapping_array = [#sair.mapping<2 : d0>]
     sair.map_reduce[d0:%1] %0 reduce[d1:%1] attributes {
       loop_nest = [
-        {name = "A", iter = #sair.pattern_expr<d0>},
-        {name = "B", iter = #sair.pattern_expr<d1>}
+        {name = "A", iter = #sair.mapping_expr<d0>},
+        {name = "B", iter = #sair.mapping_expr<d1>}
       ]
     } {
       ^bb0(%arg1: index, %arg2: index, %arg3: f32):

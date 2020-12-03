@@ -57,41 +57,41 @@ namespace {
 
 // Parses a Sair value access if present. Returns llvm::None if no Sair value
 // access is present, and a ParseResult indicating the parsing status otherwise.
-// Populates "value" and "access_pattern" with an operand placeholder and a
-// pattern attribute on success.
+// Populates "value" and "mapping" with an operand placeholder and a
+// mapping attribute on success.
 OptionalParseResult ParseOptionalValueAccess(
     int num_dimensions, mlir::OpAsmParser &parser,
-    mlir::OpAsmParser::OperandType &value, AccessPatternAttr &access_pattern) {
+    mlir::OpAsmParser::OperandType &value, MappingAttr &mapping) {
   OptionalParseResult has_operand = parser.parseOptionalOperand(value);
   if (!has_operand.hasValue() || mlir::failed(has_operand.getValue()))
     return has_operand;
 
   llvm::SMLoc loc = parser.getCurrentLocation();
-  if (!(access_pattern = ParseOptionalAccessPattern(parser, num_dimensions))) {
+  if (!(mapping = ParseOptionalMapping(parser, num_dimensions))) {
     return mlir::failure();
   }
-  if (!access_pattern.IsFullySpecified()) {
+  if (!mapping.IsFullySpecified()) {
     return parser.emitError(loc)
-           << "expected access pattern to a concrete element, got 'none'";
+           << "expected mapping to a concrete element, got 'none'";
   }
-  return mlir::success(access_pattern != nullptr);
+  return mlir::success(mapping != nullptr);
 }
 
 // Parses a potentially empty list of Sair value operands with corresponding
-// access patterns.
+// mappings.
 //
 // value-list ::= epsilon
-//              | ssa-value access-pattern (`,` ssa-value access-pattern)*
+//              | ssa-value mapping (`,` ssa-value mapping)*
 ParseResult ParseOperandList(
     int num_dimensions, mlir::OpAsmParser &parser,
     llvm::SmallVectorImpl<mlir::OpAsmParser::OperandType> &operands,
-    llvm::SmallVectorImpl<AccessPatternAttr> &patterns) {
+    llvm::SmallVectorImpl<MappingAttr> &mappings) {
   // Try parsing a value access. If there is no operand in the parsing stream,
   // interpret it as having parsed an empty operand list and succeed.
   mlir::OpAsmParser::OperandType first_operand;
-  AccessPatternAttr first_pattern;
+  MappingAttr first_mapping;
   OptionalParseResult has_first_operand = ParseOptionalValueAccess(
-      num_dimensions, parser, first_operand, first_pattern);
+      num_dimensions, parser, first_operand, first_mapping);
   if (!has_first_operand.hasValue()) {
     return mlir::success();
   }
@@ -100,14 +100,14 @@ ParseResult ParseOperandList(
   }
 
   operands.emplace_back(first_operand);
-  patterns.emplace_back(first_pattern);
+  mappings.emplace_back(first_mapping);
 
   // If there was an operand, attempt parsing succeeding operands that are
   // separated by commas.
   while (mlir::succeeded(parser.parseOptionalComma())) {
     if (mlir::failed(ParseValueAccess(num_dimensions, parser,
                                       operands.emplace_back(),
-                                      patterns.emplace_back()))) {
+                                      mappings.emplace_back()))) {
       return mlir::failure();
     }
   }
@@ -119,18 +119,18 @@ ParseResult ParseOperandList(
 // accesses a single Sair value with index elements. The syntax for the range
 // operator is the following.
 //
-//   range-op ::= `sair.dyn_range` domain  ssa-value access-pattern
+//   range-op ::= `sair.dyn_range` domain  ssa-value mapping
 //
 ParseResult ParseDynRangeOp(mlir::OpAsmParser &parser,
                             mlir::OperationState &result) {
   mlir::Builder &builder = parser.getBuilder();
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 2> operands;
-  llvm::SmallVector<AccessPatternAttr, 2> patterns;
+  llvm::SmallVector<MappingAttr, 2> mappings;
   RangeType type;
 
   if (ParseDomain(parser, domain) ||
-      ParseOperandList(domain.size(), parser, operands, patterns)) {
+      ParseOperandList(domain.size(), parser, operands, mappings)) {
     return failure();
   }
 
@@ -149,11 +149,11 @@ ParseResult ParseDynRangeOp(mlir::OpAsmParser &parser,
     return failure();
   }
 
-  llvm::ArrayRef<mlir::Attribute> pattern_attrs(patterns.begin(),
-                                                patterns.size());
+  llvm::ArrayRef<mlir::Attribute> mapping_attrs(mappings.begin(),
+                                                mappings.size());
   result.addAttribute(
-      SairDialect::kAccessPatternAttrName,
-      ArrayAttr::get(pattern_attrs, parser.getBuilder().getContext()));
+      SairDialect::kMappingAttrName,
+      ArrayAttr::get(mapping_attrs, parser.getBuilder().getContext()));
   result.addAttribute(
       SairDynRangeOp::getOperandSegmentSizeAttr(),
       builder.getI64VectorAttr({static_cast<int64_t>(domain.size()),
@@ -161,9 +161,9 @@ ParseResult ParseDynRangeOp(mlir::OpAsmParser &parser,
 
   ValueType index_value_type = builder.getType<ValueType>(
       type.Shape(), builder.getType<mlir::IndexType>());
-  for (auto [operand, pattern] : llvm::zip(operands, patterns)) {
+  for (auto [operand, mapping] : llvm::zip(operands, mappings)) {
     if (mlir::failed(parser.resolveOperand(
-            operand, index_value_type.AccessedType(pattern),
+            operand, index_value_type.AccessedType(mapping),
             result.operands))) {
       return mlir::failure();
     }
@@ -202,17 +202,17 @@ ParseResult ParseStaticRangeOp(mlir::OpAsmParser &parser,
 // Parses the copy operation. This operation has an iteration domain and
 // accesses a single Sair value. The syntax for the operation is the following.
 //
-// copy-op ::= `sair.copy` domain ssa-value access-pattern attributes
+// copy-op ::= `sair.copy` domain ssa-value mapping attributes
 //
 ParseResult ParseCopyOp(mlir::OpAsmParser &parser,
                         mlir::OperationState &result) {
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
   mlir::OpAsmParser::OperandType value;
-  AccessPatternAttr access_pattern;
+  MappingAttr mapping;
   ValueType type;
 
   if (ParseDomain(parser, domain) ||
-      ParseValueAccess(domain.size(), parser, value, access_pattern) ||
+      ParseValueAccess(domain.size(), parser, value, mapping) ||
       parser.parseOptionalAttrDict(result.attributes) ||
       parser.parseColonType<ValueType>(type) ||
       parser.addTypeToList(type, result.types) ||
@@ -220,10 +220,10 @@ ParseResult ParseCopyOp(mlir::OpAsmParser &parser,
     return failure();
   }
 
-  result.addAttribute(SairDialect::kAccessPatternAttrName,
-                      parser.getBuilder().getArrayAttr({access_pattern}));
+  result.addAttribute(SairDialect::kMappingAttrName,
+                      parser.getBuilder().getArrayAttr({mapping}));
 
-  return parser.resolveOperand(value, type.AccessedType(access_pattern),
+  return parser.resolveOperand(value, type.AccessedType(mapping),
                                result.operands);
 }
 
@@ -275,29 +275,29 @@ ParseResult ParseFromMemRefOp(mlir::OpAsmParser &parser,
 // Sair value and a memref as argument and returns nothing. Its syntax is the
 // following.
 //
-// to-memref-op ::= dialect-namespace '.' 'to_memref' ssa-value access-pattern
+// to-memref-op ::= dialect-namespace '.' 'to_memref' ssa-value mapping
 //   ',' ssa-value ':' memref-type
 //
 ParseResult ParseToMemRefOp(mlir::OpAsmParser &parser,
                             mlir::OperationState &result) {
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
   mlir::OpAsmParser::OperandType value, memref;
-  AccessPatternAttr access_pattern;
+  MappingAttr mapping;
   mlir::MemRefType type;
 
   if (ParseDomain(parser, domain) ||
-      ParseValueAccess(domain.size(), parser, value, access_pattern) ||
+      ParseValueAccess(domain.size(), parser, value, mapping) ||
       parser.parseComma() || parser.parseOperand(memref) ||
       parser.parseColonType(type)) {
     return failure();
   }
 
-  result.addAttribute(SairDialect::kAccessPatternAttrName,
-                      parser.getBuilder().getArrayAttr({access_pattern}));
+  result.addAttribute(SairDialect::kMappingAttrName,
+                      parser.getBuilder().getArrayAttr({mapping}));
 
   mlir::MLIRContext *context = parser.getBuilder().getContext();
   auto shape = DomainShapeAttr::HyperRectangular(context, type.getRank());
-  DomainShapeAttr value_shape = shape.AccessedShape(access_pattern);
+  DomainShapeAttr value_shape = shape.AccessedShape(mapping);
   auto value_type = ValueType::get(context, value_shape, type.getElementType());
   return failure(ResolveDomain(parser, shape, domain, result) ||
                  parser.resolveOperand(value, value_type, result.operands) ||
@@ -315,7 +315,7 @@ ParseResult ParseProjection(mlir::OpAsmParser &parser,
                             mlir::OperationState &result) {
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
   mlir::OpAsmParser::OperandType value;
-  AccessPatternAttr access_pattern;
+  MappingAttr mapping;
   DomainShapeAttr shape;
   mlir::Type element_type;
 
@@ -323,7 +323,7 @@ ParseResult ParseProjection(mlir::OpAsmParser &parser,
 
   int num_parallel_dimensions = domain.size();
   if (parser.parseKeyword(kOfKeyword) || ParseDomain(parser, domain) ||
-      ParseValueAccess(domain.size(), parser, value, access_pattern) ||
+      ParseValueAccess(domain.size(), parser, value, mapping) ||
       parser.parseOptionalAttrDict(result.attributes) || parser.parseColon() ||
       parser.parseAttribute(shape, SairDialect::kShapeAttrName,
                             result.attributes) ||
@@ -332,9 +332,9 @@ ParseResult ParseProjection(mlir::OpAsmParser &parser,
     return mlir::failure();
   }
 
-  access_pattern = access_pattern.ResizeUseDomain(domain.size());
-  result.addAttribute(SairDialect::kAccessPatternAttrName,
-                      parser.getBuilder().getArrayAttr({access_pattern}));
+  mapping = mapping.ResizeUseDomain(domain.size());
+  result.addAttribute(SairDialect::kMappingAttrName,
+                      parser.getBuilder().getArrayAttr({mapping}));
   mlir::MLIRContext *context = parser.getBuilder().getContext();
   DomainShapeAttr result_shape = shape.Prefix(num_parallel_dimensions);
   result.addTypes(ValueType::get(context, result_shape, element_type));
@@ -349,7 +349,7 @@ ParseResult ParseProjection(mlir::OpAsmParser &parser,
                            static_cast<int64_t>(1)}));
 
   ValueType type =
-      ValueType::get(context, shape, element_type).AccessedType(access_pattern);
+      ValueType::get(context, shape, element_type).AccessedType(mapping);
   return parser.resolveOperand(value, type, result.operands);
 }
 
@@ -376,22 +376,22 @@ ParseResult ParseExitOp(mlir::OpAsmParser &parser,
                         mlir::OperationState &result) {
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> operands;
   llvm::SmallVector<mlir::Type, 4> element_types;
-  llvm::SmallVector<AccessPatternAttr, 4> patterns;
+  llvm::SmallVector<MappingAttr, 4> mappings;
   llvm::SMLoc type_loc;
-  if (ParseOperandList(0, parser, operands, patterns) ||
+  if (ParseOperandList(0, parser, operands, mappings) ||
       parser.parseOptionalAttrDict(result.attributes) ||
       parser.getCurrentLocation(&type_loc) ||
       parser.parseOptionalColonTypeList(element_types)) {
     return mlir::failure();
   }
 
-  llvm::ArrayRef<mlir::Attribute> pattern_attrs(patterns.begin(),
-                                                patterns.end());
+  llvm::ArrayRef<mlir::Attribute> mapping_attrs(mappings.begin(),
+                                                mappings.end());
   result.addAttribute(
-      SairDialect::kAccessPatternAttrName,
-      ArrayAttr::get(pattern_attrs, parser.getBuilder().getContext()));
+      SairDialect::kMappingAttrName,
+      ArrayAttr::get(mapping_attrs, parser.getBuilder().getContext()));
 
-  assert(patterns.size() == operands.size());
+  assert(mappings.size() == operands.size());
   if (element_types.size() != operands.size()) {
     return parser.emitError(type_loc)
            << "expected " << operands.size() << " types";
@@ -399,10 +399,10 @@ ParseResult ParseExitOp(mlir::OpAsmParser &parser,
 
   mlir::Builder &builder = parser.getBuilder();
   auto domain_shape = DomainShapeAttr::get(builder.getContext());
-  for (auto [operand, element_type, pattern] :
-       llvm::zip(operands, element_types, patterns)) {
+  for (auto [operand, element_type, mapping] :
+       llvm::zip(operands, element_types, mappings)) {
     mlir::Type expected_type = builder.getType<ValueType>(
-        domain_shape.AccessedShape(pattern), element_type);
+        domain_shape.AccessedShape(mapping), element_type);
     if (failed(
             parser.resolveOperand(operand, expected_type, result.operands))) {
       return mlir::failure();
@@ -420,15 +420,15 @@ static mlir::ParseResult ParseFbyOp(mlir::OpAsmParser &parser,
                                     mlir::OperationState &result) {
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
   mlir::OpAsmParser::OperandType init, value;
-  AccessPatternAttr init_pattern, value_pattern;
+  MappingAttr init_mapping, value_mapping;
   ValueType type;
 
   if (failed(ParseDomain(parser, domain))) return mlir::failure();
   int num_parallel_dimensions = domain.size();
-  if (ParseValueAccess(num_parallel_dimensions, parser, init, init_pattern) ||
+  if (ParseValueAccess(num_parallel_dimensions, parser, init, init_mapping) ||
       parser.parseKeyword(SairFbyOp::kThenKeyword) ||
       ParseDomain(parser, domain) ||
-      ParseValueAccess(domain.size(), parser, value, value_pattern) ||
+      ParseValueAccess(domain.size(), parser, value, value_mapping) ||
       parser.parseOptionalAttrDict(result.attributes) ||
       parser.parseColonType(type) ||
       ResolveDomain(parser, type.Shape(), domain, result) ||
@@ -437,9 +437,9 @@ static mlir::ParseResult ParseFbyOp(mlir::OpAsmParser &parser,
   }
 
   result.addAttribute(
-      SairDialect::kAccessPatternAttrName,
+      SairDialect::kMappingAttrName,
       mlir::ArrayAttr::get(
-          {init_pattern.ResizeUseDomain(domain.size()), value_pattern},
+          {init_mapping.ResizeUseDomain(domain.size()), value_mapping},
           type.getContext()));
 
   // Store the number of operands in each variadic segments as required by MLIR,
@@ -451,14 +451,14 @@ static mlir::ParseResult ParseFbyOp(mlir::OpAsmParser &parser,
            static_cast<int64_t>(domain.size() - num_parallel_dimensions), 1,
            1}));
 
-  ValueType init_type = type.AccessedType(init_pattern);
-  ValueType value_type = type.AccessedType(value_pattern);
+  ValueType init_type = type.AccessedType(init_mapping);
+  ValueType value_type = type.AccessedType(value_mapping);
   return failure(parser.resolveOperand(init, init_type, result.operands) ||
                  parser.resolveOperand(value, value_type, result.operands));
 }
 
 // Prints a Sair value access list. Takes the list of values and respective
-// access patterns as arguments. Expects "values" and "patterns" to be ranges
+// mappings as arguments. Expects "values" and "mappings" to be ranges
 // of equal length.
 static void PrintValueAccessList(const ValueOperandRange operands,
                                  mlir::OpAsmPrinter &printer) {
@@ -498,8 +498,7 @@ void Print(SairCopyOp op, OpAsmPrinter &printer) {
   PrintDomain(op.domain(), printer);
   printer << " ";
   PrintValueAccess(op.Value(), printer);
-  printer.printOptionalAttrDict(op.getAttrs(),
-                                {SairDialect::kAccessPatternAttrName});
+  printer.printOptionalAttrDict(op.getAttrs(), {SairDialect::kMappingAttrName});
   printer << " : " << op.getType();
 }
 
@@ -565,8 +564,7 @@ void Print(SairReturnOp op, OpAsmPrinter &printer) {
 void Print(SairExitOp op, OpAsmPrinter &printer) {
   printer << SairExitOp::getOperationName() << " ";
   PrintValueAccessList(op.ValueOperands(), printer);
-  printer.printOptionalAttrDict(op.getAttrs(),
-                                {SairDialect::kAccessPatternAttrName});
+  printer.printOptionalAttrDict(op.getAttrs(), {SairDialect::kMappingAttrName});
   if (op.inputs().empty()) return;
   printer << " : ";
   llvm::interleaveComma(
@@ -589,7 +587,7 @@ void Print(SairFbyOp op, OpAsmPrinter &printer) {
   printer.printOptionalAttrDict(op.getAttrs(),
                                 {
                                     SairMapOp::getOperandSegmentSizeAttr(),
-                                    SairDialect::kAccessPatternAttrName,
+                                    SairDialect::kMappingAttrName,
                                 });
   printer << " : ";
   printer.printType(op.getType());
@@ -671,9 +669,9 @@ ParseResult ResolveDomain(mlir::OpAsmParser &parser,
 
 ParseResult ParseValueAccess(int num_dimensions, mlir::OpAsmParser &parser,
                              mlir::OpAsmParser::OperandType &value,
-                             AccessPatternAttr &access_pattern) {
+                             MappingAttr &mapping) {
   OptionalParseResult has_value_access =
-      ParseOptionalValueAccess(num_dimensions, parser, value, access_pattern);
+      ParseOptionalValueAccess(num_dimensions, parser, value, mapping);
   if (!has_value_access.hasValue()) {
     return parser.emitError(parser.getCurrentLocation())
            << "expected a sair value access";
@@ -683,9 +681,9 @@ ParseResult ParseValueAccess(int num_dimensions, mlir::OpAsmParser &parser,
 
 void PrintValueAccess(ValueOperand value, OpAsmPrinter &printer) {
   printer << value.value();
-  if (value.AccessPattern().empty()) return;
+  if (value.Mapping().empty()) return;
   printer << "(";
-  PrintAccessPattern(value.AccessPattern(), printer.getStream());
+  PrintMapping(value.Mapping(), printer.getStream());
   printer << ")";
 }
 
@@ -737,18 +735,18 @@ ParseResult ParseMapOp(mlir::OpAsmParser &parser,
   // Parse a non-empty list of operands and store them to have their types
   // resolved when the type information is available.
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> operands;
-  llvm::SmallVector<AccessPatternAttr, 4> patterns;
+  llvm::SmallVector<MappingAttr, 4> mappings;
   if (mlir::failed(
-          ParseOperandList(domain.size(), parser, operands, patterns))) {
+          ParseOperandList(domain.size(), parser, operands, mappings))) {
     return mlir::failure();
   }
 
-  // Store the operand access patterns as an attribute.
-  llvm::ArrayRef<mlir::Attribute> pattern_attrs(patterns.begin(),
-                                                patterns.size());
+  // Store the operand mappings as an attribute.
+  llvm::ArrayRef<mlir::Attribute> mapping_attrs(mappings.begin(),
+                                                mappings.size());
   result.addAttribute(
-      SairDialect::kAccessPatternAttrName,
-      ArrayAttr::get(pattern_attrs, parser.getBuilder().getContext()));
+      SairDialect::kMappingAttrName,
+      ArrayAttr::get(mapping_attrs, parser.getBuilder().getContext()));
 
   // Parse an optional attribute dictionary.
   if (mlir::failed(
@@ -773,12 +771,12 @@ ParseResult ParseMapOp(mlir::OpAsmParser &parser,
   }
 
   // Resolve operand types: they are expected to have a shape derived from the
-  // domain shape by applying the access pattern, and the same element type as
+  // domain shape by applying the mapping, and the same element type as
   // region arguments.
   mlir::Builder &builder = parser.getBuilder();
   for (int i = 0, e = function_type.getNumInputs(); i < e; ++i) {
     mlir::Type type = builder.getType<ValueType>(
-        domain_shape.AccessedShape(patterns[i]), function_type.getInput(i));
+        domain_shape.AccessedShape(mappings[i]), function_type.getInput(i));
     if (mlir::failed(
             parser.resolveOperand(operands[i], type, result.operands))) {
       return mlir::failure();
@@ -807,14 +805,13 @@ ParseResult ParseMapOp(mlir::OpAsmParser &parser,
 // Input values must have !sair.value types.
 void SairMapOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,
                       mlir::TypeRange result_types, mlir::ValueRange domain,
-                      mlir::ArrayAttr access_patterns_array,
-                      mlir::ValueRange inputs, DomainShapeAttr shape,
-                      ArrayAttr loop_nest, ArrayAttr memory_space) {
+                      mlir::ArrayAttr mappings_array, mlir::ValueRange inputs,
+                      DomainShapeAttr shape, ArrayAttr loop_nest,
+                      ArrayAttr memory_space) {
   result.addTypes(result_types);
   result.addOperands(domain);
   result.addOperands(inputs);
-  result.addAttribute(SairDialect::kAccessPatternAttrName,
-                      access_patterns_array);
+  result.addAttribute(SairDialect::kMappingAttrName, mappings_array);
   result.addAttribute(SairDialect::kShapeAttrName, shape);
   if (loop_nest != nullptr) {
     result.addAttribute(ComputeOp::kLoopNestAttrName, loop_nest);
@@ -868,7 +865,7 @@ void Print(SairMapOp op, OpAsmPrinter &printer) {
   printer.printOptionalAttrDictWithKeyword(
       op.getAttrs(),
       {SairMapOp::getOperandSegmentSizeAttr(), SairDialect::kShapeAttrName,
-       SairDialect::kAccessPatternAttrName});
+       SairDialect::kMappingAttrName});
 
   printer.printRegion(op.body());
   printer << " : ";
@@ -995,9 +992,9 @@ ParseResult ParseMapReduceOp(mlir::OpAsmParser &parser,
   // Parse a list of reduction initializer operands and store them to have their
   // types resolved when the type information is available.
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> operands;
-  llvm::SmallVector<AccessPatternAttr, 4> patterns;
+  llvm::SmallVector<MappingAttr, 4> mappings;
   if (mlir::failed(
-          ParseOperandList(domain.size(), parser, operands, patterns))) {
+          ParseOperandList(domain.size(), parser, operands, mappings))) {
     return mlir::failure();
   }
   int num_reduction_init_operands = operands.size();
@@ -1007,21 +1004,21 @@ ParseResult ParseMapReduceOp(mlir::OpAsmParser &parser,
   if (parser.parseKeyword(SairMapReduceOp::kReduceKeyword) ||
       mlir::failed(ParseDomain(parser, domain)) ||
       mlir::failed(
-          ParseOperandList(domain.size(), parser, operands, patterns)) ||
+          ParseOperandList(domain.size(), parser, operands, mappings)) ||
       parser.parseOptionalAttrDictWithKeyword(result.attributes)) {
     return mlir::failure();
   }
 
   // Resize the use domain in init operands.
   for (int i = 0; i < num_reduction_init_operands; ++i) {
-    patterns[i] = patterns[i].ResizeUseDomain(domain.size());
+    mappings[i] = mappings[i].ResizeUseDomain(domain.size());
   }
-  // Store the operand access patterns as an attribute.
-  llvm::ArrayRef<mlir::Attribute> pattern_attrs(patterns.begin(),
-                                                patterns.size());
+  // Store the operand mappings as an attribute.
+  llvm::ArrayRef<mlir::Attribute> mapping_attrs(mappings.begin(),
+                                                mappings.size());
   result.addAttribute(
-      SairDialect::kAccessPatternAttrName,
-      ArrayAttr::get(pattern_attrs, parser.getBuilder().getContext()));
+      SairDialect::kMappingAttrName,
+      ArrayAttr::get(mapping_attrs, parser.getBuilder().getContext()));
 
   // Parse the remaining part of the operation and build the domain shape. Note
   // that 'llvm::None' is passed as region arguments and types to indicate to
@@ -1067,7 +1064,7 @@ ParseResult ParseMapReduceOp(mlir::OpAsmParser &parser,
   mlir::Builder &builder = parser.getBuilder();
   for (int i = 0, e = operand_element_types.size(); i < e; ++i) {
     mlir::Type type = builder.getType<ValueType>(
-        domain_shape.AccessedShape(patterns[i]), operand_element_types[i]);
+        domain_shape.AccessedShape(mappings[i]), operand_element_types[i]);
     if (mlir::failed(
             parser.resolveOperand(operands[i], type, result.operands))) {
       return mlir::failure();
@@ -1116,7 +1113,7 @@ void Print(SairMapReduceOp op, mlir::OpAsmPrinter &printer) {
   printer.printOptionalAttrDictWithKeyword(
       op.getAttrs(),
       {SairMapOp::getOperandSegmentSizeAttr(), SairDialect::kShapeAttrName,
-       SairDialect::kAccessPatternAttrName});
+       SairDialect::kMappingAttrName});
   printer.printRegion(op.body());
 
   // Print the trailing type using operand and result element types as a single
@@ -1133,10 +1130,10 @@ void Print(SairMapReduceOp op, mlir::OpAsmPrinter &printer) {
 }
 
 // Reduction dimensions come after parallel dimensions and should not be
-// referenced in the pattern.
-mlir::LogicalResult VerifyReductionAccessPattern(AccessPatternAttr pattern,
-                                                 int num_parallel_dimensions) {
-  llvm::SmallBitVector dependencies = pattern.DependencyMask();
+// referenced in the mapping.
+mlir::LogicalResult VerifyReductionMapping(MappingAttr mapping,
+                                           int num_parallel_dimensions) {
+  llvm::SmallBitVector dependencies = mapping.DependencyMask();
   return mlir::success(dependencies.find_next(num_parallel_dimensions) == -1);
 }
 
@@ -1262,19 +1259,17 @@ mlir::StringAttr SairProgramOp::GenLoopName(llvm::StringRef prefix) {
   return name;
 }
 
-// Builds a sair.exit operation with empty access patterns. This is the
+// Builds a sair.exit operation with empty mappings. This is the
 // implementation of an MLIR generated class.
 void SairExitOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,
                        mlir::ValueRange operands) {
   result.addOperands(operands);
   mlir::MLIRContext *context = builder.getContext();
-  AccessPatternAttr access_pattern = AccessPatternAttr::get(
-      context, /*domain_size =*/ 0, /*pattern =*/ {});
-  mlir::SmallVector<mlir::Attribute, 4> access_patterns(operands.size(),
-                                                        access_pattern);
-  auto access_patterns_attr = mlir::ArrayAttr::get(access_patterns, context);
-  result.addAttribute(SairDialect::kAccessPatternAttrName,
-                      access_patterns_attr);
+  MappingAttr mapping =
+      MappingAttr::get(context, /*domain_size =*/0, /*mapping =*/{});
+  mlir::SmallVector<mlir::Attribute, 4> mappings(operands.size(), mapping);
+  auto mappings_attr = mlir::ArrayAttr::get(mappings, context);
+  result.addAttribute(SairDialect::kMappingAttrName, mappings_attr);
 }
 
 OperandRange ChainOperandRanges(OperandRange first, OperandRange second) {
