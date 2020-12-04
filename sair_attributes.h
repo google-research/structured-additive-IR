@@ -19,7 +19,7 @@
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SmallBitVector.h"
 #include "mlir/IR/AffineMap.h"
-#include "mlir/IR/Attributes.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/MLIRContext.h"
 #include "sair_types.h"
 
