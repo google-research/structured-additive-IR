@@ -84,7 +84,7 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
         builder.getArrayAttr({init_mappings[i], identity_mapping});
     // This produces a value that of the same rank as the domain.
     auto fby_type = ValueType::get(
-        ctx, op.shape(), init_value.getType().cast<ValueType>().ElementType());
+        op.shape(), init_value.getType().cast<ValueType>().ElementType());
 
     // Use `init_value` as both arguments temporarily, the second argument will
     // be updated later. Keep memory space undefined for the produced value.
@@ -108,8 +108,7 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
   // reintroduced the reduction dimensions in them.
   auto result_types = llvm::to_vector<4>(
       llvm::map_range(op.getResultTypes(), [&](mlir::Type type) -> mlir::Type {
-        return ValueType::get(type.getContext(), op.shape(),
-                              type.cast<ValueType>().ElementType());
+        return ValueType::get(op.shape(), type.cast<ValueType>().ElementType());
       }));
 
   // Keep memory space undefined for the produced value.

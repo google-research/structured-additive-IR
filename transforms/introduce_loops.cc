@@ -315,8 +315,7 @@ llvm::SmallVector<mlir::Type, 4> EraseDimension(mlir::TypeRange types,
   for (mlir::Type type : types) {
     ValueType value_type = type.cast<ValueType>();
     DomainShapeAttr shape = EraseDimension(value_type.Shape(), dimension);
-    res.push_back(
-        ValueType::get(type.getContext(), shape, value_type.ElementType()));
+    res.push_back(ValueType::get(shape, value_type.ElementType()));
   }
   return res;
 }
@@ -380,7 +379,7 @@ void EraseDimension(SairFbyOp op, int dimension, mlir::Value new_value,
   driver.setInsertionPoint(op);
   driver.replaceOpWithNewOp<SairFbyOp>(
       op,
-      /*result_type=*/ValueType::get(op.getContext(), shape, element_type),
+      /*result_type=*/ValueType::get(shape, element_type),
       /*parallel_domain=*/op.parallel_domain(),
       /*sequential_domain=*/EraseValue(op.sequential_domain(), dim_pos),
       /*mapping_array*/

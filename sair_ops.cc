@@ -159,8 +159,8 @@ ParseResult ParseDynRangeOp(mlir::OpAsmParser &parser,
       builder.getI64VectorAttr({static_cast<int64_t>(domain.size()),
                                 static_cast<int64_t>(operands.size() - 1), 1}));
 
-  ValueType index_value_type = builder.getType<ValueType>(
-      type.Shape(), builder.getType<mlir::IndexType>());
+  ValueType index_value_type =
+      ValueType::get(type.Shape(), builder.getIndexType());
   for (auto [operand, mapping] : llvm::zip(operands, mappings)) {
     if (mlir::failed(parser.resolveOperand(
             operand, index_value_type.AccessedType(mapping),
@@ -286,11 +286,9 @@ ParseResult ParseFromMemRefOp(mlir::OpAsmParser &parser,
   result.addAttribute(SairDialect::kMappingAttrName,
                       parser.getBuilder().getArrayAttr({mapping}));
 
-  mlir::MLIRContext *context = parser.getBuilder().getContext();
   auto memref_value_type =
-      ValueType::get(context, shape.AccessedShape(mapping), memref_type);
-  auto result_type =
-      ValueType::get(context, shape, memref_type.getElementType());
+      ValueType::get(shape.AccessedShape(mapping), memref_type);
+  auto result_type = ValueType::get(shape, memref_type.getElementType());
   return mlir::failure(
       parser.resolveOperand(memref, memref_value_type, result.operands) ||
       parser.addTypeToList(result_type, result.types));
@@ -336,11 +334,10 @@ ParseResult ParseToMemRefOp(mlir::OpAsmParser &parser,
            static_cast<int64_t>(domain.size() - parallel_domain_size),
            static_cast<int64_t>(1), static_cast<int64_t>(1)}));
 
-  mlir::MLIRContext *context = parser.getBuilder().getContext();
-  auto value_type = ValueType::get(context, shape.AccessedShape(value_mapping),
+  auto value_type = ValueType::get(shape.AccessedShape(value_mapping),
                                    memref_type.getElementType());
   auto memref_value_type =
-      ValueType::get(context, shape.AccessedShape(memref_mapping), memref_type);
+      ValueType::get(shape.AccessedShape(memref_mapping), memref_type);
   return failure(
       parser.resolveOperand(memref, memref_value_type, result.operands) ||
       parser.resolveOperand(value, value_type, result.operands));
@@ -377,9 +374,8 @@ ParseResult ParseProjection(mlir::OpAsmParser &parser,
   mapping = mapping.ResizeUseDomain(domain.size());
   result.addAttribute(SairDialect::kMappingAttrName,
                       parser.getBuilder().getArrayAttr({mapping}));
-  mlir::MLIRContext *context = parser.getBuilder().getContext();
   DomainShapeAttr result_shape = shape.Prefix(num_parallel_dimensions);
-  result.addTypes(ValueType::get(context, result_shape, element_type));
+  result.addTypes(ValueType::get(result_shape, element_type));
 
   // Store the number of operands in each variadic segments as required by MLIR,
   // it expects specifically int64_t.
@@ -390,8 +386,7 @@ ParseResult ParseProjection(mlir::OpAsmParser &parser,
                            static_cast<int64_t>(num_projection_dimensions),
                            static_cast<int64_t>(1)}));
 
-  ValueType type =
-      ValueType::get(context, shape, element_type).AccessedType(mapping);
+  ValueType type = ValueType::get(shape, element_type).AccessedType(mapping);
   return parser.resolveOperand(value, type, result.operands);
 }
 
@@ -443,8 +438,8 @@ ParseResult ParseExitOp(mlir::OpAsmParser &parser,
   auto domain_shape = DomainShapeAttr::get(builder.getContext());
   for (auto [operand, element_type, mapping] :
        llvm::zip(operands, element_types, mappings)) {
-    mlir::Type expected_type = builder.getType<ValueType>(
-        domain_shape.AccessedShape(mapping), element_type);
+    mlir::Type expected_type =
+        ValueType::get(domain_shape.AccessedShape(mapping), element_type);
     if (failed(
             parser.resolveOperand(operand, expected_type, result.operands))) {
       return mlir::failure();
@@ -850,8 +845,8 @@ ParseResult ParseMapOp(mlir::OpAsmParser &parser,
   // region arguments.
   mlir::Builder &builder = parser.getBuilder();
   for (int i = 0, e = function_type.getNumInputs(); i < e; ++i) {
-    mlir::Type type = builder.getType<ValueType>(
-        domain_shape.AccessedShape(mappings[i]), function_type.getInput(i));
+    mlir::Type type = ValueType::get(domain_shape.AccessedShape(mappings[i]),
+                                     function_type.getInput(i));
     if (mlir::failed(
             parser.resolveOperand(operands[i], type, result.operands))) {
       return mlir::failure();
@@ -861,8 +856,8 @@ ParseResult ParseMapOp(mlir::OpAsmParser &parser,
   // Construct result types: they have the domain shape and the element types
   // provided in the syntax.
   for (int i = 0, e = function_type.getNumResults(); i < e; ++i) {
-    mlir::Type type =
-        builder.getType<ValueType>(domain_shape, function_type.getResult(i));
+    mlir::Type type = ValueType::get(domain_shape, function_type.getResult(i));
+
     result.addTypes(type);
   }
 
@@ -1138,8 +1133,8 @@ ParseResult ParseMapReduceOp(mlir::OpAsmParser &parser,
   // Resolve operand types.
   mlir::Builder &builder = parser.getBuilder();
   for (int i = 0, e = operand_element_types.size(); i < e; ++i) {
-    mlir::Type type = builder.getType<ValueType>(
-        domain_shape.AccessedShape(mappings[i]), operand_element_types[i]);
+    mlir::Type type = ValueType::get(domain_shape.AccessedShape(mappings[i]),
+                                     operand_element_types[i]);
     if (mlir::failed(
             parser.resolveOperand(operands[i], type, result.operands))) {
       return mlir::failure();
@@ -1151,8 +1146,8 @@ ParseResult ParseMapReduceOp(mlir::OpAsmParser &parser,
       builder.getContext(),
       domain_shape.Dimensions().take_front(num_parallel_dimensions));
   for (int i = 0, e = function_type.getNumResults(); i < e; ++i) {
-    mlir::Type type = builder.getType<ValueType>(parallel_domain_shape,
-                                                 function_type.getResult(i));
+    mlir::Type type =
+        ValueType::get(parallel_domain_shape, function_type.getResult(i));
     result.addTypes(type);
   }
 

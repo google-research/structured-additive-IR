@@ -257,7 +257,7 @@ DomainShapeDim MappingStripeExpr::AccessedShape(
     if (step == this->step()) break;
     type_shape.emplace_back(
         type, MappingAttr::GetIdentity(context, type_shape.size()));
-    type = RangeType::get(context, DomainShapeAttr::get(context, type_shape));
+    type = RangeType::get(DomainShapeAttr::get(context, type_shape));
     dependency_mapping_exprs.push_back(expr);
   }
 
@@ -846,7 +846,7 @@ DomainShapeAttr DomainShapeAttr::get(mlir::MLIRContext *context,
 DomainShapeAttr DomainShapeAttr::HyperRectangular(mlir::MLIRContext *context,
                                                   int rank) {
   DomainShapeAttr empty_shape = DomainShapeAttr::get(context);
-  RangeType range_type = RangeType::get(context, empty_shape);
+  RangeType range_type = RangeType::get(empty_shape);
   llvm::SmallVector<DomainShapeDim, 4> dims;
   dims.reserve(rank);
   for (int i = 0; i < rank; ++i) {

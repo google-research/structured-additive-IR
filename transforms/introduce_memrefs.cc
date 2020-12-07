@@ -127,8 +127,7 @@ SairCopyOp MaterializeOperand(DomainShapeAttr shape, mlir::OperandRange domain,
   insertion_point.Set(builder);
 
   // Build the copy operation.
-  mlir::Type type =
-      builder.getType<ValueType>(shape, operand.GetType().ElementType());
+  mlir::Type type = ValueType::get(shape, operand.GetType().ElementType());
   auto mappings = builder.getArrayAttr(
       operand.Mapping().ResizeUseDomain(shape.NumDimensions()));
   mlir::Location loc = operand.getOwner()->getLoc();
@@ -808,7 +807,7 @@ void CreateMemRefForValue(mlir::Value value, SairMapOp producer,
   DomainShapeAttr alloc_shape = DomainShapeAttr::get(builder.getContext());
   mlir::MemRefType memref_type =
       mlir::MemRefType::get(memref_shape, element_type);
-  mlir::Type alloc_type = builder.getType<ValueType>(alloc_shape, memref_type);
+  mlir::Type alloc_type = ValueType::get(alloc_shape, memref_type);
 
   // Create a sair.map operation that allocates the memref.
   llvm::ArrayRef<mlir::Value> alloc_domain;

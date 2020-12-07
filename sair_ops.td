@@ -162,7 +162,7 @@ def SairFromScalarOp : SairOp<"from_scalar", [
     OpBuilderDAG<(ins "Value":$value),
     [{
       $_state.addOperands(value);
-      $_state.addTypes($_builder.getType<ValueType>(value.getType()));
+      $_state.addTypes(ValueType::get(value.getType()));
     }]>
   ];
 

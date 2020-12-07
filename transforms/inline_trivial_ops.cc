@@ -101,12 +101,10 @@ bool InlineTrivialSairOp(mlir::FuncOp function) {
   // Wrap the terminator operands into Sair values so they are compatible with
   // the remaining users.
   llvm::SmallVector<mlir::Value, 8> result_values;
-  DomainShapeAttr shape_0d =
-      DomainShapeAttr::HyperRectangular(terminator->getContext(), /*rank=*/0);
   mlir::OpBuilder builder(trivial_op);
   result_values.reserve(terminator->getNumOperands());
   for (mlir::Value operand : terminator->getOperands()) {
-    mlir::Type type = builder.getType<ValueType>(shape_0d, operand.getType());
+    mlir::Type type = ValueType::get(operand.getType());
     mlir::Value value =
         builder.create<SairFromScalarOp>(trivial_op.getLoc(), type, operand);
     result_values.push_back(value);

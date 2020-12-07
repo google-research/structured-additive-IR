@@ -56,7 +56,7 @@ class RangeType : public mlir::Type::TypeBase<RangeType, SairShapedType,
 
   // Constructs an instance of RangeType in the provided context. This is a hook
   // for MLIR Builders.
-  static RangeType get(mlir::MLIRContext *context, DomainShapeAttr shape);
+  static RangeType get(DomainShapeAttr shape);
 
   // Returns the name of this type as it appears in the textual format without
   // the dialect prefix.
@@ -79,12 +79,11 @@ class ValueType : public mlir::Type::TypeBase<ValueType, SairShapedType,
 
   // Construct an instance of ValueType in the provided context. This is a hook
   // for MLIR Builders.
-  static ValueType get(mlir::MLIRContext *context, DomainShapeAttr domain,
-                       mlir::Type element_type);
+  static ValueType get(DomainShapeAttr domain, mlir::Type element_type);
 
   // Construct a 0-dimensional instance of ValueType in the provided context.
   // This is a hook for MLIR Builders.
-  static ValueType get(mlir::MLIRContext *context, mlir::Type element_type);
+  static ValueType get(mlir::Type element_type);
 
   // Returns the name of this type as it appears in the textual format, without
   // the dialect prefix.

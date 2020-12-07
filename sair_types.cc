@@ -70,8 +70,8 @@ DomainShapeAttr SairShapedType::Shape() const {
 }
 
 // Forwards the construction to the MLIR type system with SairTypes::Range tag.
-RangeType RangeType::get(mlir::MLIRContext *context, DomainShapeAttr shape) {
-  return Base::get(context, shape);
+RangeType RangeType::get(DomainShapeAttr shape) {
+  return Base::get(shape.getContext(), shape);
 }
 
 // Private implementation/storage class for sair::ValueType. Instances of this
@@ -120,22 +120,20 @@ class impl::ValueTypeStorage : public impl::SairShapedTypeStorage {
 };
 
 // Forwards the construction to the MLIR type system with Sair::Value tag.
-ValueType ValueType::get(mlir::MLIRContext *context, DomainShapeAttr domain,
-                         mlir::Type element_type) {
-  return Base::get(context, std::make_tuple(domain, element_type));
+ValueType ValueType::get(DomainShapeAttr domain, mlir::Type element_type) {
+  return Base::get(domain.getContext(), std::make_tuple(domain, element_type));
 }
 
 // Forwards the construction to the MLIR type system with Sair::Value tag.
-ValueType ValueType::get(mlir::MLIRContext *context, mlir::Type element_type) {
-  return get(context, DomainShapeAttr::get(context), element_type);
+ValueType ValueType::get(mlir::Type element_type) {
+  return get(DomainShapeAttr::get(element_type.getContext()), element_type);
 }
 
 // Forwards the request to the implementation class.
 mlir::Type ValueType::ElementType() const { return getImpl()->element_type(); }
 
 ValueType ValueType::AccessedType(MappingAttr mapping) const {
-  return ValueType::get(getContext(), Shape().AccessedShape(mapping),
-                        ElementType());
+  return ValueType::get(Shape().AccessedShape(mapping), ElementType());
 }
 
 }  // namespace sair

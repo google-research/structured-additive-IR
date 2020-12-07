@@ -76,7 +76,7 @@ mlir::Value CreateSairRange(mlir::Location loc, const LoopBound &bound,
                             mlir::OpBuilder &rewriter) {
   mlir::MLIRContext *context = loc.getContext();
   auto domain_0d = DomainShapeAttr::HyperRectangular(context, /*rank=*/0);
-  auto range_type = RangeType::get(context, domain_0d);
+  auto range_type = RangeType::get(domain_0d);
   auto shaped_type = bound.referenced_value.getType().cast<mlir::ShapedType>();
   int dimension = shaped_type.getDimSize(bound.dimension);
 
@@ -91,8 +91,7 @@ mlir::Value CreateSairRange(mlir::Location loc, const LoopBound &bound,
   // Sair value, and use this value to create a dependent range.
   auto mapping = MappingAttr::GetIdentity(context, /*num_dimensions=*/0);
   auto mapping_array = rewriter.getArrayAttr(mapping);
-  auto index_type = rewriter.getType<IndexType>();
-  auto value_type = rewriter.getType<ValueType>(domain_0d, index_type);
+  auto value_type = ValueType::get(rewriter.getIndexType());
 
   // Create the IR obtaining the dimension of the memref outside the main Sair
   // program, since it is not allowed inside it. Temporarily switch the rewriter
@@ -249,12 +248,11 @@ void EmitMemRefToValue(
 
     auto domain_shape =
         DomainShapeAttr::HyperRectangular(context, type.getRank());
-    auto value_type =
-        ValueType::get(context, domain_shape, type.getElementType());
+    auto value_type = ValueType::get(domain_shape, type.getElementType());
     auto mappings = rewriter.getArrayAttr(
         {MappingAttr::GetIdentity(context, 0, type.getRank())});
     auto memref_value_type =
-        ValueType::get(context, DomainShapeAttr::get(context), type);
+        ValueType::get(DomainShapeAttr::get(context), type);
 
     auto from_scalar =
         rewriter.create<SairFromScalarOp>(loc, memref_value_type, operand);
@@ -291,8 +289,8 @@ void EmitValueToMemRef(mlir::Location loc, mlir::ValueRange sair_values,
         {MappingAttr::GetIdentity(context, 0, ranges[i].size()), mappings[i]},
         context);
     auto shape = DomainShapeAttr::HyperRectangular(context, ranges[i].size());
-    auto memref_value_type = ValueType::get(
-        context, DomainShapeAttr::get(context), memrefs[i].getType());
+    auto memref_value_type =
+        ValueType::get(DomainShapeAttr::get(context), memrefs[i].getType());
     auto from_scalar =
         rewriter.create<SairFromScalarOp>(loc, memref_value_type, memrefs[i]);
     rewriter.create<SairToMemRefOp>(loc, mlir::ValueRange(), ranges[i],
@@ -442,8 +440,7 @@ void CreateResultTypes(mlir::Builder &rewriter, int num_dimensions,
   result_types.reserve(num_results);
   for (Type type : types) {
     mlir::Type element_type = type.cast<mlir::ShapedType>().getElementType();
-    result_types.push_back(
-        rewriter.getType<ValueType>(result_domain_shape, element_type));
+    result_types.push_back(ValueType::get(result_domain_shape, element_type));
   }
 }
 

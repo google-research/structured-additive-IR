@@ -115,7 +115,7 @@ DomainShapeAttr ParseDomainShape(mlir::DialectAsmParser &parser) {
           dimensions, inversed_mapping.ResizeUseDomain(arg_shape_dims.size())));
     }
     RangeType arg_type =
-        RangeType::get(context, DomainShapeAttr::get(context, arg_shape_dims));
+        RangeType::get(DomainShapeAttr::get(context, arg_shape_dims));
     dimensions.emplace_back(arg_type, mapping);
   } while (succeeded(parser.parseOptionalKeyword("x")));
   return DomainShapeAttr::get(context, dimensions);
@@ -141,7 +141,7 @@ mlir::Type sair::SairDialect::parseType(mlir::DialectAsmParser &parser) const {
     } else {
       domain = DomainShapeAttr::get(getContext());
     }
-    return RangeType::get(getContext(), domain);
+    return RangeType::get(domain);
   }
 
   if (keyword == sair::ValueType::Name()) {
@@ -154,7 +154,7 @@ mlir::Type sair::SairDialect::parseType(mlir::DialectAsmParser &parser) const {
       parser.emitError(parser.getNameLoc(), "expected 'x' or '>'");
       return nullptr;
     }
-    return ValueType::get(getContext(), domain, element_type);
+    return ValueType::get(domain, element_type);
   }
 
   parser.emitError(parser.getNameLoc(), "invalid sair type");

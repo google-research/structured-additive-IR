@@ -40,8 +40,7 @@ namespace {
 void AdaptTypesToShape(mlir::TypeRange types, DomainShapeAttr shape,
                        llvm::SmallVectorImpl<mlir::Type> &result) {
   auto range = llvm::map_range(types, [shape](mlir::Type type) -> mlir::Type {
-    return ValueType::get(shape.getContext(), shape,
-                          type.cast<ValueType>().ElementType());
+    return ValueType::get(shape, type.cast<ValueType>().ElementType());
   });
   result.append(range.begin(), range.end());
 }
