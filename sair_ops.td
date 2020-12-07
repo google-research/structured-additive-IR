@@ -175,11 +175,10 @@ def SairFromScalarOp : SairOp<"from_scalar", [
 }
 
 def SairFromMemRefOp : SairOp<"from_memref", [
+    AttrSizedOperandSegments,
     NoSideEffect,
-    SairHyperRectangularDomain,
+    SairInferIterationSpaceOp,
     SairOneResult,
-    SairSameElementType<"memref", "result">,
-    SairSameRank<"result", "memref">,
     SairValueProducerOp]> {
   let summary = "Interprets a memref as a Sair value";
 
@@ -196,20 +195,55 @@ def SairFromMemRefOp : SairOp<"from_memref", [
     The general syntax for the from_memref operation is the following.
 
     ```
-    <var-name> = sair.from_memeref[<domain>] <var-name>
-      : <memref-type> -> <sair-value-type>
+    <var-name> =
+      sair.from_memeref[<parallel-domain>] <var-name> shape[<memref-domain>]
+        : <memref-type> -> <sair-value-type>
     ```
   }];
 
   let arguments = (ins
-    Variadic<SairRange>:$domain,
-    AnyMemRef:$memref
+    Variadic<SairRange>:$parallel_domain,
+    Variadic<SairRange>:$memref_domain,
+    SairMappingArrayAttr:$mapping_array,
+    SairValueOf<AnyMemRef>:$memref,
+    OptionalAttr<AffineMapAttr>:$access_map
   );
 
   let results = (outs SairValue:$result);
 
   let parser = [{return ParseFromMemRefOp(parser, result);}];
   let printer = [{return Print(*this, p);}];
+  let verifier = [{
+    return VerifyFromToMemRef(
+      getOperation(), parallel_domain().size(), shape(), memref(), result(),
+      AccessMap());
+  }];
+
+  let extraClassDeclaration = [{
+    ValueOperand MemRef() { return ValueOperands()[0]; }
+
+    OperandRange domain() {
+      return ChainOperandRanges(parallel_domain(), memref_domain());
+    }
+
+    llvm::SmallBitVector DimsDependingOnOperand(int sair_operand);
+
+    int infer_iteration_space_operand() { return 0; }
+
+    mlir::AffineMap AccessMap() {
+      if (access_map().hasValue()) return access_map().getValue();
+      return mlir::AffineMap::getMultiDimIdentityMap(memref_domain().size(),
+                                                     getContext());
+    }
+
+    mlir::MemRefType MemRefType() {
+      return memref()
+          .getType()
+          .cast<ValueType>()
+          .ElementType()
+          .cast<mlir::MemRefType>();
+    }
+  }];
 
   // The memory space is set to kMemory.
   DerivedAttr memory_space = DerivedAttr<"llvm::Optional<ArrayAttr>", [{
@@ -220,8 +254,8 @@ def SairFromMemRefOp : SairOp<"from_memref", [
 }
 
 def SairToMemRefOp : SairOp<"to_memref", [
-    SairHyperRectangularDomain,
-    SairSameElementType<"value", "memref">]> {
+    AttrSizedOperandSegments,
+    SairInferIterationSpaceOp]> {
   let summary = "Indicates that a value should be stored in a memref.";
 
   let description = [{
@@ -236,24 +270,55 @@ def SairToMemRefOp : SairOp<"to_memref", [
     The general syntax for the to_memref operation is the following.
 
     ```
-    sair.to_memref[<domain>] <value-name> <mapping>, <memref-name> : <memref-type>
+    sair.to_memref[<parallel-domain>] <memref> memref[<memref-domain] <value>
+      : <shape>, <memref-type>
     ```
   }];
 
   let arguments = (ins
-    Variadic<SairRange>:$domain,
+    Variadic<SairRange>:$parallel_domain,
+    Variadic<SairRange>:$memref_domain,
     SairMappingArrayAttr:$mapping_array,
+    SairValueOf<AnyMemRef>:$memref,
     SairValue:$value,
-    AnyMemRef:$memref
+    SairDomainShapeAttr:$shape,
+    OptionalAttr<AffineMapAttr>:$access_map
   );
 
   let parser = [{return ParseToMemRefOp(parser, result);}];
   let printer = [{return Print(*this, p);}];
+  let verifier = [{
+    return VerifyFromToMemRef(
+      getOperation(), parallel_domain().size(), shape(), memref(), value(),
+      AccessMap());
+  }];
 
   let extraClassDeclaration = [{
-    DomainShapeAttr shape();
+    ValueOperand MemRef() { return ValueOperands()[0]; }
 
-    ValueOperand Value() { return ValueOperands()[0]; }
+    ValueOperand Value() { return ValueOperands()[1]; }
+
+    OperandRange domain() {
+      return ChainOperandRanges(parallel_domain(), memref_domain());
+    }
+
+    llvm::SmallBitVector DimsDependingOnOperand(int sair_operand);
+
+    int infer_iteration_space_operand() { return 0; }
+
+    mlir::AffineMap AccessMap() {
+      if (access_map().hasValue()) return access_map().getValue();
+      return mlir::AffineMap::getMultiDimIdentityMap(memref_domain().size(),
+                                                     getContext());
+    }
+
+    mlir::MemRefType MemRefType() {
+      return memref()
+          .getType()
+          .cast<ValueType>()
+          .ElementType()
+          .cast<mlir::MemRefType>();
+    }
   }];
 }
 

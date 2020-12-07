@@ -10,9 +10,10 @@ func @to_memref(%arg0: memref<?x?xf32>) {
   sair.program {
     // CHECK: %[[V0:.*]] = sair.static_range
     %0 = sair.static_range 8 : !sair.range
-    // CHECK: %[[WRAPPED:.*]] = sair.from_scalar %[[ARG0:.*]] : !sair.value<(), memref<?x?xf32>>
-    // CHECK: sair.map[d0:%[[V0]], d1:%[[V0]]] %[[WRAPPED]] {
-    %1 = sair.map[d0:%0, d1: %0] {
+    // CHECK: %[[V1:.*]] = sair.from_scalar %[[ARG0]]
+    %1 = sair.from_scalar %arg0 : !sair.value<(), memref<?x?xf32>>
+    // CHECK: sair.map[d0:%[[V0]], d1:%[[V0]]] %[[V1]] {
+    %2 = sair.map[d0:%0, d1: %0] {
       // CHECK: ^{{.*}}(%[[ARG1:.*]]: index, %[[ARG2:.*]]: index, %[[ARG3:.*]]: memref<?x?xf32>):
       ^bb0(%arg1: index, %arg2: index):
         // CHECK: %[[V1:.*]] = constant
@@ -23,8 +24,8 @@ func @to_memref(%arg0: memref<?x?xf32>) {
         sair.return %2 : f32
     } : #sair.shape<d0:range x d1:range>, () -> f32
     // CHECK-NOT: sair.to_memref
-    sair.to_memref[d0:%0, d1:%0] %1(d1, d0), %arg0
-      : memref<?x?xf32>
+    sair.to_memref %1 memref[d0:%0, d1:%0] %2(d1, d0)
+      : #sair.shape<d0:range x d1:range>, memref<?x?xf32>
     sair.exit
   }
   return
@@ -41,6 +42,7 @@ func @to_memref_map_reduce(%arg0: memref<?xf32>, %arg1: f32) {
     %3 = sair.copy[d0:%0, d1:%0] %1 : !sair.value<d0:range x d1:range, f32>
 
     // CHECK: %[[WRAPPED:.*]] = sair.from_scalar %[[ARG0:.*]] : !sair.value<(), memref<?xf32>>
+    %6 = sair.from_scalar %arg0 : !sair.value<(), memref<?xf32>>
     // CHECK: sair.map_reduce[d0:%[[RANGE]]] %{{.*}}(d0) reduce[d1:%[[RANGE]]] %{{.*}}(d0, d1), %[[WRAPPED]] {
     %4 = sair.map_reduce[d0:%0] %2(d0) reduce[d1:%0] %3(d0, d1) {
     // CHECK: ^{{.*}}(%[[I0:.*]]: index, %[[I1:.*]]: index, %{{.*}}: f32, %{{.*}}: f32, %[[MEMREF:.*]]: memref<?xf32>):
@@ -51,7 +53,8 @@ func @to_memref_map_reduce(%arg0: memref<?xf32>, %arg1: f32) {
       sair.return %5 : f32
     } : #sair.shape<d0:range x d1:range>, (f32) -> f32
     // CHECK-NOT: sair.to_memref
-    sair.to_memref[d0:%0] %4(d0), %arg0 : memref<?xf32>
+    sair.to_memref %6 memref[d0:%0] %4(d0)
+      : #sair.shape<d0:range>, memref<?xf32>
     sair.exit
   }
   return

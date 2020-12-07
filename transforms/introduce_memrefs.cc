@@ -293,6 +293,11 @@ mlir::LogicalResult internMemRefs(
   for (mlir::OpResult result : op.getOperation()->getResults()) {
     for (mlir::Operation *user : result.getUsers()) {
       if (auto to_memref = dyn_cast<SairToMemRefOp>(user)) {
+        if (!to_memref.parallel_domain().empty() ||
+            to_memref.access_map().hasValue()) {
+          return rewriter.notifyMatchFailure(
+              user, "operation not supported by memref materialization");
+        }
         mlir::AffineMap inverse_access =
             to_memref.Value().Mapping().InverseAffineMap();
         if (!inverse_access) {
@@ -314,8 +319,7 @@ mlir::LogicalResult internMemRefs(
   wrapped_memrefs.reserve(num_memrefs);
   for (SairToMemRefOp to_memref :
        llvm::map_range(to_memref_ops, ExtractOpFromInfo)) {
-    wrapped_memrefs.push_back(rewriter.create<SairFromScalarOp>(
-        to_memref.getLoc(), to_memref.memref()));
+    wrapped_memrefs.push_back(to_memref.memref());
   }
 
   SairOpWithBody new_map = recreate(operands, wrapped_memrefs, op, rewriter);
@@ -501,7 +505,8 @@ class MaterializeFromMemRef
       SairFromMemRefOp op, llvm::ArrayRef<mlir::Value> operands,
       mlir::ConversionPatternRewriter &rewriter) const override {
     if (op.domain().empty()) return mlir::failure();
-    SairFromMemRefOp::Adaptor adapted(operands);
+    SairFromMemRefOp::Adaptor adapted(operands,
+                                      op.getOperation()->getAttrDictionary());
     rewriter.replaceOpWithNewOp<SairFromScalarOp>(op, adapted.memref());
     return mlir::success();
   }
@@ -930,11 +935,14 @@ mlir::LogicalResult IntroduceMemRef(SairMapOp op, mlir::OpBuilder &builder) {
 // 0-dimensional value wrapping a memref.
 mlir::LogicalResult IntroduceMemRef(SairFromMemRefOp op,
                                     mlir::OpBuilder &builder) {
-  auto from_scalar = builder.create<SairFromScalarOp>(op.getLoc(), op.memref());
+  if (!op.parallel_domain().empty() || op.access_map().hasValue()) {
+    return op.emitError()
+           << "operation not supported by memref materialization";
+  }
   auto layout = mlir::AffineMap::getMultiDimIdentityMap(op.domain().size(),
                                                         op.getContext());
-  if (failed(UpdateUsersAfterMaterialization(op.result(), from_scalar.result(),
-                                             layout, builder))) {
+  if (failed(UpdateUsersAfterMaterialization(op.result(), op.memref(), layout,
+                                             builder))) {
     return mlir::failure();
   }
   op.erase();

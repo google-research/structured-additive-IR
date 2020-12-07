@@ -103,3 +103,16 @@ func @in_place_not_last_use() {
   }
   return
 }
+
+// -----
+
+func @unsupported_from_memref(%arg0: memref<f32>) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), memref<f32>>
+    %1 = sair.static_range 8 : !sair.range
+    // expected-error @+1 {{operation not supported by memref materialization}}
+    %2 = sair.from_memref[d0:%1] %0 memref : #sair.shape<d0:range>, memref<f32>
+    sair.exit
+  }
+  return
+}

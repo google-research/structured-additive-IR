@@ -224,21 +224,11 @@ def SairMappingArrayAttr :
 // Defines a 'shape()' method that return the shape of the result.
 def SairOneResult : NativeOpTrait<"sair::OneResult">;
 
-// Ensures that the domain is hyper-rectangular.
-def SairHyperRectangularDomain : PredOpTrait<"the domain is hyper-rectangular",
-  CPred<"SairOp(&$_op).shape().IsHyperRectangular()">>;
-
 // Ensures that two named values have the same element type. Values can be Sair
 // values or mlir shaped values.
 class SairSameElementType<string lhs, string rhs>
   : PredOpTrait<lhs # " and " # rhs # " have the same element type",
       CPred<"IsSameElementType(" # lhs # "(), " # rhs # "())">>;
-
-// Ensures that two named values have the same rank. The first one must be a
-// SairShapedType SSA value and the second an mlir::ShapedType SSA value.
-class SairSameRank<string sair_val, string mlir_val>
-  : PredOpTrait<sair_val #  " and " # mlir_val # " must have the same rank",
-      CPred<"IsSameRank(" # sair_val # "(), " # mlir_val # " ())">>;
 
 //===----------------------------------------------------------------------===//
 // Sair Interfaces

@@ -13,9 +13,10 @@ func @from_memref(%arg0: index, %arg1: memref<?x8xf32>) {
     %2 = sair.static_range 8 : !sair.range
 
     // CHECK: %[[V0:.*]] = sair.from_scalar %[[ARG1]]
+    %5 = sair.from_scalar %arg1 : !sair.value<(), memref<?x8xf32>>
     // CHECK: : !sair.value<(), memref<?x8xf32>
-    %3 = sair.from_memref[d0:%1, d1:%2] %arg1
-      : memref<?x8xf32> -> !sair.value<d0:range x d1:range, f32>
+    %3 = sair.from_memref %5 memref[d0:%1, d1:%2]
+      : #sair.shape<d0:range x d1:range>, memref<?x8xf32>
     // CHECK: sair.map[d0:{{.*}}, d1:{{.*}}] %[[V0]] {
     sair.map[d0:%2, d1:%1] %3(d1, d0) {
       // CHECK: ^{{.*}}(%[[ARG2:.*]]: index, %[[ARG3:.*]]: index,

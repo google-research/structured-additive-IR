@@ -251,9 +251,16 @@ void EmitMemRefToValue(
         DomainShapeAttr::HyperRectangular(context, type.getRank());
     auto value_type =
         ValueType::get(context, domain_shape, type.getElementType());
+    auto mappings = rewriter.getArrayAttr(
+        {MappingAttr::GetIdentity(context, 0, type.getRank())});
+    auto memref_value_type =
+        ValueType::get(context, DomainShapeAttr::get(context), type);
 
-    Value new_operand =
-        rewriter.create<SairFromMemRefOp>(loc, value_type, ranges, operand);
+    auto from_scalar =
+        rewriter.create<SairFromScalarOp>(loc, memref_value_type, operand);
+    Value new_operand = rewriter.create<SairFromMemRefOp>(
+        loc, value_type, mlir::ValueRange(), ranges, mappings, from_scalar,
+        /*access_map=*/nullptr);
     map_operands.push_back(new_operand);
 
     // For in/out operands, store the ranges.
@@ -280,9 +287,17 @@ void EmitValueToMemRef(mlir::Location loc, mlir::ValueRange sair_values,
   mlir::MLIRContext *context = loc.getContext();
   int num_results = sair_values.size();
   for (int i = 0; i < num_results; ++i) {
-    auto mapping = ArrayAttr::get(mappings[i], context);
-    rewriter.create<SairToMemRefOp>(loc, ranges[i], mapping, sair_values[i],
-                                    memrefs[i]);
+    auto mapping_array = ArrayAttr::get(
+        {MappingAttr::GetIdentity(context, 0, ranges[i].size()), mappings[i]},
+        context);
+    auto shape = DomainShapeAttr::HyperRectangular(context, ranges[i].size());
+    auto memref_value_type = ValueType::get(
+        context, DomainShapeAttr::get(context), memrefs[i].getType());
+    auto from_scalar =
+        rewriter.create<SairFromScalarOp>(loc, memref_value_type, memrefs[i]);
+    rewriter.create<SairToMemRefOp>(loc, mlir::ValueRange(), ranges[i],
+                                    mapping_array, from_scalar, sair_values[i],
+                                    shape, /*access_map=*/nullptr);
   }
 }
 

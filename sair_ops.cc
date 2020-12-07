@@ -253,55 +253,97 @@ ParseResult ParseFromScalarOp(mlir::OpAsmParser &parser,
 // and a memref as argument and returns a Sair value. This syntax is the
 // following.
 //
-// from-memref-op ::= dialect-namespace '.' 'from_memref' ssa-value :
-//   memref-type '->' sair-value-type
+// from-memref-op ::= 'sair.from_memref' parallel-domain memref-operand
+//    'memref' memref-domain attr-dict : shape, memref-type
 //
 ParseResult ParseFromMemRefOp(mlir::OpAsmParser &parser,
                               mlir::OperationState &result) {
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
   mlir::OpAsmParser::OperandType memref;
+  MappingAttr mapping;
   MemRefType memref_type;
-  ValueType result_type;
+  DomainShapeAttr shape;
 
-  return failure(ParseDomain(parser, domain) || parser.parseOperand(memref) ||
-                 parser.parseColonType(memref_type) || parser.parseArrow() ||
-                 parser.parseType(result_type) ||
-                 ResolveDomain(parser, result_type.Shape(), domain, result) ||
-                 parser.resolveOperand(memref, memref_type, result.operands) ||
-                 parser.addTypeToList(result_type, result.types));
+  if (mlir::failed(ParseDomain(parser, domain))) return mlir::failure();
+  int parallel_domain_size = domain.size();
+  if (ParseValueAccess(domain.size(), parser, memref, mapping) ||
+      parser.parseKeyword("memref") || ParseDomain(parser, domain) ||
+      parser.parseOptionalAttrDict(result.attributes) || parser.parseColon() ||
+      parser.parseAttribute(shape) || parser.parseComma() ||
+      parser.parseType(memref_type) ||
+      ResolveDomain(parser, shape, domain, result)) {
+    return mlir::failure();
+  }
+
+  result.addAttribute(
+      SairFromMemRefOp::getOperandSegmentSizeAttr(),
+      parser.getBuilder().getI64VectorAttr(
+          {static_cast<int64_t>(parallel_domain_size),
+           static_cast<int64_t>(domain.size() - parallel_domain_size),
+           static_cast<int64_t>(1)}));
+
+  mapping = mapping.ResizeUseDomain(domain.size());
+  result.addAttribute(SairDialect::kMappingAttrName,
+                      parser.getBuilder().getArrayAttr({mapping}));
+
+  mlir::MLIRContext *context = parser.getBuilder().getContext();
+  auto memref_value_type =
+      ValueType::get(context, shape.AccessedShape(mapping), memref_type);
+  auto result_type =
+      ValueType::get(context, shape, memref_type.getElementType());
+  return mlir::failure(
+      parser.resolveOperand(memref, memref_value_type, result.operands) ||
+      parser.addTypeToList(result_type, result.types));
 }
 
 // Parses the ToMemRef operation. This operation takes an iteration domain, a
 // Sair value and a memref as argument and returns nothing. Its syntax is the
 // following.
 //
-// to-memref-op ::= dialect-namespace '.' 'to_memref' ssa-value mapping
-//   ',' ssa-value ':' memref-type
+// to-memref-op ::= 'sair.from_memref' parallel-domain memref-operand
+//    'memref' memref-domain value-operand attr-dict : shape, memref-type
 //
 ParseResult ParseToMemRefOp(mlir::OpAsmParser &parser,
                             mlir::OperationState &result) {
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
-  mlir::OpAsmParser::OperandType value, memref;
-  MappingAttr mapping;
-  mlir::MemRefType type;
+  mlir::OpAsmParser::OperandType memref, value;
+  MappingAttr memref_mapping, value_mapping;
+  DomainShapeAttr shape;
+  mlir::MemRefType memref_type;
 
-  if (ParseDomain(parser, domain) ||
-      ParseValueAccess(domain.size(), parser, value, mapping) ||
-      parser.parseComma() || parser.parseOperand(memref) ||
-      parser.parseColonType(type)) {
-    return failure();
+  if (mlir::failed(ParseDomain(parser, domain))) return mlir::failure();
+  int parallel_domain_size = domain.size();
+  if (ParseValueAccess(domain.size(), parser, memref, memref_mapping) ||
+      parser.parseKeyword("memref") || ParseDomain(parser, domain) ||
+      ParseValueAccess(domain.size(), parser, value, value_mapping) ||
+      parser.parseOptionalAttrDict(result.attributes) || parser.parseColon() ||
+      parser.parseAttribute(shape, SairDialect::kShapeAttrName,
+                            result.attributes) ||
+      parser.parseComma() || parser.parseType(memref_type) ||
+      ResolveDomain(parser, shape, domain, result)) {
+    return mlir::failure();
   }
 
-  result.addAttribute(SairDialect::kMappingAttrName,
-                      parser.getBuilder().getArrayAttr({mapping}));
+  memref_mapping = memref_mapping.ResizeUseDomain(domain.size());
+  result.addAttribute(
+      SairDialect::kMappingAttrName,
+      parser.getBuilder().getArrayAttr({memref_mapping, value_mapping}));
+
+  result.addAttribute(
+      SairFromMemRefOp::getOperandSegmentSizeAttr(),
+      parser.getBuilder().getI64VectorAttr(
+          {static_cast<int64_t>(parallel_domain_size),
+           static_cast<int64_t>(domain.size() - parallel_domain_size),
+           static_cast<int64_t>(1), static_cast<int64_t>(1)}));
 
   mlir::MLIRContext *context = parser.getBuilder().getContext();
-  auto shape = DomainShapeAttr::HyperRectangular(context, type.getRank());
-  DomainShapeAttr value_shape = shape.AccessedShape(mapping);
-  auto value_type = ValueType::get(context, value_shape, type.getElementType());
-  return failure(ResolveDomain(parser, shape, domain, result) ||
-                 parser.resolveOperand(value, value_type, result.operands) ||
-                 parser.resolveOperand(memref, type, result.operands));
+  auto value_type = ValueType::get(context, shape.AccessedShape(value_mapping),
+                                   memref_type.getElementType());
+  auto memref_value_type =
+      ValueType::get(context, shape.AccessedShape(memref_mapping), memref_type);
+  return failure(
+      parser.resolveOperand(memref, memref_value_type, result.operands) ||
+      parser.resolveOperand(value, value_type, result.operands));
 }
 
 constexpr llvm::StringRef kOfKeyword = "of";
@@ -512,18 +554,32 @@ void Print(SairFromScalarOp op, OpAsmPrinter &printer) {
 // Prints the from_memref operation.
 void Print(SairFromMemRefOp op, OpAsmPrinter &printer) {
   printer << SairFromMemRefOp::getOperationName();
-  PrintDomain(op.domain(), printer);
-  printer << " " << op.memref() << " : " << op.memref().getType() << " -> "
-          << op.result().getType();
+  PrintDomain(op.parallel_domain(), printer);
+  printer << " ";
+  PrintValueAccess(op.MemRef(), printer);
+  printer << " memref";
+  PrintDomain(op.memref_domain(), printer, op.parallel_domain().size());
+  printer.printOptionalAttrDict(op.getAttrs(),
+                                {SairFromMemRefOp::getOperandSegmentSizeAttr(),
+                                 SairDialect::kMappingAttrName});
+  printer << " : " << op.shape() << ", " << op.MemRefType();
 }
 
 // Prints the to_memref operation.
 void Print(SairToMemRefOp op, OpAsmPrinter &printer) {
   printer << SairToMemRefOp::getOperationName();
-  PrintDomain(op.domain(), printer);
+  PrintDomain(op.parallel_domain(), printer);
+  printer << " ";
+  PrintValueAccess(op.MemRef(), printer);
+  printer << " memref";
+  PrintDomain(op.memref_domain(), printer, op.parallel_domain().size());
   printer << " ";
   PrintValueAccess(op.Value(), printer);
-  printer << ", " << op.memref() << " : " << op.memref().getType();
+  printer.printOptionalAttrDict(
+      op.getAttrs(),
+      {SairFromMemRefOp::getOperandSegmentSizeAttr(),
+       SairDialect::kShapeAttrName, SairDialect::kMappingAttrName});
+  printer << " : " << op.shape() << ", " << op.MemRefType();
 }
 
 // Prints a projection operation.
@@ -603,6 +659,37 @@ mlir::LogicalResult Verify(SairFromScalarOp op) {
   return mlir::success();
 }
 
+static mlir::LogicalResult VerifyFromToMemRef(
+    mlir::Operation *op, int parallel_domain_size, DomainShapeAttr shape,
+    mlir::Value memref, mlir::Value value, mlir::AffineMap access_map) {
+  auto memref_type =
+      memref.getType().cast<ValueType>().ElementType().cast<MemRefType>();
+  auto value_type = value.getType().cast<ValueType>();
+  if (memref_type.getElementType() != value_type.ElementType()) {
+    return op->emitError()
+           << "memref and value must have the same element type";
+  }
+  int memref_domain_size = shape.NumDimensions() - parallel_domain_size;
+  if (access_map.getNumDims() != memref_domain_size) {
+    return op->emitError() << "access_map has " << access_map.getNumDims()
+                           << " dimensions, expected " << memref_domain_size;
+  }
+  if (memref_type.getRank() != access_map.getNumResults()) {
+    return op->emitError() << "expected memref of rank "
+                           << access_map.getNumResults() << ", got "
+                           << memref_type.getRank();
+  }
+  for (const DomainShapeDim shape_dim :
+       shape.Dimensions().drop_front(parallel_domain_size)) {
+    int max_dependency = shape_dim.DependencyMask().find_last();
+    if (max_dependency >= parallel_domain_size) {
+      return op->emitError()
+             << "memref domain dimensions cannot depend on each other";
+    }
+  }
+  return mlir::success();
+}
+
 mlir::LogicalResult Verify(SairExitOp op) {
   auto program_op = op.getParentOfType<SairProgramOp>();
   assert(program_op);
@@ -626,20 +713,24 @@ mlir::LogicalResult Verify(SairExitOp op) {
   return mlir::success();
 }
 
-// Returns the element type of a value. The value can be a Sair value or an
-// mlir shaped value. Returns nullptr in case of failure.
-mlir::Type ElementType(mlir::Value value) {
-  mlir::Type type = value.getType();
-  if (auto value_type = type.dyn_cast<ValueType>()) {
-    return value_type.ElementType();
+}  // namespace
+
+llvm::SmallBitVector SairFromMemRefOp::DimsDependingOnOperand(
+    int sair_operand) {
+  llvm::SmallBitVector mask(domain().size());
+  if (sair_operand == 0) {
+    mask.set(parallel_domain().size(), domain().size());
   }
-  if (auto shaped_type = type.dyn_cast<mlir::ShapedType>()) {
-    return shaped_type.getElementType();
-  }
-  return nullptr;
+  return mask;
 }
 
-}  // namespace
+llvm::SmallBitVector SairToMemRefOp::DimsDependingOnOperand(int sair_operand) {
+  llvm::SmallBitVector mask(domain().size());
+  if (sair_operand == 0) {
+    mask.set(parallel_domain().size(), domain().size());
+  }
+  return mask;
+}
 
 ParseResult ParseDomain(
     mlir::OpAsmParser &parser,
@@ -700,24 +791,8 @@ void PrintDomain(mlir::Operation::operand_range dimensions,
 }
 
 bool IsSameElementType(mlir::Value lhs, mlir::Value rhs) {
-  mlir::Type lhs_type = ElementType(lhs);
-  mlir::Type rhs_type = ElementType(rhs);
-  return lhs_type && rhs_type && lhs_type == rhs_type;
-}
-
-bool IsSameRank(mlir::Value sair_value, mlir::Value mlir_value) {
-  ValueType sair_type = sair_value.getType().dyn_cast<ValueType>();
-  mlir::ShapedType mlir_type =
-      mlir_value.getType().dyn_cast<mlir::ShapedType>();
-  return sair_type && mlir_type &&
-         sair_type.Shape().NumDimensions() == mlir_type.getRank();
-}
-
-// Returns the hyper-rectangular shape of the ToMemRefOp, based on the rank on
-// the memref.
-DomainShapeAttr SairToMemRefOp::shape() {
-  int rank = memref().getType().cast<mlir::ShapedType>().getRank();
-  return DomainShapeAttr::HyperRectangular(getContext(), rank);
+  return lhs.getType().cast<ValueType>().ElementType() ==
+         rhs.getType().cast<ValueType>().ElementType();
 }
 
 // Parses a Sair MapOp. The expected syntax is as folows.

@@ -227,8 +227,13 @@ func @copy_expected_value() {
 
 func @from_memref_exected_same_element_type(%arg0 : memref<f32>) {
   sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), memref<f32>>
     // expected-error @+1 {{same element type}}
-    %0 = "sair.from_memref"(%arg0) : (memref<f32>) -> (!sair.value<(), i32>)
+    %1 = "sair.from_memref"(%0) {
+      shape = #sair.shape<()>,
+      mapping_array = [#sair.mapping<0>],
+      operand_segment_sizes = dense<[0, 0, 1]> : vector<3xi64>
+    } : (!sair.value<(), memref<f32>>) -> (!sair.value<(), i32>)
     sair.exit
   }
   return
@@ -241,10 +246,11 @@ func @hyper_rectangular_domain(%arg0: index, %arg1 : memref<?x?xf32>) {
     %0 = sair.static_range 8 :!sair.range
     %1 = sair.from_scalar %arg0 : !sair.value<(), index>
     %2 = sair.dyn_range[d0:%0] %1 :!sair.range<d0:range>
+    %3 = sair.from_scalar %arg1 : !sair.value<(), memref<?x?xf32>>
 
-    // expected-error @+1 {{hyper-rectangular}}
-    %3 = sair.from_memref[d0:%0, d1:%2] %arg1
-      : memref<?x?xf32> -> !sair.value<d0:range x d1:range(d0), f32>
+    // expected-error @+1 {{memref domain dimensions cannot depend on each other}}
+    %4 = sair.from_memref %3 memref[d0:%0, d1:%2]
+      : #sair.shape<d0:range x d1:range(d0)>, memref<?x?xf32>
     sair.exit
   }
   return
@@ -252,10 +258,11 @@ func @hyper_rectangular_domain(%arg0: index, %arg1 : memref<?x?xf32>) {
 
 // -----
 
-func @same_rank(%arg0 : memref<?xf32>) {
+func @from_memref_rank(%arg0 : memref<?xf32>) {
   sair.program {
-    // expected-error @+1 {{same rank}}
-    %0 = sair.from_memref %arg0 : memref<?xf32> -> !sair.value<(), f32>
+    %0 = sair.from_scalar %arg0 : !sair.value<(), memref<?xf32>>
+    // expected-error @+1 {{expected memref of rank 0, got 1}}
+    %1 = sair.from_memref %0 memref : #sair.shape<()>, memref<?xf32>
     sair.exit
   }
   return
@@ -263,15 +270,29 @@ func @same_rank(%arg0 : memref<?xf32>) {
 
 // -----
 
-func @map_wrong_body_argument_count(%arg0 : memref<?xi32>) {
+func @from_memref_access_map_dims(%arg0 : memref<?xf32>) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), memref<?xf32>>
+    // expected-error @+1 {{access_map has 1 dimensions, expected 0}}
+    %1 = sair.from_memref %0 memref {
+      access_map = affine_map<(d0) -> (d0)>
+    } : #sair.shape<()>, memref<?xf32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @map_wrong_body_argument_count(%arg0 : f32) {
   sair.program {
     %0 = sair.static_range 8 :!sair.range
-    %1 = sair.from_memref[d0:%0] %arg0 : memref<?xi32> -> !sair.value<d0:range, i32>
+    %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{expects 2 body arguments}}
-    sair.map[d0:%0] %1(d0) {
-    ^bb0(%arg1: index):
-      sair.return %arg1 : index
-    } : #sair.shape<d0:range>, (i32) -> (i32)
+    sair.map[d0:%0] %1 {
+      ^bb0(%arg1: index):
+        sair.return
+    } : #sair.shape<d0:range>, (f32) -> ()
     sair.exit
   }
   return
@@ -279,15 +300,15 @@ func @map_wrong_body_argument_count(%arg0 : memref<?xi32>) {
 
 // -----
 
-func @map_wrong_body_argument_type(%arg0 : memref<?xi32>) {
+func @map_wrong_body_argument_type(%arg0 : f32) {
   sair.program {
     %0 = sair.static_range 8 :!sair.range
-    %1 = sair.from_memref[d0:%0] %arg0 : memref<?xi32> -> !sair.value<d0:range, i32>
+    %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{expects first 1 body arguments to have type 'index'}}
-    sair.map[d0:%0] %1(d0) {
-    ^bb0(%arg1: i32, %arg2: i32):
-      sair.return %arg2 : i32
-    } : #sair.shape<d0:range>, (i32) -> (i32)
+    sair.map[d0:%0] %1 {
+      ^bb0(%arg1: i32, %arg2: f32):
+        sair.return
+    } : #sair.shape<d0:range>, (f32) -> ()
     sair.exit
   }
   return
@@ -295,15 +316,15 @@ func @map_wrong_body_argument_type(%arg0 : memref<?xi32>) {
 
 // -----
 
-func @map_wrong_body_argument_trailing_type(%arg0 : memref<?xi32>) {
+func @map_wrong_body_argument_trailing_type(%arg0 : f32) {
   sair.program {
     %0 = sair.static_range 8 :!sair.range
-    %1 = sair.from_memref[d0:%0] %arg0 : memref<?xi32> -> !sair.value<d0:range, i32>
+    %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{expects trailing body arguments to have the same element type as operands}}
-    sair.map[d0:%0] %1(d0) {
+    sair.map[d0:%0] %1 {
     ^bb0(%arg1: index, %arg2: i64):
-      sair.return %arg2 : i64
-    } : #sair.shape<d0:range>, (i32) -> (i32)
+      sair.return
+    } : #sair.shape<d0:range>, (f32) -> ()
     sair.exit
   }
   return
@@ -311,15 +332,13 @@ func @map_wrong_body_argument_trailing_type(%arg0 : memref<?xi32>) {
 
 // -----
 
-func @map_wrong_terminator(%arg0 : memref<?xi32>) {
+func @map_wrong_terminator() {
   sair.program {
-    %0 = sair.static_range 8 :!sair.range
-    %1 = sair.from_memref[d0:%0] %arg0 : memref<?xi32> -> !sair.value<d0:range, i32>
     // expected-error @+1 {{expects body to be terminated with 'sair.return'}}
-    sair.map[d0:%0] %1(d0) {
-    ^bb0(%arg1: index, %arg2: i32):
-      "op"() : () -> ()
-    } : #sair.shape<d0:range>, (i32) -> (i32)
+    sair.map {
+      ^bb0:
+        "op"() : () -> ()
+    } : #sair.shape<()>, () -> ()
     sair.exit
   }
   return
@@ -327,16 +346,15 @@ func @map_wrong_terminator(%arg0 : memref<?xi32>) {
 
 // -----
 
-func @map_wrong_terminator_operand(%arg0 : memref<?xi32>) {
+func @map_wrong_terminator_operand() {
   sair.program {
-    %0 = sair.static_range 8 :!sair.range
-    %1 = sair.from_memref[d0:%0] %arg0 : memref<?xi32> -> !sair.value<d0:range, i32>
     // expected-error @+1 {{expects element types of results to match operand types of the body terminator}}
-    sair.map[d0:%0] %1(d0) {
-    ^bb0(%arg1: index, %arg2: i32):
+    sair.map {
+    ^bb0:
+      %0 = constant 1.0 : f32
       // expected-note @+1 {{body terminator}}
-      sair.return %arg2 : i32
-    } : #sair.shape<d0:range>, (i32) -> (i64)
+      sair.return %0 : f32
+    } : #sair.shape<()>, () -> (i32)
     sair.exit
   }
   return
@@ -344,14 +362,14 @@ func @map_wrong_terminator_operand(%arg0 : memref<?xi32>) {
 
 // -----
 
-func @map_reduce_wrong_trailing_arg_count(%arg0 : memref<?xi32>) {
+func @map_reduce_wrong_trailing_arg_count(%arg0 : f32) {
   sair.program {
     %0 = sair.static_range 8 :!sair.range
-    %1 = sair.from_memref[d0:%0] %arg0 : memref<?xi32> -> !sair.value<d0:range, i32>
-    sair.map_reduce[d0:%0] %1(d0) reduce[d1:%0] %1(d1) {
-    ^bb0(%arg1: i32):
-      sair.return %arg1 : i32
-    } : #sair.shape<d0:range x d1:range>, (i32, i32) -> i32
+    %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    sair.map_reduce %1 reduce %1 {
+      ^bb0(%arg1: f32, %arg2: f32):
+        sair.return %arg1 : f32
+    } : #sair.shape<()>, (f32, f32) -> f32
     // expected-error @-1 {{expected 1 arguments in the trailing function type}}
     sair.exit
   }
@@ -360,14 +378,13 @@ func @map_reduce_wrong_trailing_arg_count(%arg0 : memref<?xi32>) {
 
 // -----
 
-func @map_reduce_wrong_trailing_res_count(%arg0 : memref<?xi32>) {
+func @map_reduce_wrong_trailing_res_count(%arg0 : f32) {
   sair.program {
-    %0 = sair.static_range 8 :!sair.range
-    %1 = sair.from_memref[d0:%0] %arg0 : memref<?xi32> -> !sair.value<d0:range, i32>
-    sair.map_reduce[d0:%0] %1(d0) reduce[d1:%0] %1(d1) {
-    ^bb0(%arg1: i32):
-      sair.return %arg1 : i32
-    } : #sair.shape<d0:range x d1:range>, (i32) -> (i32, i32)
+    %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    sair.map_reduce %1 reduce {
+    ^bb0(%arg1: f32):
+      sair.return %arg1 : f32
+    } : #sair.shape<()>, () -> (f32, f32)
     // expected-error @-1 {{expected 1 results in the trailing function type}}
     sair.exit
   }
@@ -377,15 +394,15 @@ func @map_reduce_wrong_trailing_res_count(%arg0 : memref<?xi32>) {
 
 // -----
 
-func @map_reduce_wrong_body_argument_count(%arg0 : memref<?xi32>) {
+func @map_reduce_wrong_body_argument_count(%arg0 : f32) {
   sair.program {
-    %0 = sair.static_range 8 :!sair.range
-    %1 = sair.from_memref[d0:%0] %arg0 : memref<?xi32> -> !sair.value<d0:range, i32>
+    %0 = sair.static_range 8 : !sair.range
+    %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{expects 4 body arguments}}
-    sair.map_reduce[d0:%0] %1(d0) reduce[d1:%0] %1(d1) {
-    ^bb0(%arg1: i32):
-      sair.return %arg1 : i32
-    } : #sair.shape<d0:range x d1:range>, (i32) -> i32
+    sair.map_reduce[d0:%0] %1 reduce[d1:%0] %1 {
+    ^bb0(%arg1: f32):
+      sair.return %arg1 : f32
+    } : #sair.shape<d0:range x d1:range>, (f32) -> f32
     sair.exit
   }
   return
@@ -393,16 +410,16 @@ func @map_reduce_wrong_body_argument_count(%arg0 : memref<?xi32>) {
 
 // -----
 
-func @map_reduce_wrong_terminator_type(%arg0 : memref<?xi32>) {
+func @map_reduce_wrong_terminator_type(%arg0 : f32) {
   sair.program {
     %0 = sair.static_range 8 :!sair.range
-    %1 = sair.from_memref[d0:%0] %arg0 : memref<?xi32> -> !sair.value<d0:range, i32>
+    %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{expects element types of results to match operand types of the body terminator}}
-    sair.map_reduce[d0:%0] %1(d0) reduce[d1:%0] %1(d1) {
-    ^bb0(%arg1: index, %arg2: index, %arg3: i32, %arg4: i32):
+    sair.map_reduce[d0:%0] %1 reduce[d1:%0] %1 {
+    ^bb0(%arg1: index, %arg2: index, %arg3: f32, %arg4: f32):
       // expected-note @+1 {{body terminator}}
       sair.return %arg1 : index
-    } : #sair.shape<d0:range x d1:range>, (i32) -> i32
+    } : #sair.shape<d0:range x d1:range>, (f32) -> f32
     sair.exit
   }
   return
@@ -410,19 +427,20 @@ func @map_reduce_wrong_terminator_type(%arg0 : memref<?xi32>) {
 
 // -----
 
-func @map_reduce_init_accessing_reduction(%arg0 : memref<?xi32>) {
+func @map_reduce_init_accessing_reduction(%arg0 : f32) {
   sair.program {
     %0 = sair.static_range 8 :!sair.range
-    %1 = sair.from_memref[d0:%0] %arg0 : memref<?xi32> -> !sair.value<d0:range, i32>
+    %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %2 = sair.copy[d0:%0] %1 : !sair.value<d0:range, f32>
     // expected-error @+1 {{an operand mapping references a dimension that depends on the operand}}
-    %3 = "sair.map_reduce"(%0, %0, %1, %1) ( {
-      ^bb0(%arg1: index, %arg2: index, %arg3: i32, %arg4: i32):
-        "sair.return"(%arg3) : (i32) -> ()
+    %3 = "sair.map_reduce"(%0, %0, %2, %2) ( {
+      ^bb0(%arg1: index, %arg2: index, %arg3: f32, %arg4: f32):
+        "sair.return"(%arg3) : (f32) -> ()
       }) {mapping_array = [#sair.mapping<2:d1>, #sair.mapping<2:d1>],
           operand_segment_sizes = dense<1> : vector<4xi64>,
           shape = #sair.shape<d0:range x d1:range>}
-       : (!sair.range, !sair.range, !sair.value<d0:range, i32>, !sair.value<d0:range, i32>)
-       -> !sair.value<d0:range, i32>
+       : (!sair.range, !sair.range, !sair.value<d0:range, f32>, !sair.value<d0:range, f32>)
+       -> !sair.value<d0:range, f32>
     sair.exit
   }
   return
