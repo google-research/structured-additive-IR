@@ -112,6 +112,10 @@ mlir::LogicalResult MappingDimExpr::UnificationConstraints(
   return mlir::success();
 }
 
+mlir::AffineExpr MappingDimExpr::AsAffineExpr() const {
+  return mlir::getAffineDimExpr(dimension(), getContext());
+}
+
 //===----------------------------------------------------------------------===//
 // AccessPatternNoneExpr
 //===----------------------------------------------------------------------===//
@@ -294,6 +298,10 @@ MappingExpr MappingStripeExpr::FindInInverse(
   auto factor_it = llvm::find(unstripe_expr.factors(), step());
   int pos = std::distance(unstripe_expr.factors().begin(), factor_it);
   return unstripe_expr.operands()[pos];
+}
+
+mlir::AffineExpr MappingStripeExpr::AsAffineExpr() const {
+  return step() * operand().AsAffineExpr().floorDiv(step());
 }
 
 //===----------------------------------------------------------------------===//
@@ -518,6 +526,10 @@ MappingExpr MappingUnStripeExpr::FindInInverse(
       .operand();
 }
 
+mlir::AffineExpr MappingUnStripeExpr::AsAffineExpr() const {
+  return operands().back().AsAffineExpr();
+}
+
 //===----------------------------------------------------------------------===//
 // AccessPatternAttr
 //===----------------------------------------------------------------------===//
@@ -634,33 +646,13 @@ MappingAttr MappingAttr::Compose(MappingAttr other) const {
   return MappingAttr::get(getContext(), UseDomainSize(), new_mapping_dims);
 }
 
-// TODO(b/339834234): move this to the memref introduction pass
-static mlir::AffineExpr AsAffineExpr(MappingExpr expr) {
-  if (auto dim_expr = expr.dyn_cast<MappingDimExpr>()) {
-    return getAffineDimExpr(dim_expr.dimension(), dim_expr.getContext());
-  } else if (auto stripe_expr = expr.dyn_cast<MappingStripeExpr>()) {
-    mlir::AffineExpr inner_expr = AsAffineExpr(stripe_expr.operand());
-    auto step = mlir::getAffineConstantExpr(stripe_expr.step(),
-                                            stripe_expr.getContext());
-    auto floor_div = mlir::AffineExprKind::FloorDiv;
-    return mlir::getAffineBinaryOpExpr(floor_div, inner_expr, step) * step;
-  } else if (auto unstripe_expr = expr.dyn_cast<MappingUnStripeExpr>()) {
-    return AsAffineExpr(unstripe_expr.operands().back());
-  }
-  llvm_unreachable("unsupported expression");
-}
-
 mlir::AffineMap MappingAttr::AsAffineMap() const {
   llvm::SmallVector<mlir::AffineExpr, 4> affine_exprs;
   affine_exprs.reserve(Dimensions().size());
   for (MappingExpr expr : *this) {
-    affine_exprs.push_back(AsAffineExpr(expr));
+    affine_exprs.push_back(expr.AsAffineExpr());
   }
   return mlir::AffineMap::get(UseDomainSize(), 0, affine_exprs, getContext());
-}
-
-mlir::AffineMap MappingAttr::InverseAffineMap() const {
-  return mlir::inversePermutation(AsAffineMap());
 }
 
 bool MappingAttr::IsFullySpecified() const {

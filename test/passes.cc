@@ -91,6 +91,10 @@ class TestMappingExprsPass
       return expr.FindInInverse(inverse.Dimensions());
     } else if (op_name == "min_domain_size") {
       return builder.getIndexAttr(expr.MinDomainSize());
+    } else if (op_name == "as_affine_expr") {
+      int domain_size = expr.MinDomainSize();
+      auto map = mlir::AffineMap::get(domain_size, 0, expr.AsAffineExpr());
+      return mlir::AffineMapAttr::get(map);
     }
     llvm_unreachable("unknown test name");
   }

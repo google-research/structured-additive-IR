@@ -164,7 +164,7 @@ class InsertCopies : public InsertCopiesPassBase<InsertCopies> {
     getFunction().walk([&builder](SairToMemRefOp op) {
       mlir::Operation *defining_op = op.value().getDefiningOp();
       if (!isa<SairFromMemRefOp>(defining_op) &&
-          op.Value().Mapping().InverseAffineMap()) {
+          op.Value().Mapping().Inverse().IsFullySpecified()) {
         return;
       }
       ValueOperand operand = op.Value();
@@ -298,7 +298,7 @@ mlir::LogicalResult internMemRefs(
               user, "operation not supported by memref materialization");
         }
         mlir::AffineMap inverse_access =
-            to_memref.Value().Mapping().InverseAffineMap();
+            to_memref.Value().Mapping().Inverse().AsAffineMap();
         if (!inverse_access) {
           return rewriter.notifyMatchFailure(user, "non-invertible access map");
         }

@@ -1,4 +1,5 @@
-// RUN: sair-opt -allow-unregistered-dialect %s -test-mapping-exprs | FileCheck %s
+// RUN: sair-opt -allow-unregistered-dialect %s -test-mapping-exprs \
+// RUN:   -mlir-print-local-scope | FileCheck %s
 
 module {
 
@@ -191,6 +192,26 @@ module {
   expr = #sair.mapping_expr<unstripe(stripe(d0, 4), [])>,
   other = #sair.mapping_expr<unstripe(stripe(d0, 8), [])>,
   domain_size = 1
+} : () -> ()
+
+// CHECK: "test.as_affine_expr"() {label = @dim, result = affine_map<(d0) -> (d0)>}
+"test.as_affine_expr"() {
+  label = @dim,
+  expr = #sair.mapping_expr<d0>
+} : () -> ()
+
+// CHECK: "test.as_affine_expr"() {label = @stripe,
+// CHECK-SAME: result = affine_map<(d0) -> ((d0 floordiv 4) * 4)>}
+"test.as_affine_expr"() {
+  label = @stripe,
+  expr = #sair.mapping_expr<stripe(d0, 4)>
+} : () -> ()
+
+// CHECK: "test.as_affine_expr"() {label = @unstripe,
+// CHECK-SAME: result = affine_map<(d0, d1) -> (d1)>}
+"test.as_affine_expr"() {
+  label = @unstripe,
+  expr = #sair.mapping_expr<unstripe(d0, d1, [4])>
 } : () -> ()
 
 }

@@ -103,10 +103,6 @@ class MappingAttr
   // fully specified.
   mlir::AffineMap AsAffineMap() const;
 
-  // Inverse the mapping and returns it as an affine map. Returns the
-  // null affine map if the mapping is not invertible.
-  mlir::AffineMap InverseAffineMap() const;
-
   // Returns `true` if mapping expression does not contain `none`.
   bool IsFullySpecified() const;
 
@@ -298,6 +294,8 @@ class MappingDimExpr
   MappingExpr FindInInverse(llvm::ArrayRef<MappingExpr> inverse) const {
     return inverse[dimension()];
   }
+
+  mlir::AffineExpr AsAffineExpr() const;
 };
 
 // Mapping expression that maps to no dimensions. This used when
@@ -348,6 +346,11 @@ class MappingNoneExpr
   MappingExpr FindInInverse(llvm::ArrayRef<MappingExpr> inverse) const {
     llvm_unreachable(
         "cannot call `FindInInverse` on partially-specified expressions");
+  }
+
+  mlir::AffineExpr AsAffineExpr() const {
+    llvm_unreachable(
+        "cannot call `AsAffineExpr` on partially specified expressions");
   }
 };
 
@@ -402,6 +405,8 @@ class MappingStripeExpr
       llvm::MutableArrayRef<MappingExpr> constraints) const;
 
   MappingExpr FindInInverse(llvm::ArrayRef<MappingExpr> inverse) const;
+
+  mlir::AffineExpr AsAffineExpr() const;
 };
 
 // Stiches together stripe expressions to iterate on a full dimension. Specifies
@@ -451,6 +456,8 @@ class MappingUnStripeExpr
       llvm::MutableArrayRef<MappingExpr> constraints) const;
 
   MappingExpr FindInInverse(llvm::ArrayRef<MappingExpr> inverse) const;
+
+  mlir::AffineExpr AsAffineExpr() const;
 };
 
 }  // namespace sair

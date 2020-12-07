@@ -123,6 +123,11 @@ def MappingExpr : AttrInterface<"MappingExpr"> {
         "MappingExpr":$other_expr,
         "llvm::MutableArrayRef<MappingExpr>":$constraints
       )
+    >,
+    InterfaceMethod<
+      [{Converts the expression into an affine expression. The expression must
+        be fully specified}],
+      "mlir::AffineExpr", "AsAffineExpr"
     >
   ];
 }
