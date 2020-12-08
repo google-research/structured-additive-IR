@@ -344,7 +344,7 @@ class RemoveUnreferencedDims : public OpRewritePattern<OpTy> {
         parallel_dimensions, projection_dimensions,
         rewriter.getArrayAttr(mapping.Inverse().Compose(op.Value().Mapping())),
         op.value(), op.shape().AccessedShape(mapping), op.memory_spaceAttr());
-    new_op.setDialectAttrs(op.getDialectAttrs());
+    new_op.setDialectAttrs(op->getDialectAttrs());
 
     // Replace the original op.
     UpdateValueUses(op, new_op, partial_mapping);
@@ -390,7 +390,7 @@ class RemoveUnreferencedDims<SairFbyOp> : public OpRewritePattern<SairFbyOp> {
         rewriter.getArrayAttr({inverted_mapping.Compose(op.Init().Mapping()),
                                inverted_mapping.Compose(op.Value().Mapping())}),
         op.init(), op.value(), op.memory_spaceAttr());
-    new_op.setDialectAttrs(op.getDialectAttrs());
+    new_op.setDialectAttrs(op->getDialectAttrs());
 
     // Replace the original op.
     UpdateValueUses(op, new_op, direct_mapping);

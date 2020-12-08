@@ -68,7 +68,7 @@ class DefaultLoopNest : public DefaultLoopNestPassBase<DefaultLoopNest> {
     getFunction().walk([](ComputeOp op) {
       if (op.loop_nest().hasValue()) return;
       SairOp sair_op = cast<SairOp>(op.getOperation());
-      SairProgramOp program_op = cast<SairProgramOp>(op.getParentOp());
+      SairProgramOp program_op = cast<SairProgramOp>(op->getParentOp());
       int num_dimensions = sair_op.shape().NumDimensions();
       op.setLoopNest(GetDefaultLoopNest(program_op, num_dimensions));
     });

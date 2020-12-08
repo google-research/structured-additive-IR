@@ -208,7 +208,7 @@ static mlir::LogicalResult VerifyLoopNestWellFormed(
     if (loop == nullptr) {
       return op.emitError() << "expected a `Loop` attribute";
     }
-    SairProgramOp parent = cast<SairProgramOp>(op.getParentOp());
+    SairProgramOp parent = cast<SairProgramOp>(op->getParentOp());
     if (llvm::count(parent.loop_name_table(), loop.name()) == 0) {
       return op.emitError() << "loop " << loop.name()
                             << " is not declared in the parent operation";
