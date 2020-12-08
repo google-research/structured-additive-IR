@@ -50,8 +50,8 @@ SairDialect::SairDialect(mlir::MLIRContext *context)
     : mlir::Dialect(getDialectNamespace(), context,
                     TypeID::get<SairDialect>()) {
   addTypes<RangeType, ValueType>();
-  addAttributes<DomainShapeAttr, MappingAttr, MappingDimExpr, MappingNoneExpr,
-                MappingStripeExpr, MappingUnStripeExpr>();
+  addAttributes<DomainShapeAttr, MappingAttr, NamedMappingAttr, MappingDimExpr,
+                MappingNoneExpr, MappingStripeExpr, MappingUnStripeExpr>();
   addOperations<
 #define GET_OP_LIST
 #include "sair_ops.cc.inc"
@@ -121,6 +121,36 @@ DomainShapeAttr ParseDomainShape(mlir::DialectAsmParser &parser) {
   return DomainShapeAttr::get(context, dimensions);
 }
 
+NamedMappingAttr ParseNamedMapping(mlir::DialectAsmParser &parser) {
+  if (mlir::failed(parser.parseLSquare())) return nullptr;
+  llvm::SmallVector<mlir::StringAttr, 4> names;
+
+  if (mlir::failed(parser.parseOptionalRSquare())) {
+    do {
+      std::string expected_name = "d" + std::to_string(names.size());
+      mlir::StringAttr name;
+      if (parser.parseKeyword(expected_name) || parser.parseColon() ||
+          parser.parseAttribute(name)) {
+        return nullptr;
+      }
+      names.push_back(name);
+    } while (mlir::succeeded(parser.parseOptionalComma()));
+    if (mlir::failed(parser.parseRSquare())) return nullptr;
+  }
+
+  if (parser.parseArrow() || parser.parseLParen()) return nullptr;
+  MappingAttr mapping;
+  if (mlir::succeeded(parser.parseOptionalRParen())) {
+    mapping =
+        MappingAttr::get(parser.getBuilder().getContext(), names.size(), {});
+  } else {
+    mapping = ParseMapping(parser, names.size());
+    if (mapping == nullptr || parser.parseRParen()) return nullptr;
+  }
+
+  return NamedMappingAttr::get(names, mapping);
+}
+
 }  // namespace
 
 // Parses the Sair dialect type. Returns nullptr in case of failure.
@@ -183,6 +213,8 @@ mlir::Attribute sair::SairDialect::parseAttribute(
     } else {
       attribute = MappingAttr::get(getContext(), num_dimensions, {});
     }
+  } else if (keyword == "named_mapping") {
+    attribute = ParseNamedMapping(parser);
   } else if (keyword == "mapping_expr") {
     attribute = ParseMappingExpr(parser);
   } else {
@@ -271,6 +303,17 @@ void PrintWithUseDomainSize(MappingAttr mapping, mlir::DialectAsmPrinter &os) {
   PrintMapping(mapping, os.getStream());
 }
 
+void Print(NamedMappingAttr named_mapping, mlir::DialectAsmPrinter &os) {
+  os << "[";
+  int i = 0;
+  llvm::interleaveComma(named_mapping.names(), os, [&](mlir::StringAttr name) {
+    os << 'd' << i++ << ":" << name;
+  });
+  os << "] -> (";
+  PrintMapping(named_mapping.mapping(), os.getStream());
+  os << ")";
+}
+
 }  // namespace
 
 void PrintMapping(MappingAttr mapping, llvm::raw_ostream &os) {
@@ -297,6 +340,11 @@ void sair::SairDialect::printAttribute(mlir::Attribute attr,
       .Case([&os](MappingAttr mapping_attr) {
         os << "mapping<";
         PrintWithUseDomainSize(mapping_attr, os);
+        os << ">";
+      })
+      .Case([&os](NamedMappingAttr named_mapping) {
+        os << "named_mapping<";
+        Print(named_mapping, os);
         os << ">";
       })
       .Case([&os](MappingExpr expr) {

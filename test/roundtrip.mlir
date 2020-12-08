@@ -481,3 +481,11 @@ func @stripe_mapping(%arg0: f32) {
   }
   return
 }
+
+// CHECK-LABEL: @named_mapping
+func @named_mapping() {
+  // CHECK: #sair.named_mapping<[] -> ()>
+  "foo"() { bar = #sair.named_mapping<[] -> ()>} : () -> ()
+  // CHECK: #sair.named_mapping<[d0:"A", d1:"B"] -> (d0, d1)>
+  "foo"() { bar = #sair.named_mapping<[d0:"A", d1:"B"] -> (d0, d1)>} : () -> ()
+}

@@ -34,6 +34,8 @@ class MappingStripeExprStorage;
 class MappingUnStripeExprStorage;
 // Private implementation for sair::MappingAttr
 class MappingAttrStorage;
+// Private implementation for sair::NamedMappingAttr
+class NamedMappingAttrStorage;
 // Private implementation for sair::DomainShapeAttr
 class DomainShapeAttrStorage;
 }  // namespace impl
@@ -145,6 +147,25 @@ class MappingAttr
   using iterator = llvm::ArrayRef<MappingExpr>::iterator;
   iterator begin() const { return Dimensions().begin(); }
   iterator end() const { return Dimensions().end(); }
+};
+
+// A MappingAttr, with named dimensions in the use domain. Format is
+// ```
+// [d0:<name[0]>, ..., dn:<name[n]>] -> (<mapping>)
+// ```
+class NamedMappingAttr
+    : public mlir::Attribute::AttrBase<NamedMappingAttr, mlir::Attribute,
+                                       impl::NamedMappingAttrStorage> {
+ public:
+  using Base::Base;
+
+  // Constructs an instance of NamedMappingAttr.
+  static NamedMappingAttr get(llvm::ArrayRef<mlir::StringAttr> names,
+                              MappingAttr mapping);
+
+  llvm::ArrayRef<mlir::StringAttr> names() const;
+
+  MappingAttr mapping() const;
 };
 
 // The shape of an iteration dimension of a Sair domain.

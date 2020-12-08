@@ -531,7 +531,7 @@ mlir::AffineExpr MappingUnStripeExpr::AsAffineExpr() const {
 }
 
 //===----------------------------------------------------------------------===//
-// AccessPatternAttr
+// MappingAttr
 //===----------------------------------------------------------------------===//
 
 // Private implementation/storage class for sair::MappingAttr. Instances
@@ -761,6 +761,59 @@ MappingAttr MappingAttr::Inverse() const {
   }
   return MappingAttr::get(context, size(), inverted_exprs);
 }
+
+//===----------------------------------------------------------------------===//
+// NamedMappingAttr
+//===----------------------------------------------------------------------===//
+
+// Private implementation/storage class for sair::NamedMappingAttr. Instances of
+// this class are allocated by MLIR type system in a dedicated arena. Not
+// intended for direct use.
+class impl::NamedMappingAttrStorage : public mlir::AttributeStorage {
+ public:
+  // Key type uniquely identifying MappingAttrStorage for MLIR attribute
+  // unique-ing. This specific name is required by mlir::AttributeUniquer.
+  using KeyTy = std::pair<llvm::ArrayRef<mlir::StringAttr>, mlir::Attribute>;
+
+  // Creates a NamedMappingAttrStorage using the provided allocator. Hook for
+  // MLIR attribute system.
+  static NamedMappingAttrStorage *construct(
+      mlir::AttributeStorageAllocator &allocator, const KeyTy &key) {
+    return new (allocator.allocate<NamedMappingAttrStorage>())
+        NamedMappingAttrStorage(
+            std::make_pair(allocator.copyInto(key.first), key.second));
+  }
+
+  // Compares the NamedMappingAttrStorage identification key with this object.
+  bool operator==(const KeyTy &key) const {
+    return key.first == names_ && key.second == mapping_;
+  }
+
+  llvm::ArrayRef<mlir::StringAttr> names() const { return names_; }
+
+  MappingAttr mapping() const { return mapping_; }
+
+ private:
+  // Constructs a storage object from the provided key. Such objects must not be
+  // constructed directly but rather created by MLIR's type system within an
+  // arena allocator by calling ::construct.
+  explicit NamedMappingAttrStorage(KeyTy key)
+      : names_(key.first), mapping_(key.second.cast<MappingAttr>()) {}
+
+  llvm::ArrayRef<mlir::StringAttr> names_;
+  MappingAttr mapping_;
+};
+
+NamedMappingAttr NamedMappingAttr::get(llvm::ArrayRef<mlir::StringAttr> names,
+                                       MappingAttr mapping) {
+  return Base::get(mapping.getContext(), names, mapping);
+}
+
+llvm::ArrayRef<mlir::StringAttr> NamedMappingAttr::names() const {
+  return getImpl()->names();
+}
+
+MappingAttr NamedMappingAttr::mapping() const { return getImpl()->mapping(); }
 
 //===----------------------------------------------------------------------===//
 // DomainShapeDim
