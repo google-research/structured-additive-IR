@@ -686,7 +686,7 @@ static mlir::LogicalResult VerifyFromToMemRef(
 }
 
 mlir::LogicalResult Verify(SairExitOp op) {
-  auto program_op = op.getParentOfType<SairProgramOp>();
+  auto program_op = op->getParentOfType<SairProgramOp>();
   assert(program_op);
 
   if (op.getNumOperands() != program_op.getNumResults()) {

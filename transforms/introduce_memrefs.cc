@@ -169,7 +169,7 @@ class InsertCopies : public InsertCopiesPassBase<InsertCopies> {
       }
       ValueOperand operand = op.Value();
       SairProgramOp program_op = cast<SairProgramOp>(op->getParentOp());
-      // Move the operation at the end of the program s-> that we can generate a
+      // Move the operation at the end of the program so that we can generate a
       // new loop nest without causing interference with existing fusion
       // constraints.
       // TODO(ulysse): allow choosing the insertion point with an attribute.

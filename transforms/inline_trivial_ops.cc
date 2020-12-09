@@ -91,7 +91,7 @@ bool InlineTrivialSairOp(mlir::FuncOp function) {
   }
 
   // Move the body contents immediately before the Sair program.
-  auto sair_program = trivial_op.getParentOfType<SairProgramOp>();
+  auto sair_program = trivial_op->getParentOfType<SairProgramOp>();
   mlir::Operation *sair_program_operation = sair_program.getOperation();
   mlir::Block *program_block = sair_program_operation->getBlock();
   mlir::Operation *terminator = body->getTerminator();
