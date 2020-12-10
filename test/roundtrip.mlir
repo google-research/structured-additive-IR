@@ -489,3 +489,86 @@ func @named_mapping() {
   // CHECK: #sair.named_mapping<[d0:"A", d1:"B"] -> (d0, d1)>
   "foo"() { bar = #sair.named_mapping<[d0:"A", d1:"B"] -> (d0, d1)>} : () -> ()
 }
+
+// CHECK-LABEL: @alloc_simple
+func @alloc_simple() {
+  sair.program {
+    // CHECK: = sair.alloc : !sair.value<(), memref<42x42xf32>>
+    sair.alloc : !sair.value<(), memref<42x42xf32>>
+    sair.exit
+  }
+  return
+}
+
+// CHECK-LABEL: @alloc
+func @alloc(%arg0: index) {
+  sair.program {
+    %0 = sair.static_range 2 : !sair.range
+    %1 = sair.static_range 3 : !sair.range
+    %idx = sair.from_scalar %arg0 : !sair.value<(), index>
+    %2 = sair.copy[d0:%0] %idx : !sair.value<d0:range, index>
+    %3 = sair.copy[d0:%1] %idx : !sair.value<d0:range, index>
+    // CHECK: = sair.alloc[d0:%{{.*}}, d1:%{{.*}}] %{{.*}}(d0), %{{.*}}(d1) : !sair.value<d0:range x d1:range, memref<?x?xf32>>
+    sair.alloc[d0:%0, d1:%1] %2(d0), %3(d1) : !sair.value<d0:range x d1:range, memref<?x?xf32>>
+    sair.exit
+  }
+  return
+}
+
+// CHECK-LABEL: @alloc_nosize
+func @alloc_nosize(%arg0: index) {
+  sair.program {
+    %0 = sair.static_range 2 : !sair.range
+    %1 = sair.static_range 3 : !sair.range
+    %idx = sair.from_scalar %arg0 : !sair.value<(), index>
+    %2 = sair.copy[d0:%0] %idx : !sair.value<d0:range, index>
+    %3 = sair.copy[d0:%1] %idx : !sair.value<d0:range, index>
+    // CHECK: = sair.alloc[d0:%{{.*}}, d1:%{{.*}}] : !sair.value<d0:range x d1:range, memref<42x42xf32>>
+    sair.alloc[d0:%0, d1:%1] : !sair.value<d0:range x d1:range, memref<42x42xf32>>
+    sair.exit
+  }
+  return
+}
+
+// CHECK-LABEL: @free_simple
+func @free_simple() {
+  sair.program {
+    %0 = sair.alloc : !sair.value<(), memref<42x42xf32>>
+    // CHECK: sair.free %{{.*}} : !sair.value<(), memref<42x42xf32>>
+    sair.free %0 : !sair.value<(), memref<42x42xf32>>
+    sair.exit
+  }
+  return
+}
+
+// CHECK-LABEL: @sair_free
+func @sair_free(%arg0: index) {
+  sair.program {
+    %0 = sair.static_range 2 : !sair.range
+    %1 = sair.static_range 3 : !sair.range
+    %idx = sair.from_scalar %arg0 : !sair.value<(), index>
+    %2 = sair.copy[d0:%0] %idx : !sair.value<d0:range, index>
+    %3 = sair.copy[d0:%1] %idx : !sair.value<d0:range, index>
+    %4 = sair.alloc[d0:%0, d1:%1] %2(d0), %3(d1) : !sair.value<d0:range x d1:range, memref<?x?xf32>>
+    // CHECK: sair.free[d0:%{{.*}}, d1:%{{.*}}] %{{.*}}(d1, d0) : !sair.value<d0:range x d1:range, memref<?x?xf32>>
+    sair.free[d0:%1, d1:%0] %4(d1, d0) : !sair.value<d0:range x d1:range, memref<?x?xf32>>
+    sair.exit
+  }
+  return
+}
+
+// CHECK-LABEL: @free_nosize
+func @free_nosize(%arg0: index) {
+  sair.program {
+    %0 = sair.static_range 2 : !sair.range
+    %1 = sair.static_range 3 : !sair.range
+    %idx = sair.from_scalar %arg0 : !sair.value<(), index>
+    %2 = sair.copy[d0:%0] %idx : !sair.value<d0:range, index>
+    %3 = sair.copy[d0:%1] %idx : !sair.value<d0:range, index>
+    %4 = sair.alloc[d0:%0, d1:%1] : !sair.value<d0:range x d1:range, memref<42x42xf32>>
+    // CHECK: sair.free[d0:%{{.*}}, d1:%{{.*}}] %{{.*}}(d0, d1) : !sair.value<d0:range x d1:range, memref<42x42xf32>>
+    sair.free[d0:%0, d1:%1] %4(d0, d1) : !sair.value<d0:range x d1:range, memref<42x42xf32>>
+    sair.exit
+  }
+  return
+}

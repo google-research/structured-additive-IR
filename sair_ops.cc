@@ -449,6 +449,87 @@ ParseResult ParseExitOp(mlir::OpAsmParser &parser,
   return mlir::success();
 }
 
+// Parses the sair.alloc operation with the following syntax.
+//
+// alloc-op ::= `sair.alloc` value-list attr-dict? : type
+//
+static mlir::ParseResult ParseAllocOp(mlir::OpAsmParser &parser,
+                                      mlir::OperationState &result) {
+  llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain, values;
+  llvm::SmallVector<mlir::Attribute, 4> access_patterns;
+  mlir::OpAsmParser::OperandType value;
+  MappingAttr pattern;
+  if (failed(ParseDomain(parser, domain))) return mlir::failure();
+
+  mlir::OptionalParseResult parse_result =
+      ParseOptionalValueAccess(domain.size(), parser, value, pattern);
+  if (parse_result.hasValue() && mlir::failed(*parse_result)) {
+    return failure();
+  }
+
+  if (parse_result.hasValue() && mlir::succeeded(*parse_result)) {
+    access_patterns.push_back(pattern);
+    values.push_back(value);
+    while (mlir::succeeded(parser.parseOptionalComma())) {
+      if (mlir::failed(ParseValueAccess(domain.size(), parser,
+                                        values.emplace_back(), pattern))) {
+        return mlir::failure();
+      }
+      access_patterns.push_back(pattern);
+    }
+  }
+
+  result.attributes.append(SairAllocOp::getOperandSegmentSizeAttr(),
+                           parser.getBuilder().getI64VectorAttr(
+                               {static_cast<int64_t>(domain.size()),
+                                static_cast<int64_t>(values.size())}));
+  result.attributes.append(SairDialect::kMappingAttrName,
+                           parser.getBuilder().getArrayAttr(access_patterns));
+
+  ValueType resultType;
+  if (parser.parseOptionalAttrDict(result.attributes) || parser.parseColon() ||
+      parser.parseType(resultType) ||
+      parser.addTypeToList(resultType, result.types) ||
+      ResolveDomain(parser, resultType.Shape(), domain, result)) {
+    return mlir::failure();
+  }
+
+  for (auto [value, pat] : llvm::zip(values, access_patterns)) {
+    auto type = ValueType::get(
+        resultType.Shape().AccessedShape(pat.cast<MappingAttr>()),
+        parser.getBuilder().getIndexType());
+    if (mlir::failed(parser.resolveOperand(value, type, result.operands)))
+      return failure();
+  }
+  return success();
+}
+
+// Parses the sair.free operation with the following syntax.
+//
+// free-op ::= `sair.free` domain value attr-dict : type
+//
+static mlir::ParseResult ParseFreeOp(mlir::OpAsmParser &parser,
+                                     mlir::OperationState &result) {
+  llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
+
+  mlir::OpAsmParser::OperandType value;
+  MappingAttr mapping;
+  ValueType value_type;
+
+  if (ParseDomain(parser, domain) ||
+      ParseValueAccess(domain.size(), parser, value, mapping) ||
+      parser.parseOptionalAttrDict(result.attributes) || parser.parseColon() ||
+      parser.parseType(value_type) ||
+      ResolveDomain(parser, value_type.Shape(), domain, result) ||
+      parser.resolveOperand(value, value_type.AccessedType(mapping),
+                            result.operands))
+    return mlir::failure();
+
+  result.addAttribute(SairDialect::kMappingAttrName,
+                      parser.getBuilder().getArrayAttr(mapping));
+  return mlir::success();
+}
+
 // Parses the sair.fby operation, with the following syntax.
 //
 // fby-op ::= `sair.fby` domain init `then` domain value attr-dict : type
@@ -644,6 +725,28 @@ void Print(SairFbyOp op, OpAsmPrinter &printer) {
   printer.printType(op.getType());
 }
 
+static void Print(SairAllocOp op, mlir::OpAsmPrinter &printer) {
+  printer << SairAllocOp::getOperationName();
+  PrintDomain(op.domain(), printer);
+  if (!op.ValueOperands().empty()) printer << " ";
+  llvm::interleaveComma(op.ValueOperands(), printer, [&](ValueOperand value) {
+    PrintValueAccess(value, printer);
+  });
+  printer.printOptionalAttrDict(op.getAttrs(),
+                                {SairDialect::kMappingAttrName,
+                                 SairAllocOp::getOperandSegmentSizeAttr()});
+  printer << " : " << op.result().getType();
+}
+
+static void Print(SairFreeOp op, mlir::OpAsmPrinter &printer) {
+  printer << SairFreeOp::getOperationName();
+  PrintDomain(op.domain(), printer);
+  printer << " ";
+  PrintValueAccess(op.Value(), printer);
+  printer.printOptionalAttrDict(op.getAttrs(), {SairDialect::kMappingAttrName});
+  printer << " : " << op.value().getType();
+}
+
 mlir::LogicalResult Verify(SairFromScalarOp op) {
   mlir::Type expected_type =
       op.result().getType().cast<ValueType>().ElementType();
@@ -706,6 +809,14 @@ mlir::LogicalResult Verify(SairExitOp op) {
   }
 
   return mlir::success();
+}
+
+static LogicalResult Verify(SairAllocOp op) {
+  if (op.dynamic_sizes().size() != op.MemType().getNumDynamicDims()) {
+    return op.emitError() << "expected " << op.MemType().getNumDynamicDims()
+                          << " dynamic size operands";
+  }
+  return success();
 }
 
 }  // namespace

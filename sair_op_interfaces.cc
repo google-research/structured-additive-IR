@@ -169,7 +169,9 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
   int min_num_operands =
       sair_op.shape().NumDimensions() + sair_op.mapping_array().size();
   if (op->getNumOperands() < min_num_operands) {
-    return sair_op.emitError() << "unexpected number of operands";
+    return sair_op.emitError()
+           << "unexpected number of operands, expected >= " << min_num_operands
+           << ", got " << op->getNumOperands();
   }
 
   if (!sair_op.ValueOperands().empty()) {

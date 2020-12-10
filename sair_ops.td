@@ -715,4 +715,79 @@ def SairUndefOp : Op<SairDialect, "undef", [NoSideEffect]> {
   let assemblyFormat = [{ attr-dict `:` type($result) }];
 }
 
+def SairAllocOp : SairOp<"alloc", [
+    AttrSizedOperandSegments,
+    SairComputeOp,
+    SairOneResult,
+    SairValueProducerOp]> {
+  let summary = "Creates a Sair value containing allocated memrefs.";
+
+  let description = [{
+    Defines a Sair value with the given domain where each element of the value
+    is a newly allocated memref of any type. If the memref has dynamic sizes,
+    the allocation must be provided with Sair values containing `index`-typed
+    sizes for each memref in the domain.
+
+    The custom syntax for the operation is as follows.
+    ```
+    sair.alloc[<domain>] <dynamic-sizes> <attr-dict> : <value-type>
+    where <dynamic-sizes> is a potentially empty comma-separated list of
+    <value> <mapping>.
+    ```
+  }];
+
+  let arguments = (ins
+    Variadic<SairRange>:$domain,
+    SairMappingArrayAttr:$mapping_array,
+    Variadic<SairValueOf<Index>>:$dynamic_sizes,
+    SairLoopNestAttr:$loop_nest,
+    SairMemorySpaceAttr:$memory_space
+  );
+
+  let results = (outs SairValueOf<AnyMemRef>:$result);
+
+  let parser = [{return ParseAllocOp(parser, result); }];
+  let printer = [{Print(*this, p);}];
+  let verifier = [{return Verify(*this);}];
+
+  let extraClassDeclaration = [{
+    MemRefType MemType() {
+      return getType().cast<ValueType>().ElementType().cast<MemRefType>();
+    }
+  }];
+}
+
+def SairFreeOp : SairOp<"free", [
+    SairComputeOp]> {
+  let summary = "Deallocates memref contained in the given Sair value.";
+
+  let description = [{
+    Frees the memrefs contained in the given Sair value. It is invalid to use
+    the value after this operation.
+
+    The custom syntax for the operation is as follows.
+    ```
+    sair.free[domain] <value> <mapping> <attr-dict> : <value-type>
+    ```
+  }];
+
+  let arguments = (ins
+    Variadic<SairRange>:$domain,
+    SairMappingArrayAttr:$mapping_array,
+    SairValueOf<AnyMemRef>:$value,
+    SairLoopNestAttr:$loop_nest);
+
+  let parser = [{return ParseFreeOp(parser, result); }];
+  let printer = [{Print(*this, p);}];
+
+  let extraClassDeclaration = [{
+    ValueOperand Value() { return ValueOperands()[0]; }
+
+    DomainShapeAttr shape() {
+      return value().getType().cast<ValueType>().Shape().AccessedShape(
+           mapping_array()[0].cast<MappingAttr>());
+    }
+  }];
+}
+
 #endif  // SAIR_SAIR_OPS_TD_

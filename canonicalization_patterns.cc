@@ -465,4 +465,14 @@ void SairMapOp::getCanonicalizationPatterns(
   patterns.insert<DeduplicateMapInputsOutputs>(context);
 }
 
+void SairAllocOp::getCanonicalizationPatterns(
+    mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
+  patterns.insert<SimplifySairOperands>();
+}
+
+void SairFreeOp::getCanonicalizationPatterns(
+    mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
+  patterns.insert<SimplifySairOperands>();
+}
+
 }  // namespace sair

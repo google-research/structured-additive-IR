@@ -1059,3 +1059,16 @@ func @invalid_mapping() {
   // expected-error @+1 {{invalid mapping}}
   "foo"() { bar = #sair.mapping<1: d0, d0> } : () -> ()
 }
+
+// -----
+
+func @alloc_dim_sizes_mismatch(%arg0: index) {
+  sair.program {
+    %0 = sair.static_range 2 : !sair.range
+    %idx = sair.from_scalar %arg0 : !sair.value<(), index>
+    // expected-error @+1 {{expected 0 dynamic size operands}}
+    sair.alloc %idx : !sair.value<(), memref<42xi32>>
+    sair.exit
+  }
+  return
+}
