@@ -62,3 +62,51 @@ func @map_reduce(%r1: index, %r2: index, %in1: f32) {
   }
   return
 }
+
+// CHECK-LABEL: @alloc
+func @alloc(%arg0: index) {
+  sair.program {
+    // CHECK: %[[D0:.*]] = sair.static_range
+    %0 = sair.static_range 2 : !sair.range
+    // CHECK: %[[D1:.*]] = sair.static_range
+    %1 = sair.static_range 3 : !sair.range
+    %idx = sair.from_scalar %arg0 : !sair.value<(), index>
+    // CHECK: %[[SZ0:.*]] = sair.map
+    %2 = sair.copy[d0:%0] %idx : !sair.value<d0:range, index>
+    // CHECK: %[[SZ1:.*]] = sair.map
+    %3 = sair.copy[d0:%1] %idx : !sair.value<d0:range, index>
+    // CHECK: sair.map[d0:%[[D0]], d1:%[[D1]]] %[[SZ0]](d0), %[[SZ1]](d1) {
+    // CHECK: ^{{.*}}(%{{.*}}: index, %{{.*}}: index, %[[ARG2:.*]]: index, %[[ARG3:.*]]: index):
+    // CHECK:   %[[ALLOC:.*]] = alloc(%[[ARG2]], %[[ARG3]]) : memref<?x?xf32>
+    // CHECK:   sair.return %[[ALLOC]]
+    // CHECK: } : #sair.shape<d0:range x d1:range>, (index, index) -> memref<?x?xf32>
+    sair.alloc[d0:%0, d1:%1] %2(d0), %3(d1) : !sair.value<d0:range x d1:range, memref<?x?xf32>>
+    sair.exit
+  }
+  return
+}
+
+// CHECK-LABEL: @sair_free
+func @sair_free(%arg0: index) {
+  sair.program {
+    // CHECK: %[[D0:.*]] = sair.static_range
+    %0 = sair.static_range 2 : !sair.range
+    // CHECK: %[[D1:.*]] = sair.static_range
+    %1 = sair.static_range 3 : !sair.range
+    %idx = sair.from_scalar %arg0 : !sair.value<(), index>
+    // CHECK: sair.map
+    %2 = sair.copy[d0:%0] %idx : !sair.value<d0:range, index>
+    // CHECK: sair.map
+    %3 = sair.copy[d0:%1] %idx : !sair.value<d0:range, index>
+    // CHECK: %[[ALLOC:.*]] = sair.map
+    %4 = sair.alloc[d0:%0, d1:%1] %2(d0), %3(d1) : !sair.value<d0:range x d1:range, memref<?x?xf32>>
+    // CHECK: sair.map[d0:%[[D1]], d1:%[[D0]]] %[[ALLOC]](d1, d0) {
+    // CHECK: ^{{.*}}(%{{.*}}: index, %{{.*}}: index, %[[ARG2:.*]]: memref<?x?xf32>):
+    // CHECK:   dealloc %[[ARG2]] : memref<?x?xf32>
+    // CHECK:   sair.return
+    // CHECK: } : #sair.shape<d0:range x d1:range>, (memref<?x?xf32>) -> ()
+    sair.free[d0:%1, d1:%0] %4(d1, d0) : !sair.value<d0:range x d1:range, memref<?x?xf32>>
+    sair.exit
+  }
+  return
+}

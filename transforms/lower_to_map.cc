@@ -17,6 +17,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
@@ -137,6 +138,40 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
   op.erase();
 }
 
+// Lowers sair.alloc operation into a sair.map that calls std.alloc internally.
+mlir::LogicalResult RewriteAllocToMap(SairAllocOp op,
+                                      mlir::OpBuilder &builder) {
+  // Cannot emit an allocation for a map with layout.
+  if (!op.MemType().getAffineMaps().empty()) return mlir::failure();
+
+  SairMapOp map_op = builder.create<SairMapOp>(
+      op.getLoc(), op.getType(), op.domain(), op.mapping_array(),
+      op.dynamic_sizes(), op.shape(), op.loop_nestAttr(),
+      op.memory_spaceAttr());
+
+  builder.setInsertionPointToStart(&map_op.block());
+  mlir::Value allocated = builder.create<mlir::AllocOp>(
+      op.getLoc(), op.MemType(), map_op.block_inputs(),
+      /*alignment=*/nullptr);
+  builder.create<SairReturnOp>(op.getLoc(), allocated);
+  op.result().replaceAllUsesWith(map_op.getResult(0));
+  op->erase();
+
+  return mlir::success();
+}
+
+// Lowers sair.free operation into a sair.map that calls std.dealloc internally.
+void RewriteFreeToMap(SairFreeOp op, mlir::OpBuilder &builder) {
+  SairMapOp map_op = builder.create<SairMapOp>(
+      op.getLoc(), llvm::None, op.domain(), op.mapping_array(), op.value(),
+      op.shape(), op.loop_nestAttr(), /*memory_space=*/nullptr);
+
+  builder.setInsertionPointToStart(&map_op.block());
+  builder.create<mlir::DeallocOp>(op.getLoc(), map_op.block_inputs()[0]);
+  builder.create<SairReturnOp>(op.getLoc(), llvm::None);
+  op->erase();
+}
+
 class LowerToMap : public LowerToMapPassBase<LowerToMap> {
   // Converts sair.copy operations into sair.map operations. This is a hook for
   // the MLIR pass infrastructure.
@@ -149,6 +184,10 @@ class LowerToMap : public LowerToMapPassBase<LowerToMap> {
         RewriteCopyToMap(copy, builder);
       } else if (auto reduce = dyn_cast<SairMapReduceOp>(op)) {
         RewriteMapReduceToMap(reduce, builder);
+      } else if (auto alloc = dyn_cast<SairAllocOp>(op)) {
+        RewriteAllocToMap(alloc, builder);
+      } else if (auto free = dyn_cast<SairFreeOp>(op)) {
+        RewriteFreeToMap(free, builder);
       }
     });
   }
