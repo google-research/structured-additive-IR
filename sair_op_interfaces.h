@@ -179,7 +179,7 @@ void SetMapping(ConcreteType op, int position, ::sair::MappingAttr mapping) {
       llvm::to_vector<4>(op.mapping_array());
   new_array[position] = mapping;
   mlir::ArrayAttr new_attr = mlir::ArrayAttr::get(new_array, op.getContext());
-  op.setAttr(::sair::SairDialect::kMappingAttrName, new_attr);
+  op->setAttr(::sair::SairDialect::kMappingAttrName, new_attr);
 }
 
 using namespace mlir;  // NOLINT
