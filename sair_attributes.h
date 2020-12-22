@@ -144,6 +144,9 @@ class MappingAttr
   // Inverse the mapping.
   MappingAttr Inverse() const;
 
+  // Canonicalize dimension expressions.
+  MappingAttr Canonicalize() const;
+
   using iterator = llvm::ArrayRef<MappingExpr>::iterator;
   iterator begin() const { return Dimensions().begin(); }
   iterator end() const { return Dimensions().end(); }
@@ -317,6 +320,8 @@ class MappingDimExpr
   }
 
   mlir::AffineExpr AsAffineExpr() const;
+
+  MappingExpr Canonicalize() const { return *this; }
 };
 
 // Mapping expression that maps to no dimensions. This used when
@@ -373,6 +378,8 @@ class MappingNoneExpr
     llvm_unreachable(
         "cannot call `AsAffineExpr` on partially specified expressions");
   }
+
+  MappingExpr Canonicalize() const { return *this; }
 };
 
 // Applies stripe-mining to an expression. Iterates on its operand with step
@@ -428,6 +435,8 @@ class MappingStripeExpr
   MappingExpr FindInInverse(llvm::ArrayRef<MappingExpr> inverse) const;
 
   mlir::AffineExpr AsAffineExpr() const;
+
+  MappingExpr Canonicalize() const;
 };
 
 // Stiches together stripe expressions to iterate on a full dimension. Specifies
@@ -479,6 +488,8 @@ class MappingUnStripeExpr
   MappingExpr FindInInverse(llvm::ArrayRef<MappingExpr> inverse) const;
 
   mlir::AffineExpr AsAffineExpr() const;
+
+  MappingExpr Canonicalize() const;
 };
 
 }  // namespace sair

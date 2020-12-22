@@ -128,6 +128,9 @@ def MappingExpr : AttrInterface<"MappingExpr"> {
       [{Converts the expression into an affine expression. The expression must
         be fully specified}],
       "mlir::AffineExpr", "AsAffineExpr"
+    >,
+    InterfaceMethod<
+      [{Canonicalizes the expression.}], "MappingExpr", "Canonicalize"
     >
   ];
 }

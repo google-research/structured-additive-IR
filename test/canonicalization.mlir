@@ -181,3 +181,19 @@ func @remove_useless_dims_proj_dependent(%arg0: f32, %arg2: memref<?x?x?xf32>, %
   }
   return
 }
+
+// CHECK-LABEL: @mappings
+func @mappings(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.static_range 8 : !sair.range
+    // CHECK: %[[V0:.*]] = sair.copy
+    %2 = sair.copy[d0:%1] %0 : !sair.value<d0:range, f32>
+    // CHECK: sair.copy[d0:%{{.*}}] %[[V0]](d0)
+    %3 = sair.copy[d0:%1] %2(unstripe(stripe(d0, 4), stripe(d0, 1 size 4), [4]))
+      : !sair.value<d0:range, f32>
+    %4 = sair.proj_last of[d0:%1] %3(d0) : #sair.shape<d0:range>, f32
+    sair.exit %4 : f32
+  } : f32
+  return
+}

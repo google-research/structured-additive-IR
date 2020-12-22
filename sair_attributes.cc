@@ -97,7 +97,7 @@ mlir::LogicalResult MappingDimExpr::SetInverse(
 MappingExpr MappingDimExpr::Unify(MappingExpr other_expr) const {
   if (other_expr == *this) return *this;
   if (other_expr.isa<MappingNoneExpr>()) return *this;
-  return MappingExpr(nullptr);
+  return MappingExpr();
 }
 
 mlir::LogicalResult MappingDimExpr::UnificationConstraints(
@@ -217,10 +217,10 @@ MappingExpr MappingStripeExpr::Unify(MappingExpr other_expr) const {
   MappingStripeExpr other_stripe = other_expr.dyn_cast<MappingStripeExpr>();
   if (other_stripe == nullptr || size() != other_stripe.size() ||
       step() != other_stripe.step()) {
-    return MappingExpr(nullptr);
+    return MappingExpr();
   }
   MappingExpr unified_operand = operand().Unify(other_stripe.operand());
-  if (unified_operand == nullptr) return MappingExpr(nullptr);
+  if (unified_operand == nullptr) return MappingExpr();
   return MappingStripeExpr::get(unified_operand, step(), size());
 }
 
@@ -302,6 +302,25 @@ MappingExpr MappingStripeExpr::FindInInverse(
 
 mlir::AffineExpr MappingStripeExpr::AsAffineExpr() const {
   return step() * operand().AsAffineExpr().floorDiv(step());
+}
+
+MappingExpr MappingStripeExpr::Canonicalize() const {
+  MappingExpr new_operand = operand().Canonicalize();
+  // Use a lambda so that we can break from the control flow.
+  auto simplify = [&]() {
+    auto unstripe = new_operand.dyn_cast<MappingUnStripeExpr>();
+    if (unstripe == nullptr) return MappingExpr();
+    llvm::ArrayRef<int> factors = unstripe.factors();
+    auto it = llvm::find(factors, step());
+    if (it == factors.end() && step() != 1) return MappingExpr();
+    if (it == factors.begin() && size().hasValue()) return MappingExpr();
+    if (it != factors.begin() && size() != *std::prev(it)) return MappingExpr();
+    return unstripe.operands()[it - factors.begin()];
+  };
+
+  MappingExpr simplified = simplify();
+  if (simplified != nullptr) return simplified;
+  return MappingStripeExpr::get(new_operand, step(), size());
 }
 
 //===----------------------------------------------------------------------===//
@@ -438,7 +457,7 @@ MappingExpr MappingUnStripeExpr::Unify(MappingExpr other_expr) const {
   if (other_expr.isa<MappingNoneExpr>()) return *this;
   MappingUnStripeExpr other_unstripe =
       other_expr.dyn_cast<MappingUnStripeExpr>();
-  if (other_unstripe == nullptr) return MappingExpr(nullptr);
+  if (other_unstripe == nullptr) return MappingExpr();
 
   llvm::SmallVector<MappingExpr, 4> new_exprs;
   llvm::SmallVector<int, 3> new_factors;
@@ -453,7 +472,7 @@ MappingExpr MappingUnStripeExpr::Unify(MappingExpr other_expr) const {
     if (this_step < other_step) {
       // We can only subdivide none exprs.
       if (!operands()[this_cursor].isa<MappingNoneExpr>()) {
-        return MappingExpr(nullptr);
+        return MappingExpr();
       }
       new_factors.push_back(other_step);
       new_exprs.push_back(other_unstripe.operands()[other_cursor]);
@@ -461,7 +480,7 @@ MappingExpr MappingUnStripeExpr::Unify(MappingExpr other_expr) const {
     } else if (this_step > other_step) {
       // We can only subdivide none exprs.
       if (!other_unstripe.operands()[other_cursor].isa<MappingNoneExpr>()) {
-        return MappingExpr(nullptr);
+        return MappingExpr();
       }
       new_factors.push_back(this_step);
       new_exprs.push_back(operands()[this_cursor]);
@@ -528,6 +547,35 @@ MappingExpr MappingUnStripeExpr::FindInInverse(
 
 mlir::AffineExpr MappingUnStripeExpr::AsAffineExpr() const {
   return operands().back().AsAffineExpr();
+}
+
+MappingExpr MappingUnStripeExpr::Canonicalize() const {
+  llvm::SmallVector<MappingExpr, 4> new_operands;
+  new_operands.reserve(operands().size());
+  for (MappingExpr operand : operands()) {
+    new_operands.push_back(operand.Canonicalize());
+  }
+
+  // Use a lambda so that we can easily break the control flow.
+  auto simplify = [&]() -> MappingExpr {
+    auto stripe = new_operands.front().dyn_cast<MappingStripeExpr>();
+    if (stripe == nullptr) return MappingExpr();
+    if (stripe.size().hasValue()) return MappingExpr();
+    auto inner_stripes = llvm::makeArrayRef(new_operands).drop_front();
+    for (auto [expr, factor] : llvm::zip(inner_stripes, factors())) {
+      if (factor != stripe.step()) return MappingExpr();
+      auto new_stripe = expr.dyn_cast<MappingStripeExpr>();
+      if (new_stripe == nullptr) return MappingExpr();
+      if (new_stripe.size() != factor) return MappingExpr();
+      if (new_stripe.operand() != stripe.operand()) return MappingExpr();
+      stripe = new_stripe;
+    }
+    return stripe.operand();
+  };
+
+  MappingExpr simplified = simplify();
+  if (simplified != nullptr) return simplified;
+  return MappingUnStripeExpr::get(new_operands, factors());
 }
 
 //===----------------------------------------------------------------------===//
@@ -760,6 +808,15 @@ MappingAttr MappingAttr::Inverse() const {
     assert(mlir::succeeded(status));
   }
   return MappingAttr::get(context, size(), inverted_exprs);
+}
+
+MappingAttr MappingAttr::Canonicalize() const {
+  llvm::SmallVector<MappingExpr, 4> exprs;
+  exprs.reserve(size());
+  for (MappingExpr expr : Dimensions()) {
+    exprs.push_back(expr.Canonicalize());
+  }
+  return MappingAttr::get(getContext(), UseDomainSize(), exprs);
 }
 
 //===----------------------------------------------------------------------===//

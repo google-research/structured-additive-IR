@@ -95,6 +95,8 @@ class TestMappingExprsPass
       int domain_size = expr.MinDomainSize();
       auto map = mlir::AffineMap::get(domain_size, 0, expr.AsAffineExpr());
       return mlir::AffineMapAttr::get(map);
+    } else if (op_name == "canonicalize") {
+      return expr.Canonicalize();
     }
     llvm_unreachable("unknown test name");
   }

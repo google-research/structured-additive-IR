@@ -114,6 +114,11 @@ class SimplifySairOperands : public RewritePattern {
       if (auto fby = dyn_cast<SairFbyOp>(defining_op)) {
         simplified |= SimplifyFbyOp(operand, fby);
       }
+      MappingAttr canonicalized_mapping = operand.Mapping().Canonicalize();
+      if (canonicalized_mapping != operand.Mapping()) {
+        operand.SetMapping(canonicalized_mapping);
+        simplified = true;
+      }
     }
     if (simplified) {
       rewriter.finalizeRootUpdate(op);

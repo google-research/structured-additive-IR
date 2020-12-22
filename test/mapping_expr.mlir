@@ -214,4 +214,53 @@ module {
   expr = #sair.mapping_expr<unstripe(d0, d1, [4])>
 } : () -> ()
 
+// CHECK: "test.canonicalize"() {label = @stripe_unstripe_ok,
+// CHECK-SAME: result = #sair.mapping_expr<d1>
+"test.canonicalize"() {
+  label = @stripe_unstripe_ok,
+  expr = #sair.mapping_expr<stripe(unstripe(d0, d1, d2, [8, 4]), 4 size 8)>
+} : () -> ()
+
+// CHECK: "test.canonicalize"() {label = @stripe_unstripe_ok_no_size,
+// CHECK-SAME: result = #sair.mapping_expr<d0>
+"test.canonicalize"() {
+  label = @stripe_unstripe_ok_no_size,
+  expr = #sair.mapping_expr<stripe(unstripe(d0, d1, [4]), 4)>
+} : () -> ()
+
+// CHECK: "test.canonicalize"() {label = @stripe_unstripe_fail_step,
+// CHECK-SAME: result = #sair.mapping_expr<stripe(unstripe(d0, d1, d2, [8, 4]), 3 size 8)>
+"test.canonicalize"() {
+  label = @stripe_unstripe_fail_step,
+  expr = #sair.mapping_expr<stripe(unstripe(d0, d1, d2, [8, 4]), 3 size 8)>
+} : () -> ()
+
+// CHECK: "test.canonicalize"() {label = @stripe_unstripe_fail_size,
+// CHECK-SAME: result = #sair.mapping_expr<stripe(unstripe(d0, d1, d2, [8, 4]), 4)>
+"test.canonicalize"() {
+  label = @stripe_unstripe_fail_size,
+  expr = #sair.mapping_expr<stripe(unstripe(d0, d1, d2, [8, 4]), 4)>
+} : () -> ()
+
+// CHECK: "test.canonicalize"() {label = @unstripe_stripe_ok,
+// CHECK-SAME: result = #sair.mapping_expr<d0>
+"test.canonicalize"() {
+  label = @unstripe_stripe_ok,
+  expr = #sair.mapping_expr<unstripe(stripe(d0, 8), stripe(d0, 4 size 8), stripe(d0, 1 size 4), [8, 4])>
+} : () -> ()
+
+// CHECK: "test.canonicalize"() {label = @unstripe_stripe_fail_step,
+// CHECK-SAME: result = #sair.mapping_expr<unstripe(stripe(d0, 8), stripe(d0, 4 size 8), stripe(d0, 1 size 4), [8, 3])>
+"test.canonicalize"() {
+  label = @unstripe_stripe_fail_step,
+  expr = #sair.mapping_expr<unstripe(stripe(d0, 8), stripe(d0, 4 size 8), stripe(d0, 1 size 4), [8, 3])>
+} : () -> ()
+
+// CHECK: "test.canonicalize"() {label = @unstripe_stripe_fail_size,
+// CHECK-SAME: result = #sair.mapping_expr<unstripe(stripe(d0, 8), stripe(d0, 4 size 8), stripe(d0, 1 size 4), [7, 4])>
+"test.canonicalize"() {
+  label = @unstripe_stripe_fail_size,
+  expr = #sair.mapping_expr<unstripe(stripe(d0, 8), stripe(d0, 4 size 8), stripe(d0, 1 size 4), [7, 4])>
+} : () -> ()
+
 }
