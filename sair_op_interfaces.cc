@@ -130,7 +130,7 @@ void SetMemorySpace(int result, llvm::Optional<int> memory_space,
   }
   if (memory_space.hasValue()) {
     memory_spaces[result] = mlir::IntegerAttr::get(
-        mlir::IntegerType::get(64, op->getContext()), memory_space.getValue());
+        mlir::IntegerType::get(op->getContext(), 64), memory_space.getValue());
   } else {
     memory_spaces[result] = mlir::UnitAttr::get(op->getContext());
   }
