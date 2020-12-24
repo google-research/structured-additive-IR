@@ -114,11 +114,12 @@ class TestMappingExprsPass
       }
       // Clear attributes except label.
       mlir::Attribute label = op->getAttr("label");
-      op->setAttrs(mlir::MutableDictionaryAttr());
-      op->setAttr("result", result);
+      mlir::NamedAttrList attrs;
+      attrs.set("result", result);
       if (label != nullptr) {
-        op->setAttr("label", label);
+        attrs.set("label", label);
       }
+      op->setAttrs(attrs.getDictionary(op->getContext()));
     });
   }
 };
@@ -157,11 +158,12 @@ class TestDomainShapePass
       }
       // Clear attributes except label.
       mlir::Attribute label = op->getAttr("label");
-      op->setAttrs(mlir::MutableDictionaryAttr());
-      op->setAttr("result", result);
+      mlir::NamedAttrList attrs;
+      attrs.set("result", result);
       if (label != nullptr) {
-        op->setAttr("label", label);
+        attrs.set("label", label);
       }
+      op->setAttrs(attrs.getDictionary(op->getContext()));
     });
   }
 };
