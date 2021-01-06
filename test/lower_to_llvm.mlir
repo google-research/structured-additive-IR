@@ -2,7 +2,7 @@
 
 // CHECK-LABEL: @undef
 func @undef() {
-  // = llvm.mlir.undef : !llvm.float
+  // = llvm.mlir.undef : f32
   %0 = sair.undef : f32
   return
 }
