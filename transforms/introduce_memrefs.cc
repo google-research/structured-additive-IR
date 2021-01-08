@@ -323,7 +323,7 @@ mlir::ArrayAttr Append0DAccesses(mlir::ArrayAttr original, size_t num,
                                  mlir::MLIRContext *ctx) {
   auto mapping_list = llvm::to_vector<8>(original.getValue());
   mapping_list.append(num, MappingAttr::get(ctx, use_domain_size, {}));
-  return ArrayAttr::get(mapping_list, ctx);
+  return ArrayAttr::get(ctx, mapping_list);
 }
 
 // Rewrites sair.map ops producing values written to memrefs to store individual

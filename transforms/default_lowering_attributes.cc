@@ -100,7 +100,7 @@ mlir::ArrayAttr GetDefaultLoopNest(SairProgramOp program, int num_dimensions,
     loop_nest.push_back(LoopAttr::get(name, expr, context));
   }
 
-  return mlir::ArrayAttr::get(loop_nest, context);
+  return mlir::ArrayAttr::get(context, loop_nest);
 }
 
 std::unique_ptr<mlir::Pass> CreateDefaultMemorySpacePass() {

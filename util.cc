@@ -31,7 +31,7 @@ InsertionPoint FindInsertionPoint(
     int num_loops, Direction direction) {
   mlir::Operation *current_op = start.getOperation();
   auto target_loop_nest = mlir::ArrayAttr::get(
-      current_loop_nest.take_front(num_loops), start.getContext());
+      start.getContext(), current_loop_nest.take_front(num_loops));
   mlir::Operation *point = current_op;
 
   // Look for a point where only the first `num_loops` of the current loop nest

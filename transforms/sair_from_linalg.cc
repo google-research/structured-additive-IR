@@ -286,8 +286,8 @@ void EmitValueToMemRef(mlir::Location loc, mlir::ValueRange sair_values,
   int num_results = sair_values.size();
   for (int i = 0; i < num_results; ++i) {
     auto mapping_array = ArrayAttr::get(
-        {MappingAttr::GetIdentity(context, 0, ranges[i].size()), mappings[i]},
-        context);
+        context,
+        {MappingAttr::GetIdentity(context, 0, ranges[i].size()), mappings[i]});
     auto shape = DomainShapeAttr::HyperRectangular(context, ranges[i].size());
     auto memref_value_type =
         ValueType::get(DomainShapeAttr::get(context), memrefs[i].getType());

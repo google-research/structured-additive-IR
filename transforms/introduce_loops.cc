@@ -339,7 +339,7 @@ mlir::ArrayAttr EraseDimensionFromLoopNest(
     new_loop_nest.push_back(LoopAttr::get(
         loop.name(), MappingDimExpr::get(old_dimension - 1, context), context));
   }
-  return mlir::ArrayAttr::get(new_loop_nest, context);
+  return mlir::ArrayAttr::get(context, new_loop_nest);
 }
 
 // Erases a projection dimension from a proj_last operation and replaces
