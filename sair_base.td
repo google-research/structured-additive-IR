@@ -178,7 +178,7 @@ class SairStructAttr<string name,
       StructAttr<name, SairDialect, fields>,
       !foreach(c, constraints, AttrConstraint<
         SubstLeaves<"$_self", "$_self.cast<" # name # ">()", c.predicate>,
-        c.description>
+        c.summary>
       )>;
 
 // An attribute describing a loop to generate when lowering an operation.
@@ -218,7 +218,7 @@ class SairElementTypePred<Type type>
 // Type constraint for Sair values with a specific element type.
 class SairValueOf<Type type>
   : Type<And<[SairValue.predicate, SairElementTypePred<type>]>,
-      "sair.value with " # type.description # " elements">;
+      "sair.value with " # type.summary # " elements">;
 
 // Type for arrays of mappings.
 def SairMappingArrayAttr :
