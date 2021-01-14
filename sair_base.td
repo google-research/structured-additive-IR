@@ -319,6 +319,11 @@ def SairOpInterface : OpInterface<"SairOp"> {
         return llvm::SmallBitVector(size);
       }]
     >,
+    InterfaceMethod<
+      [{Indicates the size of each sub-domain. The first sub-domain is always
+        the parallel domain}],
+      "llvm::SmallVector<int, 2>", "SubDomains", (ins), [{}]
+    >
   ];
 
   let verify = [{return VerifySairOp(op);}];

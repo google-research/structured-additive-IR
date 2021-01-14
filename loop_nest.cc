@@ -62,11 +62,12 @@ IterationSpaceAnalysis::IterationSpaceAnalysis(SairProgramOp program_op) {
   }
 }
 
-mlir::ArrayAttr IterationSpaceAnalysis::IterationSpace(SairOp op) const {
-  return iteration_space_.find(op.getOperation())->second;
+llvm::ArrayRef<mlir::Attribute> IterationSpaceAnalysis::IterationSpace(
+    SairOp op) const {
+  return iteration_space_.find(op.getOperation())->second.getValue();
 }
 
-mlir::ArrayAttr IterationSpaceAnalysis::IterationSpace(
+llvm::ArrayRef<mlir::Attribute> IterationSpaceAnalysis::IterationSpace(
     mlir::Value value) const {
   return IterationSpace(value.getDefiningOp());
 }
@@ -168,11 +169,11 @@ class LoopNestConstraintsAnalysis {
       }
     }
 
-    mlir::ArrayAttr iteration_space =
+    mlir::ArrayRef<mlir::Attribute> iteration_space =
         iteration_spaces.IterationSpace(operation);
     llvm::SmallBitVector closed_dims = op.ResultsDimDependencies();
     bool closed_dims_seen = false;
-    for (mlir::Attribute attr : iteration_space.getValue()) {
+    for (mlir::Attribute attr : iteration_space) {
       LoopAttr loop = attr.cast<LoopAttr>();
       constraints.open_loops.insert(loop.name());
       llvm::SmallBitVector iter_dims =
@@ -342,18 +343,17 @@ static mlir::LogicalResult VerifyLoopsOpen(
 // * `carrying_dims`: if `dependency` is a loop-carried operand, lists
 //    dimensions carrying the value of `dependency` across iterations.
 static mlir::LogicalResult VerifyDependency(
-    SairOp op, mlir::ArrayAttr op_loop_nest, mlir::Value dependency,
-    MappingAttr mapping, const llvm::SmallBitVector &dim_dependencies,
+    SairOp op, llvm::ArrayRef<mlir::Attribute> op_loop_nest,
+    mlir::Value dependency, MappingAttr mapping,
+    const llvm::SmallBitVector &dim_dependencies,
     const llvm::SmallBitVector &carrying_dims,
     const IterationSpaceAnalysis &iteration_space_analysis,
     const LoopNestConstraintsAnalysis &loop_constraints_analysis) {
-  mlir::ArrayAttr dep_loop_nest =
+  mlir::ArrayRef<mlir::Attribute> dep_loop_nest =
       iteration_space_analysis.IterationSpace(dependency);
-  if (dep_loop_nest == nullptr) return mlir::success();
 
   // Verify dependencies with the operand loop nest.
-  for (auto [op_attr, dep_attr] :
-       llvm::zip(op_loop_nest.getValue(), dep_loop_nest.getValue())) {
+  for (auto [op_attr, dep_attr] : llvm::zip(op_loop_nest, dep_loop_nest)) {
     LoopAttr op_loop = op_attr.cast<LoopAttr>();
     LoopAttr dep_loop = dep_attr.cast<LoopAttr>();
     if (op_loop.name() != dep_loop.name()) break;
@@ -408,8 +408,8 @@ static mlir::LogicalResult VerifyDependency(
 static mlir::LogicalResult VerifyDependencies(
     SairOp op, IterationSpaceAnalysis &iteration_space_analysis,
     LoopNestConstraintsAnalysis &loop_constaints_analysis) {
-  mlir::ArrayAttr loop_nest = iteration_space_analysis.IterationSpace(op);
-  if (loop_nest == nullptr) return mlir::success();
+  llvm::ArrayRef<mlir::Attribute> loop_nest =
+      iteration_space_analysis.IterationSpace(op);
 
   int domain_size = op.domain().size();
   for (int i = 0; i < domain_size; ++i) {
@@ -557,6 +557,44 @@ static mlir::LogicalResult VerifyLoopNestShape(
   return mlir::success();
 }
 
+// Ensure that each loop only iterate along a single sub-domain.
+static mlir::LogicalResult VerifySubDomains(
+    SairOp op, llvm::ArrayRef<mlir::Attribute> iteration_space) {
+  llvm::SmallVector<int, 2> sub_domains = op.SubDomains();
+  assert(!sub_domains.empty() || iteration_space.empty());
+
+  for (mlir::Attribute attr : iteration_space) {
+    LoopAttr loop = attr.cast<LoopAttr>();
+    llvm::SmallBitVector dimensions =
+        loop.iter().DependencyMask(op.domain().size());
+    if (!dimensions.any()) continue;
+
+    // Compute the sub-domain the loop belongs to. If the iterator is not fully
+    // specified, then reaterializing dimensions will be added to the parallel
+    // sub-domain (sub-domain 0) and so all dimensions must belong to the
+    // parallel sub-domain.
+    int sub_domain = 0;
+    int min_dim_index = 0;
+    int max_dim_index = sub_domains[0];
+    if (loop.iter().IsFullySpecified()) {
+      int first = dimensions.find_first();
+      while (first >= max_dim_index) {
+        min_dim_index = max_dim_index;
+        max_dim_index += sub_domains[sub_domain++];
+      }
+    }
+
+    // Check that all dimensions referenced by the iterator are in the
+    // sub-domain.
+    if (dimensions.find_first() < min_dim_index ||
+        dimensions.find_last() >= max_dim_index) {
+      return op.emitError()
+             << "loop " << loop.name() << " crosses sub-domains boundaries";
+    }
+  }
+  return mlir::success();
+}
+
 mlir::LogicalResult VerifyLoopNests(SairProgramOp program) {
   // Verify operands of Sair operands are defined in the same program. This
   // check is performed here rather that in SairOp as it is needed for other
@@ -623,6 +661,10 @@ mlir::LogicalResult VerifyLoopNests(SairProgramOp program) {
 
   // Verify dependencies.
   result = program.walk([&](SairOp op) -> mlir::WalkResult {
+    if (mlir::failed(VerifySubDomains(
+            op, iteration_space_analysis.IterationSpace(op)))) {
+      return mlir::failure();
+    }
     return VerifyDependencies(op, iteration_space_analysis,
                               loop_constraints_analysis);
   });

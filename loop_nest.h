@@ -56,12 +56,14 @@ class IterationSpaceAnalysis {
   explicit IterationSpaceAnalysis(mlir::Operation *operation)
       : IterationSpaceAnalysis(dyn_cast<SairProgramOp>(operation)) {}
 
-  // Computes or retrieves the loops `op` is nested in.
-  mlir::ArrayAttr IterationSpace(SairOp op) const;
+  // Computes or retrieves the loops `op` is nested in. Returns the empty
+  // iteration space if the loop nest is left unspecified.
+  llvm::ArrayRef<mlir::Attribute> IterationSpace(SairOp op) const;
 
-  // Computes or retrieves the loops the value is nested in. The value must
-  // be defined by a sair operation.
-  mlir::ArrayAttr IterationSpace(mlir::Value value) const;
+  // Computes or retrieves the loops the value is nested in. The value must be
+  // defined by a sair operation. Returns the empty iteration space if the loop
+  // nest is left unspecified.
+  llvm::ArrayRef<mlir::Attribute> IterationSpace(mlir::Value value) const;
 
  private:
   // Computes the iteration space for the given operation.

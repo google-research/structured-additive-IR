@@ -1072,3 +1072,23 @@ func @alloc_dim_sizes_mismatch(%arg0: index) {
   }
   return
 }
+
+// -----
+
+func @loop_crosses_subdomain_boundaries(%arg0: f32) {
+  sair.program {
+    %0 = sair.static_range 4 : !sair.range
+    %1 = sair.static_range 4 step 4 : !sair.range
+    %2 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %3 = sair.copy[d0:%1, d1:%0] %2 {
+      loop_nest = [
+        {name = "loopA", iter = #sair.mapping_expr<unstripe(d0, d1, [4])>}
+      ]
+    } : !sair.value<d0:range x d1:range, f32>
+    // expected-error @+1 {{loop "loopA" crosses sub-domains boundaries}}
+    %4 = sair.proj_last[d0:%1] of[d1:%0] %3(d0, d1)
+      : #sair.shape<d0:range x d1:range>, f32
+    sair.exit
+  }
+  return
+}

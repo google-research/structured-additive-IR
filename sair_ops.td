@@ -69,6 +69,8 @@ def SairDynRangeOp : SairOp<"dyn_range",
     ValueOrConstant UpperBound() {
       return ValueOperands().back();
     }
+
+    llvm::SmallVector<int, 2> SubDomains() { return {domain().size()}; }
   }];
 }
 
@@ -101,6 +103,8 @@ def SairStaticRangeOp : SairOp<"static_range", [NoSideEffect, SairRangeOp]> {
     }
 
     ValueOrConstant UpperBound() { return sizeAttr(); }
+
+    llvm::SmallVector<int, 2> SubDomains() { return {}; }
   }];
 }
 
@@ -142,6 +146,8 @@ def SairCopyOp : SairOp<"copy", [
 
   let extraClassDeclaration = [{
     ValueOperand Value() { return ValueOperands()[0]; }
+
+    llvm::SmallVector<int, 2> SubDomains() { return {domain().size()}; }
   }];
 }
 
@@ -172,6 +178,10 @@ def SairFromScalarOp : SairOp<"from_scalar", [
     return builder.getArrayAttr(
       {builder.getI64IntegerAttr(ValueProducerOp::kRegister)});
   }], [{$_self.getValueOr(nullptr)}]>;
+
+  let extraClassDeclaration = [{
+    llvm::SmallVector<int, 2> SubDomains() { return {}; }
+  }];
 }
 
 def SairFromMemRefOp : SairOp<"from_memref", [
@@ -242,6 +252,10 @@ def SairFromMemRefOp : SairOp<"from_memref", [
           .cast<ValueType>()
           .ElementType()
           .cast<mlir::MemRefType>();
+    }
+
+    llvm::SmallVector<int, 2> SubDomains() {
+      return {parallel_domain().size(), memref_domain().size()};
     }
   }];
 
@@ -318,6 +332,10 @@ def SairToMemRefOp : SairOp<"to_memref", [
           .cast<ValueType>()
           .ElementType()
           .cast<mlir::MemRefType>();
+    }
+
+    llvm::SmallVector<int, 2> SubDomains() {
+      return {parallel_domain().size(), memref_domain().size()};
     }
   }];
 }
@@ -396,6 +414,8 @@ def SairMapOp : SairOp<"map", [
     llvm::MutableArrayRef<mlir::BlockArgument> block_inputs() {
       return block().getArguments().drop_front(domain().size());
     }
+
+    llvm::SmallVector<int, 2> SubDomains() { return {domain().size()}; }
   }];
 
   let parser = [{return ParseMapOp(parser, result);}];
@@ -469,6 +489,10 @@ def SairMapReduceOp : SairOp<"map_reduce", [
     llvm::SmallBitVector DimsDependingOnOperand(int sair_operand);
 
     int results_rank() { return parallel_domain().size(); }
+
+    llvm::SmallVector<int, 2> SubDomains() {
+      return {parallel_domain().size(), reduction_domain().size()};
+    }
   }];
 
   let parser = [{return ParseMapReduceOp(parser, result);}];
@@ -506,6 +530,10 @@ class SairProjectionOp<string name> : SairOp<name, [
     ValueOperand Value() { return ValueOperands()[0]; }
 
     int infer_iteration_space_operand() { return 0; }
+
+    llvm::SmallVector<int, 2> SubDomains() {
+      return {parallel_domain().size(), projection_domain().size()};
+    }
   }];
 }
 
@@ -601,6 +629,10 @@ def SairFbyOp : SairOp<"fby", [
     ValueOperand Value() { return ValueOperands()[1]; }
 
     int infer_iteration_space_operand() { return 1; }
+
+    llvm::SmallVector<int, 2> SubDomains() {
+      return {parallel_domain().size(), sequential_domain().size()};
+    }
   }];
 }
 
@@ -681,6 +713,10 @@ def SairExitOp : SairOp<"exit", [Terminator]> {
   let builders = [
     OpBuilderDAG<(ins CArg<"mlir::ValueRange", "{}">:$operands)>
   ];
+
+  let extraClassDeclaration = [{
+    llvm::SmallVector<int, 2> SubDomains() { return {}; }
+  }];
 }
 
 // Note: this is not defined as SairOp because it is not expected inside
@@ -754,6 +790,8 @@ def SairAllocOp : SairOp<"alloc", [
     MemRefType MemType() {
       return getType().cast<ValueType>().ElementType().cast<MemRefType>();
     }
+
+    llvm::SmallVector<int, 2> SubDomains() { return {domain().size()}; }
   }];
 }
 
@@ -787,6 +825,8 @@ def SairFreeOp : SairOp<"free", [
       return value().getType().cast<ValueType>().Shape().AccessedShape(
            mapping_array()[0].cast<MappingAttr>());
     }
+
+    llvm::SmallVector<int, 2> SubDomains() { return {domain().size()}; }
   }];
 }
 
