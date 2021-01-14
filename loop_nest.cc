@@ -24,7 +24,6 @@ namespace sair {
 // not cover all dimensions of the current operation.
 static mlir::ArrayAttr InferIterationSpace(
     mlir::ArrayAttr operand_iteration_space, ValueOperand &operand) {
-  if (operand_iteration_space == nullptr) return nullptr;
   mlir::MLIRContext *context = operand_iteration_space.getContext();
   MappingAttr mapping = operand.Mapping();
 
