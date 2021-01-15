@@ -84,6 +84,25 @@ llvm::SmallBitVector ValueOperand::CarryingDims() const {
   return cast<SairOp>(operand_->getOwner()).CarryingDimensions(index_);
 }
 
+// Finds a ValueOperand that wraps the same Value as the given OpOperand. Value
+// operands immediately follow domain operands in Sair ops.
+static ValueOperand ValueOperandForOpOperand(OpOperand &operand) {
+  auto owner = cast<SairOp>(operand.getOwner());
+  ValueOperand value_operand =
+      owner.ValueOperands()[operand.getOperandNumber() - owner.domain().size()];
+  return value_operand;
+}
+
+void UpdateValueUses(mlir::Value value, mlir::Value newValue,
+                     MappingAttr mapping) {
+  for (OpOperand &operand : llvm::make_early_inc_range(value.getUses())) {
+    ValueOperand value_operand = ValueOperandForOpOperand(operand);
+    value_operand.SetMapping(
+        value_operand.Mapping().Compose(mapping).Canonicalize());
+    value_operand.set_value(newValue);
+  }
+}
+
 // Sair operations are only allowed inside a SairProgramOp.
 mlir::LogicalResult VerifySairOpParent(mlir::Operation *operation) {
   if (isa<SairProgramOp>(operation->getParentOp())) {

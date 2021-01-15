@@ -227,15 +227,6 @@ class DeduplicateMapInputsOutputs : public OpRewritePattern<SairMapOp> {
   }
 };
 
-// Finds a ValueOperand that wraps the same Value as the given OpOperand. Value
-// operands immediately follow domain operands in Sair ops.
-ValueOperand ValueOperandForOpOperand(OpOperand &operand) {
-  auto owner = cast<SairOp>(operand.getOwner());
-  ValueOperand value_operand =
-      owner.ValueOperands()[operand.getOperandNumber() - owner.domain().size()];
-  return value_operand;
-}
-
 // Remove a followed-by operation that depends on its own result, i.e.
 //   %1 = sair.fby[...] %0(...) then[...] %1(d0, d1, ..., dn)
 // and make its users use the init value instead.
@@ -249,21 +240,7 @@ class RemoveCyclicFby : public OpRewritePattern<SairFbyOp> {
     if (op.result() != op.value() || !op.Value().Mapping().IsIdentity())
       return mlir::failure();
 
-    // Update the users. The list of uses contains all uses, including multiple
-    // uses of the same value by the same operation.
-    for (OpOperand &operand : op.result().getUses()) {
-      if (operand.getOwner() == op) continue;
-
-      ValueOperand value_operand = ValueOperandForOpOperand(operand);
-      MappingAttr mapping =
-          value_operand.Mapping().Compose(op.Init().Mapping());
-      value_operand.set_value(op.init());
-      value_operand.SetMapping(mapping);
-    }
-
-    assert(llvm::hasSingleElement(op.result().getUses()) &&
-           op.result().getUses().begin()->getOwner() == op &&
-           "expected only the self-reference to remain");
+    UpdateValueUses(op.result(), op.init(), op.Init().Mapping());
     op.erase();
 
     return mlir::success();
@@ -298,17 +275,6 @@ void RemoveUnusedDomainDimensions(
   }
 
   mapping = MappingAttr::get(context, used_dimensions.size(), exprs);
-}
-
-// Update all uses of `value` to use `newValue` instead, and compose the access
-// mapping with `mappingComponent`.
-void UpdateValueUses(mlir::Value value, mlir::Value newValue,
-                     MappingAttr mappingComponent) {
-  for (OpOperand &operand : value.getUses()) {
-    ValueOperand value_operand = ValueOperandForOpOperand(operand);
-    value_operand.SetMapping(value_operand.Mapping().Compose(mappingComponent));
-    value_operand.set_value(newValue);
-  }
 }
 
 // Canonicalization pattern that drops unused dimensions from projection ops.

@@ -32,9 +32,31 @@
 #include "sair_ops.h"
 #include "transforms/default_lowering_attributes.h"
 #include "transforms/lowering_pass_classes.h"
+#include "transforms/util.h"
 
 namespace sair {
 namespace {
+
+// Finds the closest insertion point of `point` for an operation with
+// `num_dimensions` dimensions that is fused with the `fusion_level` first
+// loops of `point`. `direction` indicates if the insertion point should be
+// located before or after `point`.
+//
+// Leaves the loop nest blank in the case where the loop nest of `point` is
+// blank.
+InsertionPoint FindInsertionPoint(int num_dimensions, int fusion_level,
+                                  ComputeOp point,
+                                  Direction direction = Direction::kBefore) {
+  assert(num_dimensions >= fusion_level);
+  if (!point.loop_nest().hasValue()) return {point, direction, nullptr};
+  InsertionPoint result =
+      FindInsertionPoint(cast<SairOp>(point.getOperation()),
+                         point.LoopNestLoops(), fusion_level, direction);
+  SairProgramOp program_op = cast<SairProgramOp>(point.getParentOp());
+  result.loop_nest = GetDefaultLoopNest(program_op, num_dimensions,
+                                        result.loop_nest.getValue());
+  return result;
+}
 
 // Returns the last operation using the value. Expects all users of the value to
 // be in the same block that produces it. Returns nullptr if the value has no
@@ -49,71 +71,6 @@ mlir::Operation *GetLastUse(mlir::Value value) {
     }
   }
   return last_use;
-}
-
-// Position of an operation relative to another.
-enum class Direction { kBefore, kAfter };
-
-// Specifies where to insert an operation in the generated code. The operation
-// is inserted before 'before', nested in 'loop_nest'.
-struct InsertionPoint {
-  mlir::Operation *operation;
-  Direction direction;
-  mlir::ArrayAttr loop_nest;
-
-  // Sets the insertion point of the builder.
-  void Set(mlir::OpBuilder &builder) const {
-    if (direction == Direction::kAfter) {
-      builder.setInsertionPointAfter(operation);
-    } else {
-      builder.setInsertionPoint(operation);
-    }
-  }
-};
-
-// Finds the closest insertion point of `point` for an operation with
-// `num_dimensions` dimensions that is fused with the `fusion_level` first
-// loops of `point`. `direction` indicates if the insertion point should be
-// located before or after `point`.
-//
-// Leaves the loop nest blank in the case where the loop nest of `point` is
-// blank.
-InsertionPoint FindInsertionPoint(int num_dimensions, int fusion_level,
-                                  ComputeOp point,
-                                  Direction direction = Direction::kBefore) {
-  SairProgramOp program_op = cast<SairProgramOp>(point->getParentOp());
-  if (!point.loop_nest().hasValue()) return {point, direction, nullptr};
-
-  mlir::ArrayAttr loop_nest = point.loop_nest().getValue();
-  int current_fusion_level = loop_nest.size();
-
-  mlir::Operation *current_op = point.getOperation();
-  while (current_fusion_level > fusion_level) {
-    current_op = direction == Direction::kAfter ? current_op->getNextNode()
-                                                : current_op->getPrevNode();
-    if (current_op == nullptr) break;
-
-    ComputeOp compute_op = dyn_cast<ComputeOp>(current_op);
-    if (compute_op == nullptr) continue;
-    if (!compute_op.loop_nest().hasValue()) break;
-    mlir::ArrayAttr new_loop_nest = compute_op.loop_nest().getValue();
-    if (current_fusion_level > new_loop_nest.size()) {
-      current_fusion_level = new_loop_nest.size();
-    }
-    for (; current_fusion_level > 0; --current_fusion_level) {
-      mlir::StringAttr name =
-          loop_nest[current_fusion_level - 1].cast<LoopAttr>().name();
-      mlir::StringAttr new_name =
-          new_loop_nest[current_fusion_level - 1].cast<LoopAttr>().name();
-      if (name != new_name) break;
-    }
-
-    point = compute_op;
-  }
-  mlir::ArrayAttr new_loop_nest =
-      GetDefaultLoopNest(program_op, num_dimensions,
-                         loop_nest.getValue().take_front(fusion_level));
-  return {point, direction, new_loop_nest};
 }
 
 // Materializes `operand` in `domain` by inserting a copy operation. Returns the

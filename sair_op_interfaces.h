@@ -106,6 +106,11 @@ class ValueOperandRange
   friend RangeBaseT;
 };
 
+// Update all uses of `value` to use `newValue` instead, and compose the access
+// mapping with `mapping`.
+void UpdateValueUses(mlir::Value value, mlir::Value newValue,
+                     MappingAttr mapping);
+
 // Represents wither a Sair value or a constant.
 class ValueOrConstant {
  public:
