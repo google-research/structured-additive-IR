@@ -24,7 +24,6 @@
 #include "mlir/Transforms/RegionUtils.h"
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
-#include "sair_traits.h"
 #include "transforms/lowering_pass_classes.h"
 
 namespace sair {

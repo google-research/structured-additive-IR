@@ -59,6 +59,10 @@ std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateIntroduceLoopsPass();
 // dimensions.
 std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateRematerializePass();
 
+// Returns a pass that rewrites the domain of operations so that each loop
+// corresponds to a dimension.
+std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateNormalizeLoopsPass();
+
 // Populates the pass manager to convert Sair operations to the Loops dialect.
 void CreateSairToLoopConversionPipeline(mlir::OpPassManager *pm);
 

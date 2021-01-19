@@ -23,7 +23,7 @@
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Support/LogicalResult.h"
 #include "sair_attributes.h"
-#include "sair_traits.h"
+#include "sair_dialect.h"
 #include "sair_types.h"
 
 namespace sair {

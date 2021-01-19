@@ -28,8 +28,8 @@ add_mlir_library(sair_from_linalg
   MLIRIR
   MLIRPass
   MLIRTransforms
-  MLIRLinalgOps
-  MLIRStandardOps
+  MLIRLinalg
+  MLIRStandard
   MLIRSupport
   sair_dialect
   )
@@ -65,6 +65,7 @@ add_mlir_library(sair_lowering
   introduce_loops.cc
   introduce_memrefs.cc
   lower_to_map.cc
+  normalize_loops.cc
   rematerialize.cc
   util.cc
 
@@ -72,14 +73,14 @@ add_mlir_library(sair_lowering
   sair_lowering_inc_gen
 
   LINK_LIBS PUBLIC
-  MLIRAffineOps
+  MLIRAffine
   MLIRAffineToStandard
   MLIRIR
   MLIRLLVMIR
   MLIRPass
   MLIRSCF
   MLIRSCFToStandard
-  MLIRStandardOps
+  MLIRStandard
   MLIRStandardToLLVM
   MLIRSupport
   MLIRTransforms

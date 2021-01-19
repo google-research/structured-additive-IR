@@ -65,6 +65,8 @@ add_public_tablegen_target(sair_ops_inc_gen)
 
 # Generate Sair interfaces and structured attributes.
 set(LLVM_TARGET_DEFINITIONS sair_base.td)
+mlir_tablegen(sair_attr_interfaces.h.inc -gen-attr-interface-decls)
+mlir_tablegen(sair_attr_interfaces.cc.inc -gen-attr-interface-defs)
 mlir_tablegen(sair_op_interfaces.h.inc -gen-op-interface-decls)
 mlir_tablegen(sair_op_interfaces.cc.inc -gen-op-interface-defs)
 mlir_tablegen(sair_structs.h.inc -gen-struct-attr-decls)
@@ -86,6 +88,7 @@ add_mlir_library(sair_dialect
   sair_op_interfaces_inc_gen
 
   LINK_LIBS PUBLIC
+  MLIRAffine
   MLIRIR
   MLIRDialect
   MLIRSupport

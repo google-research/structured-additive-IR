@@ -12,7 +12,6 @@
 #include "sair_attributes.h"
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
-#include "sair_traits.h"
 #include "sair_types.h"
 
 namespace sair {

@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_SAIR_TRANSFORMS_LOWERING_PASS_CLASSES_H_
 #define THIRD_PARTY_SAIR_TRANSFORMS_LOWERING_PASS_CLASSES_H_
 
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/SCF.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"

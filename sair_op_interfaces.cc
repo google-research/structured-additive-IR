@@ -36,7 +36,6 @@
 #include "sair_attributes.h"
 #include "sair_dialect.h"
 #include "sair_ops.h"
-#include "sair_traits.h"
 #include "sair_types.h"
 
 namespace sair {
@@ -297,11 +296,8 @@ mlir::LogicalResult VerifyValueProducerOp(mlir::Operation *operation) {
         needs_allocation = true;
         break;
       case ValueProducerOp::kRegister:
-        if (!type.Shape().Is0d()) {
-          // TODO(ulysse): consider the dimensionality of the layout instead,
-          // once layout attributes are implemented.
-          return op.emitError() << "only 0D values may be stored in registers";
-        }
+        // TODO(b/174127497): ensure that the value is not overwritten before it
+        // is used
         break;
       default:
         return op.emitError() << "unexpected memory space";

@@ -131,6 +131,20 @@ def MappingExpr : AttrInterface<"MappingExpr"> {
     >,
     InterfaceMethod<
       [{Canonicalizes the expression.}], "MappingExpr", "Canonicalize"
+    >,
+    InterfaceMethod<
+      [{Returns the parameters (start index, end index and step) of the range
+        represented by the expression. Adds operations to compute the parameters
+        to the body of a sair.map operation at the insertion point pointed to by
+        `builder` and adds arguments to the sair.map if necessary using
+        `map_arguments`.
+
+        After returning, builder insertion point is after newly added
+        instructions.}],
+      "RangeParameters", "GetRangeParameters",
+      (ins "mlir::Location":$loc, "mlir::ValueRange":$domain,
+           "DomainShapeAttr":$shape, "MappingAttr":$inverse_mapping,
+           "mlir::OpBuilder&":$builder, "MapArguments&":$map_arguments)
     >
   ];
 }
@@ -157,6 +171,15 @@ def SairDomainShapeAttr : Attr<IsSairDomainShapeAttr, "domain shape"> {
 def SairEmptyDomainShapeAttr :
   DerivedAttr<"DomainShapeAttr",
               [{return DomainShapeAttr::get(getContext());}]> {
+  let convertFromStorage = [{$_self}];
+}
+
+// Derived attribute that returns the shape of results.
+def SairResultDomainShapeAttr :
+    DerivedAttr<"DomainShapeAttr", [{
+      mlir::Type type = getOperation()->getResult(0).getType();
+      return type.cast<SairShapedType>().Shape();
+    }]> {
   let convertFromStorage = [{$_self}];
 }
 
@@ -227,10 +250,6 @@ def SairMappingArrayAttr :
 //===----------------------------------------------------------------------===//
 // Sair Traits
 //===----------------------------------------------------------------------===//
-
-// Trait for operations that return a single Sair value or iteration dimension.
-// Defines a 'shape()' method that return the shape of the result.
-def SairOneResult : NativeOpTrait<"sair::OneResult">;
 
 // Ensures that two named values have the same element type. Values can be Sair
 // values or mlir shaped values.
@@ -320,6 +339,16 @@ def SairOpInterface : OpInterface<"SairOp"> {
       }]
     >,
     InterfaceMethod<
+      [{Creates a copy of the operation with a new domain. May steal the body of
+        the current operation but does not erase it.}],
+      "SairOp", "ReCreateWithNewDomain", (ins
+        "llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>>":$new_domains,
+        "DomainShapeAttr":$new_shape,
+        "MappingAttr":$new_to_old_mapping,
+        "mlir::OpBuilder &":$builder
+      )
+    >,
+    InterfaceMethod<
       [{Indicates the size of each sub-domain. The first sub-domain is always
         the parallel domain}],
       "llvm::SmallVector<int, 2>", "SubDomains", (ins), [{}]
@@ -335,7 +364,10 @@ class SairOp<string mnemonic,
              Dialect dialect = SairDialect>
   : Op<
       dialect, mnemonic,
-      !listconcat([SairOpInterface], traits)
+      !listconcat([
+        SairOpInterface,
+        DeclareOpInterfaceMethods<SairOpInterface>
+      ], traits)
     > {
 
   let hasCanonicalizer = 1;

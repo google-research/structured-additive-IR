@@ -69,3 +69,10 @@ def RematerializePass : FunctionPass<"sair-rematerialize"> {
   let constructor = [{ ::sair::CreateRematerializePass(); }];
   // This does not create ops from dialects that are not present in the input.
 }
+
+def NormalizeLoopsPass : FunctionPass<"sair-normalize-loops"> {
+  let summary =
+    "Rewrites operation domains so that each loop corresponds to a dimension";
+  let constructor = [{ ::sair::CreateNormalizeLoopsPass(); }];
+  let dependentDialects = !listconcat(Deps.dialects, ["::mlir::AffineDialect"]);
+}

@@ -50,8 +50,8 @@ add_mlir_library(sair_test_passes
   MLIRIR
   MLIRPass
   MLIRTransforms
-  MLIRLinalgOps
-  MLIRStandardOps
+  MLIRLinalg
+  MLIRStandard
   MLIRSupport
   sair_dialect
   )

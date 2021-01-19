@@ -22,7 +22,7 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 include "sair_base.td"
 
 def SairDynRangeOp : SairOp<"dyn_range",
-    [NoSideEffect, SairOneResult, SairRangeOp, AttrSizedOperandSegments]> {
+    [NoSideEffect, SairRangeOp, AttrSizedOperandSegments]> {
   let summary = "Defines an iteration dimension as the interval [0, $size-1].";
 
   let description = [{
@@ -60,6 +60,8 @@ def SairDynRangeOp : SairOp<"dyn_range",
   let parser = [{return ParseDynRangeOp(parser, result);}];
   let printer = [{return Print(*this, p);}];
 
+  DerivedAttr shape = SairResultDomainShapeAttr;
+
   let extraClassDeclaration = [{
     ValueOrConstant LowerBound() {
       if (lower_bound() != nullptr) return ValueOperands()[0];
@@ -69,8 +71,6 @@ def SairDynRangeOp : SairOp<"dyn_range",
     ValueOrConstant UpperBound() {
       return ValueOperands().back();
     }
-
-    llvm::SmallVector<int, 2> SubDomains() { return {domain().size()}; }
   }];
 }
 
@@ -103,8 +103,6 @@ def SairStaticRangeOp : SairOp<"static_range", [NoSideEffect, SairRangeOp]> {
     }
 
     ValueOrConstant UpperBound() { return sizeAttr(); }
-
-    llvm::SmallVector<int, 2> SubDomains() { return {}; }
   }];
 }
 
@@ -112,7 +110,6 @@ def SairCopyOp : SairOp<"copy", [
     NoSideEffect,
     SairComputeOp,
     SairValueProducerOp,
-    SairOneResult,
     SairSameElementType<"value", "result">]> {
   let summary = "Creates a copy of a Sair value in a new iteration domain";
 
@@ -144,16 +141,15 @@ def SairCopyOp : SairOp<"copy", [
   let parser = [{return ParseCopyOp(parser, result);}];
   let printer = [{return Print(*this, p);}];
 
+  DerivedAttr shape = SairResultDomainShapeAttr;
+
   let extraClassDeclaration = [{
     ValueOperand Value() { return ValueOperands()[0]; }
-
-    llvm::SmallVector<int, 2> SubDomains() { return {domain().size()}; }
   }];
 }
 
 def SairFromScalarOp : SairOp<"from_scalar", [
     NoSideEffect,
-    SairOneResult,
     SairValueProducerOp]> {
   let description = [{Converts an SSA value into a 0-dimensional Sair value.}];
 
@@ -172,23 +168,20 @@ def SairFromScalarOp : SairOp<"from_scalar", [
     }]>
   ];
 
+  DerivedAttr shape = SairEmptyDomainShapeAttr;
+
   // The memory space is set to kRegister.
   DerivedAttr memory_space = DerivedAttr<"llvm::Optional<ArrayAttr>", [{
     mlir::Builder builder(getContext());
     return builder.getArrayAttr(
       {builder.getI64IntegerAttr(ValueProducerOp::kRegister)});
   }], [{$_self.getValueOr(nullptr)}]>;
-
-  let extraClassDeclaration = [{
-    llvm::SmallVector<int, 2> SubDomains() { return {}; }
-  }];
 }
 
 def SairFromMemRefOp : SairOp<"from_memref", [
     AttrSizedOperandSegments,
     NoSideEffect,
     SairInferIterationSpaceOp,
-    SairOneResult,
     SairValueProducerOp]> {
   let summary = "Interprets a memref as a Sair value";
 
@@ -253,11 +246,9 @@ def SairFromMemRefOp : SairOp<"from_memref", [
           .ElementType()
           .cast<mlir::MemRefType>();
     }
-
-    llvm::SmallVector<int, 2> SubDomains() {
-      return {parallel_domain().size(), memref_domain().size()};
-    }
   }];
+
+  DerivedAttr shape = SairResultDomainShapeAttr;
 
   // The memory space is set to kMemory.
   DerivedAttr memory_space = DerivedAttr<"llvm::Optional<ArrayAttr>", [{
@@ -332,10 +323,6 @@ def SairToMemRefOp : SairOp<"to_memref", [
           .cast<ValueType>()
           .ElementType()
           .cast<mlir::MemRefType>();
-    }
-
-    llvm::SmallVector<int, 2> SubDomains() {
-      return {parallel_domain().size(), memref_domain().size()};
     }
   }];
 }
@@ -414,8 +401,6 @@ def SairMapOp : SairOp<"map", [
     llvm::MutableArrayRef<mlir::BlockArgument> block_inputs() {
       return block().getArguments().drop_front(domain().size());
     }
-
-    llvm::SmallVector<int, 2> SubDomains() { return {domain().size()}; }
   }];
 
   let parser = [{return ParseMapOp(parser, result);}];
@@ -489,10 +474,6 @@ def SairMapReduceOp : SairOp<"map_reduce", [
     llvm::SmallBitVector DimsDependingOnOperand(int sair_operand);
 
     int results_rank() { return parallel_domain().size(); }
-
-    llvm::SmallVector<int, 2> SubDomains() {
-      return {parallel_domain().size(), reduction_domain().size()};
-    }
   }];
 
   let parser = [{return ParseMapReduceOp(parser, result);}];
@@ -530,10 +511,6 @@ class SairProjectionOp<string name> : SairOp<name, [
     ValueOperand Value() { return ValueOperands()[0]; }
 
     int infer_iteration_space_operand() { return 0; }
-
-    llvm::SmallVector<int, 2> SubDomains() {
-      return {parallel_domain().size(), projection_domain().size()};
-    }
   }];
 }
 
@@ -579,7 +556,6 @@ def SairFbyOp : SairOp<"fby", [
     AttrSizedOperandSegments,
     NoSideEffect,
     SairInferIterationSpaceOp,
-    SairOneResult,
     SairSameElementType<"value", "init">,
     SairSameElementType<"value", "result">,
     SairValueProducerOp]> {
@@ -611,6 +587,8 @@ def SairFbyOp : SairOp<"fby", [
   let parser = [{return ParseFbyOp(parser, result);}];
   let printer = [{Print(*this, p);}];
 
+  DerivedAttr shape = SairResultDomainShapeAttr;
+
   let extraClassDeclaration = [{
     constexpr static ::llvm::StringRef kThenKeyword = "then";
 
@@ -629,10 +607,6 @@ def SairFbyOp : SairOp<"fby", [
     ValueOperand Value() { return ValueOperands()[1]; }
 
     int infer_iteration_space_operand() { return 1; }
-
-    llvm::SmallVector<int, 2> SubDomains() {
-      return {parallel_domain().size(), sequential_domain().size()};
-    }
   }];
 }
 
@@ -713,10 +687,6 @@ def SairExitOp : SairOp<"exit", [Terminator]> {
   let builders = [
     OpBuilderDAG<(ins CArg<"mlir::ValueRange", "{}">:$operands)>
   ];
-
-  let extraClassDeclaration = [{
-    llvm::SmallVector<int, 2> SubDomains() { return {}; }
-  }];
 }
 
 // Note: this is not defined as SairOp because it is not expected inside
@@ -754,7 +724,6 @@ def SairUndefOp : Op<SairDialect, "undef", [NoSideEffect]> {
 def SairAllocOp : SairOp<"alloc", [
     AttrSizedOperandSegments,
     SairComputeOp,
-    SairOneResult,
     SairValueProducerOp]> {
   let summary = "Creates a Sair value containing allocated memrefs.";
 
@@ -786,12 +755,12 @@ def SairAllocOp : SairOp<"alloc", [
   let printer = [{Print(*this, p);}];
   let verifier = [{return Verify(*this);}];
 
+  DerivedAttr shape = SairResultDomainShapeAttr;
+
   let extraClassDeclaration = [{
     MemRefType MemType() {
       return getType().cast<ValueType>().ElementType().cast<MemRefType>();
     }
-
-    llvm::SmallVector<int, 2> SubDomains() { return {domain().size()}; }
   }];
 }
 
@@ -820,13 +789,6 @@ def SairFreeOp : SairOp<"free", [
 
   let extraClassDeclaration = [{
     ValueOperand Value() { return ValueOperands()[0]; }
-
-    DomainShapeAttr shape() {
-      return value().getType().cast<ValueType>().Shape().AccessedShape(
-           mapping_array()[0].cast<MappingAttr>());
-    }
-
-    llvm::SmallVector<int, 2> SubDomains() { return {domain().size()}; }
   }];
 }
 

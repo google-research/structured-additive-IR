@@ -17,19 +17,40 @@
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/SmallVector.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/AffineExpr.h"
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/AttributeSupport.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Identifier.h"
 #include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/Types.h"
+#include "sair_op_interfaces.h"
 
 namespace sair {
 
 #include "sair_attr_interfaces.cc.inc"
 
+mlir::Value MapArguments::AddArgument(mlir::Value value, MappingAttr mapping) {
+  values_.push_back(value);
+  mappings_.push_back(mapping);
+  mlir::Type element_type = value.getType().cast<ValueType>().ElementType();
+  return body_->addArgument(element_type);
+}
+
+mlir::OpFoldResult MapArguments::AddArgument(ValueOrConstant value,
+                                             MappingAttr mapping) {
+  if (value.is_constant()) return value.constant();
+  return AddArgument(value.value(), mapping.Compose(value.mapping()));
+}
+
+mlir::ValueRange MapArguments::Indices() const {
+  return body_->getArguments().take_front(domain_size_);
+}
+
 //===----------------------------------------------------------------------===//
-// AccessPatternDimExpr
+// MappingDimExpr
 //===----------------------------------------------------------------------===//
 
 // Private implementation/storage class for sair::MappingDimExpr.
@@ -116,8 +137,22 @@ mlir::AffineExpr MappingDimExpr::AsAffineExpr() const {
   return mlir::getAffineDimExpr(dimension(), getContext());
 }
 
+RangeParameters MappingDimExpr::GetRangeParameters(
+    mlir::Location loc, mlir::ValueRange domain, DomainShapeAttr shape,
+    MappingAttr inverse_mapping, mlir::OpBuilder &builder,
+    MapArguments &map_arguments) const {
+  auto range_op = mlir::cast<RangeOp>(domain[dimension()].getDefiningOp());
+  auto mapping = shape.Dimension(dimension())
+                     .dependency_mapping()
+                     .ResizeUseDomain(map_arguments.Indices().size());
+  assert(mapping.IsFullySpecified());
+  return {.begin = map_arguments.AddArgument(range_op.LowerBound(), mapping),
+          .end = map_arguments.AddArgument(range_op.UpperBound(), mapping),
+          .step = static_cast<int>(range_op.step().getSExtValue())};
+}
+
 //===----------------------------------------------------------------------===//
-// AccessPatternNoneExpr
+// MappingNoneExpr
 //===----------------------------------------------------------------------===//
 
 MappingNoneExpr MappingNoneExpr::get(mlir::MLIRContext *context) {
@@ -129,7 +164,7 @@ MappingExpr MappingNoneExpr::MakeFullySpecified(int &num_dimensions) const {
 }
 
 //===----------------------------------------------------------------------===//
-// AccessPatternStripeExpr
+// MappingStripeExpr
 //===----------------------------------------------------------------------===//
 
 // Private implementation/storage class for sair::MappingStripeExpr.
@@ -323,8 +358,59 @@ MappingExpr MappingStripeExpr::Canonicalize() const {
   return MappingStripeExpr::get(new_operand, step(), size());
 }
 
+RangeParameters MappingStripeExpr::GetRangeParameters(
+    mlir::Location loc, mlir::ValueRange domain, DomainShapeAttr shape,
+    MappingAttr inverse_mapping, mlir::OpBuilder &builder,
+    MapArguments &map_arguments) const {
+  // Compute range parameters for the operand.
+  RangeParameters operand_parameters = operand().GetRangeParameters(
+      loc, domain, shape, inverse_mapping, builder, map_arguments);
+  int step = this->step() * operand_parameters.step;
+
+  // If the stripe covers the entire operand range, no additional computation is
+  // needed.
+  if (!size().hasValue()) {
+    return {operand_parameters.begin, operand_parameters.end, step};
+  }
+
+  // Compute the begin index. For this, look for the unstripe operation
+  // corresponding to `this` in the inverse mapping, and find the expression of
+  // the outer stripe dimension.
+  auto inverse_expr = operand()
+                          .FindInInverse(inverse_mapping.Dimensions())
+                          .cast<MappingUnStripeExpr>();
+  int inverse_pos = llvm::find(inverse_expr.factors(), size().getValue()) -
+                    inverse_expr.factors().begin();
+  auto begin_map =
+      mlir::AffineMap::get(map_arguments.Indices().size(), 0,
+                           inverse_expr.operands()[inverse_pos].AsAffineExpr());
+  mlir::Value begin = builder.create<mlir::AffineApplyOp>(
+      loc, begin_map, map_arguments.Indices());
+
+  // Compute the end index as `min(begin + size, operand_size)`.
+  mlir::Type index_type = builder.getIndexType();
+  auto size = builder.create<mlir::ConstantOp>(
+      loc, index_type,
+      builder.getIndexAttr(this->size().getValue() * operand_parameters.step));
+  auto uncapped_end =
+      builder.create<mlir::AddIOp>(loc, index_type, begin, size);
+  mlir::Value operand_end;
+  if (operand_parameters.end.is<mlir::Attribute>()) {
+    operand_end = builder.create<mlir::ConstantOp>(
+        loc, index_type, operand_parameters.end.get<mlir::Attribute>());
+  } else {
+    operand_end = operand_parameters.end.get<mlir::Value>();
+  }
+  auto is_capped = builder.create<mlir::CmpIOp>(loc, CmpIPredicate::ult,
+                                                operand_end, uncapped_end);
+  mlir::Value end = builder.create<mlir::SelectOp>(
+      loc, builder.getIndexType(), is_capped, operand_end, uncapped_end);
+
+  return {begin, end, step};
+}
+
 //===----------------------------------------------------------------------===//
-// AccessPatternUnStripeExpr
+// MappingUnStripeExpr
 //===----------------------------------------------------------------------===//
 
 // Private implementation/storage class for sair::MappingUnStripeExpr.
@@ -576,6 +662,16 @@ MappingExpr MappingUnStripeExpr::Canonicalize() const {
   MappingExpr simplified = simplify();
   if (simplified != nullptr) return simplified;
   return MappingUnStripeExpr::get(new_operands, factors());
+}
+
+RangeParameters MappingUnStripeExpr::GetRangeParameters(
+    mlir::Location loc, mlir::ValueRange domain, DomainShapeAttr shape,
+    MappingAttr inverse_mapping, mlir::OpBuilder &builder,
+    MapArguments &map_arguments) const {
+  RangeParameters inner_parameters = operands()[0].GetRangeParameters(
+      loc, domain, shape, inverse_mapping, builder, map_arguments);
+  inner_parameters.step = 1;
+  return inner_parameters;
 }
 
 //===----------------------------------------------------------------------===//

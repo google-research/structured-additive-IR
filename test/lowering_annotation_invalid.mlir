@@ -29,22 +29,6 @@ func @unexpected_memory_space() {
 
 // -----
 
-func @nd_value_in_register() {
-  sair.program {
-    %0 = sair.static_range 8 : !sair.range
-    // expected-error @+1 {{only 0D values may be stored in registers}}
-    sair.map[d0:%0] attributes { memory_space = [0] } {
-      ^bb0(%arg0: index):
-        %c1 = constant 1.0 : f32
-        sair.return %c1 : f32
-    } : #sair.shape<d0:range>, () -> (f32)
-    sair.exit
-  }
-  return
-}
-
-// -----
-
 func @index_in_ram(%arg0: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>

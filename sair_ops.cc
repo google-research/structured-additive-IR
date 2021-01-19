@@ -30,6 +30,7 @@
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/SMLoc.h"
 #include "llvm/Support/raw_ostream.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -48,7 +49,6 @@
 #include "sair_attributes.h"
 #include "sair_dialect.h"
 #include "sair_op_interfaces.h"
-#include "sair_traits.h"
 #include "sair_types.h"
 
 namespace sair {
@@ -1480,6 +1480,381 @@ llvm::SmallBitVector SairFbyOp::CarryingDimensions(int sair_operand) {
     mask.set(parallel_domain().size(), domain().size());
   }
   return mask;
+}
+
+llvm::SmallVector<int, 2> SairDynRangeOp::SubDomains() {
+  return {static_cast<int>(domain().size())};
+}
+
+llvm::SmallVector<int, 2> SairCopyOp::SubDomains() {
+  return {static_cast<int>(domain().size())};
+}
+
+llvm::SmallVector<int, 2> SairFromScalarOp::SubDomains() { return {}; }
+
+llvm::SmallVector<int, 2> SairFromMemRefOp::SubDomains() {
+  return {static_cast<int>(parallel_domain().size()),
+          static_cast<int>(memref_domain().size())};
+}
+
+llvm::SmallVector<int, 2> SairToMemRefOp::SubDomains() {
+  return {static_cast<int>(parallel_domain().size()),
+          static_cast<int>(memref_domain().size())};
+}
+
+llvm::SmallVector<int, 2> SairMapOp::SubDomains() {
+  return {static_cast<int>(domain().size())};
+}
+
+llvm::SmallVector<int, 2> SairMapReduceOp::SubDomains() {
+  return {static_cast<int>(parallel_domain().size()),
+          static_cast<int>(reduction_domain().size())};
+}
+
+llvm::SmallVector<int, 2> SairProjLastOp::SubDomains() {
+  return {static_cast<int>(parallel_domain().size()),
+          static_cast<int>(projection_domain().size())};
+}
+
+llvm::SmallVector<int, 2> SairProjAnyOp::SubDomains() {
+  return {static_cast<int>(parallel_domain().size()),
+          static_cast<int>(projection_domain().size())};
+}
+
+llvm::SmallVector<int, 2> SairFbyOp::SubDomains() {
+  return {static_cast<int>(parallel_domain().size()),
+          static_cast<int>(sequential_domain().size())};
+}
+
+llvm::SmallVector<int, 2> SairStaticRangeOp::SubDomains() { return {}; }
+
+llvm::SmallVector<int, 2> SairExitOp::SubDomains() { return {}; }
+
+llvm::SmallVector<int, 2> SairAllocOp::SubDomains() {
+  return {static_cast<int>(domain().size())};
+}
+
+llvm::SmallVector<int, 2> SairFreeOp::SubDomains() {
+  return {static_cast<int>(domain().size())};
+}
+
+DomainShapeAttr SairFreeOp::shape() {
+  return value().getType().cast<ValueType>().Shape().AccessedShape(
+      mapping_array()[0].cast<MappingAttr>());
+}
+
+// Takes a mapping `lhs` and an array of mappings `rhs_array`. Returns a new
+// array containing the composition of `lhs` with each element of `rhs_array`.
+static mlir::ArrayAttr ComposeMappings(MappingAttr lhs,
+                                       mlir::ArrayAttr rhs_array) {
+  llvm::SmallVector<mlir::Attribute, 4> new_mappings;
+  new_mappings.reserve(rhs_array.size());
+  for (mlir::Attribute rhs : rhs_array.getValue()) {
+    new_mappings.push_back(lhs.Compose(rhs.cast<MappingAttr>()).Canonicalize());
+  }
+  return mlir::ArrayAttr::get(new_mappings, lhs.getContext());
+}
+
+// Translates the loop nest to a new domain using the given mapping.
+static mlir::ArrayAttr ComposeLoopNest(MappingAttr new_to_old_mapping,
+                                       mlir::ArrayAttr old_loop_nest) {
+  if (old_loop_nest == nullptr) return nullptr;
+  mlir::MLIRContext *context = old_loop_nest.getContext();
+
+  llvm::SmallVector<mlir::Attribute, 4> new_loop_nest;
+  new_loop_nest.reserve(old_loop_nest.size());
+  for (mlir::Attribute attr : old_loop_nest.getValue()) {
+    LoopAttr loop = attr.cast<LoopAttr>();
+    MappingExpr new_iter = loop.iter()
+                               .SubstituteDims(new_to_old_mapping.Dimensions())
+                               .Canonicalize();
+    new_loop_nest.push_back(LoopAttr::get(loop.name(), new_iter, context));
+  }
+  return mlir::ArrayAttr::get(new_loop_nest, old_loop_nest.getContext());
+}
+
+// Forwards attributes of old_op to new_op. Skips attributes already set in
+// `new_op`.
+static void ForwardAttributes(mlir::Operation *old_op,
+                              mlir::Operation *new_op) {
+  for (auto [name, attr] : old_op->getAttrs()) {
+    if (new_op->hasAttr(name)) continue;
+    new_op->setAttr(name, attr);
+  }
+}
+
+SairOp SairDynRangeOp::ReCreateWithNewDomain(
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
+    mlir::OpBuilder &builder) {
+  llvm_unreachable(
+      "not called by NormalizeLoops because the op defines a dimension");
+}
+
+SairOp SairStaticRangeOp::ReCreateWithNewDomain(
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
+    mlir::OpBuilder &builder) {
+  llvm_unreachable(
+      "not called by NormalizeLoops because the op defines a dimension");
+}
+
+SairOp SairCopyOp::ReCreateWithNewDomain(
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
+    mlir::OpBuilder &builder) {
+  assert(new_domains.size() == 1);
+  mlir::ArrayAttr new_mappings =
+      ComposeMappings(new_to_old_mapping, mapping_array());
+  auto new_type =
+      ValueType::get(new_shape, getType().cast<ValueType>().ElementType());
+  mlir::ArrayAttr new_loop_nest =
+      ComposeLoopNest(new_to_old_mapping, loop_nestAttr());
+
+  auto new_op = builder.create<SairCopyOp>(getLoc(), new_type, new_domains[0],
+                                           new_mappings, value(), new_loop_nest,
+                                           memory_spaceAttr());
+  ForwardAttributes(getOperation(), new_op.getOperation());
+  return llvm::cast<SairOp>(new_op.getOperation());
+}
+
+SairOp SairFromScalarOp::ReCreateWithNewDomain(
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
+    mlir::OpBuilder &builder) {
+  llvm_unreachable(
+      "not called by NormalizeLoops because the op has a 0D domain");
+}
+
+SairOp SairFromMemRefOp::ReCreateWithNewDomain(
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
+    mlir::OpBuilder &builder) {
+  assert(new_domains.size() == 2);
+  // Assert that memref domain is left untouched.
+  assert(new_domains[1].size() == memref_domain().size());
+  int old_parallel_domain_size = parallel_domain().size();
+  int new_parallel_domain_size = new_domains[0].size();
+  for (int i = 0, e = memref_domain().size(); i < e; ++i) {
+    auto dim_expr = new_to_old_mapping.Dimension(i + old_parallel_domain_size)
+                        .dyn_cast<MappingDimExpr>();
+    assert(dim_expr != nullptr &&
+           dim_expr.dimension() == i + new_parallel_domain_size);
+  }
+
+  mlir::ArrayAttr new_mappings =
+      ComposeMappings(new_to_old_mapping, mapping_array());
+
+  auto return_type =
+      ValueType::get(new_shape, getType().cast<ValueType>().ElementType());
+  auto new_op = builder.create<SairFromMemRefOp>(
+      getLoc(), return_type, new_domains[0], new_domains[1], new_mappings,
+      memref(), access_mapAttr());
+  ForwardAttributes(getOperation(), new_op.getOperation());
+  return llvm::cast<SairOp>(new_op.getOperation());
+}
+
+SairOp SairToMemRefOp::ReCreateWithNewDomain(
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
+    mlir::OpBuilder &builder) {
+  assert(new_domains.size() == 2);
+  // Assert that memref domain is left untouched.
+  assert(new_domains[1].size() == memref_domain().size());
+  int old_parallel_domain_size = parallel_domain().size();
+  int new_parallel_domain_size = new_domains[0].size();
+  for (int i = 0, e = memref_domain().size(); i < e; ++i) {
+    auto dim_expr = new_to_old_mapping.Dimension(i + old_parallel_domain_size)
+                        .dyn_cast<MappingDimExpr>();
+    assert(dim_expr != nullptr &&
+           dim_expr.dimension() == i + new_parallel_domain_size);
+  }
+
+  mlir::ArrayAttr new_mappings =
+      ComposeMappings(new_to_old_mapping, mapping_array());
+  auto new_op = builder.create<SairToMemRefOp>(
+      getLoc(), new_domains[0], new_domains[1], new_mappings, memref(), value(),
+      shape(), access_mapAttr());
+  ForwardAttributes(getOperation(), new_op.getOperation());
+  return llvm::cast<SairOp>(new_op.getOperation());
+}
+
+// Moves the body of a sair.map or sair.map_reduce operation and update indices
+// to match the new domain.
+static void MoveMapBody(mlir::Location loc, mlir::Block &old_body,
+                        mlir::Block &new_body, MappingAttr new_to_old_mapping,
+                        mlir::OpBuilder &builder) {
+  mlir::OpBuilder::InsertionGuard guard(builder);
+  builder.setInsertionPointToStart(&new_body);
+  int new_domain_size = new_to_old_mapping.UseDomainSize();
+  for (auto [index, expr] :
+       llvm::zip(old_body.getArguments(), new_to_old_mapping.Dimensions())) {
+    auto map = mlir::AffineMap::get(new_domain_size, 0, expr.AsAffineExpr());
+    auto new_index = builder.create<mlir::AffineApplyOp>(
+        loc, map, new_body.getArguments().take_front(new_domain_size));
+    index.replaceAllUsesWith(new_index);
+  }
+
+  auto old_args = old_body.getArguments().drop_front(new_to_old_mapping.size());
+  auto new_args = new_body.getArguments().drop_front(new_domain_size);
+  for (auto [old_arg, new_arg] : llvm::zip(old_args, new_args)) {
+    old_arg.replaceAllUsesWith(new_arg);
+  }
+  new_body.getOperations().splice(new_body.end(), old_body.getOperations());
+}
+
+SairOp SairMapOp::ReCreateWithNewDomain(
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
+    mlir::OpBuilder &builder) {
+  assert(new_domains.size() == 1);
+
+  mlir::ArrayAttr new_mappings =
+      ComposeMappings(new_to_old_mapping, mapping_array());
+  mlir::ArrayAttr new_loop_nest =
+      ComposeLoopNest(new_to_old_mapping, loop_nestAttr());
+  llvm::SmallVector<mlir::Type, 4> new_return_types;
+  new_return_types.reserve(getResults().size());
+  for (mlir::Type type : getResultTypes()) {
+    new_return_types.push_back(
+        ValueType::get(new_shape, type.cast<ValueType>().ElementType()));
+  }
+  auto new_op = builder.create<SairMapOp>(
+      getLoc(), new_return_types, new_domains[0], new_mappings, inputs(),
+      new_shape, new_loop_nest, memory_spaceAttr());
+  ForwardAttributes(getOperation(), new_op.getOperation());
+  MoveMapBody(getLoc(), block(), new_op.block(), new_to_old_mapping, builder);
+  return llvm::cast<SairOp>(new_op.getOperation());
+}
+
+SairOp SairMapReduceOp::ReCreateWithNewDomain(
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
+    mlir::OpBuilder &builder) {
+  assert(new_domains.size() == 2);
+
+  mlir::ArrayAttr new_mappings =
+      ComposeMappings(new_to_old_mapping, mapping_array());
+  mlir::ArrayAttr new_loop_nest =
+      ComposeLoopNest(new_to_old_mapping, loop_nestAttr());
+  llvm::SmallVector<mlir::Type, 4> new_return_types;
+  new_return_types.reserve(getResults().size());
+  for (mlir::Type type : getResultTypes()) {
+    new_return_types.push_back(
+        ValueType::get(new_shape.Prefix(new_domains[0].size()),
+                       type.cast<ValueType>().ElementType()));
+  }
+  auto new_op = builder.create<SairMapReduceOp>(
+      getLoc(), new_return_types, new_domains[0], new_domains[1], new_mappings,
+      inits(), inputs(), new_shape, new_loop_nest, memory_spaceAttr());
+  ForwardAttributes(getOperation(), new_op.getOperation());
+  // Create the map body.
+  llvm::SmallVector<mlir::Type> block_arg_types(new_shape.NumDimensions(),
+                                                builder.getIndexType());
+  block_arg_types.reserve(block_arg_types.size() +
+                          new_op.ValueOperands().size());
+  for (auto operand : new_op.ValueOperands()) {
+    block_arg_types.push_back(operand.GetType().ElementType());
+  }
+  mlir::OpBuilder::InsertionGuard guard(builder);
+  builder.createBlock(&new_op.body(), {}, block_arg_types);
+  MoveMapBody(getLoc(), block(), new_op.block(), new_to_old_mapping, builder);
+  return llvm::cast<SairOp>(new_op.getOperation());
+}
+
+SairOp SairProjLastOp::ReCreateWithNewDomain(
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
+    mlir::OpBuilder &builder) {
+  assert(new_domains.size() == 2);
+
+  mlir::ArrayAttr new_mappings =
+      ComposeMappings(new_to_old_mapping, mapping_array());
+  auto new_return_type =
+      ValueType::get(new_shape.Prefix(new_domains[0].size()),
+                     getType().cast<ValueType>().ElementType());
+  auto new_op = builder.create<SairProjLastOp>(
+      getLoc(), new_return_type, new_domains[0], new_domains[1], new_mappings,
+      value(), new_shape, memory_spaceAttr());
+  ForwardAttributes(getOperation(), new_op.getOperation());
+  return llvm::cast<SairOp>(new_op.getOperation());
+}
+
+SairOp SairProjAnyOp::ReCreateWithNewDomain(
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
+    mlir::OpBuilder &builder) {
+  assert(new_domains.size() == 2);
+
+  mlir::ArrayAttr new_mappings =
+      ComposeMappings(new_to_old_mapping, mapping_array());
+  auto new_return_type =
+      ValueType::get(new_shape.Prefix(new_domains[0].size()),
+                     getType().cast<ValueType>().ElementType());
+  auto new_op = builder.create<SairProjAnyOp>(
+      getLoc(), new_return_type, new_domains[0], new_domains[1], new_mappings,
+      value(), new_shape, memory_spaceAttr());
+  ForwardAttributes(getOperation(), new_op.getOperation());
+  return llvm::cast<SairOp>(new_op.getOperation());
+}
+
+SairOp SairFbyOp::ReCreateWithNewDomain(
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
+    mlir::OpBuilder &builder) {
+  assert(new_domains.size() == 2);
+
+  mlir::ArrayAttr new_mappings =
+      ComposeMappings(new_to_old_mapping, mapping_array());
+  auto new_return_type =
+      ValueType::get(new_shape, getType().cast<ValueType>().ElementType());
+  auto new_op = builder.create<SairFbyOp>(
+      getLoc(), new_return_type, new_domains[0], new_domains[1], new_mappings,
+      init(), value(), memory_spaceAttr());
+  ForwardAttributes(getOperation(), new_op.getOperation());
+  return llvm::cast<SairOp>(new_op.getOperation());
+}
+
+SairOp SairExitOp::ReCreateWithNewDomain(
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
+    mlir::OpBuilder &builder) {
+  llvm_unreachable(
+      "not called by NormalizeLoops because sair.exit has a 0D domain");
+}
+
+SairOp SairAllocOp::ReCreateWithNewDomain(
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
+    mlir::OpBuilder &builder) {
+  assert(new_domains.size() == 1);
+
+  mlir::ArrayAttr new_mappings =
+      ComposeMappings(new_to_old_mapping, mapping_array());
+  mlir::ArrayAttr new_loop_nest =
+      ComposeLoopNest(new_to_old_mapping, loop_nestAttr());
+  auto new_return_type = ValueType::get(new_shape, MemType());
+  auto new_op = builder.create<SairAllocOp>(
+      getLoc(), new_return_type, new_domains[0], new_mappings, dynamic_sizes(),
+      new_loop_nest, memory_spaceAttr());
+  ForwardAttributes(getOperation(), new_op.getOperation());
+  return llvm::cast<SairOp>(new_op.getOperation());
+}
+
+SairOp SairFreeOp::ReCreateWithNewDomain(
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
+    mlir::OpBuilder &builder) {
+  assert(new_domains.size() == 1);
+
+  mlir::ArrayAttr new_mappings =
+      ComposeMappings(new_to_old_mapping, mapping_array());
+  mlir::ArrayAttr new_loop_nest =
+      ComposeLoopNest(new_to_old_mapping, loop_nestAttr());
+  auto new_op = builder.create<SairFreeOp>(
+      getLoc(), new_domains[0], new_mappings, value(), new_loop_nest);
+  ForwardAttributes(getOperation(), new_op.getOperation());
+  return llvm::cast<SairOp>(new_op.getOperation());
 }
 
 }  // namespace sair
