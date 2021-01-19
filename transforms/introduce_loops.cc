@@ -494,10 +494,9 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op, Driver &driver) {
 
   int dimension = loop.iter().cast<MappingDimExpr>().dimension();
   RangeOp range = cast<RangeOp>(op.domain()[dimension].getDefiningOp());
-  if (op.shape().Dimensions()[dimension].DependencyMask().any()) {
-    return op.emitError()
-           << "lowering dependent dimensions is not supported yet";
-  }
+  MappingAttr range_mapping =
+      op.shape().Dimension(dimension).dependency_mapping().ResizeUseDomain(
+          op.domain().size() - 1);
 
   // Get the inputs of the new operation.
   llvm::SmallVector<mlir::Value, 4> inputs = op.inputs();
@@ -514,15 +513,28 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op, Driver &driver) {
     if (bound.is_constant()) {
       return driver.create<ConstantOp>(op.getLoc(), bound.constant());
     }
+    // Check that the value is stored in registers.
+    ValueProducerOp defining_op =
+        cast<ValueProducerOp>(bound.value().getDefiningOp());
+    int pos = 0;
+    while (defining_op->getResult(pos) != bound.value()) {
+      ++pos;
+    }
+    if (defining_op.GetMemorySpace(pos) != ValueProducerOp::kRegister) {
+      // TODO(b/174127497): ensure that value stored in registers are produced
+      // in the same loop nest.
+      defining_op->emitError() << "range bounds must be stored in registers";
+      return nullptr;
+    }
+
     inputs.push_back(bound.value());
-    assert(bound.mapping().UseDomainSize() == 0);
-    mappings.push_back(
-        MappingAttr::get(op.getContext(), op.domain().size() - 1, {}));
+    mappings.push_back(range_mapping.Compose(bound.mapping()));
     return op.block().addArgument(driver.getIndexType());
   };
 
   mlir::Value upper_bound = materialize_bound(range.UpperBound());
   mlir::Value lower_bound = materialize_bound(range.LowerBound());
+  if (upper_bound == nullptr || lower_bound == nullptr) return mlir::failure();
   llvm::APInt step = range.step();
   mlir::Block::iterator for_insertion_point = driver.getInsertionPoint();
 

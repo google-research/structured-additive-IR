@@ -105,7 +105,8 @@ void CreateRange(SairOp op, MappingExpr expr, mlir::ValueRange old_domain,
         scalar_results.size(),
         ValueType::get(range_shape, builder.getIndexType()));
     llvm::SmallVector<mlir::Attribute, 2> map_memory_spaces(
-        scalar_results.size(), builder.getIndexAttr(0));
+        scalar_results.size(),
+        builder.getIndexAttr(ValueProducerOp::kRegister));
 
     // The dimension either corresponds to a loop (in which case
     // the full loop nest is bigger than the number of inner loops) or to a

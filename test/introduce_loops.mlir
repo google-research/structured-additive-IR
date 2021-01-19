@@ -128,3 +128,47 @@ func @fuse(%arg0: f32) {
   }
   return
 }
+
+// CHECK-LABEL: @dependent_dims
+func @dependent_dims() {
+  sair.program {
+    // CHECK: sair.map
+      // CHECK-DAG: %[[V0:.*]] = constant 0
+      // CHECK-DAG: %[[V1:.*]] = constant 64
+      // CHECK-DAG: %[[V2:.*]] = constant 8
+      // CHECK: scf.for %[[V3:.*]] = %[[V0]] to %[[V1]] step %[[V2]] {
+    %0 = sair.static_range 64 step 8 : !sair.range
+    %1, %2 = sair.map[d0:%0] attributes {
+      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
+      memory_space = [0, 0]
+    } {
+      ^bb0(%arg0: index):
+        // CHECK: %[[V4:.*]] = constant 8
+        %4 = constant 8 : index
+        // CHECK: %[[V5:.*]] = addi %[[V3]], %[[V4]]
+        %5 = addi %arg0, %4 : index
+        sair.return %arg0, %5 : index, index
+    } : #sair.shape<d0:range>, () -> (index, index)
+        // CHECK: %[[V6:.*]] = constant 1
+    %3 = sair.dyn_range[d0:%0] %1(d0), %2(d0) : !sair.range<d0:range>
+        // CHECK: scf.for %[[V7:.*]] = %[[V3]] to %[[V5]] step %[[V6]] {
+    sair.map[d0:%0, d1:%3] attributes {
+      loop_nest = [
+        {name = "A", iter = #sair.mapping_expr<d0>},
+        {name = "B", iter = #sair.mapping_expr<d1>}
+      ]
+    } {
+      ^bb0(%arg0: index, %arg1: index):
+          // CHECK: call @foo(%[[V3]], %[[V7]])
+        call @foo(%arg0, %arg1) : (index, index) -> ()
+        sair.return
+    } : #sair.shape<d0:range x d1:range(d0)>, () -> ()
+        // CHECK: }
+      // CHECK: }
+      // CHECK: sair.return
+    // CHECK: } : #sair.shape<()>, () -> ()
+    // CHECK: sair.exit
+    sair.exit
+  }
+  return
+}

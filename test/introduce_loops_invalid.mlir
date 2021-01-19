@@ -71,28 +71,6 @@ func @strip_mined_loop() {
 
 // -----
 
-func @dependent_dimension(%arg0: index) {
-  sair.program {
-    %0 = sair.static_range 8 : !sair.range
-    %1 = sair.from_scalar %arg0 : !sair.value<(), index>
-    %2 = sair.dyn_range[d0:%0] %1 : !sair.range<d0:range>
-    // expected-error @+1 {{lowering dependent dimensions is not supported yet}}
-    sair.map[d0:%0, d1:%2] attributes {
-      loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<d0>},
-        {name = "B", iter = #sair.mapping_expr<d1>}
-      ]
-    } {
-      ^bb0(%i: index, %j: index):
-        sair.return
-    } : #sair.shape<d0:range x d1:range(d0)>, () -> ()
-    sair.exit
-  }
-  return
-}
-
-// -----
-
 func @unable_to_create_default_value() {
   %0 = sair.program {
     %1 = sair.static_range 8 : !sair.range
@@ -127,5 +105,30 @@ func @proj_of_fby(%arg0: f32) {
     %4 = sair.proj_last of[d0:%1] %2(d0) : #sair.shape<d0:range>, f32
     sair.exit %4 : f32
   } : f32
+  return
+}
+
+// -----
+
+func @foo() { return }
+
+func @size_not_in_register(%arg0: index) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), index>
+    // expected-error @+1 {{range bounds must be stored in registers}}
+    %1 = sair.map %0 attributes { loop_nest = [] } {
+      ^bb0(%arg1: index):
+        sair.return %arg1 : index
+    } : #sair.shape<()>, (index) -> (index)
+    %2 = sair.dyn_range %1 : !sair.range
+    sair.map[d0:%2] attributes {
+      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
+    } {
+      ^bb0(%arg1: index):
+        call @foo() : () -> ()
+        sair.return
+    } : #sair.shape<d0:range>, () -> ()
+    sair.exit
+  }
   return
 }
