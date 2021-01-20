@@ -362,6 +362,20 @@ func @map_wrong_terminator_operand() {
 
 // -----
 
+func @map_wrong_trailing_arg_count() {
+  sair.program {
+    %0 = sair.static_range 4 : !sair.range
+    sair.map[d0:%0] {
+      sair.return
+    // expected-error @+1 {{expected as many input types as operands}}
+    } : #sair.shape<d0:range>, (f32) -> ()
+    sair.exit
+  }
+  return
+}
+
+// -----
+
 func @map_reduce_wrong_trailing_arg_count(%arg0 : f32) {
   sair.program {
     %0 = sair.static_range 8 :!sair.range

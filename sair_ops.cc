@@ -942,13 +942,20 @@ ParseResult ParseMapOp(mlir::OpAsmParser &parser,
   mlir::Region *body = result.addRegion();
   DomainShapeAttr domain_shape;
   mlir::FunctionType function_type;
+  llvm::SMLoc type_loc;
   if (parser.parseRegion(*body, llvm::None, llvm::None) ||
       parser.parseColon() ||
       parser.parseAttribute(domain_shape, SairDialect::kShapeAttrName,
                             result.attributes) ||
-      parser.parseComma() || parser.parseType(function_type) ||
+      parser.parseComma() || parser.getCurrentLocation(&type_loc) ||
+      parser.parseType(function_type) ||
       ResolveDomain(parser, domain_shape, domain, result)) {
     return mlir::failure();
+  }
+
+  if (operands.size() != function_type.getNumInputs()) {
+    return parser.emitError(type_loc,
+                            "expected as many input types as operands");
   }
 
   // Resolve operand types: they are expected to have a shape derived from the
