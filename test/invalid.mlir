@@ -910,6 +910,18 @@ func @fby_must_fuse(%arg0: f32) {
 
 // -----
 
+func @loop_nest_non_compute(%arg0: memref<f32>) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), memref<f32>>
+    // expected-error @+1 {{only compute Sair ops can have the 'loop_nest' attribute}}
+    sair.from_memref %0 memref { loop_nest = [] }: #sair.shape<()>, memref<f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
 func @fby_of_proj_dependency(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>

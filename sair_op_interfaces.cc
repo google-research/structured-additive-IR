@@ -250,6 +250,12 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
     }
   }
 
+  if (!isa<ComputeOp>(sair_op.getOperation()) &&
+      sair_op->hasAttr(ComputeOp::kLoopNestAttrName)) {
+    return op->emitError() << "only compute Sair ops can have the '"
+                           << ComputeOp::kLoopNestAttrName << "' attribute";
+  }
+
   return ::sair::VerifySairOpParent(sair_op);
 }
 
