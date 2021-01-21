@@ -50,6 +50,7 @@
 #include "sair_dialect.h"
 #include "sair_op_interfaces.h"
 #include "sair_types.h"
+#include "util.h"
 
 namespace sair {
 
@@ -1635,16 +1636,6 @@ static mlir::ArrayAttr ComposeLoopNest(MappingAttr new_to_old_mapping,
     new_loop_nest.push_back(LoopAttr::get(loop.name(), new_iter, context));
   }
   return mlir::ArrayAttr::get(new_loop_nest, old_loop_nest.getContext());
-}
-
-// Forwards attributes of old_op to new_op. Skips attributes already set in
-// `new_op`.
-static void ForwardAttributes(mlir::Operation *old_op,
-                              mlir::Operation *new_op) {
-  for (auto [name, attr] : old_op->getAttrs()) {
-    if (new_op->hasAttr(name)) continue;
-    new_op->setAttr(name, attr);
-  }
 }
 
 SairOp SairDynRangeOp::ReCreateWithNewDomain(

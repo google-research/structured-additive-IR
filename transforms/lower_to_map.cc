@@ -17,15 +17,19 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OperationSupport.h"
 #include "mlir/Pass/Pass.h"
 #include "sair_attributes.h"
+#include "sair_dialect.h"
 #include "sair_ops.h"
 #include "transforms/lowering_pass_classes.h"
+#include "util.h"
 
 namespace sair {
 namespace {
@@ -172,6 +176,70 @@ void RewriteFreeToMap(SairFreeOp op, mlir::OpBuilder &builder) {
   op->erase();
 }
 
+// Given a source op, which is either a SairLoadFromMemRefOp or a
+// SairStoreToMemRefOp, populates `indices` with the values that index the
+// memref given the affine access map attached to the op. May emit additional
+// operations using `builder`.
+template <typename OpTy>
+void MemRefIndices(OpTy source_op, mlir::ValueRange block_indices,
+                   mlir::OpBuilder &builder,
+                   llvm::SmallVectorImpl<mlir::Value> &indices) {
+  static_assert(
+      llvm::is_one_of<OpTy, SairLoadFromMemRefOp, SairStoreToMemRefOp>::value,
+      "can extract memref indices only from memref-related Sair ops");
+
+  mlir::ValueRange indices_range = block_indices.slice(
+      source_op.parallel_domain().size(), source_op.memref_domain().size());
+  mlir::AffineMap access_map = source_op.AccessMap();
+  if (access_map.isIdentity()) {
+    indices.assign(indices_range.begin(), indices_range.end());
+    return;
+  }
+
+  indices.reserve(access_map.getNumResults());
+  for (unsigned i = 0, e = access_map.getNumResults(); i < e; ++i) {
+    mlir::Value applied = builder.create<mlir::AffineApplyOp>(
+        source_op.getLoc(), access_map.getSubMap(i), indices_range);
+    indices.push_back(applied);
+  }
+}
+
+// Rewrites a SairFromMemRefOp to a SairMapOp that contains a load from the
+// memref.
+void RewriteToMap(SairLoadFromMemRefOp op, mlir::OpBuilder &builder) {
+  SairMapOp map_op = builder.create<SairMapOp>(
+      op.getLoc(), op.result().getType(), op.domain(), op.mapping_array(),
+      op.memref(), op.shape(), op.loop_nestAttr(), op.memory_spaceAttr());
+  ForwardAttributes(op, map_op, {SairDialect::kAccessMapAttrName});
+
+  llvm::SmallVector<mlir::Value, 4> indices;
+  builder.setInsertionPointToStart(&map_op.block());
+  MemRefIndices(op, map_op.block().getArguments(), builder, indices);
+  mlir::Value loaded = builder.create<mlir::LoadOp>(
+      op.getLoc(), map_op.block_inputs()[0], indices);
+  builder.create<SairReturnOp>(op.getLoc(), loaded);
+  op.result().replaceAllUsesWith(map_op.getResult(0));
+  op->erase();
+}
+
+// Rewrites a SairToMemRefOp to a SairMap op that contains a store into the
+// memref.
+void RewriteToMap(SairStoreToMemRefOp op, mlir::OpBuilder &builder) {
+  llvm::SmallVector<mlir::Value, 2> args({op.memref(), op.value()});
+  SairMapOp map_op = builder.create<SairMapOp>(
+      op.getLoc(), /*results=*/llvm::None, op.domain(), op.mapping_array(),
+      args, op.shape(), op.loop_nestAttr(), /*memory_space=*/nullptr);
+  ForwardAttributes(op, map_op, {SairDialect::kAccessMapAttrName});
+
+  llvm::SmallVector<mlir::Value, 4> indices;
+  builder.setInsertionPointToStart(&map_op.block());
+  MemRefIndices(op, map_op.block().getArguments(), builder, indices);
+  builder.create<mlir::StoreOp>(op.getLoc(), map_op.block_inputs()[1],
+                                map_op.block_inputs()[0], indices);
+  builder.create<SairReturnOp>(op.getLoc());
+  op->erase();
+}
+
 class LowerToMap : public LowerToMapPassBase<LowerToMap> {
   // Converts sair.copy operations into sair.map operations. This is a hook for
   // the MLIR pass infrastructure.
@@ -188,6 +256,10 @@ class LowerToMap : public LowerToMapPassBase<LowerToMap> {
         RewriteAllocToMap(alloc, builder);
       } else if (auto free = dyn_cast<SairFreeOp>(op)) {
         RewriteFreeToMap(free, builder);
+      } else if (auto from_memref = dyn_cast<SairLoadFromMemRefOp>(op)) {
+        RewriteToMap(from_memref, builder);
+      } else if (auto to_memref = dyn_cast<SairStoreToMemRefOp>(op)) {
+        RewriteToMap(to_memref, builder);
       }
     });
   }

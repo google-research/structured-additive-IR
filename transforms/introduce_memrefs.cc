@@ -32,7 +32,7 @@
 #include "sair_ops.h"
 #include "transforms/default_lowering_attributes.h"
 #include "transforms/lowering_pass_classes.h"
-#include "transforms/util.h"
+#include "util.h"
 
 namespace sair {
 namespace {

@@ -42,6 +42,11 @@ InsertionPoint FindInsertionPoint(
     SairOp start, llvm::ArrayRef<mlir::Attribute> current_loop_nest,
     int num_loops, Direction direction = Direction::kBefore);
 
+// Forwards attributes of old_op to new_op. Skips attributes already set in
+// `new_op`.
+void ForwardAttributes(mlir::Operation *old_op, mlir::Operation *new_op,
+                       llvm::ArrayRef<llvm::StringRef> ignore = {});
+
 }  // namespace sair
 
 #endif  // THIRD_PARTY_SAIR_TRANSFORMS_UTIL_H_

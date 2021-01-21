@@ -24,7 +24,7 @@ def Deps {
 def LowerToMapPass : FunctionPass<"sair-lower-to-map"> {
   let summary = "Lowers sair operations into sair.map operations";
   let constructor = [{ ::sair::CreateLowerToMapPass(); }];
-  let dependentDialects = Deps.dialects;
+  let dependentDialects = !listconcat(Deps.dialects, ["::mlir::AffineDialect"]);
 }
 
 def LowerToMemRefPass : FunctionPass<"sair-lower-tomemref"> {

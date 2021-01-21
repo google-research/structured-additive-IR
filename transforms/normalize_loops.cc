@@ -16,7 +16,7 @@
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
 #include "transforms/lowering_pass_classes.h"
-#include "transforms/util.h"
+#include "util.h"
 
 namespace sair {
 namespace {

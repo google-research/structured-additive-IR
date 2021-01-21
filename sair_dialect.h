@@ -40,6 +40,9 @@ class SairDialect : public mlir::Dialect {
   // The string identifier used for shape attribute in Sair ops.
   static constexpr llvm::StringRef kShapeAttrName = "shape";
 
+  // The string identifier used for affine access map attribute in Sair ops.
+  static constexpr llvm::StringRef kAccessMapAttrName = "access_map";
+
   // Constructs the dialect in the provided context.
   explicit SairDialect(mlir::MLIRContext *context);
 

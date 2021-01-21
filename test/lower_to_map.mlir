@@ -1,4 +1,4 @@
-// RUN: sair-opt %s -sair-lower-to-map | FileCheck %s
+// RUN: sair-opt %s -sair-lower-to-map --mlir-print-local-scope | FileCheck %s
 // RUN: sair-opt %s -sair-lower-to-map --mlir-print-op-generic | FileCheck %s --check-prefix=GENERIC
 
 // CHECK-LABEL: @copy
@@ -106,6 +106,96 @@ func @sair_free(%arg0: index) {
     // CHECK:   sair.return
     // CHECK: } : #sair.shape<d0:range x d1:range>, (memref<?x?xf32>) -> ()
     sair.free[d0:%1, d1:%0] %4(d1, d0) : !sair.value<d0:range x d1:range, memref<?x?xf32>>
+    sair.exit
+  }
+  return
+}
+
+// CHECK-LABEL: @load_from_memref
+func @load_from_memref(%arg0 : memref<?x?xf32>) {
+  sair.program {
+    %0 = sair.static_range 8 : !sair.range
+    %1 = sair.from_scalar %arg0 : !sair.value<(), memref<?x?xf32>>
+    // CHECK: = sair.map[d0:%{{.*}}, d1:%{{.*}}, d2:%{{.*}}] %{{.*}} {
+    // CHECK: ^{{.*}}(%[[ARG1:.*]]: index, %[[ARG2:.*]]: index, %[[ARG3:.*]]: index, %[[MEMREF:.*]]: memref<?x?xf32>):
+    // CHECK:   %[[VALUE:.*]] = load %[[MEMREF]][%[[ARG2]], %[[ARG3]]] : memref<?x?xf32>
+    // CHECK:   sair.return %[[VALUE]] : f32
+    // CHECK: } : #sair.shape<d0:range x d1:range x d2:range>, (memref<?x?xf32>) -> f32
+    %2 = sair.load_from_memref[d0:%0] %1 memref[d1:%0, d2:%0]
+      : #sair.shape<d0:range x d1:range x d2:range>, memref<?x?xf32>
+    sair.exit
+  }
+  return
+}
+
+// CHECK-LABEL: @load_from_memref_permuted
+func @load_from_memref_permuted(%arg0 : memref<?x?xf32>) {
+  sair.program {
+    %0 = sair.static_range 8 : !sair.range
+    %1 = sair.from_scalar %arg0 : !sair.value<(), memref<?x?xf32>>
+    // CHECK: sair.map
+    %2 = sair.copy[d0:%0] %1 : !sair.value<d0:range, memref<?x?xf32>>
+
+    // CHECK: = sair.map[d0:%{{.*}}, d1:%{{.*}}, d2:%{{.*}}] %{{.*}}(d0) attributes {foo = "bar"} {
+    // CHECK: ^{{.*}}(%[[ARG1:.*]]: index, %[[ARG2:.*]]: index, %[[ARG3:.*]]: index, %[[MEMREF:.*]]: memref<?x?xf32>):
+    // CHECK:   %[[IDX1:.*]] = affine.apply affine_map<(d0, d1) -> (d1)>(%[[ARG2]], %[[ARG3]])
+    // CHECK:   %[[IDX2:.*]] = affine.apply affine_map<(d0, d1) -> (d0)>(%[[ARG2]], %[[ARG3]])
+    // CHECK:   %[[VALUE:.*]] = load %[[MEMREF]][%[[IDX1]], %[[IDX2]]] : memref<?x?xf32>
+    // CHECK:   sair.return %[[VALUE]] : f32
+    // CHECK: } : #sair.shape<d0:range x d1:range x d2:range>, (memref<?x?xf32>) -> f32
+    %3 = sair.load_from_memref[d0:%0] %2(d0) memref[d1:%0, d2:%0]
+      {access_map = affine_map<(d0,d1)->(d1,d0)>, foo = "bar"}
+      : #sair.shape<d0:range x d1:range x d2:range>, memref<?x?xf32>
+    sair.exit
+  }
+  return
+}
+
+// CHECK-LABEL: @store_to_memref
+func @store_to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
+  sair.program {
+    %0 = sair.static_range 8 : !sair.range
+    %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %2 = sair.from_scalar %arg1 : !sair.value<(), memref<?x?xf32>>
+    // CHECK: sair.map
+    %3 = sair.copy[d0:%0, d1:%0, d2:%0] %1
+      : !sair.value<d0:range x d1:range x d2:range, f32>
+
+    // CHECK: sair.map[d0:%{{.*}}, d1:%{{.*}}, d2:%{{.*}}] %{{.*}}, %{{.*}}(d0, d1, d2) {
+    // CHECK: ^{{.*}}(%[[ARG1:.*]]: index, %[[ARG2:.*]]: index, %[[ARG3:.*]]: index, %[[MEMREF:.*]]: memref<?x?xf32>, %[[VALUE:.*]]: f32):
+    // CHECK:   store %[[VALUE]], %[[MEMREF]][%[[ARG2]], %[[ARG3]]]
+    // CHECK:   sair.return
+    // CHECK: } : #sair.shape<d0:range x d1:range x d2:range>, (memref<?x?xf32>, f32) -> ()
+    sair.store_to_memref[d0:%0] %2 memref[d1:%0, d2:%0] %3(d0, d1, d2)
+      : #sair.shape<d0:range x d1:range x d2:range>, memref<?x?xf32>
+    sair.exit
+  }
+  return
+}
+
+// CHECK-LABEL: @store_to_memref_permuted
+func @store_to_memref_permuted(%arg0 : f32, %arg1 : memref<?x?xf32>) {
+  sair.program {
+    %0 = sair.static_range 8 : !sair.range
+    %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %2 = sair.from_scalar %arg1 : !sair.value<(), memref<?x?xf32>>
+    // CHECK: sair.map
+    %3 = sair.copy[d0:%0, d1:%0, d2:%0] %1
+      : !sair.value<d0:range x d1:range x d2:range, f32>
+
+    // CHECK: sair.map
+    %4 = sair.copy[d0:%0] %2 : !sair.value<d0:range, memref<?x?xf32>>
+
+    // CHECK: sair.map[d0:%{{.*}}, d1:%{{.*}}, d2:%{{.*}}] %{{.*}}(d0), %{{.*}}(d0, d1, d2) attributes {foo = "bar"} {
+    // CHECK: ^{{.*}}(%[[ARG1:.*]]: index, %[[ARG2:.*]]: index, %[[ARG3:.*]]: index, %[[MEMREF:.*]]: memref<?x?xf32>, %[[VALUE:.*]]: f32):
+    // CHECK:   %[[IDX1:.*]] = affine.apply affine_map<(d0, d1) -> (d1)>(%[[ARG2]], %[[ARG3]])
+    // CHECK:   %[[IDX2:.*]] = affine.apply affine_map<(d0, d1) -> (d0)>(%[[ARG2]], %[[ARG3]])
+    // CHECK:   store %[[VALUE]], %[[MEMREF]][%[[IDX1]], %[[IDX2]]]
+    // CHECK:   sair.return
+    // CHECK: } : #sair.shape<d0:range x d1:range x d2:range>, (memref<?x?xf32>, f32) -> ()
+    sair.store_to_memref[d0:%0] %4(d0) memref[d1:%0, d2:%0] %3(d0, d1, d2)
+      {access_map = affine_map<(d0,d1)->(d1,d0)>, foo = "bar"}
+      : #sair.shape<d0:range x d1:range x d2:range>, memref<?x?xf32>
     sair.exit
   }
   return

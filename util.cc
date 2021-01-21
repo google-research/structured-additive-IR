@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "transforms/util.h"
+#include "util.h"
+
+#include "llvm/ADT/STLExtras.h"
 
 namespace sair {
 
@@ -59,6 +61,15 @@ InsertionPoint FindInsertionPoint(
   }
 
   return {point, direction, target_loop_nest};
+}
+
+void ForwardAttributes(mlir::Operation *old_op, mlir::Operation *new_op,
+                       llvm::ArrayRef<llvm::StringRef> ignore) {
+  for (auto [name, attr] : old_op->getAttrs()) {
+    if (new_op->hasAttr(name) || llvm::find(ignore, name) != ignore.end())
+      continue;
+    new_op->setAttr(name, attr);
+  }
 }
 
 }  // namespace sair
