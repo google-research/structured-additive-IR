@@ -178,11 +178,61 @@ def SairFromScalarOp : SairOp<"from_scalar", [
   }], [{$_self.getValueOr(nullptr)}]>;
 }
 
-def SairFromMemRefOp : SairOp<"from_memref", [
-    AttrSizedOperandSegments,
-    NoSideEffect,
-    SairInferIterationSpaceOp,
-    SairValueProducerOp]> {
+class SairFromMemRefOpBase<string mnemonic,
+                           list<OpTrait> extraTraits = [],
+                           dag extraArgs = (ins)> : SairOp<mnemonic,
+   !listconcat([AttrSizedOperandSegments,
+                SairValueProducerOp], extraTraits)> {
+  let arguments = !con((ins
+    Variadic<SairRange>:$parallel_domain,
+    Variadic<SairRange>:$memref_domain,
+    SairMappingArrayAttr:$mapping_array,
+    SairValueOf<AnyMemRef>:$memref,
+    OptionalAttr<AffineMapAttr>:$access_map
+  ), extraArgs);
+
+  let results = (outs SairValue:$result);
+
+  let parser = [{return ParseFromMemRefLike(parser, result);}];
+  let printer = [{return PrintFromMemRefLike(*this, p);}];
+
+  code commonVerifier = [{
+    return VerifyFromToMemRef(
+      getOperation(), parallel_domain().size(), shape(), memref(), result(),
+      AccessMap());
+  }];
+  let verifier = commonVerifier;
+
+  code commonClassDeclaration = [{
+    ValueOperand MemRef() { return ValueOperands()[0]; }
+
+    OperandRange domain() {
+      return ChainOperandRanges(parallel_domain(), memref_domain());
+    }
+
+    llvm::SmallBitVector DimsDependingOnOperand(int sair_operand);
+
+    mlir::AffineMap AccessMap() {
+      if (access_map().hasValue()) return access_map().getValue();
+      return mlir::AffineMap::getMultiDimIdentityMap(memref_domain().size(),
+                                                     getContext());
+    }
+
+    mlir::MemRefType MemRefType() {
+      return memref()
+          .getType()
+          .cast<ValueType>()
+          .ElementType()
+          .cast<mlir::MemRefType>();
+    }
+  }];
+  let extraClassDeclaration = commonClassDeclaration;
+
+  DerivedAttr shape = SairResultDomainShapeAttr;
+}
+
+def SairFromMemRefOp : SairFromMemRefOpBase<"from_memref",
+    [NoSideEffect, SairInferIterationSpaceOp]> {
   let summary = "Interprets a memref as a Sair value";
 
   let description = [{
@@ -190,8 +240,15 @@ def SairFromMemRefOp : SairOp<"from_memref", [
     hyper-rectangular domain with a number of dimensions equal to the rank of
     the memref.
 
-    This instruction is only intended to translate values from one dialect to
-    the other and is expected to be implemented as a no-op in the final code, by
+    It can occur anywhere in the Sair program but before any other operation may
+    write to the memref it reinterprets. Not requiring these operations to be at
+    the entry of the program allows Sair to support dependent dimensions (whose
+    size is provided in another memref), but it still needs a clear boundary
+    between memrefs and values that would otherwise alias each other.
+
+    This operation is only intended to connect Sair to built-in types in the
+    input programs. Sair is not expected to produce such operations, and those
+    present in the input are expected to be no-op in the final code, achieved by
     mapping the memref and the Sair value to the same location, with the same
     layout.
 
@@ -204,51 +261,9 @@ def SairFromMemRefOp : SairOp<"from_memref", [
     ```
   }];
 
-  let arguments = (ins
-    Variadic<SairRange>:$parallel_domain,
-    Variadic<SairRange>:$memref_domain,
-    SairMappingArrayAttr:$mapping_array,
-    SairValueOf<AnyMemRef>:$memref,
-    OptionalAttr<AffineMapAttr>:$access_map
-  );
-
-  let results = (outs SairValue:$result);
-
-  let parser = [{return ParseFromMemRefOp(parser, result);}];
-  let printer = [{return Print(*this, p);}];
-  let verifier = [{
-    return VerifyFromToMemRef(
-      getOperation(), parallel_domain().size(), shape(), memref(), result(),
-      AccessMap());
-  }];
-
-  let extraClassDeclaration = [{
-    ValueOperand MemRef() { return ValueOperands()[0]; }
-
-    OperandRange domain() {
-      return ChainOperandRanges(parallel_domain(), memref_domain());
-    }
-
-    llvm::SmallBitVector DimsDependingOnOperand(int sair_operand);
-
+  let extraClassDeclaration = !strconcat([{
     int infer_iteration_space_operand() { return 0; }
-
-    mlir::AffineMap AccessMap() {
-      if (access_map().hasValue()) return access_map().getValue();
-      return mlir::AffineMap::getMultiDimIdentityMap(memref_domain().size(),
-                                                     getContext());
-    }
-
-    mlir::MemRefType MemRefType() {
-      return memref()
-          .getType()
-          .cast<ValueType>()
-          .ElementType()
-          .cast<mlir::MemRefType>();
-    }
-  }];
-
-  DerivedAttr shape = SairResultDomainShapeAttr;
+  }], commonClassDeclaration);
 
   // The memory space is set to kMemory.
   DerivedAttr memory_space = DerivedAttr<"llvm::Optional<ArrayAttr>", [{
@@ -258,29 +273,45 @@ def SairFromMemRefOp : SairOp<"from_memref", [
   }], [{$_self.getValueOr(nullptr)}]>;
 }
 
-def SairToMemRefOp : SairOp<"to_memref", [
-    AttrSizedOperandSegments,
-    SairInferIterationSpaceOp]> {
-  let summary = "Indicates that a value should be stored in a memref.";
+def SairLoadFromMemRefOp : SairFromMemRefOpBase<"load_from_memref",
+    [SairComputeOp],
+    (ins SairLoopNestAttr:$loop_nest,
+         SairMemorySpaceAttr:$memory_space)> {
+  let summary = "Loads data from a memref to a Sair value";
 
   let description = [{
-    Indicates that a Sair value should be stored inside a memref. The operation
-    has an hyper-rectangular domain with a number of dimensions equal to the
-    rank of the memref.
+    Loads data from a memref into a Sair value. The Sair value must have an
+    hyper-rectangular domain with a number of dimensions equal to the rank of
+    the memref.
 
-    This instruction is only intended to enforce layout and location constraints
-    on its operand. It is expected to be implemented as a no-op in the final
-    code.
+    This operation is introduced by Sair during its lowering process and is NOT
+    expected to be present in the input. It is implemented as an actual load
+    in the final code.
 
-    The general syntax for the to_memref operation is the following.
+    The syntax for the load_from_memref operation is as follows.
 
     ```
-    sair.to_memref[<parallel-domain>] <memref> memref[<memref-domain] <value>
-      : <shape>, <memref-type>
+    <var-name> =
+      sair.load_from_memeref[<parallel-domain>] <var-name>
+                       shape[<memref-domain>]
+          : <memref-type> -> <sair-value-type>
     ```
   }];
 
-  let arguments = (ins
+  let verifier = !strconcat([{
+    if (failed(VerifyDomainLoopNestIsIdentity(getOperation(), loop_nestAttr(),
+                                              parallel_domain().size(),
+                                              domain().size()))) {
+      return mlir::failure();
+    }
+  }], commonVerifier);
+}
+
+class SairToMemRefOpBase<string mnemonic,
+                         list<OpTrait> extraTraits = [],
+                         dag extraArgs = (ins)> : SairOp<mnemonic,
+    !listconcat([AttrSizedOperandSegments], extraTraits)> {
+  let arguments = !con((ins
     Variadic<SairRange>:$parallel_domain,
     Variadic<SairRange>:$memref_domain,
     SairMappingArrayAttr:$mapping_array,
@@ -288,17 +319,19 @@ def SairToMemRefOp : SairOp<"to_memref", [
     SairValue:$value,
     SairDomainShapeAttr:$shape,
     OptionalAttr<AffineMapAttr>:$access_map
-  );
+  ), extraArgs);
 
-  let parser = [{return ParseToMemRefOp(parser, result);}];
-  let printer = [{return Print(*this, p);}];
-  let verifier = [{
+  let parser = [{return ParseToMemRefLike(parser, result);}];
+  let printer = [{return PrintToMemRefLike(*this, p);}];
+
+  code commonVerifier = [{
     return VerifyFromToMemRef(
       getOperation(), parallel_domain().size(), shape(), memref(), value(),
       AccessMap());
   }];
+  let verifier = commonVerifier;
 
-  let extraClassDeclaration = [{
+  code commonClassDeclaration = [{
     ValueOperand MemRef() { return ValueOperands()[0]; }
 
     ValueOperand Value() { return ValueOperands()[1]; }
@@ -309,8 +342,6 @@ def SairToMemRefOp : SairOp<"to_memref", [
 
     llvm::SmallBitVector DimsDependingOnOperand(int sair_operand);
 
-    int infer_iteration_space_operand() { return 0; }
-
     mlir::AffineMap AccessMap() {
       if (access_map().hasValue()) return access_map().getValue();
       return mlir::AffineMap::getMultiDimIdentityMap(memref_domain().size(),
@@ -325,6 +356,66 @@ def SairToMemRefOp : SairOp<"to_memref", [
           .cast<mlir::MemRefType>();
     }
   }];
+  let extraClassDeclaration = commonClassDeclaration;
+}
+
+def SairToMemRefOp : SairToMemRefOpBase<"to_memref",
+    [SairInferIterationSpaceOp]> {
+  let summary = "Interprets a Sair value as a memref";
+
+  let description = [{
+    Interprets a Sair value as a memref. The operation has an hyper-rectangular
+    domain with a number of dimensions equal to the rank of the memref.
+
+    This operation can appear anywhere in the program, but further accesses to
+    the memref it writes to are not allowed. That is, the IR outside Sair will
+    observe this memref elements written by this operation.
+
+    This operation is only intended to enforce layout and location constraints
+    on its operand. It is expected to be implemented as a no-op in the final
+    code and is not produced by Sair.
+
+    The general syntax for the to_memref operation is the following.
+
+    ```
+    sair.to_memref[<parallel-domain>] <memref> memref[<memref-domain>] <value>
+      : <shape>, <memref-type>
+    ```
+  }];
+
+  let extraClassDeclaration = !strconcat(commonClassDeclaration, [{
+    int infer_iteration_space_operand() { return 0; }
+  }]);
+}
+
+def SairStoreToMemRefOp : SairToMemRefOpBase<"store_to_memref",
+    [SairComputeOp], (ins SairLoopNestAttr:$loop_nest)> {
+  let summary = "Storse a Sair value in a memref";
+
+  let description = [{
+    Stores a Sair value in a memref. The operation has an hyper-rectangular
+    domain with a number of dimensions equal to the rank of the memref.
+
+    This operation is introduced by Sair during its lowering process and is NOT
+    expected to be present in the input. It is implemented as an actual store
+    in the final code.
+
+    The syntax for the store_memref operation is as follows.
+
+    ```
+    sair.store_to_memref[<parallel-domain>] <memref>
+                  memref[<memref-domain>] <value>
+        : <shape>, <memref-type>
+    ```
+  }];
+
+  let verifier = !strconcat([{
+    if (failed(VerifyDomainLoopNestIsIdentity(getOperation(), loop_nestAttr(),
+                                              parallel_domain().size(),
+                                              domain().size()))) {
+      return mlir::failure();
+    }
+  }], commonVerifier);
 }
 
 def SairReturnOp : Op<SairDialect, "return", [Terminator]> {

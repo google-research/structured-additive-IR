@@ -211,6 +211,41 @@ func @to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
   return
 }
 
+// CHECK-LABEL: @load_from_memref
+func @load_from_memref(%arg0 : memref<?x?xf32>) {
+  sair.program {
+    // CHECK: %[[D0:.*]] = sair.static_range
+    %0 = sair.static_range 8 : !sair.range
+    // CHECK: %[[V0:.]] = sair.from_scalar
+    %1 = sair.from_scalar %arg0 : !sair.value<(), memref<?x?xf32>>
+    // CHECK: %{{.*}} = sair.load_from_memref[d0:%[[D0]]] %[[V0]] memref[d1:%[[D0]], d2:%[[D0]]]
+    // CHECK: : #sair.shape<d0:range x d1:range x d2:range>, memref<?x?xf32>
+    %2 = sair.load_from_memref[d0:%0] %1 memref[d1:%0, d2:%0]
+      : #sair.shape<d0:range x d1:range x d2:range>, memref<?x?xf32>
+    sair.exit
+  }
+  return
+}
+
+// CHECK-LABEL: @store_to_memref
+func @store_to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
+  sair.program {
+    // CHECK: %[[D0:.*]] = sair.static_range
+    %0 = sair.static_range 8 : !sair.range
+    // CHECK: %[[V0:.*]] = sair.from_scalar %{{.*}} : !sair.value<(), f32>
+    %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    // CHECK: %[[V1:.*]] = sair.from_scalar %{{.*}} : !sair.value<(), memref<?x?xf32>>
+    %2 = sair.from_scalar %arg1 : !sair.value<(), memref<?x?xf32>>
+    // CHECK: sair.store_to_memref[d0:%[[D0]]] %[[V1]]
+    // CHECK:  memref[d1:%[[D0]], d2:%[[D0]]] %[[V0]]
+    // CHECK:  : #sair.shape<d0:range x d1:range x d2:range>, memref<?x?xf32>
+    sair.store_to_memref[d0:%0] %2 memref[d1:%0, d2:%0] %1
+      : #sair.shape<d0:range x d1:range x d2:range>, memref<?x?xf32>
+    sair.exit
+  }
+  return
+}
+
 // CHECK-LABEL: @map
 func @map(%arg0 : f32, %arg1: i32) {
   sair.program {

@@ -127,3 +127,62 @@ func @from_to_memref(%arg0: index) {
   }
   return
 }
+
+// CHECK-LABEL: @load_store_memref
+func @load_store_memref(%arg0: index) {
+  sair.program {
+    // CHECK: %[[SIZE:.*]] = sair.from_scalar
+    %size = sair.from_scalar %arg0 : !sair.value<(), index>
+    // CHECK: %[[D0:.*]] = sair.static_range 4 step 4
+    %0 = sair.static_range 4 : !sair.range
+    // CHECK: %[[MAPPED:.*]] = sair.map %[[SIZE]]
+    // CHECK: %[[D2:.*]] = sair.dyn_range %[[MAPPED]]
+    %1 = sair.dyn_range %size : !sair.range
+    // CHECK: %[[DYNMAPPED:.*]]:2 = sair.map[d0:{{.*}}]
+    // CHECK: %[[D1:.*]] = sair.dyn_range[d0:{{.*}}] %[[DYNMAPPED]]#0(d0), %[[DYNMAPPED]]#1(d0)
+    // CHECK: sair.alloc[d0:%[[D0]], d1:%[[D1]]]
+    // CHECK: loop_nest = [
+    // CHECK:   {iter = #sair.mapping_expr<d0>, name = "A"}
+    // CHECK:   {iter = #sair.mapping_expr<d1>, name = "B"}
+    %memref = sair.alloc[d0:%0] %size {
+      loop_nest = [
+        {name = "A", iter = #sair.mapping_expr<stripe(d0, 4)>},
+        {name = "B", iter = #sair.mapping_expr<stripe(d0, 1 size 4)>}
+      ]
+    } : !sair.value<d0:range, memref<?xf32>>
+    // CHECK: sair.load_from_memref[d0:%[[D0]], d1:%[[D1]]] %{{.*}}(d0, d1) memref[d2:%[[D2]]]
+    // CHECK: loop_nest = [
+    // CHECK:   {iter = #sair.mapping_expr<d0>, name = "A"}
+    // CHECK:   {iter = #sair.mapping_expr<d1>, name = "B"}
+    // CHECK:   {iter = #sair.mapping_expr<d2>, name = "C"}
+    // CHECK: #sair.shape<d0:range x d1:range(d0) x d2:range>
+    %2 = sair.load_from_memref[d0:%0] %memref(d0) memref[d1:%1]
+      { loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<stripe(d0, 4)>},
+          {name = "B", iter = #sair.mapping_expr<stripe(d0, 1 size 4)>},
+          {name = "C", iter = #sair.mapping_expr<d1>}
+        ]
+      } : #sair.shape<d0:range x d1:range>, memref<?xf32>
+    // CHECK: sair.store_to_memref[d0:%[[D0]], d1:%[[D1]]] %{{.*}}(d0, d1) memref[d2:%[[D2]]] %{{.*}}(d0, d1, d2)
+    // CHECK: loop_nest = [
+    // CHECK:   {iter = #sair.mapping_expr<d0>, name = "A"}
+    // CHECK:   {iter = #sair.mapping_expr<d1>, name = "B"}
+    // CHECK:   {iter = #sair.mapping_expr<d2>, name = "C"}
+    // CHECK: #sair.shape<d0:range x d1:range(d0) x d2:range>
+    sair.store_to_memref[d0:%0] %memref(d0) memref[d1:%1] %2(d0, d1)
+      { loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<stripe(d0, 4)>},
+          {name = "B", iter = #sair.mapping_expr<stripe(d0, 1 size 4)>},
+          {name = "C", iter = #sair.mapping_expr<d1>}
+        ]
+      } : #sair.shape<d0:range x d1:range>, memref<?xf32>
+    sair.free[d0:%0] %memref(d0) {
+      loop_nest = [
+        {name = "A", iter = #sair.mapping_expr<stripe(d0, 4)>},
+        {name = "B", iter = #sair.mapping_expr<stripe(d0, 1 size 4)>}
+      ]
+    } : !sair.value<d0:range, memref<?xf32>>
+    sair.exit
+  }
+  return
+}

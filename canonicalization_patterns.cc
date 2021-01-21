@@ -386,6 +386,11 @@ void SairFromMemRefOp::getCanonicalizationPatterns(
   patterns.insert<SimplifySairOperands>();
 }
 
+void SairLoadFromMemRefOp::getCanonicalizationPatterns(
+    mlir::OwningRewritePatternList &results, mlir::MLIRContext *context) {
+  results.insert<SimplifySairOperands>();
+}
+
 void SairFbyOp::getCanonicalizationPatterns(
     mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>();
@@ -427,6 +432,11 @@ void SairStaticRangeOp::getCanonicalizationPatterns(
 void SairToMemRefOp::getCanonicalizationPatterns(
     mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>();
+}
+
+void SairStoreToMemRefOp::getCanonicalizationPatterns(
+    mlir::OwningRewritePatternList &results, mlir::MLIRContext *context) {
+  results.insert<SimplifySairOperands>();
 }
 
 void SairMapOp::getCanonicalizationPatterns(

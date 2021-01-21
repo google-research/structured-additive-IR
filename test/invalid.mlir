@@ -1118,3 +1118,29 @@ func @loop_crosses_subdomain_boundaries(%arg0: f32) {
   }
   return
 }
+
+// -----
+
+func @non_identity_loop_nest_for_memref(%arg0: index) {
+  sair.program {
+    %size = sair.from_scalar %arg0 : !sair.value<(), index>
+    %0 = sair.static_range 4 : !sair.range
+    %1 = sair.dyn_range %size : !sair.range
+    %memref = sair.alloc[d0:%0] %size {
+      loop_nest = [
+        {name = "A", iter = #sair.mapping_expr<d0>}
+      ]
+    } : !sair.value<d0:range, memref<?xf32>>
+    // expected-error @+2 {{expects loop_nest to be identity for the memref domain}}
+    // expected-note @+1 {{found #sair.mapping_expr<stripe(d1, 1 size 4)>}}
+    %2 = sair.load_from_memref[d0:%0] %memref(d0) memref[d1:%1]
+      { loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<d0>},
+          {name = "B", iter = #sair.mapping_expr<stripe(d1, 4)>},
+          {name = "C", iter = #sair.mapping_expr<stripe(d1, 1 size 4)>}
+        ]
+      } : #sair.shape<d0:range x d1:range>, memref<?xf32>
+    sair.exit
+  }
+  return
+}
