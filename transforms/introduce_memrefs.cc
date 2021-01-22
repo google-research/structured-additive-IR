@@ -52,7 +52,7 @@ InsertionPoint FindInsertionPoint(int num_dimensions, int fusion_level,
   InsertionPoint result =
       FindInsertionPoint(cast<SairOp>(point.getOperation()),
                          point.LoopNestLoops(), fusion_level, direction);
-  SairProgramOp program_op = cast<SairProgramOp>(point.getParentOp());
+  SairProgramOp program_op = cast<SairProgramOp>(point->getParentOp());
   result.loop_nest = GetDefaultLoopNest(program_op, num_dimensions,
                                         result.loop_nest.getValue());
   return result;
