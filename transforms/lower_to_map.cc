@@ -253,7 +253,7 @@ class LowerToMap : public LowerToMapPassBase<LowerToMap> {
       } else if (auto reduce = dyn_cast<SairMapReduceOp>(op)) {
         RewriteMapReduceToMap(reduce, builder);
       } else if (auto alloc = dyn_cast<SairAllocOp>(op)) {
-        RewriteAllocToMap(alloc, builder);
+        (void)RewriteAllocToMap(alloc, builder);
       } else if (auto free = dyn_cast<SairFreeOp>(op)) {
         RewriteFreeToMap(free, builder);
       } else if (auto from_memref = dyn_cast<SairLoadFromMemRefOp>(op)) {
