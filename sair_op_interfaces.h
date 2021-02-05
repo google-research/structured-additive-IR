@@ -15,6 +15,8 @@
 #ifndef SAIR_SAIR_OP_INTERFACES_H_
 #define SAIR_SAIR_OP_INTERFACES_H_
 
+#include <variant>
+
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SmallBitVector.h"
 #include "mlir/IR/OpDefinition.h"
@@ -27,6 +29,18 @@
 #include "sair_types.h"
 
 namespace sair {
+
+// A Sair value accessed with a mapping.
+struct ValueAccess {
+  mlir::Value value;
+  MappingAttr mapping;
+
+  // Returns the element type of the value.
+  mlir::Type ElementType() const;
+};
+
+bool operator==(const ValueAccess &lhs, const ValueAccess &rhs);
+bool operator!=(const ValueAccess &lhs, const ValueAccess &rhs);
 
 // A !sair.value operand of a Sair operation.
 class ValueOperand {
@@ -41,6 +55,12 @@ class ValueOperand {
   // Returns the value referenced by the operand.
   mlir::Value value() const { return operand_->get(); }
 
+  // Returns the mapping associated to the operand.
+  MappingAttr Mapping() const;
+
+  // Returns the value access of the operand.
+  ValueAccess Get() const { return {value(), Mapping()}; }
+
   // Returns the type of the value referenced by the operand.
   ValueType GetType() const {
     return operand_->get().getType().cast<ValueType>();
@@ -49,11 +69,12 @@ class ValueOperand {
   // Returns the operation owning the operand.
   mlir::Operation *getOwner() { return operand_->getOwner(); }
 
-  // Returns the mapping associated to the operand.
-  MappingAttr Mapping();
-
   // Returns the position of the operand.
   int position() const { return index_; }
+
+  // Substitutes the value with a new one. The mlir value is replaced and the
+  // new mapping is composed with the new one.
+  void SubstituteValue(ValueAccess new_value);
 
   // Sets the value referenced by the operand.
   void set_value(mlir::Value value) { operand_->set(value); }
@@ -108,39 +129,28 @@ class ValueOperandRange
 
 // Update all uses of `value` to use `newValue` instead, and compose the access
 // mapping with `mapping`.
-void UpdateValueUses(mlir::Value value, mlir::Value newValue,
-                     MappingAttr mapping);
+void UpdateValueUses(mlir::Value value, ValueAccess new_value);
 
 // Represents wither a Sair value or a constant.
 class ValueOrConstant {
  public:
-  ValueOrConstant(mlir::Value value, MappingAttr mapping)
-      : value_(value), attribute_(mapping) {}
-  ValueOrConstant(mlir::Attribute constant) : attribute_(constant) {}
-  ValueOrConstant(ValueOperand &&operand)
-      : ValueOrConstant(operand.value(), operand.Mapping()) {}
+  ValueOrConstant(ValueAccess value) : variant_(value) {}
+  ValueOrConstant(mlir::Attribute constant) : variant_(constant) {}
 
-  bool is_constant() const { return value_ == nullptr; }
+  bool is_constant() const { return variant_.index() == 1; }
   bool is_value() const { return !is_constant(); }
 
-  mlir::Value value() const {
-    assert(is_value());
-    return value_;
-  }
-
-  MappingAttr mapping() const {
-    assert(is_value());
-    return attribute_.cast<MappingAttr>();
-  }
-
+  const ValueAccess &value() const { return std::get<ValueAccess>(variant_); }
   mlir::Attribute constant() const {
-    assert(is_constant());
-    return attribute_;
+    return std::get<mlir::Attribute>(variant_);
   }
+
+  // Returns a value accessed through the given mapping: if this is a value,
+  // composes mapping with the value access mapping.
+  ValueOrConstant Map(MappingAttr mapping) const;
 
  private:
-  mlir::Value value_;
-  mlir::Attribute attribute_;
+  std::variant<ValueAccess, mlir::Attribute> variant_;
 };
 
 // Returns the memory space of the given result.

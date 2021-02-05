@@ -40,11 +40,28 @@
 
 namespace sair {
 
-MappingAttr ValueOperand::Mapping() {
+mlir::Type ValueAccess::ElementType() const {
+  return value.getType().cast<ValueType>().ElementType();
+}
+
+bool operator==(const ValueAccess &lhs, const ValueAccess &rhs) {
+  return lhs.value == rhs.value && lhs.mapping == rhs.mapping;
+}
+
+bool operator!=(const ValueAccess &lhs, const ValueAccess &rhs) {
+  return !(lhs == rhs);
+}
+
+MappingAttr ValueOperand::Mapping() const {
   return cast<SairOp>(operand_->getOwner())
       .mapping_array()
       .getValue()[index_]
       .template cast<::sair::MappingAttr>();
+}
+
+void ValueOperand::SubstituteValue(ValueAccess new_value) {
+  set_value(new_value.value);
+  SetMapping(Mapping().Compose(new_value.mapping));
 }
 
 void ValueOperand::SetMapping(MappingAttr mapping) {
@@ -92,14 +109,17 @@ static ValueOperand ValueOperandForOpOperand(OpOperand &operand) {
   return value_operand;
 }
 
-void UpdateValueUses(mlir::Value value, mlir::Value newValue,
-                     MappingAttr mapping) {
+void UpdateValueUses(mlir::Value value, ValueAccess new_value) {
   for (OpOperand &operand : llvm::make_early_inc_range(value.getUses())) {
-    ValueOperand value_operand = ValueOperandForOpOperand(operand);
-    value_operand.SetMapping(
-        value_operand.Mapping().Compose(mapping).Canonicalize());
-    value_operand.set_value(newValue);
+    ValueOperandForOpOperand(operand).SubstituteValue(new_value);
   }
+}
+
+ValueOrConstant ValueOrConstant::Map(MappingAttr mapping) const {
+  if (is_constant()) return *this;
+  ValueAccess value_access = value();
+  value_access.mapping = mapping.Compose(value_access.mapping);
+  return value_access;
 }
 
 // Sair operations are only allowed inside a SairProgramOp.
@@ -209,7 +229,8 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
 
   // Check !sair.value operands.
   for (::sair::ValueOperand v : sair_op.ValueOperands()) {
-    auto value_type = v.GetType().template dyn_cast<::sair::ValueType>();
+    auto value_type =
+        v.value().getType().template dyn_cast<::sair::ValueType>();
     if (!value_type) {
       return mlir::emitError(v.value().getLoc())
              << "expected a !sair.value operand";

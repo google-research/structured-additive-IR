@@ -64,12 +64,12 @@ def SairDynRangeOp : SairOp<"dyn_range",
 
   let extraClassDeclaration = [{
     ValueOrConstant LowerBound() {
-      if (lower_bound() != nullptr) return ValueOperands()[0];
+      if (lower_bound() != nullptr) return ValueOperands()[0].Get();
       return mlir::IntegerAttr::get(mlir::IndexType::get(getContext()), 0);
     }
 
     ValueOrConstant UpperBound() {
-      return ValueOperands().back();
+      return ValueOperands().back().Get();
     }
   }];
 }

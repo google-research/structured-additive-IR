@@ -35,8 +35,7 @@ MappingAttr ExtendWithIdentity(MappingAttr old_mapping, int domain_size,
 // domain. Returns true if any change was made.
 bool SimplifyFbyOp(ValueOperand &use, SairFbyOp op) {
   if (!op.sequential_domain().empty()) return false;
-  use.SetMapping(use.Mapping().Compose(op.Init().Mapping()));
-  use.set_value(op.init());
+  use.SubstituteValue(op.Init().Get());
   return true;
 }
 
@@ -47,8 +46,7 @@ template <typename ProjOp>
 bool SimplifyProjOp(ValueOperand &use, ProjOp op,
                     mlir::PatternRewriter &rewriter) {
   if (op.projection_domain().empty()) {
-    use.SetMapping(use.Mapping().Compose(op.Value().Mapping()));
-    use.set_value(op.value());
+    use.SubstituteValue(op.Value().Get());
     return true;
   }
 
@@ -153,8 +151,7 @@ class DeduplicateMapInputsOutputs : public OpRewritePattern<SairMapOp> {
       auto previous_operands =
           op.ValueOperands().take_front(operand.position());
       for (ValueOperand previous_operand : previous_operands) {
-        if (operand.value() != previous_operand.value()) continue;
-        if (operand.Mapping() != previous_operand.Mapping()) continue;
+        if (operand.Get() != previous_operand.Get()) continue;
         mlir::Value previous_argument =
             op.block().getArgument(domain_size + previous_operand.position());
         argument.replaceAllUsesWith(previous_argument);
@@ -239,7 +236,7 @@ class RemoveCyclicFby : public OpRewritePattern<SairFbyOp> {
     if (op.result() != op.value() || !op.Value().Mapping().IsIdentity())
       return mlir::failure();
 
-    UpdateValueUses(op.result(), op.init(), op.Init().Mapping());
+    UpdateValueUses(op.result(), op.Init().Get());
     op.erase();
 
     return mlir::success();
@@ -317,7 +314,7 @@ class RemoveUnreferencedDims : public OpRewritePattern<OpTy> {
     new_op.setDialectAttrs(op->getDialectAttrs());
 
     // Replace the original op.
-    UpdateValueUses(op, new_op, partial_mapping);
+    UpdateValueUses(op, {new_op, partial_mapping});
     rewriter.eraseOp(op);
 
     return mlir::success();
@@ -363,7 +360,7 @@ class RemoveUnreferencedDims<SairFbyOp> : public OpRewritePattern<SairFbyOp> {
     new_op.setDialectAttrs(op->getDialectAttrs());
 
     // Replace the original op.
-    UpdateValueUses(op, new_op, direct_mapping);
+    UpdateValueUses(op, {new_op, direct_mapping});
     rewriter.eraseOp(op);
     return mlir::success();
   }

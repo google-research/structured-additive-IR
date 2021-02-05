@@ -32,17 +32,15 @@ namespace sair {
 
 #include "sair_attr_interfaces.cc.inc"
 
-mlir::Value MapArguments::AddArgument(mlir::Value value, MappingAttr mapping) {
-  values_.push_back(value);
-  mappings_.push_back(mapping);
-  mlir::Type element_type = value.getType().cast<ValueType>().ElementType();
-  return body_->addArgument(element_type);
+mlir::Value MapArguments::AddArgument(ValueAccess value) {
+  values_.push_back(value.value);
+  mappings_.push_back(value.mapping);
+  return body_->addArgument(value.ElementType());
 }
 
-mlir::OpFoldResult MapArguments::AddArgument(ValueOrConstant value,
-                                             MappingAttr mapping) {
+mlir::OpFoldResult MapArguments::AddArgument(ValueOrConstant value) {
   if (value.is_constant()) return value.constant();
-  return AddArgument(value.value(), mapping.Compose(value.mapping()));
+  return AddArgument(value.value());
 }
 
 mlir::ValueRange MapArguments::Indices() const {
@@ -146,9 +144,10 @@ RangeParameters MappingDimExpr::GetRangeParameters(
                      .dependency_mapping()
                      .ResizeUseDomain(map_arguments.Indices().size());
   assert(mapping.IsFullySpecified());
-  return {.begin = map_arguments.AddArgument(range_op.LowerBound(), mapping),
-          .end = map_arguments.AddArgument(range_op.UpperBound(), mapping),
-          .step = static_cast<int>(range_op.step().getSExtValue())};
+  return {
+      .begin = map_arguments.AddArgument(range_op.LowerBound().Map(mapping)),
+      .end = map_arguments.AddArgument(range_op.UpperBound().Map(mapping)),
+      .step = static_cast<int>(range_op.step().getSExtValue())};
 }
 
 //===----------------------------------------------------------------------===//

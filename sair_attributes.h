@@ -288,6 +288,7 @@ struct RangeParameters {
   int step;
 };
 
+class ValueAccess;
 class ValueOrConstant;
 
 // Helper class to hold the !sair.value arguments of a sair.map operation and
@@ -299,8 +300,8 @@ class MapArguments {
 
   // Registers a !sair.value argument and returns the corresponding scalar in
   // the body of the sair.map operation.
-  mlir::Value AddArgument(mlir::Value value, MappingAttr mapping);
-  mlir::OpFoldResult AddArgument(ValueOrConstant value, MappingAttr mapping);
+  mlir::Value AddArgument(ValueAccess value);
+  mlir::OpFoldResult AddArgument(ValueOrConstant value);
 
   // Returns the !sair.value arguments of the map operation.
   mlir::ValueRange values() const { return values_; }

@@ -336,20 +336,18 @@ static mlir::LogicalResult VerifyLoopsOpen(
 
 // Verifies that the loop nest `op_loop_nest` of `op` is compatible with the
 // constraints imposed by the operand `dependency` of `op`.
-// * `mapping`: the mapping used by `op` to access `dependency`.
 // * `dim_dependencies`: dimensions of `op` that cannot be part of the loop-nest
 //    producing `dependency`.
 // * `carrying_dims`: if `dependency` is a loop-carried operand, lists
 //    dimensions carrying the value of `dependency` across iterations.
 static mlir::LogicalResult VerifyDependency(
     SairOp op, llvm::ArrayRef<mlir::Attribute> op_loop_nest,
-    mlir::Value dependency, MappingAttr mapping,
-    const llvm::SmallBitVector &dim_dependencies,
+    ValueAccess dependency, const llvm::SmallBitVector &dim_dependencies,
     const llvm::SmallBitVector &carrying_dims,
     const IterationSpaceAnalysis &iteration_space_analysis,
     const LoopNestConstraintsAnalysis &loop_constraints_analysis) {
   mlir::ArrayRef<mlir::Attribute> dep_loop_nest =
-      iteration_space_analysis.IterationSpace(dependency);
+      iteration_space_analysis.IterationSpace(dependency.value);
 
   // Verify dependencies with the operand loop nest.
   for (auto [op_attr, dep_attr] : llvm::zip(op_loop_nest, dep_loop_nest)) {
@@ -358,16 +356,16 @@ static mlir::LogicalResult VerifyDependency(
     if (op_loop.name() != dep_loop.name()) break;
     // Ensure that we can unify the iterator of both loops if they are fused.
     MappingExpr expected_expr =
-        dep_loop.iter().SubstituteDims(mapping.Dimensions());
+        dep_loop.iter().SubstituteDims(dependency.mapping.Dimensions());
     if (expected_expr.Unify(op_loop.iter()) != nullptr) continue;
     return (op.emitError() << "loop " << op_loop.name()
                            << " violates a data dependency")
-               .attachNote(dependency.getLoc())
+               .attachNote(dependency.value.getLoc())
            << "dependency from this operation";
   }
 
   const LoopNestConstraintsAnalysis::Constraints &constraints =
-      loop_constraints_analysis.GetConstraints(dependency);
+      loop_constraints_analysis.GetConstraints(dependency.value);
   for (mlir::Attribute attr : op_loop_nest) {
     LoopAttr loop = attr.cast<LoopAttr>();
     if (constraints.closed_loops.contains(loop.name())) {
@@ -380,17 +378,17 @@ static mlir::LogicalResult VerifyDependency(
         loop.iter().DependencyMask(op.domain().size());
     if (!dim_dependencies.anyCommon(iter_dims)) continue;
 
-    return (dependency.getDefiningOp()->emitError()
+    return (dependency.value.getDefiningOp()->emitError()
             << "operation cannot be nested in loop " << loop.name())
                .attachNote(op.getLoc())
            << "because of this operation";
   }
 
   for (int dep_dimension : constraints.closed_dimensions.set_bits()) {
-    int domain_size = mapping.UseDomainSize();
-    if (dep_dimension >= mapping.size()) break;
+    int domain_size = dependency.mapping.UseDomainSize();
+    if (dep_dimension >= dependency.mapping.size()) break;
     llvm::SmallBitVector mapped_dims =
-        mapping.Dimension(dep_dimension).DependencyMask(domain_size);
+        dependency.mapping.Dimension(dep_dimension).DependencyMask(domain_size);
     if (carrying_dims.anyCommon(mapped_dims)) {
       int dim = (carrying_dims & mapped_dims).find_first();
       return op.emitError()
@@ -416,7 +414,7 @@ static mlir::LogicalResult VerifyDependencies(
     llvm::SmallBitVector carrying_dims(op.domain().size());
     dim_dependencies.set(i);
     MappingAttr mapping = op.shape().Dimensions()[i].dependency_mapping();
-    if (mlir::failed(VerifyDependency(op, loop_nest, op.domain()[i], mapping,
+    if (mlir::failed(VerifyDependency(op, loop_nest, {op.domain()[i], mapping},
                                       dim_dependencies, carrying_dims,
                                       iteration_space_analysis,
                                       loop_constaints_analysis))) {
@@ -426,9 +424,9 @@ static mlir::LogicalResult VerifyDependencies(
 
   for (ValueOperand operand : op.ValueOperands()) {
     if (mlir::failed(VerifyDependency(
-            op, loop_nest, operand.value(), operand.Mapping(),
-            operand.DependingDims(), operand.CarryingDims(),
-            iteration_space_analysis, loop_constaints_analysis))) {
+            op, loop_nest, operand.Get(), operand.DependingDims(),
+            operand.CarryingDims(), iteration_space_analysis,
+            loop_constaints_analysis))) {
       return mlir::failure();
     }
   }

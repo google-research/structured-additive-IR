@@ -515,9 +515,9 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op, Driver &driver) {
     }
     // Check that the value is stored in registers.
     ValueProducerOp defining_op =
-        cast<ValueProducerOp>(bound.value().getDefiningOp());
+        cast<ValueProducerOp>(bound.value().value.getDefiningOp());
     int pos = 0;
-    while (defining_op->getResult(pos) != bound.value()) {
+    while (defining_op->getResult(pos) != bound.value().value) {
       ++pos;
     }
     if (defining_op.GetMemorySpace(pos) != ValueProducerOp::kRegister) {
@@ -527,8 +527,8 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op, Driver &driver) {
       return nullptr;
     }
 
-    inputs.push_back(bound.value());
-    mappings.push_back(range_mapping.Compose(bound.mapping()));
+    inputs.push_back(bound.value().value);
+    mappings.push_back(range_mapping.Compose(bound.value().mapping));
     return op.block().addArgument(driver.getIndexType());
   };
 

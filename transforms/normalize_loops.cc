@@ -253,8 +253,8 @@ mlir::LogicalResult NormalizeLoops(
        llvm::zip(op->getResults(), new_op->getResults())) {
     // We do not normalize range operations, so we know that results are values.
     assert(old_value.getType().isa<ValueType>());
-    UpdateValueUses(old_value, new_value,
-                    mapping.Resize(new_op.results_rank()));
+    UpdateValueUses(old_value,
+                    {new_value, mapping.Resize(new_op.results_rank())});
   }
   op.erase();
 
