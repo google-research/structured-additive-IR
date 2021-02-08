@@ -72,4 +72,43 @@ void ForwardAttributes(mlir::Operation *old_op, mlir::Operation *new_op,
   }
 }
 
+mlir::LogicalResult ResolveUnificationConstraint(
+    ComputeOp op, int dimension, llvm::StringRef origin,
+    MappingAttr target_deps_to_op, MappingExpr &constraint,
+    llvm::SmallVectorImpl<ValueAccess> &target_domain) {
+  mlir::MLIRContext *context = op.getContext();
+  SairOp sair_op = cast<SairOp>(op.getOperation());
+  int domain_size = sair_op.domain().size();
+
+  // Get a mapping from target dependencies to `dimension` domain.
+  MappingAttr old_dependency_mapping =
+      sair_op.shape().Dimension(dimension).dependency_mapping().ResizeUseDomain(
+          domain_size);
+  MappingAttr new_dependency_mapping =
+      target_deps_to_op.Compose(old_dependency_mapping).Canonicalize();
+
+  if (!new_dependency_mapping.IsFullySpecified()) {
+    return op->emitError() << "dimension d" << dimension << " in " << origin
+                           << " is used before its dependencies";
+  }
+
+  ValueAccess dimension_access = {sair_op.domain()[dimension],
+                                  new_dependency_mapping};
+
+  if (constraint.isa<MappingNoneExpr>()) {
+    constraint = MappingDimExpr::get(target_domain.size(), context);
+    target_domain.push_back(dimension_access);
+  } else if (auto dim_expr = constraint.dyn_cast<MappingDimExpr>()) {
+    if (dimension_access != target_domain[dim_expr.dimension()]) {
+      return op.emitError() << "use of dimension d" << dimension << " in "
+                            << origin << " does not match previous occurrences";
+    }
+  } else {
+    return op.emitError() << "cannot unify " << origin
+                          << " with previous occurences";
+  }
+
+  return mlir::success();
+}
+
 }  // namespace sair

@@ -74,17 +74,21 @@ class IterationSpaceAnalysis {
 
 // A class of fused loops.
 struct LoopFusionClass {
-  // Iterator of the loop.
-  MappingExpr iter_expr;
-  // Dimensions `iter_expr` depends on.
-  llvm::SmallVector<mlir::Value, 4> dimensions;
-  // Mapping from the domain of `dimensions` to the domain of each operation.
-  // Expressions are either MappingNoneExpr or MappingDimExpr.
-  llvm::DenseMap<mlir::Operation *, llvm::SmallVector<MappingExpr, 4>>
-      op_dims_mappings;
   // Loops this class depends on.
-  // TODO(ulysse): infer this from `op_dims_mapping`.
   llvm::SmallVector<mlir::StringAttr, 2> dependencies;
+
+  // Domain in which the loop size is defined. This is a list of dimensions,
+  // with an access pattern from dependencies indicies to the domain of each
+  // dimension.
+  //
+  // Domains of outer fusion classes must be a prefix of this one.
+  llvm::SmallVector<ValueAccess, 4> domain;
+
+  // Mapping from domain indices to the loop indices.
+  MappingExpr iter_expr;
+
+  // An occurence on the fusion class, for error reporting purposes.
+  ComputeOp occurence;
 };
 
 // Computes loop fusion classes in a sair program.
@@ -108,11 +112,14 @@ class LoopFusionAnalysis {
   // Populates the analysis with the operations appearing in `program_op`.
   mlir::LogicalResult Init(SairProgramOp program_op);
 
-  // Registers a loop of `op`.
+  // Registers a loop of an operation. All occurences of outer loops must be
+  // registered first.
   mlir::LogicalResult RegisterLoop(ComputeOp op, LoopAttr loop,
-                                   llvm::ArrayRef<mlir::Attribute> loop_nest);
+                                   llvm::ArrayRef<mlir::Attribute> outer_loops);
 
   llvm::DenseMap<mlir::Attribute, LoopFusionClass> fusion_classes_;
+  llvm::DenseMap<mlir::Operation *, llvm::SmallVector<MappingExpr, 4>>
+      op_domain_mappings_;
 };
 
 }  // namespace sair

@@ -975,7 +975,6 @@ DomainShapeDim::DomainShapeDim(RangeType type, MappingAttr dependency_mapping)
     : type_(type), dependency_mapping_(dependency_mapping) {
   assert(type != nullptr);
   assert(dependency_mapping != nullptr);
-  assert(dependency_mapping.IsFullySpecified());
 }
 
 DomainShapeDim DomainShapeDim::Apply(MappingAttr mapping) const {
@@ -1034,6 +1033,7 @@ DomainShapeAttr DomainShapeAttr::get(mlir::MLIRContext *context,
   // has a fixed value.
   for (int i = 0, e = dims.size(); i < e; ++i) {
     assert(dims[i].dependency_mapping().UseDomainSize() == i);
+    assert(dims[i].dependency_mapping().IsFullySpecified());
     (void) i;
   }
 

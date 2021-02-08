@@ -674,7 +674,7 @@ func @loop_step_increasing(%arg0: f32) {
   sair.program {
     %0 = sair.static_range 8 : !sair.range
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    // expected-error @+1 {{loop "A" must be nested inside "B"}}
+    // expected-error @+1 {{loop "A" must be nested inside the loops it depends on}}
     sair.copy[d0: %0] %1 {
       loop_nest = [
         {name = "A", iter = #sair.mapping_expr<stripe(d0, 1 size 4)>},
@@ -1014,7 +1014,7 @@ func @loop_unification_failed(%arg0: f32) {
         {name = "B", iter = #sair.mapping_expr<stripe(d0, 1 size 4)>}
       ]
     } : !sair.value<d0:range, f32>
-    // expected-error @+1 {{failed to unify loop "A" iterators}}
+    // expected-error @+1 {{cannot unify loop "A" with previous occurences}}
     %3 = sair.copy[d0:%1] %2(d0) {
       loop_nest = [
         {name = "A", iter = #sair.mapping_expr<stripe(d0, 2)>},
@@ -1038,7 +1038,7 @@ func @loop_unification_failed_subexpr(%arg0: f32) {
         {name = "B", iter = #sair.mapping_expr<stripe(d0, 1 size 2)>}
       ]
     } : !sair.value<d0:range, f32>
-    // expected-error @+1 {{cannot unify d0 with '#sair.mapping_expr<stripe(d0, 2)>' in loop "A"}}
+    // expected-error @+1 {{cannot unify loop "A" with previous occurences}}
     %3 = sair.copy[d0:%1] %2(d0) {
       loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
     } : !sair.value<d0:range, f32>

@@ -15,6 +15,7 @@
 #include "loop_nest.h"
 
 #include "llvm/ADT/SetVector.h"
+#include "util.h"
 
 namespace sair {
 
@@ -27,7 +28,7 @@ static mlir::ArrayAttr InferIterationSpace(
   mlir::MLIRContext *context = operand_iteration_space.getContext();
   MappingAttr mapping = operand.Mapping();
 
-  llvm::SmallVector<mlir::Attribute, 4> iteration_space;
+  llvm::SmallVector<mlir::Attribute> iteration_space;
   for (mlir::Attribute attr : operand_iteration_space.getValue()) {
     LoopAttr loop = attr.cast<LoopAttr>();
     if (loop.iter().MinDomainSize() > mapping.size()) break;
@@ -198,7 +199,7 @@ class LoopNestConstraintsAnalysis {
 // the operation it is attached to.
 static mlir::LogicalResult VerifyLoopNestWellFormed(
     SairOp op, llvm::ArrayRef<mlir::Attribute> loop_nest) {
-  llvm::SmallVector<MappingExpr, 4> iter_exprs;
+  llvm::SmallVector<MappingExpr> iter_exprs;
   iter_exprs.reserve(loop_nest.size());
 
   int domain_size = op.domain().size();
@@ -304,7 +305,7 @@ class LoopNestState {
   }
 
  private:
-  llvm::SmallVector<mlir::StringAttr, 8> open_loops_;
+  llvm::SmallVector<mlir::StringAttr> open_loops_;
   llvm::DenseSet<mlir::Attribute> closed_loops_;
 };
 
@@ -442,112 +443,14 @@ static mlir::LogicalResult VerifyLoopRanges(
   for (mlir::Attribute attr : loop_nest) {
     LoopAttr loop = attr.cast<LoopAttr>();
     const LoopFusionClass &fusion_class = fusion_analysis.GetClass(loop.name());
-    if (!fusion_class.iter_expr.IsFullySpecified()) {
-      return op.emitError()
-             << "loop " << loop.name() << " iterator is not fully specified";
-    }
-
-    for (mlir::Value dimension : fusion_class.dimensions) {
-      if (op.getOperation()->isBeforeInBlock(dimension.getDefiningOp())) {
+    for (const auto &dimension : fusion_class.domain) {
+      if (op.getOperation()->isBeforeInBlock(dimension.value.getDefiningOp())) {
         return (op.emitError()
                 << "rematerialized loop " << loop.name()
                 << " indirectly uses the range before it is defined")
-                   .attachNote(dimension.getLoc())
+                   .attachNote(dimension.value.getLoc())
                << "range defined here";
       }
-    }
-  }
-
-  return mlir::success();
-}
-
-// Verifies that loops satisfy dependencies: if the range of loop "A" depends on
-// the index of loop "B", then "A" must be nested inside "B".
-// TODO(ulysse): we can compute this for all loop nests at once instead of
-// duplicating the work for each loop nest (LoopNestShapeAnalysis?).
-static mlir::LogicalResult VerifyLoopNestShape(
-    ComputeOp loop_nest_op, llvm::ArrayRef<mlir::Attribute> loop_nest,
-    const LoopFusionAnalysis &fusion_classes) {
-  mlir::MLIRContext *context = loop_nest_op.getContext();
-  llvm::SmallVector<DomainShapeDim, 4> joint_domain;
-  // [<joint-domain>] -> (<op-domain>) mapping for each operation.
-  llvm::DenseMap<mlir::Operation *, llvm::SmallVector<MappingExpr, 4>>
-      op_mappings;
-  llvm::SmallVector<MappingExpr, 4> iter_exprs;
-  auto none_expr = MappingNoneExpr::get(context);
-
-  // Add dimensions loops iterate on to the joint domain shape while building a
-  // mapping from the ops domain to the joint domain.
-  for (mlir::Attribute attr : loop_nest) {
-    LoopAttr loop = attr.cast<LoopAttr>();
-    LoopFusionClass fusion_class = fusion_classes.GetClass(loop.name());
-    // [<joint-domain>] -> (<fusion-class-domain>) mapping.
-    llvm::SmallVector<MappingExpr, 4> class_mapping(
-        fusion_class.dimensions.size(), none_expr);
-
-    for (auto [operation, mapping] : fusion_class.op_dims_mappings) {
-      SairOp op = cast<SairOp>(operation);
-      llvm::SmallVector<MappingExpr, 4> &op_mapping = op_mappings[operation];
-      op_mapping.resize(op.domain().size(), none_expr);
-
-      for (auto en : llvm::enumerate(mapping)) {
-        if (en.value().isa<MappingNoneExpr>()) continue;
-        int class_dimension = en.value().cast<MappingDimExpr>().dimension();
-
-        // If the op dimension is alreadey mapped to a joint dimension, just
-        // copy the mapping for the fusion class.
-        if (!op_mapping[en.index()].isa<MappingNoneExpr>()) {
-          class_mapping[class_dimension] =
-              class_mapping[class_dimension].Unify(op_mapping[en.index()]);
-          assert(class_mapping[class_dimension] != nullptr);
-          continue;
-        }
-
-        // If the class dimension is already mapped to a joint domain dimension,
-        // just copy the mapping for this operation.
-        if (!class_mapping[class_dimension].isa<MappingNoneExpr>()) {
-          op_mapping[en.index()] =
-              op_mapping[en.index()].Unify(class_mapping[class_dimension]);
-          assert(op_mapping[en.index()] != nullptr);
-          continue;
-        }
-
-        // Otherwise, add a new dimension to the joint domain.
-        const DomainShapeDim &dim_shape = op.shape().Dimension(en.index());
-        for (int dependency : dim_shape.DependencyMask().set_bits()) {
-          // Check that dependencies are already added.
-          if (!op_mapping[dependency].IsFullySpecified()) {
-            return operation->emitError()
-                   << "dimension d" << en.index() << " in loop " << loop.name()
-                   << " is used before its dependencies";
-          }
-        }
-
-        auto expr = MappingDimExpr::get(joint_domain.size(), context);
-        auto mapping =
-            MappingAttr::get(context, joint_domain.size(), op_mapping);
-        op_mapping[en.index()] = expr;
-        class_mapping[class_dimension] = expr;
-        joint_domain.push_back(dim_shape.Apply(mapping));
-      }
-    }
-    iter_exprs.push_back(fusion_class.iter_expr.SubstituteDims(class_mapping));
-  }
-
-  auto loops_mapping =
-      MappingAttr::get(context, joint_domain.size(), iter_exprs);
-  MappingAttr inverse_loops_mapping = loops_mapping.Inverse();
-
-  for (auto en : llvm::enumerate(iter_exprs)) {
-    DomainShapeDim loop_shape =
-        en.value().AccessedShape(joint_domain, inverse_loops_mapping);
-    int max_dep = loop_shape.DependencyMask().find_last();
-    if (max_dep >= (int)en.index()) {
-      LoopAttr loop = loop_nest[en.index()].cast<LoopAttr>();
-      LoopAttr loop_dep = loop_nest[max_dep].cast<LoopAttr>();
-      return loop_nest_op.emitError()
-             << "loop " << loop.name() << " must be nested inside "
-             << loop_dep.name();
     }
   }
 
@@ -557,7 +460,7 @@ static mlir::LogicalResult VerifyLoopNestShape(
 // Ensure that each loop only iterate along a single sub-domain.
 static mlir::LogicalResult VerifySubDomains(
     SairOp op, llvm::ArrayRef<mlir::Attribute> iteration_space) {
-  llvm::SmallVector<int, 2> sub_domains = op.SubDomains();
+  llvm::SmallVector<int> sub_domains = op.SubDomains();
   assert(!sub_domains.empty() || iteration_space.empty());
 
   for (mlir::Attribute attr : iteration_space) {
@@ -643,10 +546,6 @@ mlir::LogicalResult VerifyLoopNests(SairProgramOp program) {
               VerifyLoopRanges(op, op.LoopNestLoops(), fusion_analysis))) {
         return mlir::failure();
       }
-      if (mlir::failed(
-              VerifyLoopNestShape(op, op.LoopNestLoops(), fusion_analysis))) {
-        return mlir::failure();
-      }
     } else if (mlir::failed(loop_nest_state.CloseLoops())) {
       return mlir::failure();
     }
@@ -686,78 +585,151 @@ std::optional<LoopFusionAnalysis> LoopFusionAnalysis::Create(
 }
 
 mlir::LogicalResult LoopFusionAnalysis::Init(SairProgramOp program_op) {
-  auto status = program_op.walk([&](ComputeOp op) -> mlir::WalkResult {
-    if (!op.loop_nest().hasValue()) return mlir::success();
-    llvm::ArrayRef<mlir::Attribute> loop_nest = op.LoopNestLoops();
-    for (mlir::Attribute attr : loop_nest) {
-      if (mlir::failed(RegisterLoop(op, attr.cast<LoopAttr>(), loop_nest))) {
+  mlir::MLIRContext *context = program_op.getContext();
+
+  llvm::SmallVector<ComputeOp> work_list;
+  program_op.walk([&](ComputeOp op) {
+    auto sair_op = cast<SairOp>(op.getOperation());
+    int domain_size = sair_op.domain().size();
+    auto none_expr = MappingNoneExpr::get(context);
+    op_domain_mappings_[op.getOperation()].resize(domain_size, none_expr);
+    if (!op.loop_nest().hasValue()) return;
+    work_list.push_back(op);
+  });
+
+  // Handle loops by nesting levels. This ensures that we visited all occurences
+  // of a loop before moving to inner loops.
+  for (int level = 0; !work_list.empty(); ++level) {
+    for (int i = 0; i < work_list.size(); ++i) {
+      ComputeOp op = work_list[i];
+
+      // Remove operations from the list once their loop-nest is handled.
+      if (op.LoopNestLoops().size() <= level) {
+        work_list[i] = work_list.back();
+        work_list.pop_back();
+        --i;
+        continue;
+      }
+
+      auto loop = op.LoopNestLoops()[level].cast<LoopAttr>();
+      auto outer_loops = op.LoopNestLoops().take_front(level);
+      if (mlir::failed(RegisterLoop(op, loop, outer_loops))) {
         return mlir::failure();
       }
     }
-    return mlir::success();
-  });
-  return mlir::failure(status.wasInterrupted());
-}
-
-mlir::LogicalResult LoopFusionAnalysis::RegisterLoop(
-    ComputeOp op, LoopAttr loop, llvm::ArrayRef<mlir::Attribute> loop_nest) {
-  mlir::MLIRContext *context = op.getContext();
-  LoopFusionClass &fusion_class = fusion_classes_[loop.name()];
-  if (fusion_class.iter_expr == nullptr) {
-    fusion_class.iter_expr = MappingNoneExpr::get(context);
   }
 
-  SairOp sair_op = cast<SairOp>(op.getOperation());
-  int domain_size = sair_op.domain().size();
-
-  // Solve unification constraints.
-  llvm::SmallVector<MappingExpr, 4> mapping(sair_op.domain().size(),
-                                            MappingNoneExpr::get(context));
-  if (mlir::failed(loop.iter().UnificationConstraints(fusion_class.iter_expr,
-                                                      mapping))) {
-    return op.emitError() << "failed to unify loop " << loop.name()
-                          << " iterators";
-  }
-
-  llvm::SmallBitVector iter_dims = loop.iter().DependencyMask(domain_size);
-  for (int dimension : iter_dims.set_bits()) {
-    MappingExpr expr = mapping[dimension];
-    if (expr.isa<MappingNoneExpr>()) {
-      mapping[dimension] =
-          MappingDimExpr::get(fusion_class.dimensions.size(), context);
-      fusion_class.dimensions.push_back(sair_op.domain()[dimension]);
-      // TODO(ulysse): make it work with tiling before introducing tiled loops
-      // in passes.
-      llvm::SmallBitVector dependencies =
-          sair_op.shape().Dimension(dimension).DependencyMask();
-      for (mlir::Attribute attr : loop_nest) {
-        LoopAttr other_loop = attr.cast<LoopAttr>();
-        llvm::SmallBitVector other_dims =
-            other_loop.iter().DependencyMask(domain_size);
-        if (other_dims.anyCommon(dependencies)) {
-          fusion_class.dependencies.push_back(other_loop.name());
-        }
-      }
-    } else if (auto dim_expr = expr.dyn_cast<MappingDimExpr>()) {
-      mlir::Value expected_dimension =
-          fusion_class.dimensions[dim_expr.dimension()];
-      if (sair_op.domain()[dimension] != expected_dimension) {
-        return op.emitError()
-               << "dimension d" << dimension << " in loop " << loop.name()
-               << " does not match previous occurrences";
-      }
-    } else {
-      return op.emitError() << "cannot unify d" << dimension << " with '"
-                            << expr << "' in loop " << loop.name();
+  // Ensure that all iterators are fully specified.
+  for (auto &[name, fusion_class] : fusion_classes_) {
+    if (!fusion_class.iter_expr.IsFullySpecified()) {
+      return fusion_class.occurence.emitError()
+             << "loop " << name << " iterator is not fully specified";
     }
   }
 
-  // Unify iterator expressions.
-  fusion_class.iter_expr =
-      fusion_class.iter_expr.Unify(loop.iter().SubstituteDims(mapping));
-  assert(fusion_class.iter_expr != nullptr);
+  // Trim dependencies in each fusion class.
+  for (auto &[name, fusion_class] : fusion_classes_) {
+    llvm::SmallVector<MappingExpr> loop_nest;
+    loop_nest.reserve(fusion_class.dependencies.size() + 1);
+    for (auto outer_loop : fusion_class.dependencies) {
+      loop_nest.push_back(fusion_classes_[outer_loop].iter_expr);
+    }
+    loop_nest.push_back(fusion_class.iter_expr);
 
-  fusion_class.op_dims_mappings[op.getOperation()] = std::move(mapping);
+    int domain_size = fusion_class.domain.size();
+    MappingAttr inverse_loop_nest =
+        MappingAttr::get(context, domain_size, loop_nest).Inverse();
+
+    auto hr_domain = DomainShapeAttr::HyperRectangular(context, domain_size);
+    DomainShapeDim loop_shape = fusion_class.iter_expr.AccessedShape(
+        hr_domain.Dimensions(), inverse_loop_nest);
+    if (!loop_shape.dependency_mapping().IsFullySpecified()) {
+      return fusion_class.occurence.emitError()
+             << "loop " << name
+             << " must be nested inside the loops it depends on";
+    }
+
+    int max_dependency = loop_shape.DependencyMask().find_last();
+    for (const auto &dimension : fusion_class.domain) {
+      max_dependency = std::max(max_dependency,
+                                dimension.mapping.DependencyMask().find_last());
+    }
+    int num_dependencies = max_dependency + 1;
+
+    fusion_class.dependencies.resize(num_dependencies);
+    for (auto &dimension : fusion_class.domain) {
+      dimension.mapping = dimension.mapping.ResizeUseDomain(num_dependencies);
+    }
+  }
+
+  return mlir::success();
+}
+
+mlir::LogicalResult LoopFusionAnalysis::RegisterLoop(
+    ComputeOp op, LoopAttr loop, llvm::ArrayRef<mlir::Attribute> outer_loops) {
+  mlir::MLIRContext *context = op.getContext();
+  auto sair_op = cast<SairOp>(op.getOperation());
+  int domain_size = sair_op.domain().size();
+
+  LoopFusionClass &fusion_class = fusion_classes_[loop.name()];
+  // Initialize the fusion class if needed.
+  if (fusion_class.occurence == nullptr) {
+    fusion_class.occurence = op;
+    fusion_class.iter_expr = MappingNoneExpr::get(context);
+    if (!outer_loops.empty()) {
+      auto outer_loop = outer_loops.back().cast<LoopAttr>();
+      fusion_class.domain = GetClass(outer_loop.name()).domain;
+    }
+
+    // Add all outer dimensions to dependencies, this will be trimmed later.
+    fusion_class.dependencies.reserve(outer_loops.size());
+    for (auto attr : outer_loops) {
+      LoopAttr outer_loop = attr.cast<LoopAttr>();
+      fusion_class.dependencies.push_back(outer_loop.name());
+    }
+
+    int num_dependencies = fusion_class.dependencies.size();
+    for (auto &dimension : fusion_class.domain) {
+      dimension.mapping = dimension.mapping.ResizeUseDomain(num_dependencies);
+    }
+  }
+
+  // Compute the mapping from outer loops to op domain.
+  llvm::SmallVector<MappingExpr> outer_loop_iters;
+  outer_loop_iters.reserve(outer_loop_iters.size());
+  for (mlir::Attribute attr : outer_loops) {
+    auto outer_loop = attr.cast<LoopAttr>();
+    outer_loop_iters.push_back(outer_loop.iter());
+  }
+  MappingAttr loops_to_op_domain_mapping =
+      MappingAttr::get(context, domain_size, outer_loop_iters).Inverse();
+
+  // Generate unification constraints.
+  auto &constraints = op_domain_mappings_[op.getOperation()];
+  if (mlir::failed(loop.iter().UnificationConstraints(fusion_class.iter_expr,
+                                                      constraints))) {
+    return op.emitError() << "cannot unify loop " << loop.name()
+                          << " with previous occurences";
+  }
+
+  // Resolve unification constraints.
+  std::string loop_name_internal;
+  llvm::raw_string_ostream loop_name(loop_name_internal);
+  loop_name << "loop " << loop.name();
+
+  llvm::SmallBitVector constrained_dims =
+      loop.iter().DependencyMask(domain_size);
+  for (int dimension : constrained_dims.set_bits()) {
+    if (mlir::failed(ResolveUnificationConstraint(
+            op, dimension, loop_name.str(), loops_to_op_domain_mapping,
+            constraints[dimension], fusion_class.domain))) {
+      return mlir::failure();
+    }
+  }
+
+  fusion_class.iter_expr =
+      loop.iter().SubstituteDims(constraints).Unify(fusion_class.iter_expr);
+  assert(fusion_class.iter_expr != nullptr);
 
   return mlir::success();
 }

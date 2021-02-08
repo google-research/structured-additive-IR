@@ -47,6 +47,22 @@ InsertionPoint FindInsertionPoint(
 void ForwardAttributes(mlir::Operation *old_op, mlir::Operation *new_op,
                        llvm::ArrayRef<llvm::StringRef> ignore = {});
 
+// Resolves a unfication constraint for dimension `dimension` of `op`.
+//
+// Adds dimension `dimension` to `target_domain` while making sure that the
+// expression pointing to `dimension` in `target_domain` can be unified with
+// `constraint`. Reports an error if unification fails. `origin` is used to
+// indicate where the error comes from.
+//
+// The target domain is defined with regard to a number of dimensions, called
+// its dependencies. Each value access in `target_domain` specifies how to
+// access a range variable given the current index along dependencies.
+// `target_deps_to_op` is a mapping from dependencies to `op` domain.
+mlir::LogicalResult ResolveUnificationConstraint(
+    ComputeOp op, int dimension, llvm::StringRef origin,
+    MappingAttr target_deps_to_op, MappingExpr &constraint,
+    llvm::SmallVectorImpl<ValueAccess> &target_domain);
+
 }  // namespace sair
 
 #endif  // THIRD_PARTY_SAIR_TRANSFORMS_UTIL_H_

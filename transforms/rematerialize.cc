@@ -215,7 +215,7 @@ mlir::LogicalResult Rematerialize(ComputeOp op,
       // TODO(b/172908223): support all loop nests expressions.
       return op.emitError() << "rematerialization only supports plain loops";
     }
-    extra_domain.push_back(fusion_class.dimensions[0]);
+    extra_domain.push_back(fusion_class.domain.back().value);
     loop_nest_array[i] =
         LoopAttr::get(loop.name(), MappingDimExpr::get(position++, ctx), ctx);
   }
