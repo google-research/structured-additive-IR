@@ -55,7 +55,7 @@ mlir::ArrayAttr MappingsInsertDims(mlir::ArrayAttr mapping_array,
   for (auto mapping : mapping_array.getAsRange<MappingAttr>()) {
     new_mappings.push_back(mapping.ShiftRight(num_dims, insert_pos));
   }
-  return mlir::ArrayAttr::get(new_mappings, mapping_array.getContext());
+  return mlir::ArrayAttr::get(mapping_array.getContext(), new_mappings);
 }
 
 // Moves the body of the source operation to the target operation and inserts
@@ -80,7 +80,7 @@ mlir::ArrayAttr MappingsExtendUseDomain(mlir::ArrayAttr mapping_array,
     new_mappings.push_back(
         mapping.ResizeUseDomain(mapping.UseDomainSize() + num_extra_dims));
   }
-  return mlir::ArrayAttr::get(new_mappings, mapping_array.getContext());
+  return mlir::ArrayAttr::get(mapping_array.getContext(), new_mappings);
 }
 
 // Creates a new sair.copy operation that is intended to replace `op`. Takes the

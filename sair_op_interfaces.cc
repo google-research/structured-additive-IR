@@ -172,7 +172,7 @@ void SetMemorySpace(int result, llvm::Optional<int> memory_space,
   } else {
     memory_spaces[result] = mlir::UnitAttr::get(op->getContext());
   }
-  auto new_attribute = mlir::ArrayAttr::get(memory_spaces, op->getContext());
+  auto new_attribute = mlir::ArrayAttr::get(op->getContext(), memory_spaces);
   op->setAttr(ValueProducerOp::kMemorySpaceAttrName, new_attribute);
 }
 

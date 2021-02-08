@@ -52,7 +52,7 @@ static mlir::ArrayAttr InferIterationSpace(
       iteration_space.pop_back();
     }
   }
-  return mlir::ArrayAttr::get(iteration_space, context);
+  return mlir::ArrayAttr::get(context, iteration_space);
 }
 
 IterationSpaceAnalysis::IterationSpaceAnalysis(SairProgramOp program_op) {
@@ -80,7 +80,7 @@ mlir::ArrayAttr IterationSpaceAnalysis::ComputeIterationSpace(
   }
 
   mlir::MLIRContext *context = operation->getContext();
-  mlir::ArrayAttr iteration_space = mlir::ArrayAttr::get({}, context);
+  mlir::ArrayAttr iteration_space = mlir::ArrayAttr::get(context, {});
   if (auto compute_op = dyn_cast<ComputeOp>(operation)) {
     iteration_space = compute_op.loop_nest().getValueOr(iteration_space);
   } else if (auto infer_iteration_space =

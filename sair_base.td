@@ -290,7 +290,7 @@ def SairOpInterface : OpInterface<"SairOp"> {
     InterfaceMethod<
       "Returns the mappings for the !sair.value operands",
       "mlir::ArrayAttr", "mapping_array", (ins), [{}], [{
-        return mlir::ArrayAttr::get({}, this->getOperation()->getContext());
+        return mlir::ArrayAttr::get(this->getOperation()->getContext(), {});
       }]
     >,
     InterfaceMethod<

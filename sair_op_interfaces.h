@@ -193,7 +193,7 @@ void SetMapping(ConcreteType op, int position, ::sair::MappingAttr mapping) {
   llvm::SmallVector<mlir::Attribute, 4> new_array =
       llvm::to_vector<4>(op.mapping_array());
   new_array[position] = mapping;
-  mlir::ArrayAttr new_attr = mlir::ArrayAttr::get(new_array, op.getContext());
+  mlir::ArrayAttr new_attr = mlir::ArrayAttr::get(op.getContext(), new_array);
   op->setAttr(::sair::SairDialect::kMappingAttrName, new_attr);
 }
 

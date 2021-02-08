@@ -154,7 +154,7 @@ ParseResult ParseDynRangeOp(mlir::OpAsmParser &parser,
                                                 mappings.size());
   result.addAttribute(
       SairDialect::kMappingAttrName,
-      ArrayAttr::get(mapping_attrs, parser.getBuilder().getContext()));
+      ArrayAttr::get(parser.getBuilder().getContext(), mapping_attrs));
   result.addAttribute(
       SairDynRangeOp::getOperandSegmentSizeAttr(),
       builder.getI64VectorAttr({static_cast<int64_t>(domain.size()),
@@ -431,7 +431,7 @@ ParseResult ParseExitOp(mlir::OpAsmParser &parser,
                                                 mappings.end());
   result.addAttribute(
       SairDialect::kMappingAttrName,
-      ArrayAttr::get(mapping_attrs, parser.getBuilder().getContext()));
+      ArrayAttr::get(parser.getBuilder().getContext(), mapping_attrs));
 
   assert(mappings.size() == operands.size());
   if (element_types.size() != operands.size()) {
@@ -562,8 +562,8 @@ static mlir::ParseResult ParseFbyOp(mlir::OpAsmParser &parser,
   result.addAttribute(
       SairDialect::kMappingAttrName,
       mlir::ArrayAttr::get(
-          {init_mapping.ResizeUseDomain(domain.size()), value_mapping},
-          type.getContext()));
+          type.getContext(),
+          {init_mapping.ResizeUseDomain(domain.size()), value_mapping}));
 
   // Store the number of operands in each variadic segments as required by MLIR,
   // it expects specifically int64_t.
@@ -975,7 +975,7 @@ ParseResult ParseMapOp(mlir::OpAsmParser &parser,
                                                 mappings.size());
   result.addAttribute(
       SairDialect::kMappingAttrName,
-      ArrayAttr::get(mapping_attrs, parser.getBuilder().getContext()));
+      ArrayAttr::get(parser.getBuilder().getContext(), mapping_attrs));
 
   // Parse an optional attribute dictionary.
   if (mlir::failed(
@@ -1254,7 +1254,7 @@ ParseResult ParseMapReduceOp(mlir::OpAsmParser &parser,
                                                 mappings.size());
   result.addAttribute(
       SairDialect::kMappingAttrName,
-      ArrayAttr::get(mapping_attrs, parser.getBuilder().getContext()));
+      ArrayAttr::get(parser.getBuilder().getContext(), mapping_attrs));
 
   // Parse the remaining part of the operation and build the domain shape. Note
   // that 'llvm::None' is passed as region arguments and types to indicate to
@@ -1476,7 +1476,7 @@ void SairProgramOp::build(mlir::OpBuilder &builder,
 }
 
 mlir::StringAttr SairProgramOp::GenLoopName(llvm::StringRef prefix) {
-  mlir::StringAttr name = mlir::StringAttr::get(prefix, getContext());
+  mlir::StringAttr name = mlir::StringAttr::get(getContext(), prefix);
   std::vector<mlir::Attribute> name_table(loop_name_table().begin(),
                                           loop_name_table().end());
   if (llvm::count(loop_name_table(), name) > 0) {
@@ -1487,11 +1487,11 @@ mlir::StringAttr SairProgramOp::GenLoopName(llvm::StringRef prefix) {
       name_buffer.resize(original_size);
       name_buffer += '_';
       name_buffer += std::to_string(counter++);
-      name = mlir::StringAttr::get(name_buffer, getContext());
+      name = mlir::StringAttr::get(getContext(), name_buffer);
     } while (llvm::count(name_table, name) > 0);
   }
   name_table.push_back(name);
-  loop_name_tableAttr(mlir::ArrayAttr::get(name_table, getContext()));
+  loop_name_tableAttr(mlir::ArrayAttr::get(getContext(), name_table));
   return name;
 }
 
@@ -1504,7 +1504,7 @@ void SairExitOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,
   MappingAttr mapping =
       MappingAttr::get(context, /*domain_size =*/0, /*mapping =*/{});
   mlir::SmallVector<mlir::Attribute, 4> mappings(operands.size(), mapping);
-  auto mappings_attr = mlir::ArrayAttr::get(mappings, context);
+  auto mappings_attr = mlir::ArrayAttr::get(context, mappings);
   result.addAttribute(SairDialect::kMappingAttrName, mappings_attr);
 }
 
@@ -1617,7 +1617,7 @@ static mlir::ArrayAttr ComposeMappings(MappingAttr lhs,
   for (mlir::Attribute rhs : rhs_array.getValue()) {
     new_mappings.push_back(lhs.Compose(rhs.cast<MappingAttr>()).Canonicalize());
   }
-  return mlir::ArrayAttr::get(new_mappings, lhs.getContext());
+  return mlir::ArrayAttr::get(lhs.getContext(), new_mappings);
 }
 
 // Translates the loop nest to a new domain using the given mapping.
@@ -1635,7 +1635,7 @@ static mlir::ArrayAttr ComposeLoopNest(MappingAttr new_to_old_mapping,
                                .Canonicalize();
     new_loop_nest.push_back(LoopAttr::get(loop.name(), new_iter, context));
   }
-  return mlir::ArrayAttr::get(new_loop_nest, old_loop_nest.getContext());
+  return mlir::ArrayAttr::get(old_loop_nest.getContext(), new_loop_nest);
 }
 
 SairOp SairDynRangeOp::ReCreateWithNewDomain(
