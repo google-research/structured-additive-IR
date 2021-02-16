@@ -281,9 +281,9 @@ class DomainShapeAttr
 // constants.
 struct RangeParameters {
   // First index of the range.
-  mlir::OpFoldResult begin;
+  mlir::ValueOrAttr begin;
   // End of the range.
-  mlir::OpFoldResult end;
+  mlir::ValueOrAttr end;
   // Step of the range.
   int step;
 };
@@ -301,7 +301,7 @@ class MapArguments {
   // Registers a !sair.value argument and returns the corresponding scalar in
   // the body of the sair.map operation.
   mlir::Value AddArgument(ValueAccess value);
-  mlir::OpFoldResult AddArgument(ValueOrConstant value);
+  mlir::ValueOrAttr AddArgument(ValueOrConstant value);
 
   // Returns the !sair.value arguments of the map operation.
   mlir::ValueRange values() const { return values_; }

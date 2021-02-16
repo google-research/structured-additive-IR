@@ -22,7 +22,7 @@ namespace sair {
 namespace {
 
 // Materializes `value` as an mlir value.
-mlir::Value Materialize(mlir::Location loc, mlir::OpFoldResult &value,
+mlir::Value Materialize(mlir::Location loc, mlir::ValueOrAttr &value,
                         mlir::OpBuilder &builder) {
   if (value.is<mlir::Value>()) return value.get<mlir::Value>();
   return builder.create<ConstantOp>(loc, value.get<mlir::Attribute>());

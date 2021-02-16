@@ -38,7 +38,7 @@ mlir::Value MapArguments::AddArgument(ValueAccess value) {
   return body_->addArgument(value.ElementType());
 }
 
-mlir::OpFoldResult MapArguments::AddArgument(ValueOrConstant value) {
+mlir::ValueOrAttr MapArguments::AddArgument(ValueOrConstant value) {
   if (value.is_constant()) return value.constant();
   return AddArgument(value.value());
 }
