@@ -621,14 +621,15 @@ void Print(SairCopyOp op, OpAsmPrinter &printer) {
   PrintDomain(op.domain(), printer);
   printer << " ";
   PrintValueAccess(op.Value(), printer);
-  printer.printOptionalAttrDict(op.getAttrs(), {SairDialect::kMappingAttrName});
+  printer.printOptionalAttrDict(op->getAttrs(),
+                                {SairDialect::kMappingAttrName});
   printer << " : " << op.getType();
 }
 
 // Prints the sair.from_scalar operation.
 void Print(SairFromScalarOp op, OpAsmPrinter &printer) {
   printer << SairFromScalarOp::getOperationName() << " " << op.value();
-  printer.printOptionalAttrDict(op.getAttrs());
+  printer.printOptionalAttrDict(op->getAttrs());
   printer << " : " << op.getType();
 }
 
@@ -643,7 +644,7 @@ void PrintFromMemRefLike(OpTy op, OpAsmPrinter &printer) {
   PrintDomain(op.memref_domain(), printer, op.parallel_domain().size());
   // It is irrelevant which Op class we use to get the attribute name because it
   // comes from a trait. However, we cannot call a trait method directly.
-  printer.printOptionalAttrDict(op.getAttrs(),
+  printer.printOptionalAttrDict(op->getAttrs(),
                                 {SairFromMemRefOp::getOperandSegmentSizeAttr(),
                                  SairDialect::kMappingAttrName});
   printer << " : " << op.shape() << ", " << op.MemRefType();
@@ -663,7 +664,7 @@ void PrintToMemRefLike(OpTy op, OpAsmPrinter &printer) {
   // It is irrelevant which Op class we use to get the attribute name because it
   // comes from a trait. However, we cannot call a trait method directly.
   printer.printOptionalAttrDict(
-      op.getAttrs(),
+      op->getAttrs(),
       {SairFromMemRefOp::getOperandSegmentSizeAttr(),
        SairDialect::kShapeAttrName, SairDialect::kMappingAttrName});
   printer << " : " << op.shape() << ", " << op.MemRefType();
@@ -696,7 +697,7 @@ void Print(SairProjLastOp op, OpAsmPrinter &printer) {
 void Print(SairReturnOp op, OpAsmPrinter &printer) {
   printer << SairReturnOp::getOperationName() << " ";
   printer.printOperands(op.operands());
-  printer.printOptionalAttrDict(op.getAttrs());
+  printer.printOptionalAttrDict(op->getAttrs());
   if (op.operands().empty()) return;
   printer << " : ";
   llvm::interleaveComma(op.getOperands().getTypes(), printer,
@@ -707,7 +708,8 @@ void Print(SairReturnOp op, OpAsmPrinter &printer) {
 void Print(SairExitOp op, OpAsmPrinter &printer) {
   printer << SairExitOp::getOperationName() << " ";
   PrintValueAccessList(op.ValueOperands(), printer);
-  printer.printOptionalAttrDict(op.getAttrs(), {SairDialect::kMappingAttrName});
+  printer.printOptionalAttrDict(op->getAttrs(),
+                                {SairDialect::kMappingAttrName});
   if (op.inputs().empty()) return;
   printer << " : ";
   llvm::interleaveComma(
@@ -727,7 +729,7 @@ void Print(SairFbyOp op, OpAsmPrinter &printer) {
   printer << " ";
   PrintValueAccess(op.Value(), printer);
 
-  printer.printOptionalAttrDict(op.getAttrs(),
+  printer.printOptionalAttrDict(op->getAttrs(),
                                 {
                                     SairMapOp::getOperandSegmentSizeAttr(),
                                     SairDialect::kMappingAttrName,
@@ -743,7 +745,7 @@ static void Print(SairAllocOp op, mlir::OpAsmPrinter &printer) {
   llvm::interleaveComma(op.ValueOperands(), printer, [&](ValueOperand value) {
     PrintValueAccess(value, printer);
   });
-  printer.printOptionalAttrDict(op.getAttrs(),
+  printer.printOptionalAttrDict(op->getAttrs(),
                                 {SairDialect::kMappingAttrName,
                                  SairAllocOp::getOperandSegmentSizeAttr()});
   printer << " : " << op.result().getType();
@@ -754,7 +756,8 @@ static void Print(SairFreeOp op, mlir::OpAsmPrinter &printer) {
   PrintDomain(op.domain(), printer);
   printer << " ";
   PrintValueAccess(op.Value(), printer);
-  printer.printOptionalAttrDict(op.getAttrs(), {SairDialect::kMappingAttrName});
+  printer.printOptionalAttrDict(op->getAttrs(),
+                                {SairDialect::kMappingAttrName});
   printer << " : " << op.value().getType();
 }
 
@@ -1099,7 +1102,7 @@ void Print(SairMapOp op, OpAsmPrinter &printer) {
 
   // Print the attributes except those that are handled specially in the syntax.
   printer.printOptionalAttrDictWithKeyword(
-      op.getAttrs(),
+      op->getAttrs(),
       {SairMapOp::getOperandSegmentSizeAttr(), SairDialect::kShapeAttrName,
        SairDialect::kMappingAttrName});
 
@@ -1347,7 +1350,7 @@ void Print(SairMapReduceOp op, mlir::OpAsmPrinter &printer) {
 
   // Print the attributes and the body.
   printer.printOptionalAttrDictWithKeyword(
-      op.getAttrs(),
+      op->getAttrs(),
       {SairMapOp::getOperandSegmentSizeAttr(), SairDialect::kShapeAttrName,
        SairDialect::kMappingAttrName});
   printer.printRegion(op.body());
@@ -1437,7 +1440,7 @@ mlir::ParseResult ParseProgramOp(mlir::OpAsmParser &parser,
 // Prints the given SairProgramOp using "printer".
 void Print(SairProgramOp op, mlir::OpAsmPrinter &printer) {
   printer << SairProgramOp::getOperationName() << " ";
-  printer.printOptionalAttrDictWithKeyword(op.getAttrs(),
+  printer.printOptionalAttrDictWithKeyword(op->getAttrs(),
                                            {SairProgramOp::kLoopNameTable});
   printer.printRegion(op.body(), /*printEntryBlockArgs=*/false,
                       /*printBlockTerminators=*/true);
