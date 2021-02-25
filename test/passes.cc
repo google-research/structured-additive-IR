@@ -103,7 +103,7 @@ class TestMappingExprsPass
 
   void runOnOperation() override {
     getOperation().walk([&](mlir::Operation *op) {
-      if (op->getName().getDialect() != "test") return;
+      if (op->getName().getDialectNamespace() != "test") return;
       llvm::StringRef name = op->getName().stripDialect();
       auto expr = op->getAttrOfType<MappingExpr>("expr");
       assert(expr != nullptr);
@@ -147,7 +147,7 @@ class TestDomainShapePass
 
   void runOnOperation() override {
     getOperation().walk([&](mlir::Operation *op) {
-      if (op->getName().getDialect() != "test") return;
+      if (op->getName().getDialectNamespace() != "test") return;
       llvm::StringRef name = op->getName().stripDialect();
       auto shape = op->getAttrOfType<DomainShapeAttr>("shape");
       assert(shape != nullptr);
