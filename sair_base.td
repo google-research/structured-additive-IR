@@ -373,22 +373,6 @@ class SairOp<string mnemonic,
   let hasCanonicalizer = 1;
 }
 
-def SairOpWithBody : OpInterface<"SairOpWithBody"> {
-  let description = [{
-    Interface for Sair operations that execute a region for all the points of
-    their domain.
-  }];
-
-  let methods = [
-    InterfaceMethod<
-      "Returns the block executed at each point of the operation domain",
-      "mlir::Block&", "block", (ins), [{}], [{
-        return this->getOperation()->getRegions()[0].front();
-      }]
-    >,
-  ];
-}
-
 def SairValueProducerOp : OpInterface<"ValueProducerOp"> {
   let description = [{
     A Sair operation that produces variables of type !sair.value. All operations

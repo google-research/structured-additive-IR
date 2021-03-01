@@ -39,19 +39,10 @@ func @sequence() -> f32 {
       // CHECK-NOT: sair.return
       sair.return %3 : f32
     } : #sair.shape<()>, (f32) -> f32
-
-    // CHECK-NOT: sair.map_reduce
-    %4 = sair.map_reduce %1 reduce %2 {
-    ^bb1(%arg1: f32, %arg2: f32):
-      // CHECK: %[[v5:.*]] = mulf %[[v0]], %[[v3]]
-      %5 = mulf %arg1, %arg2 : f32
-      // CHECK-NOT: sair.return
-      sair.return %5 : f32
-    } : #sair.shape<()>, (f32) -> f32
     // CHECK-NOT: sair.exit
-    sair.exit %4 : f32
+    sair.exit %2 : f32
   } : f32
-  // CHECK: return %[[v5]] : f32
+  // CHECK: return %[[v3]] : f32
   return %6 : f32
 }
 

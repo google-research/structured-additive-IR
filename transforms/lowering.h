@@ -23,6 +23,10 @@
 
 namespace sair {
 
+// Returns a pass that lowers sair.map_reduce operations into sair.map,
+// sair.proj_last and sair.fby operations.
+std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateLowerMapReducePass();
+
 // Returns a pass that converts sair operations into sair.map operations.
 std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateLowerToMapPass();
 

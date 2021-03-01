@@ -82,6 +82,7 @@ std::unique_ptr<mlir::Pass> CreateLowerToLLVMPass() {
 }
 
 void CreateSairToLoopConversionPipeline(mlir::OpPassManager *pm) {
+  pm->addPass(CreateLowerMapReducePass());
   pm->addPass(CreateInsertCopiesPass());
   pm->addPass(CreateLowerToMapPass());
   pm->addPass(CreateLowerToMemRefPass());

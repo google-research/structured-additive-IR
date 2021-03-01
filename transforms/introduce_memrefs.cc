@@ -139,40 +139,6 @@ class InsertCopies : public InsertCopiesPassBase<InsertCopies> {
       MaterializeOperand(op.shape(), op.domain(), operand, insertion_point,
                          ValueProducerOp::kMemory, builder);
     });
-
-    // Copy initializing operands of sair.map_reduce operations if they have
-    // another use later in the Sair program or if the mapping is not
-    // injective.
-    getFunction().walk([&builder](SairMapReduceOp op) {
-      for (int i = 0, e = op.inits().size(); i < e; ++i) {
-        ValueOperand operand = op.ValueOperands()[i];
-        bool is_access_injective =
-            operand.Mapping().IsInjective(op.parallel_domain().size());
-        bool memory_space_match =
-            GetMemorySpace(operand.value()) == op.GetMemorySpace(i);
-        if (is_access_injective && GetLastUse(operand.value()) == op &&
-            memory_space_match) {
-          continue;
-        }
-
-        int first_reduce_loop = 0;
-        int parallel_domain_size = op.parallel_domain().size();
-        if (op.loop_nest().hasValue()) {
-          auto loop_range = op.loop_nest().getValue().getAsRange<LoopAttr>();
-          auto it = llvm::find_if(loop_range, [&](LoopAttr loop) {
-            return loop.iter().MinDomainSize() > parallel_domain_size;
-          });
-          first_reduce_loop = std::distance(it, loop_range.end());
-        }
-
-        InsertionPoint insertion_point =
-            FindInsertionPoint(op.parallel_domain().size(), first_reduce_loop,
-                               cast<ComputeOp>(op.getOperation()));
-        DomainShapeAttr copy_shape = op.shape().Prefix(parallel_domain_size);
-        MaterializeOperand(copy_shape, op.parallel_domain(), operand,
-                           insertion_point, op.GetMemorySpace(i), builder);
-      }
-    });
   }
 };
 
@@ -238,9 +204,9 @@ SairToMemRefOp ExtractOpFromInfo(const ToMemRefOpInfo &info) { return info.op; }
 // instead. The `to_memref` operations are then removed. `recreate` is a
 // function that constructs a concrete op.
 mlir::LogicalResult internMemRefs(
-    SairOpWithBody op, llvm::ArrayRef<mlir::Value> operands,
-    llvm::function_ref<SairOpWithBody(mlir::ValueRange, mlir::ValueRange,
-                                      SairOpWithBody, mlir::OpBuilder &)>
+    SairMapOp op, llvm::ArrayRef<mlir::Value> operands,
+    llvm::function_ref<SairMapOp(mlir::ValueRange, mlir::ValueRange, SairMapOp,
+                                 mlir::OpBuilder &)>
         recreate,
     mlir::ConversionPatternRewriter &rewriter) {
   // Collect the `to_memref` ops that should be eliminated. Bail out early if
@@ -278,7 +244,7 @@ mlir::LogicalResult internMemRefs(
     wrapped_memrefs.push_back(to_memref.memref());
   }
 
-  SairOpWithBody new_map = recreate(operands, wrapped_memrefs, op, rewriter);
+  SairMapOp new_map = recreate(operands, wrapped_memrefs, op, rewriter);
   rewriter.replaceOp(op, new_map.getOperation()->getResults());
 
   // Recreate the body with new block arguments.
@@ -332,10 +298,8 @@ class InternMemRefsIntoMap : public mlir::OpConversionPattern<SairMapOp> {
  private:
   // Creates a new sair.map operation using updated `operands` and attaching
   // `memrefs` as additional inputs.
-  static SairOpWithBody recreate(mlir::ValueRange operands,
-                                 mlir::ValueRange memrefs,
-                                 SairOpWithBody original,
-                                 mlir::OpBuilder &builder) {
+  static SairMapOp recreate(mlir::ValueRange operands, mlir::ValueRange memrefs,
+                            SairMapOp original, mlir::OpBuilder &builder) {
     mlir::MLIRContext *ctx = builder.getContext();
     auto op = cast<SairMapOp>(original.getOperation());
     SairMapOpAdaptor adaptor(operands, op.getOperation()->getAttrDictionary());
@@ -343,10 +307,9 @@ class InternMemRefsIntoMap : public mlir::OpConversionPattern<SairMapOp> {
     llvm::append_range(inputs, memrefs);
     mlir::ArrayAttr mappings = Append0DAccesses(
         adaptor.mapping_array(), memrefs.size(), op.domain().size(), ctx);
-    auto new_map = builder.create<SairMapOp>(
+    return builder.create<SairMapOp>(
         original.getLoc(), op.getResultTypes(), adaptor.domain(), mappings,
         inputs, op.shape(), op.loop_nestAttr(), op.memory_spaceAttr());
-    return cast<SairOpWithBody>(new_map.getOperation());
   }
 
  public:
@@ -355,60 +318,7 @@ class InternMemRefsIntoMap : public mlir::OpConversionPattern<SairMapOp> {
   mlir::LogicalResult matchAndRewrite(
       SairMapOp op, llvm::ArrayRef<mlir::Value> operands,
       mlir::ConversionPatternRewriter &rewriter) const override {
-    return internMemRefs(cast<SairOpWithBody>(op.getOperation()), operands,
-                         recreate, rewriter);
-  }
-};
-
-// Rewrites sair.map_reduce ops producing values written to memrefs to store
-// individual values instead.
-class InternMemRefsIntoMapReduce
-    : public mlir::OpConversionPattern<SairMapReduceOp> {
- private:
-  // Creates a new sair.map_reduce operation using updated `operands` and
-  // attaching `memrefs` as additional inputs.
-  static SairOpWithBody recreate(mlir::ValueRange operands,
-                                 mlir::ValueRange memrefs,
-                                 SairOpWithBody original,
-                                 mlir::OpBuilder &builder) {
-    mlir::MLIRContext *ctx = builder.getContext();
-    auto op = cast<SairMapReduceOp>(original.getOperation());
-    SairMapReduceOpAdaptor adaptor(operands,
-                                   op.getOperation()->getAttrDictionary());
-    auto inputs = llvm::to_vector<8>(adaptor.inputs());
-    llvm::append_range(inputs, memrefs);
-    mlir::ArrayAttr mappings = Append0DAccesses(
-        adaptor.mapping_array(), memrefs.size(), op.domain().size(), ctx);
-    auto new_map = builder.create<SairMapReduceOp>(
-        op.getLoc(), op.getResultTypes(), op.parallel_domain(),
-        op.reduction_domain(), mappings, adaptor.inits(), inputs, op.shape(),
-        op.loop_nestAttr(), op.memory_spaceAttr());
-
-    // Create the body of the map_reduce.
-    // TODO: this should be moved to the constructor of map_reduce.
-    llvm::SmallVector<mlir::Type, 8> arg_types;
-    arg_types.reserve(op.domain().size() + inputs.size() +
-                      adaptor.inits().size());
-    arg_types.append(op.domain().size(), builder.getIndexType());
-    for (mlir::Value init : adaptor.inits()) {
-      arg_types.push_back(init.getType().cast<ValueType>().ElementType());
-    }
-    for (mlir::Value input : inputs) {
-      arg_types.push_back(input.getType().cast<ValueType>().ElementType());
-    }
-    builder.createBlock(&new_map.getRegion(), new_map.getRegion().begin(),
-                        arg_types);
-    return cast<SairOpWithBody>(new_map.getOperation());
-  }
-
- public:
-  using mlir::OpConversionPattern<SairMapReduceOp>::OpConversionPattern;
-
-  mlir::LogicalResult matchAndRewrite(
-      SairMapReduceOp op, llvm::ArrayRef<mlir::Value> operands,
-      mlir::ConversionPatternRewriter &rewriter) const override {
-    return internMemRefs(cast<SairOpWithBody>(op.getOperation()), operands,
-                         recreate, rewriter);
+    return internMemRefs(op, operands, recreate, rewriter);
   }
 };
 
@@ -421,21 +331,19 @@ class InternMemRefsIntoMapReduce
 class LowerToMemRef : public LowerToMemRefPassBase<LowerToMemRef> {
   void runOnFunction() override {
     mlir::OwningRewritePatternList patterns;
-    patterns.insert<InternMemRefsIntoMap, InternMemRefsIntoMapReduce>(
-        &getContext());
+    patterns.insert<InternMemRefsIntoMap>(&getContext());
 
     mlir::ConversionTarget target(getContext());
     target.addLegalDialect<SairDialect>();
 
-    target.addDynamicallyLegalOp<SairMapOp, SairMapReduceOp>(
-        [](mlir::Operation *op) {
-          for (mlir::Value result : op->getResults()) {
-            for (mlir::Operation *user : result.getUsers()) {
-              if (dyn_cast<SairToMemRefOp>(user)) return false;
-            }
-          }
-          return true;
-        });
+    target.addDynamicallyLegalOp<SairMapOp>([](mlir::Operation *op) {
+      for (mlir::Value result : op->getResults()) {
+        for (mlir::Operation *user : result.getUsers()) {
+          if (isa<SairToMemRefOp>(user)) return false;
+        }
+      }
+      return true;
+    });
 
     target.addLegalDialect<mlir::StandardOpsDialect>();
     target.addLegalDialect<mlir::AffineDialect>();
@@ -476,7 +384,7 @@ void UpdateUseAfterMaterialization(mlir::Value memref_value,
                                    mlir::Type memref_type, OpOperand &use,
                                    mlir::OpBuilder &builder) {
   auto sair_op = llvm::cast<SairOp>(use.getOwner());
-  mlir::Block *body = &llvm::cast<SairOpWithBody>(use.getOwner()).block();
+  mlir::Block *body = &llvm::cast<SairMapOp>(use.getOwner()).block();
 
   const int operand_number = use.getOperandNumber();
   const int domain_size = sair_op.domain().size();
@@ -498,90 +406,6 @@ void UpdateUseAfterMaterialization(mlir::Value memref_value,
                                       load_map, load_indices, builder);
   scalar_argument.replaceAllUsesWith(load_op.getResult());
   body->eraseArgument(scalar_argument.getArgNumber());
-}
-
-// Replaces 'op' by a new sair.map_reduce operation that reads 'init_operand'
-// from the memref wrapped in a Sair value 'memref_value'. 'init_operand' must
-// be an operand initializing one of the reduction variables of 'op'.
-// The reduction variable is removed from the new operation and replaced by
-// loads and stores from and to the memref. Use 'memref_layout' to map elements
-// of 'init_operand' to elements of the memref.
-void UpdateUseInPlaceAfterMaterialization(
-    SairMapReduceOp op, mlir::Value memref_value, mlir::AffineMap memref_layout,
-    mlir::Type memref_type, OpOperand &init_operand, mlir::OpBuilder &builder) {
-  mlir::OpBuilder::InsertionGuard insertion_guard(builder);
-  SairOp sair_op = llvm::cast<SairOp>(op.getOperation());
-  builder.setInsertionPoint(op);
-
-  int domain_size = sair_op.domain().size();
-  int init_position =
-      init_operand.getOperandNumber() - op.inits().getBeginOperandIndex();
-
-  llvm::SmallVector<mlir::Type, 4> result_types;
-  result_types.reserve(op.getNumResults() - 1);
-  llvm::append_range(result_types,
-                     op.getResultTypes().take_front(init_position));
-  llvm::append_range(result_types,
-                     op.getResultTypes().drop_front(init_position + 1));
-
-  llvm::SmallVector<mlir::Value, 4> init_operands;
-  init_operands.reserve(op.getNumResults() - 1);
-  llvm::append_range(init_operands, op.inits().take_front(init_position));
-  llvm::append_range(init_operands, op.inits().drop_front(init_position + 1));
-
-  llvm::SmallVector<mlir::Value, 4> input_operands;
-  input_operands.reserve(op.inputs().size() + 1);
-  llvm::append_range(input_operands, op.inputs());
-  input_operands.push_back(memref_value);
-
-  llvm::SmallVector<mlir::Attribute, 8> mapping_array;
-  mapping_array.reserve(op.mapping_array().size());
-  llvm::ArrayRef<mlir::Attribute> old_mappings = op.mapping_array().getValue();
-  llvm::append_range(mapping_array, old_mappings.take_front(init_position));
-  llvm::append_range(mapping_array, old_mappings.drop_front(init_position + 1));
-  mapping_array.push_back(MappingAttr::get(op.getContext(), domain_size, {}));
-  mlir::ArrayAttr mapping_attr = builder.getArrayAttr(mapping_array);
-
-  llvm::SmallVector<mlir::Attribute, 4> memory_spaces;
-  memory_spaces.reserve(op.getNumResults() - 1);
-  llvm::ArrayRef<mlir::Attribute> old_memory_spaces =
-      op.memory_space().getValue().getValue();
-  llvm::append_range(memory_spaces,
-                     old_memory_spaces.take_front(init_position));
-  llvm::append_range(memory_spaces,
-                     old_memory_spaces.drop_front(init_position + 1));
-  mlir::ArrayAttr memory_space_attr = builder.getArrayAttr(memory_spaces);
-
-  SairMapReduceOp new_op = builder.create<SairMapReduceOp>(
-      op.getLoc(), result_types, op.parallel_domain(), op.reduction_domain(),
-      mapping_attr, init_operands, input_operands, op.shape(),
-      op.loop_nestAttr(), memory_space_attr);
-
-  // Forward attributes.
-
-  // Setup the new body.
-  new_op.body().getBlocks().splice(new_op.body().begin(),
-                                   op.body().getBlocks());
-  auto access_indices = new_op.block().getArguments().take_front(domain_size);
-  mlir::BlockArgument scalar_argument =
-      new_op.block().getArgument(init_operand.getOperandNumber());
-  mlir::BlockArgument memref_argument = new_op.block().addArgument(memref_type);
-
-  // Load from the memref.
-  mlir::AffineMap access_map = memref_layout.compose(
-      op.ValueOperands()[init_position].Mapping().AsAffineMap());
-  builder.setInsertionPointToStart(&new_op.block());
-  auto load_op = EmitPseudoAffineLoad(op.getLoc(), memref_argument, access_map,
-                                      access_indices, builder);
-  scalar_argument.replaceAllUsesWith(load_op.getResult());
-  new_op.block().eraseArgument(scalar_argument.getArgNumber());
-
-  // Store into the memref.
-  mlir::Operation *sair_return = new_op.block().getTerminator();
-  builder.setInsertionPoint(sair_return);
-  EmitPseudoAffineStore(op.getLoc(), sair_return->getOperand(init_position),
-                        memref_argument, access_map, access_indices, builder);
-  sair_return->eraseOperand(init_position);
 }
 
 // Replaces uses of a Sair value by loads from a memref wrapped in a Sair value.
@@ -614,61 +438,20 @@ mlir::LogicalResult UpdateUsersAfterMaterialization(mlir::Value old_value,
     MaterializedValue materialized_value = work_list.pop_back_val();
     mlir::Value old_value = materialized_value.old_value;
     mlir::AffineMap layout = materialized_value.layout;
-    mlir::Operation *last_use = GetLastUse(old_value);
 
     for (mlir::OpOperand &use :
          llvm::make_early_inc_range(old_value.getUses())) {
-      if (!isa<SairOpWithBody>(use.getOwner())) {
+      if (!isa<SairMapOp>(use.getOwner())) {
         use.getOwner()
                 ->emitError(
-                    "can only materialize operands of sair.map and "
-                    "sair.map_reduce operations")
+                    "can only materialize operands of sair.map operations")
                 .attachNote(old_value.getLoc())
             << "while trying to materialize a value produced here";
         return mlir::failure();
       }
 
-      auto reduce_op = llvm::dyn_cast<SairMapReduceOp>(use.getOwner());
-      int operand_number = use.getOperandNumber();
-      // Handle the common case.
-      if (reduce_op == nullptr || !reduce_op.IsInitOperand(operand_number)) {
-        UpdateUseAfterMaterialization(new_value, layout, memref_type, use,
-                                      builder);
-        continue;
-      }
-
-      // Handle the special case where the user updates the argument in place.
-      int init_number =
-          operand_number - reduce_op.inits().getBeginOperandIndex();
-      MappingAttr mapping = reduce_op.ValueOperands()[init_number].Mapping();
-      mlir::AffineMap result_layout = layout.compose(
-          mapping.ResizeUseDomain(reduce_op.parallel_domain().size())
-              .AsAffineMap());
-
-      // We can only perform an in-place update if the mapping is
-      // injective and if 'op' is the last use of the variable.
-      if (!result_layout.isPermutation()) {
-        reduce_op.emitError("layout incompatible with an in-place update")
-                .attachNote(old_value.getLoc())
-            << "while trying to materialize a value produced here";
-        return mlir::failure();
-      }
-      if (last_use != reduce_op) {
-        mlir::InFlightDiagnostic error =
-            reduce_op.emitError()
-            << "cannot update in-place a value that is still alive";
-        error.attachNote(last_use->getLoc()) << "value used here";
-        error.attachNote(old_value.getLoc())
-            << "while trying to materialize a value produced here";
-        return mlir::failure();
-      }
-
-      UpdateUseInPlaceAfterMaterialization(reduce_op, new_value, layout,
-                                           memref_type, use, builder);
-      // Push new work to update the result of 'op'. Remove 'op' only once
-      // the update is done.
-      work_list.push_back({reduce_op.getResult(init_number), result_layout});
-      ops_to_erase.push_back(reduce_op);
+      UpdateUseAfterMaterialization(new_value, layout, memref_type, use,
+                                    builder);
     }
   }
   for (mlir::Operation *op : ops_to_erase) {
@@ -724,16 +507,6 @@ ComputeOp GetLastStorageUse(mlir::Value value) {
           last_use = compute_op;
         }
       }
-
-      // Push the result of the operation to the work list if it performs an
-      // in-place update.
-      auto map_reduce = llvm::dyn_cast<SairMapReduceOp>(owner);
-      if (map_reduce == nullptr) continue;
-      int operand_number = use.getOperandNumber();
-      if (!map_reduce.IsInitOperand(operand_number)) continue;
-      mlir::Value result = map_reduce.getResult(
-          operand_number - map_reduce.inits().getBeginOperandIndex());
-      work_list.push_back(result);
     }
   }
   return last_use;

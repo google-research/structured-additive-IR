@@ -438,7 +438,6 @@ def SairReturnOp : Op<SairDialect, "return", [Terminator]> {
 def SairMapOp : SairOp<"map", [
     AttrSizedOperandSegments,
     SairComputeOp,
-    SairOpWithBody,
     SairValueProducerOp,
     IsolatedFromAbove]> {
   let summary = "Applies the computation across the given domain";
@@ -492,6 +491,8 @@ def SairMapOp : SairOp<"map", [
     llvm::MutableArrayRef<mlir::BlockArgument> block_inputs() {
       return block().getArguments().drop_front(domain().size());
     }
+
+    mlir::Block& block() { return body().front(); }
   }];
 
   let parser = [{return ParseMapOp(parser, result);}];
@@ -502,7 +503,6 @@ def SairMapOp : SairOp<"map", [
 def SairMapReduceOp : SairOp<"map_reduce", [
     AttrSizedOperandSegments,
     SairComputeOp,
-    SairOpWithBody,
     SairValueProducerOp,
     IsolatedFromAbove]> {
   let summary = "Applies the computation to the domain and reduces the results";
@@ -565,6 +565,8 @@ def SairMapReduceOp : SairOp<"map_reduce", [
     llvm::SmallBitVector DimsDependingOnOperand(int sair_operand);
 
     int results_rank() { return parallel_domain().size(); }
+
+    mlir::Block& block() { return body().front(); }
   }];
 
   let parser = [{return ParseMapReduceOp(parser, result);}];

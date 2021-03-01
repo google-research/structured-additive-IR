@@ -32,10 +32,8 @@ namespace {
 // Checks if the given Sair Op is trivial and can be simplified. Sair Ops are
 // trivial if they have a body region with 0D shape and all their operands are
 // 0D Sair values constructed from known scalars.
-bool IsTrivialSairMap(SairOp op) {
-  if (!op.shape().Is0d() || !isa<SairOpWithBody>(op.getOperation())) {
-    return false;
-  }
+bool IsTrivialSairMap(SairMapOp op) {
+  if (!op.shape().Is0d()) return false;
   for (const ValueOperand operand : op.ValueOperands()) {
     assert(operand.GetType().Shape().Is0d());
 
@@ -55,8 +53,8 @@ bool IsTrivialSairMap(SairOp op) {
 // function, "false" otherwise.
 bool InlineTrivialSairOp(mlir::FuncOp function) {
   // Find the first map or map_reduce operation with 0d domain and 0d inputs.
-  SairOp trivial_op;
-  mlir::WalkResult walk_result = function.walk([&trivial_op](SairOp op) {
+  SairMapOp trivial_op;
+  mlir::WalkResult walk_result = function.walk([&trivial_op](SairMapOp op) {
     if (IsTrivialSairMap(op)) {
       trivial_op = op;
       return mlir::WalkResult::interrupt();
@@ -79,23 +77,22 @@ bool InlineTrivialSairOp(mlir::FuncOp function) {
 
   // Use the sources of the 0d value directly.
   mlir::Operation *trivial_operation = trivial_op.getOperation();
-  auto op_with_body = cast<SairOpWithBody>(trivial_operation);
-  mlir::Block *body = &op_with_body.block();
-  assert(trivial_op_operands.size() == body->getNumArguments());
-  for (auto pair : llvm::zip(source_values, body->getArguments())) {
+  assert(trivial_op_operands.size() == trivial_op.block().getNumArguments());
+  for (auto pair :
+       llvm::zip(source_values, trivial_op.block().getArguments())) {
     mlir::Value source = std::get<0>(pair);
     mlir::Value block_argument = std::get<1>(pair);
-    mlir::replaceAllUsesInRegionWith(block_argument, source,
-                                     *body->getParent());
+    mlir::replaceAllUsesInRegionWith(block_argument, source, trivial_op.body());
   }
 
   // Move the body contents immediately before the Sair program.
   auto sair_program = trivial_op->getParentOfType<SairProgramOp>();
   mlir::Operation *sair_program_operation = sair_program.getOperation();
   mlir::Block *program_block = sair_program_operation->getBlock();
-  mlir::Operation *terminator = body->getTerminator();
+  mlir::Operation *terminator = trivial_op.block().getTerminator();
   program_block->getOperations().splice(
-      mlir::Block::iterator(sair_program_operation), body->getOperations());
+      mlir::Block::iterator(sair_program_operation),
+      trivial_op.block().getOperations());
 
   // Wrap the terminator operands into Sair values so they are compatible with
   // the remaining users.

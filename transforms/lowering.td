@@ -21,6 +21,12 @@ def Deps {
                            "::sair::SairDialect"];
 }
 
+def LowerMapReducePass : FunctionPass<"sair-lower-map-reduce"> {
+  let summary = "Lowers map_reduce into map + fby operations";
+  let constructor = [{ ::sair::CreateLowerMapReducePass(); }];
+  let dependentDialects = Deps.dialects;
+}
+
 def LowerToMapPass : FunctionPass<"sair-lower-to-map"> {
   let summary = "Lowers sair operations into sair.map operations";
   let constructor = [{ ::sair::CreateLowerToMapPass(); }];
