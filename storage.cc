@@ -293,7 +293,7 @@ static mlir::LogicalResult UnifyBufferShape(
     const LoopFusionAnalysis &fusion_analysis, Buffer &buffer) {
   mlir::MLIRContext *context = buffer_attr.getContext();
   auto none_expr = MappingNoneExpr::get(context);
-  LoopNest loop_nest = fusion_analysis.GetLoopNest(op.LoopNestLoops());
+  LoopNest loop_nest = fusion_analysis.GetLoopNest(op);
 
   // Get a mapping from domain to buffer layout.
   MappingAttr domain_to_layout =
@@ -363,8 +363,9 @@ static mlir::LogicalResult CheckMallocInsertionPoint(
     }
   }
 
-  llvm::ArrayRef<mlir::Attribute> write_loop_nest = first_write.LoopNestLoops();
-
+  llvm::ArrayRef<mlir::StringAttr> write_loops =
+      iteration_spaces.Get(cast<SairOp>(first_write.getOperation()))
+          .loop_names();
   for (int dim : used_dimensions.set_bits()) {
     auto dimension_op =
         cast<SairOp>(buffer.domain()[dim].value.getDefiningOp());
@@ -378,15 +379,11 @@ static mlir::LogicalResult CheckMallocInsertionPoint(
     }
 
     for (ValueOperand operand : dimension_op.ValueOperands()) {
-      llvm::ArrayRef<mlir::Attribute> operand_iteration_space =
-          iteration_spaces.IterationSpace(operand.value());
-      int new_min =
-          std::min(write_loop_nest.size(), operand_iteration_space.size());
+      llvm::ArrayRef<mlir::StringAttr> operand_loops =
+          iteration_spaces.Get(operand.value()).loop_names();
+      int new_min = std::min(write_loops.size(), operand_loops.size());
       for (; new_min > 0; --new_min) {
-        auto write_loop = write_loop_nest[new_min - 1].cast<LoopAttr>();
-        auto operand_loop =
-            operand_iteration_space[new_min - 1].cast<LoopAttr>();
-        if (write_loop.name() == operand_loop.name()) break;
+        if (operand_loops[new_min - 1] == write_loops[new_min - 1]) break;
       }
 
       // TODO(b/170195606): this check is not enough if other operations are

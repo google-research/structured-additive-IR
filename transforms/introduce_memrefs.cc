@@ -49,10 +49,8 @@ InsertionPoint FindInsertionPoint(int num_dimensions, int fusion_level,
                                   ComputeOp point,
                                   Direction direction = Direction::kBefore) {
   assert(num_dimensions >= fusion_level);
-  if (!point.loop_nest().hasValue()) return {point, direction, nullptr};
-  InsertionPoint result =
-      FindInsertionPoint(cast<SairOp>(point.getOperation()),
-                         point.LoopNestLoops(), fusion_level, direction);
+  InsertionPoint result = FindInsertionPoint(
+      cast<SairOp>(*point), point.LoopNestLoops(), fusion_level, direction);
   SairProgramOp program_op = cast<SairProgramOp>(point->getParentOp());
   result.loop_nest = GetDefaultLoopNest(program_op, num_dimensions,
                                         result.loop_nest.getValue());

@@ -146,24 +146,18 @@ mlir::LogicalResult NormalizeLoops(
     mlir::OpBuilder &builder,
     llvm::DenseMap<mlir::Attribute, std::pair<mlir::Value, DomainShapeDim>>
         &loop_range_cache) {
-  llvm::ArrayRef<mlir::Attribute> iteration_space =
-      iteration_spaces.IterationSpace(op);
+  const IterationSpace &iteration_space = iteration_spaces.Get(op);
   if (iteration_space.empty()) return mlir::success();
   mlir::MLIRContext *context = op.getContext();
 
   // Compute the mapping from the old domain to the new.
-  llvm::SmallVector<MappingExpr, 4> iter_exprs;
-  iter_exprs.reserve(iteration_space.size());
   llvm::SmallVector<mlir::Attribute, 4> normalized_loops;
   normalized_loops.reserve(iteration_space.size());
-  for (auto ei : llvm::enumerate(iteration_space)) {
-    LoopAttr loop = ei.value().cast<LoopAttr>();
-    iter_exprs.push_back(loop.iter());
+  for (auto ei : llvm::enumerate(iteration_space.loop_names())) {
     auto dim_expr = MappingDimExpr::get(ei.index(), context);
-    normalized_loops.push_back(LoopAttr::get(loop.name(), dim_expr, context));
+    normalized_loops.push_back(LoopAttr::get(ei.value(), dim_expr, context));
   }
-  MappingAttr mapping =
-      MappingAttr::get(op.getContext(), op.domain().size(), iter_exprs);
+  MappingAttr mapping = iteration_space.domain_to_loops();
   if (!mapping.IsFullySpecified()) {
     return op.emitError()
            << "loop normalization called on a partially specified loop nest";
@@ -182,7 +176,7 @@ mlir::LogicalResult NormalizeLoops(
     mlir::Attribute loop_name = nullptr;
     // Check if the range is already cached.
     if (ie.index() < iteration_space.size()) {
-      loop_name = iteration_space[ie.index()].cast<LoopAttr>().name();
+      loop_name = iteration_space.loop_names()[ie.index()];
       auto it = loop_range_cache.find(loop_name);
       if (it != loop_range_cache.end()) {
         new_domain.push_back(it->second.first);

@@ -27,14 +27,9 @@ namespace sair {
 // operation. Assumes that Sair operands are defined in the same program.
 mlir::LogicalResult VerifyLoopNests(SairProgramOp program);
 
-// Analysis of how data is distributed on loop nests iterations. It indicates,
-// for each value and operation, the loops they are nested in and the slice of
-// the domain each loop iteration owns.
-//
-// The analysis returns the loops each operation or value is nested in, and how
-// the iterating along the loop iterates on the domain. A single loop iteration
-// may own more that a single point of the domain. For example, consider the
-// following Sair code.
+// Indicates how an operation and the data it produces is distributed accross
+// loop nests iterations. A single loop iteration may own more than a single
+// point of the domain. For example, consider the following Sair code.
 // ```
 // %4 = sair.copy[d0:%0, d1:%1, d2: %2] %3 {
 //   loop_nest = [
@@ -49,7 +44,28 @@ mlir::LogicalResult VerifyLoopNests(SairProgramOp program);
 // projected along loop "B" and "C" is nested in "B". Each point of the loop
 // nest ["A", "B", "C"] will own a point of %4, and each point of "A" will own a
 // slice of %5.
-//
+class IterationSpace {
+ public:
+  IterationSpace(llvm::SmallVector<mlir::StringAttr> loop_names,
+                 MappingAttr domain_to_loops);
+
+  // Names of the loops.
+  llvm::ArrayRef<mlir::StringAttr> loop_names() const { return loop_names_; }
+
+  // Mapping from operation domain to loops.
+  MappingAttr domain_to_loops() const { return domain_to_loops_; }
+
+  // Number of loops in the iteration space.
+  int size() const { return loop_names_.size(); }
+
+  bool empty() const { return loop_names_.empty(); }
+
+ private:
+  llvm::SmallVector<mlir::StringAttr> loop_names_;
+  MappingAttr domain_to_loops_;
+};
+
+// Compute iteration spaces for each operation and value.
 class IterationSpaceAnalysis {
  public:
   explicit IterationSpaceAnalysis(SairProgramOp program_op);
@@ -58,18 +74,18 @@ class IterationSpaceAnalysis {
 
   // Computes or retrieves the loops `op` is nested in. Returns the empty
   // iteration space if the loop nest is left unspecified.
-  llvm::ArrayRef<mlir::Attribute> IterationSpace(SairOp op) const;
+  const IterationSpace &Get(SairOp op) const;
 
   // Computes or retrieves the loops the value is nested in. The value must be
   // defined by a sair operation. Returns the empty iteration space if the loop
   // nest is left unspecified.
-  llvm::ArrayRef<mlir::Attribute> IterationSpace(mlir::Value value) const;
+  const IterationSpace &Get(mlir::Value value) const;
 
  private:
   // Computes the iteration space for the given operation.
-  mlir::ArrayAttr ComputeIterationSpace(mlir::Operation *operation);
+  const IterationSpace &ComputeIterationSpace(mlir::Operation *operation);
 
-  llvm::DenseMap<mlir::Operation *, mlir::ArrayAttr> iteration_space_;
+  llvm::DenseMap<mlir::Operation *, IterationSpace> iteration_space_;
 };
 
 // A class of fused loops.
@@ -92,14 +108,13 @@ struct LoopFusionClass {
 };
 
 // A loop nest of fused loops.
-// TODO: use in normalize_loops.cc
 struct LoopNest {
   // Domain used to define loop ranges.
   llvm::ArrayRef<ValueAccess> domain;
   // Mapping from `domain` to loops.
   MappingAttr domain_to_loops;
   // Shape of the resulting loop nest.
-  DomainShapeAttr loops_shape;
+  DomainShapeAttr shape;
 };
 
 // Computes loop fusion classes in a sair program.
@@ -118,7 +133,7 @@ class LoopFusionAnalysis {
   }
 
   // Retrives the unified loop nest corresponding to loops.
-  LoopNest GetLoopNest(llvm::ArrayRef<mlir::Attribute> loops) const;
+  LoopNest GetLoopNest(ComputeOp op) const;
   LoopNest GetLoopNest(llvm::ArrayRef<mlir::StringAttr> loop_names) const;
 
  private:
