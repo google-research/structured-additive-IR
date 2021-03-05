@@ -376,8 +376,7 @@ class MappingDimExpr
   MappingExpr Canonicalize() const { return *this; }
 
   RangeParameters GetRangeParameters(mlir::Location loc,
-                                     mlir::ValueRange domain,
-                                     DomainShapeAttr shape,
+                                     llvm::ArrayRef<ValueAccess> domain,
                                      MappingAttr inverse_mapping,
                                      mlir::OpBuilder &builder,
                                      MapArguments &map_arguments) const;
@@ -441,8 +440,7 @@ class MappingNoneExpr
   MappingExpr Canonicalize() const { return *this; }
 
   RangeParameters GetRangeParameters(mlir::Location loc,
-                                     mlir::ValueRange domain,
-                                     DomainShapeAttr shape,
+                                     llvm::ArrayRef<ValueAccess> domain,
                                      MappingAttr inverse_mapping,
                                      mlir::OpBuilder &builder,
                                      MapArguments &map_arguments) const {
@@ -508,8 +506,7 @@ class MappingStripeExpr
   MappingExpr Canonicalize() const;
 
   RangeParameters GetRangeParameters(mlir::Location loc,
-                                     mlir::ValueRange domain,
-                                     DomainShapeAttr shape,
+                                     llvm::ArrayRef<ValueAccess> domain,
                                      MappingAttr inverse_mapping,
                                      mlir::OpBuilder &builder,
                                      MapArguments &map_arguments) const;
@@ -568,8 +565,7 @@ class MappingUnStripeExpr
   MappingExpr Canonicalize() const;
 
   RangeParameters GetRangeParameters(mlir::Location loc,
-                                     mlir::ValueRange domain,
-                                     DomainShapeAttr shape,
+                                     llvm::ArrayRef<ValueAccess> domain,
                                      MappingAttr inverse_mapping,
                                      mlir::OpBuilder &builder,
                                      MapArguments &map_arguments) const;

@@ -59,10 +59,6 @@ CreateMaterializeMemRefsPass();
 // operations.
 std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateIntroduceLoopsPass();
 
-// Returns a pass that replaces rematerialization annotations with actual
-// dimensions.
-std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateRematerializePass();
-
 // Returns a pass that rewrites the domain of operations so that each loop
 // corresponds to a dimension.
 std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateNormalizeLoopsPass();

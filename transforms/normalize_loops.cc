@@ -29,48 +29,47 @@ mlir::Value Materialize(mlir::Location loc, mlir::OpFoldResult &value,
   return builder.create<ConstantOp>(loc, value.get<mlir::Attribute>());
 }
 
-void CreateRange(SairOp op, MappingExpr expr, mlir::ValueRange old_domain,
-                 DomainShapeAttr old_shape, MappingAttr inverse_mapping,
-                 llvm::ArrayRef<mlir::Attribute> loop_nest,
-                 const IterationSpaceAnalysis &iteration_spaces,
-                 mlir::OpBuilder &builder,
+// Creates a range operation for loop `loop` of `loop_nest`. Appends
+// the dimension to `new_domain`.
+// * `inverse_mapping` is the mapping from loops to `op` domain.
+// * `new_loop_nest` contains LoopAttr attributes for outer loops and this one.
+void CreateRange(SairOp op, const LoopNest &loop_nest, int loop,
+                 MappingAttr inverse_mapping,
+                 llvm::ArrayRef<mlir::Attribute> new_loop_nest,
                  llvm::SmallVectorImpl<mlir::Value> &new_domain,
-                 llvm::SmallVectorImpl<DomainShapeDim> &new_shape) {
+                 mlir::OpBuilder &builder) {
   mlir::OpBuilder::InsertionGuard guard(builder);
+  mlir::MLIRContext *context = op.getContext();
 
   // Find the loop nest and domain of the new operation.
-  llvm::SmallBitVector dependency_mask =
-      expr.AccessedShape(old_shape.Dimensions(), inverse_mapping)
-          .dependency_mapping()
-          .DependencyMask();
-  int num_loops = dependency_mask.find_last() + 1;
+  int range_rank =
+      loop_nest.shape.Dimension(loop).dependency_mapping().MinDomainSize();
+  auto range_domain = llvm::makeArrayRef(new_domain).take_front(range_rank);
   // TODO(b/175664160): this fails if op is not a ComputeOp and compute ops
-  // surrounding op are not nested in loop_nest. We can fix this by normalizing
-  // instructions order so that this property is satisfied.
-  InsertionPoint insertion_point = FindInsertionPoint(op, loop_nest, num_loops);
-
-  auto identity_mapping = MappingAttr::GetIdentity(op.getContext(), num_loops);
-  auto range_shape = DomainShapeAttr::get(
-      op.getContext(),
-      llvm::ArrayRef<DomainShapeDim>(new_shape).take_front(num_loops));
-  auto range_type = RangeType::get(range_shape);
-  auto range_domain =
-      llvm::ArrayRef<mlir::Value>(new_domain).take_front(num_loops);
+  // surrounding op are not nested in loop_nest. We can fix this either
+  // * by normalizing instructions order so that this property is satisfied,
+  // * by not enforcing dominances and relying on a dedicated attribute for
+  //   ordering, or
+  // * by introducing placeholder dimensions for non-compute ops instead of
+  //   calling CreateRange.
+  InsertionPoint insertion_point =
+      FindInsertionPoint(op, new_loop_nest, range_rank);
 
   // Create a block that will hold computations for the new bounds of the
   // range.
   mlir::Region region;
-  llvm::SmallVector<mlir::Type, 4> block_arg_types(num_loops,
-                                                   builder.getIndexType());
+  llvm::SmallVector<mlir::Type> block_arg_types(range_rank,
+                                                builder.getIndexType());
   mlir::Block *block = builder.createBlock(&region, {}, block_arg_types);
 
   // Populate the block with the computations for the bounds of the new range.
   // Adds !sair.value arguments necessary to compute the bounds to `arguments`,
   // and `arguments_mappings` and corresponding scalars to block arguments.
-  MapArguments map_arguments(block, num_loops);
+  MapArguments map_arguments(block, range_rank);
   RangeParameters range_parameters =
-      expr.GetRangeParameters(op.getLoc(), old_domain, old_shape,
-                              inverse_mapping, builder, map_arguments);
+      loop_nest.domain_to_loops.Dimension(loop).GetRangeParameters(
+          op.getLoc(), loop_nest.domain, inverse_mapping, builder,
+          map_arguments);
 
   // Create a sair.map operation with `block` as body and add a sair.return
   // operation to `block`. Create a range operation that uses the bounds
@@ -85,14 +84,14 @@ void CreateRange(SairOp op, MappingExpr expr, mlir::ValueRange old_domain,
   auto step =
       mlir::IntegerAttr::get(builder.getIndexType(), range_parameters.step);
   if (range_parameters.end.is<mlir::Attribute>() && is_beg_zero) {
-    assert(num_loops == 0);
+    assert(range_rank == 0);
     auto size =
         range_parameters.end.get<mlir::Attribute>().cast<mlir::IntegerAttr>();
     insertion_point.Set(builder);
-    range =
-        builder.create<SairStaticRangeOp>(op.getLoc(), range_type, size, step);
+    range = builder.create<SairStaticRangeOp>(
+        op.getLoc(), loop_nest.shape.Dimension(loop).type(), size, step);
   } else {
-    llvm::SmallVector<mlir::Value, 2> scalar_results;
+    llvm::SmallVector<mlir::Value> scalar_results;
     if (!is_beg_zero) {
       scalar_results.push_back(
           Materialize(op.getLoc(), range_parameters.begin, builder));
@@ -102,18 +101,21 @@ void CreateRange(SairOp op, MappingExpr expr, mlir::ValueRange old_domain,
     builder.create<SairReturnOp>(op.getLoc(), scalar_results);
 
     insertion_point.Set(builder);
-    llvm::SmallVector<mlir::Type, 2> map_result_types(
+    DomainShapeAttr range_shape =
+        loop_nest.shape.Dimension(loop).type().Shape();
+    llvm::SmallVector<mlir::Type> map_result_types(
         scalar_results.size(),
         ValueType::get(range_shape, builder.getIndexType()));
-    llvm::SmallVector<mlir::Attribute, 2> map_buffers(
+    llvm::SmallVector<mlir::Attribute> map_buffers(
         scalar_results.size(), GetRegister0DBuffer(builder.getContext()));
 
     // The dimension either corresponds to a loop (in which case
     // the full loop nest is bigger than the number of inner loops) or to a
     // dimension of the original operation (in which case a sair.map should not
     // be needed).
-    assert(loop_nest.size() >= num_loops);
-    auto map_loop_nest = builder.getArrayAttr(loop_nest.take_front(num_loops));
+    assert(new_loop_nest.size() >= range_rank);
+    auto map_loop_nest =
+        builder.getArrayAttr(new_loop_nest.take_front(range_rank));
 
     auto map_op = builder.create<SairMapOp>(
         op.getLoc(), map_result_types,
@@ -124,10 +126,11 @@ void CreateRange(SairOp op, MappingExpr expr, mlir::ValueRange old_domain,
         /*loop_nest=*/map_loop_nest,
         /*storage=*/builder.getArrayAttr(map_buffers));
     map_op.body().takeBody(region);
-    llvm::SmallVector<mlir::Attribute, 2> range_mappings(scalar_results.size(),
-                                                         identity_mapping);
+    auto identity_mapping = MappingAttr::GetIdentity(context, range_rank);
+    llvm::SmallVector<mlir::Attribute> range_mappings(scalar_results.size(),
+                                                      identity_mapping);
     range = builder.create<SairDynRangeOp>(
-        op.getLoc(), range_type,
+        op.getLoc(), loop_nest.shape.Dimension(loop).type(),
         /*domain=*/range_domain,
         /*mapping_array=*/builder.getArrayAttr(range_mappings),
         /*begin=*/is_beg_zero ? nullptr : map_op.getResult(0),
@@ -136,75 +139,54 @@ void CreateRange(SairOp op, MappingExpr expr, mlir::ValueRange old_domain,
   }
 
   new_domain.push_back(range);
-  new_shape.emplace_back(range_type, identity_mapping);
 }
 
-// Replaces `op` by a copy with a different domain such that each loop in the
-// iteration space corresponds to a full dimension.
-mlir::LogicalResult NormalizeLoops(
-    SairOp op, IterationSpaceAnalysis iteration_spaces,
-    mlir::OpBuilder &builder,
-    llvm::DenseMap<mlir::Attribute, std::pair<mlir::Value, DomainShapeDim>>
-        &loop_range_cache) {
-  const IterationSpace &iteration_space = iteration_spaces.Get(op);
-  if (iteration_space.empty()) return mlir::success();
-  mlir::MLIRContext *context = op.getContext();
+// Caches loop ranges. Indexed by loop name.
+using LoopRangeCache = llvm::DenseMap<mlir::Attribute, mlir::Value>;
 
-  // Compute the mapping from the old domain to the new.
-  llvm::SmallVector<mlir::Attribute, 4> normalized_loops;
-  normalized_loops.reserve(iteration_space.size());
-  for (auto ei : llvm::enumerate(iteration_space.loop_names())) {
-    auto dim_expr = MappingDimExpr::get(ei.index(), context);
-    normalized_loops.push_back(LoopAttr::get(ei.value(), dim_expr, context));
-  }
-  MappingAttr mapping = iteration_space.domain_to_loops();
-  if (!mapping.IsFullySpecified()) {
-    return op.emitError()
-           << "loop normalization called on a partially specified loop nest";
-  }
+// Create a domain for `op` where each dimension corresponds to a single loop.
+llvm::SmallVector<mlir::Value> GetDomain(
+    SairOp op, llvm::ArrayRef<mlir::StringAttr> loop_names,
+    const LoopNest &loop_nest, llvm::ArrayRef<mlir::Attribute> normalized_loops,
+    mlir::OpBuilder &builder, LoopRangeCache &loop_range_cache) {
+  MappingAttr inverse_mapping = loop_nest.domain_to_loops.Inverse();
 
-  // Complete the mapping so that it covers all dimensions.
-  MappingAttr inverse_mapping = mapping.Inverse().MakeFullySpecified();
-  mapping = inverse_mapping.Inverse();
+  llvm::SmallVector<mlir::Value> new_domain;
+  new_domain.reserve(loop_names.size());
 
-  // Create new ranges.
-  llvm::SmallVector<mlir::Value, 4> new_domain;
-  llvm::SmallVector<DomainShapeDim, 4> new_shape_dims;
-  for (auto ie : llvm::enumerate(mapping.Dimensions())) {
-    MappingExpr iter_expr = ie.value();
-
-    mlir::Attribute loop_name = nullptr;
-    // Check if the range is already cached.
-    if (ie.index() < iteration_space.size()) {
-      loop_name = iteration_space.loop_names()[ie.index()];
-      auto it = loop_range_cache.find(loop_name);
-      if (it != loop_range_cache.end()) {
-        new_domain.push_back(it->second.first);
-        new_shape_dims.push_back(it->second.second);
-        continue;
-      }
+  for (int i = 0, e = loop_names.size(); i < e; ++i) {
+    auto cache = loop_range_cache.find(loop_names[i]);
+    if (cache != loop_range_cache.end()) {
+      new_domain.push_back(cache->second);
+      continue;
     }
 
-    CreateRange(op, iter_expr, op.domain(), op.shape(), inverse_mapping,
-                normalized_loops, iteration_spaces, builder, new_domain,
-                new_shape_dims);
-
-    // Cache the new range.
-    if (loop_name == nullptr) continue;
-    loop_range_cache.try_emplace(loop_name, new_domain.back(),
-                                 new_shape_dims.back());
+    CreateRange(op, loop_nest, i, inverse_mapping, normalized_loops, new_domain,
+                builder);
+    loop_range_cache.try_emplace(loop_names[i], new_domain.back());
   }
 
+  return new_domain;
+}
+
+// Partitions `domain` into subdomains so that the image of a dimension of `op`
+// through `mapping` remains in the same domain. Reorders dimensions of shape
+// and updates mapping to match the new domain order.
+llvm::SmallVector<llvm::SmallVector<mlir::Value>> PartitionDomain(
+    SairOp op, MappingAttr &mapping, DomainShapeAttr &shape,
+    llvm::SmallVector<mlir::Value> domain) {
+  mlir::MLIRContext *context = op.getContext();
+
   // Permute dimensions to preserve sub-domains.
-  llvm::SmallVector<int, 4> sub_domains = op.SubDomains();
-  llvm::SmallVector<llvm::SmallVector<MappingExpr, 4>> partitioned_mapping(
+  llvm::SmallVector<int> sub_domains = op.SubDomains();
+  llvm::SmallVector<llvm::SmallVector<MappingExpr>> partitioned_mapping(
       sub_domains.size());
-  llvm::SmallVector<llvm::SmallVector<mlir::Value, 4>, 4> partitioned_domain(
+  llvm::SmallVector<llvm::SmallVector<mlir::Value>> partitioned_domain(
       sub_domains.size());
-  llvm::SmallVector<llvm::SmallVector<DomainShapeDim, 4>, 4> partitioned_shape(
+  llvm::SmallVector<llvm::SmallVector<DomainShapeDim>> partitioned_shape(
       sub_domains.size());
 
-  for (int i = 0; i < new_domain.size(); ++i) {
+  for (int i = 0; i < domain.size(); ++i) {
     int sub_domain = 0;
     // Find the subdomain the loop belongs to.
     int min_domain_size = mapping.Dimension(i).MinDomainSize();
@@ -215,8 +197,8 @@ mlir::LogicalResult NormalizeLoops(
     }
 
     partitioned_mapping[sub_domain].push_back(mapping.Dimension(i));
-    partitioned_domain[sub_domain].push_back(new_domain[i]);
-    partitioned_shape[sub_domain].push_back(new_shape_dims[i]);
+    partitioned_domain[sub_domain].push_back(domain[i]);
+    partitioned_shape[sub_domain].push_back(shape.Dimension(i));
   }
 
   llvm::SmallVector<MappingExpr> flattened_mapping;
@@ -224,35 +206,94 @@ mlir::LogicalResult NormalizeLoops(
   for (const auto &sub_domain : partitioned_mapping) {
     llvm::append_range(flattened_mapping, sub_domain);
   }
-  mapping =
-      MappingAttr::get(op.getContext(), op.domain().size(), flattened_mapping);
+  mapping = MappingAttr::get(context, op.domain().size(), flattened_mapping);
 
-  llvm::SmallVector<DomainShapeDim, 4> reordered_new_shape_dims;
-  reordered_new_shape_dims.reserve(new_shape_dims.size());
+  llvm::SmallVector<DomainShapeDim> shape_dims;
+  shape_dims.reserve(shape.NumDimensions());
   for (const auto &sub_domain : partitioned_shape) {
     for (const auto &dim : sub_domain) {
-      reordered_new_shape_dims.emplace_back(
-          dim.type(), dim.dependency_mapping().ResizeUseDomain(
-                          reordered_new_shape_dims.size()));
+      shape_dims.emplace_back(
+          dim.type(),
+          dim.dependency_mapping().ResizeUseDomain(shape_dims.size()));
     }
   }
+  shape = DomainShapeAttr::get(context, shape_dims);
+  return partitioned_domain;
+}
+
+// Replaces `op` by a copy with a different domain such that each loop in the
+// iteration space corresponds to a full dimension.
+void NormalizeLoops(SairOp op, const IterationSpace &iteration_space,
+                    const LoopNest &loop_nest, mlir::OpBuilder &builder,
+                    LoopRangeCache &loop_range_cache) {
+  if (iteration_space.empty()) return;
+  mlir::OpBuilder::InsertionGuard insertion_guard(builder);
+  mlir::MLIRContext *context = op.getContext();
+
+  llvm::SmallVector<mlir::Attribute> normalized_loops;
+  normalized_loops.reserve(iteration_space.size());
+  for (int i = 0, e = iteration_space.size(); i < e; ++i) {
+    auto dim_expr = MappingDimExpr::get(i, context);
+    mlir::StringAttr name = iteration_space.loop_names()[i];
+    normalized_loops.push_back(LoopAttr::get(name, dim_expr, context));
+  }
+
+  MappingAttr mapping = iteration_space.domain_to_loops();
+  DomainShapeAttr new_shape = loop_nest.shape;
+  llvm::SmallVector<mlir::Value> new_domain =
+      GetDomain(op, iteration_space.loop_names(), loop_nest, normalized_loops,
+                builder, loop_range_cache);
+  llvm::SmallVector<llvm::SmallVector<mlir::Value>> partitioned_domain =
+      PartitionDomain(op, mapping, new_shape, new_domain);
 
   // Replace op by an operation with the domain changed.
-  auto new_shape =
-      DomainShapeAttr::get(op.getContext(), reordered_new_shape_dims);
   builder.setInsertionPoint(op);
   SairOp new_op = op.ReCreateWithNewDomain(partitioned_domain, new_shape,
                                            mapping.Inverse(), builder);
+  if (auto compute_op = dyn_cast<ComputeOp>(*new_op)) {
+    compute_op.setLoopNest(builder.getArrayAttr(normalized_loops));
+  }
+
+  MappingAttr result_mapping =
+      mapping.Resize(new_op.results_rank()).ResizeUseDomain(op.results_rank());
+
+  // Handle the case where there is no rematerialization.
+  if (result_mapping.IsFullySpecified()) {
+    for (auto [old_value, new_value] :
+         llvm::zip(op->getResults(), new_op->getResults())) {
+      // We do not normalize range operations, so we know that results are
+      // values.
+      assert(old_value.getType().isa<ValueType>());
+      UpdateValueUses(old_value,
+                      {new_value, mapping.Resize(new_op.results_rank())});
+    }
+    op.erase();
+    return;
+  }
+
+  // Create proj_any operations with placeholder dimensions for the domain, as
+  // we won't use them anyway.
+  result_mapping = result_mapping.MakeFullySpecified();
+  MappingAttr inverse_result_mapping = result_mapping.Inverse();
+
+  DomainShapeAttr proj_any_shape =
+      loop_nest.shape.AccessedShape(inverse_result_mapping);
+  llvm::SmallVector<mlir::Value> proj_any_domain =
+      CreatePlaceholderDomain(op.getLoc(), proj_any_shape, builder);
+
   for (auto [old_value, new_value] :
        llvm::zip(op->getResults(), new_op->getResults())) {
-    // We do not normalize range operations, so we know that results are values.
-    assert(old_value.getType().isa<ValueType>());
-    UpdateValueUses(old_value,
-                    {new_value, mapping.Resize(new_op.results_rank())});
+    auto proj_any = builder.create<SairProjAnyOp>(
+        op.getLoc(), old_value.getType(),
+        llvm::makeArrayRef(proj_any_domain).take_front(op.results_rank()),
+        llvm::makeArrayRef(proj_any_domain).drop_front(op.results_rank()),
+        builder.getArrayAttr({result_mapping}), new_value, proj_any_shape);
+    // We can directly replace uses without updating mappings as the mapping is
+    // already applied for the proj_any operation.
+    old_value.replaceAllUsesWith(proj_any);
   }
-  op.erase();
 
-  return mlir::success();
+  op.erase();
 }
 
 // Pass that rewrites operations domains so that each loop corresponds to a
@@ -262,17 +303,46 @@ class NormalizeLoopsPass : public NormalizeLoopsPassBase<NormalizeLoopsPass> {
   void runOnFunction() override {
     mlir::OpBuilder builder(&getContext());
     getFunction().walk([&](SairProgramOp program) {
+      LoopRangeCache loop_range_cache;
       auto iteration_spaces = getChildAnalysis<IterationSpaceAnalysis>(program);
-      llvm::DenseMap<mlir::Attribute, std::pair<mlir::Value, DomainShapeDim>>
-          loop_range_cache;
+      auto fusion_analysis = getChildAnalysis<LoopFusionAnalysis>(program);
+
+      llvm::SmallVector<SairOp> ops;
       program.walk([&](SairOp op) {
         // Do not normalize range and placeholder operations.
         if (isa<RangeOp, SairPlaceholderOp>(op.getOperation())) return;
-        if (mlir::failed(NormalizeLoops(op, iteration_spaces, builder,
-                                        loop_range_cache))) {
-          signalPassFailure();
-        }
+        ops.push_back(op);
       });
+
+      for (SairOp op : ops) {
+        if (isa<SairFromMemRefOp, SairToMemRefOp>(*op)) {
+          op.emitError() << "sair.from_memref and sair.to_memref must be "
+                            "eliminated before loop normalization";
+          signalPassFailure();
+          return;
+        }
+
+        // Do not normalize range operations.
+        const IterationSpace &iteration_space = iteration_spaces.Get(op);
+        if (!iteration_space.domain_to_loops().Inverse().IsFullySpecified()) {
+          // This error should only occur if
+          // * memref introduction or canonicalization was not run beforehand or
+          // * some loop-nests are missing.
+          //
+          // Canonicalization will remove unused dimensions from non-compute
+          // operations while memref introduction will remove non-compute
+          // operations are not in the same iteration space than the producers
+          // of their operands
+          op.emitError() << "operation with an incomplete iteration space";
+          signalPassFailure();
+          return;
+        }
+
+        LoopNest loop_nest =
+            fusion_analysis.GetLoopNest(iteration_space.loop_names());
+        NormalizeLoops(op, iteration_space, loop_nest, builder,
+                       loop_range_cache);
+      };
     });
   }
 };

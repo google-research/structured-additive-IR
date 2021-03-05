@@ -118,4 +118,17 @@ void SetInArrayAttr(mlir::Operation *operation, llvm::StringRef attr_name,
   operation->setAttr(attr_name, mlir::ArrayAttr::get(context, values));
 }
 
+llvm::SmallVector<mlir::Value> CreatePlaceholderDomain(
+    mlir::Location loc, DomainShapeAttr shape, mlir::OpBuilder &builder) {
+  llvm::SmallVector<mlir::Value> domain;
+  domain.reserve(shape.NumDimensions());
+  for (const DomainShapeDim &shape_dim : shape.Dimensions()) {
+    llvm::SmallVector<mlir::Value> range_domain =
+        CreatePlaceholderDomain(loc, shape_dim.type().Shape(), builder);
+    domain.push_back(
+        builder.create<SairPlaceholderOp>(loc, shape_dim.type(), range_domain));
+  }
+  return domain;
+}
+
 }  // namespace sair

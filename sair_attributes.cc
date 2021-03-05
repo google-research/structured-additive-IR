@@ -136,13 +136,13 @@ mlir::AffineExpr MappingDimExpr::AsAffineExpr() const {
 }
 
 RangeParameters MappingDimExpr::GetRangeParameters(
-    mlir::Location loc, mlir::ValueRange domain, DomainShapeAttr shape,
+    mlir::Location loc, llvm::ArrayRef<ValueAccess> domain,
     MappingAttr inverse_mapping, mlir::OpBuilder &builder,
     MapArguments &map_arguments) const {
-  auto range_op = mlir::cast<RangeOp>(domain[dimension()].getDefiningOp());
-  auto mapping = shape.Dimension(dimension())
-                     .dependency_mapping()
-                     .ResizeUseDomain(map_arguments.Indices().size());
+  const ValueAccess &dim_access = domain[dimension()];
+  auto range_op = mlir::cast<RangeOp>(dim_access.value.getDefiningOp());
+  auto mapping =
+      dim_access.mapping.ResizeUseDomain(map_arguments.Indices().size());
   assert(mapping.IsFullySpecified());
   return {
       .begin = map_arguments.AddArgument(range_op.LowerBound().Map(mapping)),
@@ -358,12 +358,12 @@ MappingExpr MappingStripeExpr::Canonicalize() const {
 }
 
 RangeParameters MappingStripeExpr::GetRangeParameters(
-    mlir::Location loc, mlir::ValueRange domain, DomainShapeAttr shape,
+    mlir::Location loc, llvm::ArrayRef<ValueAccess> domain,
     MappingAttr inverse_mapping, mlir::OpBuilder &builder,
     MapArguments &map_arguments) const {
   // Compute range parameters for the operand.
   RangeParameters operand_parameters = operand().GetRangeParameters(
-      loc, domain, shape, inverse_mapping, builder, map_arguments);
+      loc, domain, inverse_mapping, builder, map_arguments);
   int step = this->step() * operand_parameters.step;
 
   // If the stripe covers the entire operand range, no additional computation is
@@ -664,11 +664,11 @@ MappingExpr MappingUnStripeExpr::Canonicalize() const {
 }
 
 RangeParameters MappingUnStripeExpr::GetRangeParameters(
-    mlir::Location loc, mlir::ValueRange domain, DomainShapeAttr shape,
+    mlir::Location loc, llvm::ArrayRef<ValueAccess> domain,
     MappingAttr inverse_mapping, mlir::OpBuilder &builder,
     MapArguments &map_arguments) const {
   RangeParameters inner_parameters = operands()[0].GetRangeParameters(
-      loc, domain, shape, inverse_mapping, builder, map_arguments);
+      loc, domain, inverse_mapping, builder, map_arguments);
   inner_parameters.step = 1;
   return inner_parameters;
 }

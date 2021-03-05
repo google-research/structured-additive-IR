@@ -1,4 +1,6 @@
 // RUN: sair-opt %s -sair-normalize-loops -cse -mlir-print-local-scope | FileCheck %s
+// RUN: sair-opt %s -sair-normalize-loops -cse -mlir-print-op-generic | FileCheck %s --check-prefix=GENERIC
+
 
 // CHECK-LABEL: @identity
 func @identity(%arg0: index, %arg1: f32) {
@@ -102,34 +104,6 @@ func @unstripe(%arg0: f32) {
   return
 }
 
-// CHECK-LABEL: @from_to_memref
-func @from_to_memref(%arg0: index) {
-  sair.program {
-    // CHECK: %[[SIZE:.*]] = sair.from_scalar
-    %size = sair.from_scalar %arg0 : !sair.value<(), index>
-    // CHECK: %[[D0:.*]] = sair.static_range 4
-    %0 = sair.static_range 4 : !sair.range
-    // CHECK: %[[D1:.*]] = sair.dyn_range %{{.*}}
-    // CHECK: %[[D2:.*]] = sair.dyn_range %{{.*}}
-    %1 = sair.dyn_range %size : !sair.range
-    // CHECK: %[[MEMREF:.*]] = sair.alloc[d0:%[[D0]]] %[[SIZE]]
-    %memref = sair.alloc[d0:%0] %size {
-      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
-    } : !sair.value<d0:range, memref<?xf32>>
-    // CHECK: %[[V0:.*]] = sair.from_memref[d0:%[[D0]]] %[[MEMREF]](d0) memref[d1:%[[D1]]]
-    %2 = sair.from_memref[d0:%0] %memref(d0) memref[d1:%1]
-      : #sair.shape<d0:range x d1:range>, memref<?xf32>
-    // CHECK: sair.to_memref[d0:%[[D0]]] %[[MEMREF]](d0) memref[d1:%[[D2]]] %[[V0]](d0, d1)
-    sair.to_memref[d0:%0] %memref(d0) memref[d1:%1] %2(d0, d1)
-      : #sair.shape<d0:range x d1:range>, memref<?xf32>
-    sair.free[d0:%0] %memref(d0) {
-      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
-    } : !sair.value<d0:range, memref<?xf32>>
-    sair.exit
-  }
-  return
-}
-
 // CHECK-LABEL: @load_store_memref
 func @load_store_memref(%arg0: index) {
   sair.program {
@@ -188,3 +162,44 @@ func @load_store_memref(%arg0: index) {
   }
   return
 }
+// In the generic form, the function (symbol) name is an attribute and is
+// printed after the body region.
+// GENERIC-LABEL: sym_name = "load_store_memref"
+
+// CHECK-LABEL: @remat
+func @remat(%arg0: f32) {
+  sair.program {
+    // CHECK: %[[INIT:.*]] = sair.from_scalar
+    // GENERIC: %[[INIT:.*]] = "sair.from_scalar"
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    // CHECK: %[[RANGE:.*]] = sair.static_range
+    // GENERIC: %[[RANGE:.*]] = "sair.static_range"
+    %1 = sair.static_range 8 : !sair.range
+    // CHECK: %[[RESULT:.*]] = sair.copy[d0:%[[RANGE]]] %[[INIT]]
+    // CHECK: loop_nest = [{iter = #sair.mapping_expr<d0>, name = "A"}]
+    // CHECK: !sair.value<d0:range, f32>
+    //
+    // CHECK: %[[P0:.*]] = sair.placeholder : !sair.range
+    // CHECK: %[[VALUE:.*]] = sair.proj_any of[d0:%[[P0]]] %[[RESULT]](d0)
+    // CHECK: #sair.shape<d0:range>
+    //
+    // Ensure that the mapping has the expected use domain, and that the
+    // resulting value has the right type.
+    // GENERIC: "sair.copy"(%[[RANGE]], %[[INIT]])
+    // GENERIC-SAME: mapping_array = [#sair.mapping<1>]
+    // GENERIC-SAME: (!sair.range, !sair.value<(), f32>) -> !sair.value<d0:range, f32>
+    %2 = sair.copy %0 {
+      loop_nest = [{name = "A", iter = #sair.mapping_expr<none>}]
+    } : !sair.value<(), f32>
+    // CHECK: sair.copy[d0:%[[RANGE]]] %[[VALUE]]
+    %3 = sair.copy[d0:%1] %2 {
+      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
+    } : !sair.value<d0:range, f32>
+    %4 = sair.proj_last of[d0:%1] %3(d0) : #sair.shape<d0:range>, f32
+    sair.exit %4 : f32
+  } : f32
+  return
+}
+// In the generic form, the function (symbol) name is an attribute and is
+// printed after the body region.
+// GENERIC-LABEL: sym_name = "remat"

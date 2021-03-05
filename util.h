@@ -64,6 +64,10 @@ mlir::LogicalResult ResolveUnificationConstraint(
 void SetInArrayAttr(mlir::Operation *operation, llvm::StringRef attr_name,
                     int array_size, int element, mlir::Attribute value);
 
+// Creates a domain with the given shape using placeholder dimensions.
+llvm::SmallVector<mlir::Value> CreatePlaceholderDomain(
+    mlir::Location loc, DomainShapeAttr shape, mlir::OpBuilder &builder);
+
 }  // namespace sair
 
 #endif  // THIRD_PARTY_SAIR_TRANSFORMS_UTIL_H_

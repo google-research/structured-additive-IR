@@ -142,9 +142,9 @@ def MappingExpr : AttrInterface<"MappingExpr"> {
         After returning, builder insertion point is after newly added
         instructions.}],
       "RangeParameters", "GetRangeParameters",
-      (ins "mlir::Location":$loc, "mlir::ValueRange":$domain,
-           "DomainShapeAttr":$shape, "MappingAttr":$inverse_mapping,
-           "mlir::OpBuilder&":$builder, "MapArguments&":$map_arguments)
+      (ins "mlir::Location":$loc, "llvm::ArrayRef<ValueAccess>":$domain,
+           "MappingAttr":$inverse_mapping, "mlir::OpBuilder&":$builder,
+           "MapArguments&":$map_arguments)
     >
   ];
 }
@@ -352,7 +352,7 @@ def SairOpInterface : OpInterface<"SairOp"> {
       [{Creates a copy of the operation with a new domain. May steal the body of
         the current operation but does not erase it.}],
       "SairOp", "ReCreateWithNewDomain", (ins
-        "llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>>":$new_domains,
+        "llvm::ArrayRef<llvm::SmallVector<mlir::Value>>":$new_domains,
         "DomainShapeAttr":$new_shape,
         "MappingAttr":$new_to_old_mapping,
         "mlir::OpBuilder &":$builder

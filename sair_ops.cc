@@ -1656,7 +1656,7 @@ DomainShapeAttr SairFreeOp::shape() {
 // array containing the composition of `lhs` with each element of `rhs_array`.
 static mlir::ArrayAttr ComposeMappings(MappingAttr lhs,
                                        mlir::ArrayAttr rhs_array) {
-  llvm::SmallVector<mlir::Attribute, 4> new_mappings;
+  llvm::SmallVector<mlir::Attribute> new_mappings;
   new_mappings.reserve(rhs_array.size());
   for (mlir::Attribute rhs : rhs_array.getValue()) {
     new_mappings.push_back(lhs.Compose(rhs.cast<MappingAttr>()).Canonicalize());
@@ -1670,7 +1670,7 @@ static mlir::ArrayAttr ComposeLoopNest(MappingAttr new_to_old_mapping,
   if (old_loop_nest == nullptr) return nullptr;
   mlir::MLIRContext *context = old_loop_nest.getContext();
 
-  llvm::SmallVector<mlir::Attribute, 4> new_loop_nest;
+  llvm::SmallVector<mlir::Attribute> new_loop_nest;
   new_loop_nest.reserve(old_loop_nest.size());
   for (mlir::Attribute attr : old_loop_nest.getValue()) {
     LoopAttr loop = attr.cast<LoopAttr>();
@@ -1683,7 +1683,7 @@ static mlir::ArrayAttr ComposeLoopNest(MappingAttr new_to_old_mapping,
 }
 
 SairOp SairDynRangeOp::ReCreateWithNewDomain(
-    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value>> new_domains,
     DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
     mlir::OpBuilder &builder) {
   llvm_unreachable(
@@ -1691,7 +1691,7 @@ SairOp SairDynRangeOp::ReCreateWithNewDomain(
 }
 
 SairOp SairStaticRangeOp::ReCreateWithNewDomain(
-    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value>> new_domains,
     DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
     mlir::OpBuilder &builder) {
   llvm_unreachable(
@@ -1699,7 +1699,7 @@ SairOp SairStaticRangeOp::ReCreateWithNewDomain(
 }
 
 SairOp SairPlaceholderOp::ReCreateWithNewDomain(
-    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value>> new_domains,
     DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
     mlir::OpBuilder &builder) {
   llvm_unreachable(
@@ -1707,7 +1707,7 @@ SairOp SairPlaceholderOp::ReCreateWithNewDomain(
 }
 
 SairOp SairCopyOp::ReCreateWithNewDomain(
-    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value>> new_domains,
     DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
     mlir::OpBuilder &builder) {
   assert(new_domains.size() == 1);
@@ -1726,7 +1726,7 @@ SairOp SairCopyOp::ReCreateWithNewDomain(
 }
 
 SairOp SairFromScalarOp::ReCreateWithNewDomain(
-    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value>> new_domains,
     DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
     mlir::OpBuilder &builder) {
   llvm_unreachable(
@@ -1738,7 +1738,7 @@ namespace {
 // value would be preserved if an op is created with the given new domains.
 template <typename OpTy>
 void CheckMemRefDomainPreserved(
-    OpTy op, llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    OpTy op, llvm::ArrayRef<llvm::SmallVector<mlir::Value>> new_domains,
     MappingAttr new_to_old_mapping) {
   assert(new_domains.size() == 2);
   // Assert that memref domain is left untouched.
@@ -1757,24 +1757,14 @@ void CheckMemRefDomainPreserved(
 }  // end namespace
 
 SairOp SairFromMemRefOp::ReCreateWithNewDomain(
-    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value>> new_domains,
     DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
     mlir::OpBuilder &builder) {
-  CheckMemRefDomainPreserved(*this, new_domains, new_to_old_mapping);
-
-  mlir::ArrayAttr new_mappings =
-      ComposeMappings(new_to_old_mapping, mapping_array());
-  auto return_type =
-      ValueType::get(new_shape, getType().cast<ValueType>().ElementType());
-  auto new_op = builder.create<SairFromMemRefOp>(
-      getLoc(), return_type, new_domains[0], new_domains[1], new_mappings,
-      memref(), access_mapAttr());
-  ForwardAttributes(getOperation(), new_op.getOperation());
-  return llvm::cast<SairOp>(new_op.getOperation());
+  llvm_unreachable("must be erased before calling loop normalization");
 }
 
 SairOp SairLoadFromMemRefOp::ReCreateWithNewDomain(
-    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value>> new_domains,
     DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
     mlir::OpBuilder &builder) {
   CheckMemRefDomainPreserved(*this, new_domains, new_to_old_mapping);
@@ -1794,22 +1784,14 @@ SairOp SairLoadFromMemRefOp::ReCreateWithNewDomain(
 }
 
 SairOp SairToMemRefOp::ReCreateWithNewDomain(
-    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value>> new_domains,
     DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
     mlir::OpBuilder &builder) {
-  CheckMemRefDomainPreserved(*this, new_domains, new_to_old_mapping);
-
-  mlir::ArrayAttr new_mappings =
-      ComposeMappings(new_to_old_mapping, mapping_array());
-  auto new_op = builder.create<SairToMemRefOp>(
-      getLoc(), new_domains[0], new_domains[1], new_mappings, memref(), value(),
-      shape(), access_mapAttr());
-  ForwardAttributes(getOperation(), new_op.getOperation());
-  return llvm::cast<SairOp>(new_op.getOperation());
+  llvm_unreachable("must be erased before calling loop normalization");
 }
 
 SairOp SairStoreToMemRefOp::ReCreateWithNewDomain(
-    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value>> new_domains,
     DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
     mlir::OpBuilder &builder) {
   CheckMemRefDomainPreserved(*this, new_domains, new_to_old_mapping);
@@ -1850,7 +1832,7 @@ static void MoveMapBody(mlir::Location loc, mlir::Block &old_body,
 }
 
 SairOp SairMapOp::ReCreateWithNewDomain(
-    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value>> new_domains,
     DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
     mlir::OpBuilder &builder) {
   assert(new_domains.size() == 1);
@@ -1874,7 +1856,7 @@ SairOp SairMapOp::ReCreateWithNewDomain(
 }
 
 SairOp SairMapReduceOp::ReCreateWithNewDomain(
-    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value>> new_domains,
     DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
     mlir::OpBuilder &builder) {
   assert(new_domains.size() == 2);
@@ -1909,7 +1891,7 @@ SairOp SairMapReduceOp::ReCreateWithNewDomain(
 }
 
 SairOp SairProjLastOp::ReCreateWithNewDomain(
-    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value>> new_domains,
     DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
     mlir::OpBuilder &builder) {
   assert(new_domains.size() == 2);
@@ -1927,7 +1909,7 @@ SairOp SairProjLastOp::ReCreateWithNewDomain(
 }
 
 SairOp SairProjAnyOp::ReCreateWithNewDomain(
-    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value>> new_domains,
     DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
     mlir::OpBuilder &builder) {
   assert(new_domains.size() == 2);
@@ -1945,7 +1927,7 @@ SairOp SairProjAnyOp::ReCreateWithNewDomain(
 }
 
 SairOp SairFbyOp::ReCreateWithNewDomain(
-    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value>> new_domains,
     DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
     mlir::OpBuilder &builder) {
   assert(new_domains.size() == 2);
@@ -1962,7 +1944,7 @@ SairOp SairFbyOp::ReCreateWithNewDomain(
 }
 
 SairOp SairExitOp::ReCreateWithNewDomain(
-    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value>> new_domains,
     DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
     mlir::OpBuilder &builder) {
   llvm_unreachable(
@@ -1970,7 +1952,7 @@ SairOp SairExitOp::ReCreateWithNewDomain(
 }
 
 SairOp SairAllocOp::ReCreateWithNewDomain(
-    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value>> new_domains,
     DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
     mlir::OpBuilder &builder) {
   assert(new_domains.size() == 1);
@@ -1988,7 +1970,7 @@ SairOp SairAllocOp::ReCreateWithNewDomain(
 }
 
 SairOp SairFreeOp::ReCreateWithNewDomain(
-    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value>> new_domains,
     DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
     mlir::OpBuilder &builder) {
   assert(new_domains.size() == 1);
