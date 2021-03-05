@@ -627,3 +627,32 @@ func @storage_stripe(%arg0: f32) {
   }
   return
 }
+
+// CHECK-LABEL: @placeholder
+func @placeholder(%arg0: f32) {
+  sair.program {
+    %0 = sair.static_range 2 : !sair.range
+    %1 = sair.placeholder[d0:%0] : !sair.range<d0:range>
+    %2 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %3 = sair.copy[d0:%0, d1:%1] %2 : !sair.value<d0:range x d1:range(d0), f32>
+    sair.exit
+  }
+  return
+}
+
+// CHECK-LABEL: @placeholder_with_loop_nest
+func @placeholder_with_loop_nest(%arg0: f32) {
+  sair.program {
+    %0 = sair.static_range 2 : !sair.range
+    %1 = sair.placeholder : !sair.range
+    %2 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %3 = sair.copy[d0:%0] %2 {
+      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
+    } : !sair.value<d0:range, f32>
+    %4 = sair.copy[d0:%1] %2 {
+      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
+    } : !sair.value<d0:range, f32>
+    sair.exit
+  }
+  return
+}

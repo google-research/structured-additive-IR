@@ -53,7 +53,7 @@ namespace sair {
 // '['.
 ParseResult ParseDomain(
     mlir::OpAsmParser &parser,
-    llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> &dimensions);
+    llvm::SmallVectorImpl<mlir::OpAsmParser::OperandType> &dimensions);
 // Resolves the operands that consitute the dimensions of an iteration domain
 // and registers them in 'result'.
 ParseResult ResolveDomain(mlir::OpAsmParser &parser,

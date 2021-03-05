@@ -1519,3 +1519,18 @@ func @map_reduce_init_result_storages_must_match(%arg0: f32) {
   }
   return
 }
+
+// -----
+
+func @placeholder_loop_nest_unspecified(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.placeholder : !sair.range
+    // expected-error @+1 {{loop "loopA" iterator is not fully specified}}
+    %2 = sair.copy[d0:%1] %0 {
+      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
+    } : !sair.value<d0:range, f32>
+    sair.exit
+  }
+  return
+}

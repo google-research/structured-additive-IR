@@ -106,6 +106,30 @@ def SairStaticRangeOp : SairOp<"static_range", [NoSideEffect, SairRangeOp]> {
   }];
 }
 
+def SairPlaceholderOp : SairOp<"placeholder", [NoSideEffect]> {
+  let summary = "Placeholder for an iteration dimension";
+
+  let description = [{
+    Defines an iteration dimension that will be replaced by an actual iteration
+    dimension during loop-normalization pass. This is used to introduce
+    operations in specific loop nests before dimensions defining loop ranges are
+    introduced.
+
+    If a dimension bound to a placeholder operation appears in loop iterators
+    mapping, the dimension must be defined by another operation with a
+    non-placeholder operation. In that sense, they behave similarly to `none` in
+    loop-nest description.
+  }];
+
+  let arguments = (ins Variadic<SairRange>:$domain);
+  let results = (outs SairRange:$range);
+
+  let parser = [{return ParsePlaceholderOp(parser, result);}];
+  let printer = [{return Print(*this, p);}];
+
+  DerivedAttr shape = SairResultDomainShapeAttr;
+}
+
 def SairCopyOp : SairOp<"copy", [
     NoSideEffect,
     SairComputeOp,

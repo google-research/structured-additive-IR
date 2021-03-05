@@ -496,7 +496,14 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
   LoopAttr loop = loop_nest.back().cast<LoopAttr>();
 
   int dimension = loop.iter().cast<MappingDimExpr>().dimension();
-  RangeOp range = cast<RangeOp>(op.domain()[dimension].getDefiningOp());
+  mlir::Operation *dimension_op = op.domain()[dimension].getDefiningOp();
+  if (isa<SairPlaceholderOp>(dimension_op)) {
+    return dimension_op->emitError()
+           << "placeholders must be replaced by actual dimensions before "
+              "introducing loops";
+  }
+
+  RangeOp range = cast<RangeOp>(dimension_op);
   MappingAttr range_mapping =
       op.shape().Dimension(dimension).dependency_mapping().ResizeUseDomain(
           op.domain().size() - 1);

@@ -272,8 +272,8 @@ class NormalizeLoopsPass : public NormalizeLoopsPassBase<NormalizeLoopsPass> {
       llvm::DenseMap<mlir::Attribute, std::pair<mlir::Value, DomainShapeDim>>
           loop_range_cache;
       program.walk([&](SairOp op) {
-        // Do not normalize range operations.
-        if (isa<RangeOp>(op.getOperation())) return;
+        // Do not normalize range and placeholder operations.
+        if (isa<RangeOp, SairPlaceholderOp>(op.getOperation())) return;
         if (mlir::failed(NormalizeLoops(op, iteration_spaces, builder,
                                         loop_range_cache))) {
           signalPassFailure();

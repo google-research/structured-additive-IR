@@ -135,3 +135,27 @@ func @size_not_in_register(%arg0: index) {
   }
   return
 }
+
+// -----
+
+func @placeholder() {
+  sair.program {
+    %0 = sair.static_range 8 : !sair.range
+    // expected-error @+1 {{placeholders must be replaced by actual dimensions before introducing loops}}
+    %1 = sair.placeholder : !sair.range
+    sair.map[d0:%1] attributes {
+      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
+    } {
+      ^bb0(%arg1: index):
+        sair.return
+    } : #sair.shape<d0:range>, () -> ()
+    sair.map[d0:%0] attributes {
+      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
+    } {
+      ^bb0(%arg1: index):
+        sair.return
+    } : #sair.shape<d0:range>, () -> ()
+    sair.exit
+  }
+  return
+}

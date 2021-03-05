@@ -201,6 +201,22 @@ ParseResult ParseStaticRangeOp(mlir::OpAsmParser &parser,
                  parser.addTypeToList(type, result.types));
 }
 
+// Parses the placeholder dimension. This operation has an iteration domain and
+// returns a range value. The syntax is the following.
+//
+// placeholder-op ::= `sair.placeholder` domain : range-type
+//
+ParseResult ParsePlaceholderOp(mlir::OpAsmParser &parser,
+                               mlir::OperationState &result) {
+  llvm::SmallVector<mlir::OpAsmParser::OperandType> domain;
+  RangeType type;
+
+  return mlir::failure(ParseDomain(parser, domain) ||
+                       parser.parseColonType<RangeType>(type) ||
+                       parser.addTypeToList(type, result.types) ||
+                       ResolveDomain(parser, type.Shape(), domain, result));
+}
+
 // Parses the copy operation. This operation has an iteration domain and
 // accesses a single Sair value. The syntax for the operation is the following.
 //
@@ -616,6 +632,12 @@ void Print(SairStaticRangeOp op, OpAsmPrinter &printer) {
   printer << " : " << op.getType();
 }
 
+static void Print(SairPlaceholderOp op, mlir::OpAsmPrinter &printer) {
+  printer << SairPlaceholderOp::getOperationName();
+  PrintDomain(op.domain(), printer);
+  printer << " : " << op.range().getType();
+}
+
 // Prints the copy operation.
 void Print(SairCopyOp op, OpAsmPrinter &printer) {
   printer << SairCopyOp::getOperationName();
@@ -892,7 +914,7 @@ llvm::SmallBitVector SairStoreToMemRefOp::DimsDependingOnOperand(
 
 ParseResult ParseDomain(
     mlir::OpAsmParser &parser,
-    llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> &dimensions) {
+    llvm::SmallVectorImpl<mlir::OpAsmParser::OperandType> &dimensions) {
   if (failed(parser.parseOptionalLSquare())) return success();
   do {
     std::string dim_name = "d" + std::to_string(dimensions.size());
@@ -1559,6 +1581,10 @@ llvm::SmallVector<int, 2> SairDynRangeOp::SubDomains() {
   return {static_cast<int>(domain().size())};
 }
 
+llvm::SmallVector<int, 2> SairPlaceholderOp::SubDomains() {
+  return {static_cast<int>(domain().size())};
+}
+
 llvm::SmallVector<int, 2> SairCopyOp::SubDomains() {
   return {static_cast<int>(domain().size())};
 }
@@ -1665,6 +1691,14 @@ SairOp SairDynRangeOp::ReCreateWithNewDomain(
 }
 
 SairOp SairStaticRangeOp::ReCreateWithNewDomain(
+    llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
+    DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
+    mlir::OpBuilder &builder) {
+  llvm_unreachable(
+      "not called by NormalizeLoops because the op defines a dimension");
+}
+
+SairOp SairPlaceholderOp::ReCreateWithNewDomain(
     llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> new_domains,
     DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
     mlir::OpBuilder &builder) {

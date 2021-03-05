@@ -16,6 +16,7 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "sair_op_interfaces.h"
+#include "sair_ops.h"
 
 namespace sair {
 
@@ -78,6 +79,10 @@ mlir::LogicalResult ResolveUnificationConstraint(
     MappingExpr &constraint,
     llvm::SmallVectorImpl<ValueAccess> &target_domain) {
   mlir::MLIRContext *context = constraint.getContext();
+
+  // Ignore placeholders.
+  mlir::Operation *defining_op = dimension.value.getDefiningOp();
+  if (isa<SairPlaceholderOp>(defining_op)) return mlir::success();
 
   if (constraint.isa<MappingNoneExpr>()) {
     constraint = MappingDimExpr::get(target_domain.size(), context);
