@@ -52,7 +52,8 @@ static llvm::SmallVector<ValueViewOp, 4> SortValueViews(SairProgramOp program) {
   return sorted;
 }
 
-Buffer::Buffer(mlir::Type element_type, int rank, ComputeOp op, int result)
+Buffer::Buffer(mlir::Type element_type, int rank, ComputeOp op, int result,
+               const LoopFusionAnalysis &fusion_analysis)
     : loc_(op.getLoc()), element_type_(element_type) {
   assert(element_type != nullptr);
   assert(rank >= 0);
@@ -67,17 +68,19 @@ Buffer::Buffer(mlir::Type element_type, int rank, ComputeOp op, int result)
   auto none_expr = MappingNoneExpr::get(element_type.getContext());
   layout_.resize(rank, none_expr);
   writes_.emplace_back(op, result);
+
+  loop_nest_mapping_ = fusion_analysis.GetLoopNest(loop_nest_).domain_to_loops;
 }
 
-void Buffer::TrimLoopNest(int new_size,
-                          const LoopFusionAnalysis &fusion_analysis) {
+void Buffer::TrimLoopNest(int new_size) {
   assert(new_size <= loop_nest_.size());
   loop_nest_.resize(new_size);
+  loop_nest_mapping_ = loop_nest_mapping_.Resize(new_size);
   if (domain_.empty()) return;
 
   mlir::MLIRContext *context = element_type_.getContext();
   // Compute dimensions used by layout.
-  llvm::SmallBitVector used_dimensions(domain_.size());
+  llvm::SmallBitVector used_dimensions = loop_nest_mapping_.DependencyMask();
   for (MappingExpr layout_expr : layout_) {
     layout_expr.SetDependenciesInMask(used_dimensions);
   }
@@ -85,10 +88,8 @@ void Buffer::TrimLoopNest(int new_size,
   // Trim domain from unused dimensions.
   llvm::SmallVector<ValueAccess> old_domain;
   std::swap(old_domain, domain_);
-  llvm::append_range(domain_, fusion_analysis.GetLoopNest(loop_nest_).domain);
   llvm::SmallVector<MappingExpr> renaming(old_domain.size(),
                                           MappingNoneExpr::get(context));
-
   for (int dim : used_dimensions.set_bits()) {
     // Already added to the new domain.
     if (renaming[dim].isa<MappingDimExpr>()) continue;
@@ -112,6 +113,19 @@ void Buffer::UnifyLayoutDim(int layout_dim, MappingExpr expr) {
 
 void Buffer::AddWrite(ComputeOp op, int result) {
   writes_.emplace_back(op, result);
+}
+
+void Buffer::AddRead(ComputeOp op, int operand) {
+  reads_.emplace_back(op, operand);
+}
+
+MappingAttr Buffer::PrefixedLayout() const {
+  mlir::MLIRContext *context = loop_nest_mapping_.getContext();
+  llvm::SmallVector<MappingExpr> exprs;
+  exprs.reserve(loop_nest_.size() + layout_.size());
+  llvm::append_range(exprs, loop_nest_mapping_);
+  llvm::append_range(exprs, layout_);
+  return MappingAttr::get(context, domain_.size(), exprs);
 }
 
 StorageAnalysis::StorageAnalysis(mlir::Operation *operation)
@@ -234,7 +248,8 @@ static mlir::LogicalResult DeclareBuffer(
       op->getResult(result).getType().cast<ValueType>().ElementType();
 
   int rank = attr.layout().mapping().size();
-  auto it = buffer_map.try_emplace(attr.name(), element_type, rank, op, result);
+  auto it = buffer_map.try_emplace(attr.name(), element_type, rank, op, result,
+                                   fusion_analysis);
   Buffer &buffer = it.first->second;
 
   if (!it.second) {
@@ -281,7 +296,7 @@ static mlir::LogicalResult DeclareBuffer(
     }
   }
 
-  buffer.TrimLoopNest(num_deps, fusion_analysis);
+  buffer.TrimLoopNest(num_deps);
   return mlir::success();
 }
 
@@ -408,20 +423,13 @@ static mlir::LogicalResult CheckMallocInsertionPoint(
 // `loop_nest`. Increases `min_num_loops` to the minimal number of loops needed
 // in `loop_nest` for the layout to be valid.
 static mlir::LogicalResult CheckLayoutMapping(
-    const LoopNest &loop_nest, mlir::StringAttr buffer_name,
-    const Buffer &buffer, const IterationSpaceAnalysis &iteration_spaces,
-    int &min_num_loops) {
-  mlir::MLIRContext *context = loop_nest.domain_to_loops.getContext();
+    mlir::StringAttr buffer_name, const Buffer &buffer,
+    const IterationSpaceAnalysis &iteration_spaces, int &min_num_loops) {
+  mlir::MLIRContext *context = buffer_name.getContext();
   int domain_size = buffer.domain().size();
   int loop_nest_size = buffer.loop_nest().size();
 
-  // Get a mapping that maps both loop-nest and layout indices. This corresponds
-  // to the different instances of the buffer.
-  llvm::SmallVector<MappingExpr> exprs;
-  exprs.reserve(loop_nest_size + buffer.layout().size());
-  llvm::append_range(exprs, loop_nest.domain_to_loops);
-  llvm::append_range(exprs, buffer.layout());
-  auto mapping = MappingAttr::get(context, domain_size, exprs);
+  MappingAttr mapping = buffer.PrefixedLayout();
 
   // Update `min_num_loops` based on domain dimensions layout depends on.
   llvm::SmallBitVector used_dimensions(domain_size);
@@ -499,13 +507,13 @@ mlir::LogicalResult StorageAnalysis::Init(SairProgramOp program) {
     // Check that layout mapping is correct and compute the minimal loop nest
     // each buffer needs to be nested in.
     int min_num_loops = 0;
-    if (mlir::failed(CheckLayoutMapping(loop_nest, name, buffer,
-                                        iteration_spaces, min_num_loops))) {
+    if (mlir::failed(CheckLayoutMapping(name, buffer, iteration_spaces,
+                                        min_num_loops))) {
       return mlir::failure();
     }
 
     // Minimize layout loop-nest.
-    buffer.TrimLoopNest(min_num_loops, fusion_analysis);
+    buffer.TrimLoopNest(min_num_loops);
   }
 
   // Compute value storages.
@@ -528,6 +536,16 @@ mlir::LogicalResult StorageAnalysis::Init(SairProgramOp program) {
       value_storages_[op->getResult(i)] = result_opt.value();
     }
   }
+
+  // Register buffer reads.
+  program.walk([&](ComputeOp op) {
+    for (ValueOperand operand : cast<SairOp>(*op).ValueOperands()) {
+      const ValueStorage &storage = value_storages_[operand.value()];
+      if (storage.buffer_name == nullptr) continue;
+      buffers_.find(storage.buffer_name)
+          ->second.AddRead(op, operand.position());
+    }
+  });
 
   return mlir::success();
 }

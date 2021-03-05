@@ -111,10 +111,19 @@ struct LoopFusionClass {
 struct LoopNest {
   // Domain used to define loop ranges.
   llvm::ArrayRef<ValueAccess> domain;
+
   // Mapping from `domain` to loops.
   MappingAttr domain_to_loops;
-  // Shape of the resulting loop nest.
-  DomainShapeAttr shape;
+
+  // Shape of the nest, normalized so that dependencies between dimensions are
+  // identity mappings.
+  DomainShapeAttr normalized_shape;
+
+  // Shape of the domain the loop nest is defined from.
+  DomainShapeAttr DomainShape() const;
+
+  // Shape of the loop nest.
+  DomainShapeAttr Shape() const;
 };
 
 // Computes loop fusion classes in a sair program.

@@ -29,6 +29,7 @@ enum class Direction { kBefore, kAfter };
 // Specifies where to insert an operation in the generated code. The operation
 // is inserted before or after 'operation', depending on `direction` and
 // is nested in 'loop_nest'.
+// TODO(ulysse): use mlir::OpBuilder insertion point instead
 struct InsertionPoint {
   mlir::Operation *operation;
   Direction direction;
@@ -63,6 +64,10 @@ mlir::LogicalResult ResolveUnificationConstraint(
 // `unit` attributes.
 void SetInArrayAttr(mlir::Operation *operation, llvm::StringRef attr_name,
                     int array_size, int element, mlir::Attribute value);
+
+// Materializes `value` as an mlir value.
+mlir::Value Materialize(mlir::Location loc, mlir::OpFoldResult value,
+                        mlir::OpBuilder &builder);
 
 // Creates a domain with the given shape using placeholder dimensions.
 llvm::SmallVector<mlir::Value> CreatePlaceholderDomain(

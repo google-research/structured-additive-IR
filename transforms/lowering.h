@@ -55,6 +55,10 @@ std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateInlineTrivialOpsPass();
 std::unique_ptr<mlir::OperationPass<mlir::FuncOp>>
 CreateMaterializeMemRefsPass();
 
+// Replaces Sair values by buffers as specified by the `storage` attribute.
+std::unique_ptr<mlir::OperationPass<mlir::FuncOp>>
+CreateMaterializeBuffersPass();
+
 // Replaces iteration dimensions by loops in sair.map and sair.map_reduce
 // operations.
 std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateIntroduceLoopsPass();

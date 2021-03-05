@@ -789,9 +789,26 @@ LoopNest LoopFusionAnalysis::GetLoopNest(
   }
   result.domain_to_loops =
       MappingAttr::get(context_, result.domain.size(), iters);
-  result.shape = DomainShapeAttr::get(context_, shape_dims);
+  result.normalized_shape = DomainShapeAttr::get(context_, shape_dims);
 
   return result;
+}
+
+DomainShapeAttr LoopNest::DomainShape() const {
+  llvm::SmallVector<DomainShapeDim> shape_dims;
+  shape_dims.reserve(domain.size());
+  MappingAttr loops_to_domain = domain_to_loops.Inverse();
+  for (const ValueAccess &access : domain) {
+    MappingAttr mapping = loops_to_domain.Resize(shape_dims.size())
+                              .Inverse()
+                              .Compose(access.mapping);
+    shape_dims.emplace_back(access.value.getType().cast<RangeType>(), mapping);
+  }
+  return DomainShapeAttr::get(normalized_shape.getContext(), shape_dims);
+}
+
+DomainShapeAttr LoopNest::Shape() const {
+  return DomainShape().AccessedShape(domain_to_loops);
 }
 
 }  // namespace sair

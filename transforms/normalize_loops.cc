@@ -22,13 +22,6 @@
 namespace sair {
 namespace {
 
-// Materializes `value` as an mlir value.
-mlir::Value Materialize(mlir::Location loc, mlir::OpFoldResult &value,
-                        mlir::OpBuilder &builder) {
-  if (value.is<mlir::Value>()) return value.get<mlir::Value>();
-  return builder.create<ConstantOp>(loc, value.get<mlir::Attribute>());
-}
-
 // Creates a range operation for loop `loop` of `loop_nest`. Appends
 // the dimension to `new_domain`.
 // * `inverse_mapping` is the mapping from loops to `op` domain.
@@ -42,8 +35,9 @@ void CreateRange(SairOp op, const LoopNest &loop_nest, int loop,
   mlir::MLIRContext *context = op.getContext();
 
   // Find the loop nest and domain of the new operation.
-  int range_rank =
-      loop_nest.shape.Dimension(loop).dependency_mapping().MinDomainSize();
+  int range_rank = loop_nest.normalized_shape.Dimension(loop)
+                       .dependency_mapping()
+                       .MinDomainSize();
   auto range_domain = llvm::makeArrayRef(new_domain).take_front(range_rank);
   // TODO(b/175664160): this fails if op is not a ComputeOp and compute ops
   // surrounding op are not nested in loop_nest. We can fix this either
@@ -89,7 +83,8 @@ void CreateRange(SairOp op, const LoopNest &loop_nest, int loop,
         range_parameters.end.get<mlir::Attribute>().cast<mlir::IntegerAttr>();
     insertion_point.Set(builder);
     range = builder.create<SairStaticRangeOp>(
-        op.getLoc(), loop_nest.shape.Dimension(loop).type(), size, step);
+        op.getLoc(), loop_nest.normalized_shape.Dimension(loop).type(), size,
+        step);
   } else {
     llvm::SmallVector<mlir::Value> scalar_results;
     if (!is_beg_zero) {
@@ -102,7 +97,7 @@ void CreateRange(SairOp op, const LoopNest &loop_nest, int loop,
 
     insertion_point.Set(builder);
     DomainShapeAttr range_shape =
-        loop_nest.shape.Dimension(loop).type().Shape();
+        loop_nest.normalized_shape.Dimension(loop).type().Shape();
     llvm::SmallVector<mlir::Type> map_result_types(
         scalar_results.size(),
         ValueType::get(range_shape, builder.getIndexType()));
@@ -130,7 +125,7 @@ void CreateRange(SairOp op, const LoopNest &loop_nest, int loop,
     llvm::SmallVector<mlir::Attribute> range_mappings(scalar_results.size(),
                                                       identity_mapping);
     range = builder.create<SairDynRangeOp>(
-        op.getLoc(), loop_nest.shape.Dimension(loop).type(),
+        op.getLoc(), loop_nest.normalized_shape.Dimension(loop).type(),
         /*domain=*/range_domain,
         /*mapping_array=*/builder.getArrayAttr(range_mappings),
         /*begin=*/is_beg_zero ? nullptr : map_op.getResult(0),
@@ -239,7 +234,7 @@ void NormalizeLoops(SairOp op, const IterationSpace &iteration_space,
   }
 
   MappingAttr mapping = iteration_space.domain_to_loops();
-  DomainShapeAttr new_shape = loop_nest.shape;
+  DomainShapeAttr new_shape = loop_nest.normalized_shape;
   llvm::SmallVector<mlir::Value> new_domain =
       GetDomain(op, iteration_space.loop_names(), loop_nest, normalized_loops,
                 builder, loop_range_cache);
@@ -277,7 +272,7 @@ void NormalizeLoops(SairOp op, const IterationSpace &iteration_space,
   MappingAttr inverse_result_mapping = result_mapping.Inverse();
 
   DomainShapeAttr proj_any_shape =
-      loop_nest.shape.AccessedShape(inverse_result_mapping);
+      loop_nest.normalized_shape.AccessedShape(inverse_result_mapping);
   llvm::SmallVector<mlir::Value> proj_any_domain =
       CreatePlaceholderDomain(op.getLoc(), proj_any_shape, builder);
 

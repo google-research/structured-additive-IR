@@ -15,6 +15,7 @@
 #include "util.h"
 
 #include "llvm/ADT/STLExtras.h"
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
 
@@ -116,6 +117,12 @@ void SetInArrayAttr(mlir::Operation *operation, llvm::StringRef attr_name,
 
   values[element] = value;
   operation->setAttr(attr_name, mlir::ArrayAttr::get(context, values));
+}
+
+mlir::Value Materialize(mlir::Location loc, mlir::OpFoldResult value,
+                        mlir::OpBuilder &builder) {
+  if (value.is<mlir::Value>()) return value.get<mlir::Value>();
+  return builder.create<mlir::ConstantOp>(loc, value.get<mlir::Attribute>());
 }
 
 llvm::SmallVector<mlir::Value> CreatePlaceholderDomain(
