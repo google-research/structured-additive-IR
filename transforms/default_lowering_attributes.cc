@@ -27,6 +27,7 @@
 #include "sair_attributes.h"
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
+#include "storage.h"
 
 namespace sair {
 namespace {
@@ -40,22 +41,70 @@ namespace {
 #define GEN_PASS_CLASSES
 #include "transforms/default_lowering_attributes.h.inc"
 
-// Assigns the default memory space to sair values. The default memory space is
-// `kRegister` for 0D variables and `kMemory` for others.
-class DefaultMemorySpace
-    : public DefaultMemorySpacePassBase<DefaultMemorySpace> {
+// Assigns the default storage to sair values. This uses registers when possible
+// and materializes the minimum amount of dimensions in RAM otherwise. Fails if
+// the sub-domain of dimensions to materialize is a dependend domain.
+class DefaultStorage : public DefaultStoragePassBase<DefaultStorage> {
  public:
   void runOnFunction() override {
-    getFunction().walk([](ValueProducerOp op) {
-      mlir::Operation *operation = op.getOperation();
-      for (int i = 0, e = operation->getNumResults(); i < e; ++i) {
-        if (op.IsMemorySpaceSet(i)) continue;
-        ValueType type = operation->getResult(i).getType().cast<ValueType>();
-        int memory_space = type.Shape().Is0d() ? ValueProducerOp::kRegister
-                                               : ValueProducerOp::kMemory;
-        op.SetMemorySpace(i, memory_space);
+    mlir::MLIRContext *context = &getContext();
+    auto *sair_dialect = context->getLoadedDialect<SairDialect>();
+
+    auto result = getFunction().walk([&](ComputeOp op) -> mlir::WalkResult {
+      auto sair_op = cast<SairOp>(op.getOperation());
+      auto &storage_analysis =
+          getChildAnalysis<StorageAnalysis>(op->getParentOp());
+
+      for (int i = 0, e = op->getNumResults(); i < e; ++i) {
+        if (op.Storage(i) != nullptr) continue;
+        if (!op.loop_nest().hasValue()) {
+          return op.emitError() << "expected a loop-nest attribute";
+        }
+
+        BufferAttr buffer;
+        if (sair_op.shape().Is0d()) {
+          buffer = BufferAttr::get(
+              /*space=*/sair_dialect->register_attr(),
+              /*name=*/nullptr,
+              /*layout=*/NamedMappingAttr::GetIdentity(context, {}), context);
+        } else {
+          auto type = op->getResultTypes()[i].cast<ValueType>();
+          if (type.ElementType().isa<mlir::IndexType>()) {
+            return op.emitError() << "cannot generate default storage for "
+                                     "multi-dimensional index values";
+          }
+          if (!sair_op.shape().IsHyperRectangular()) {
+            return op.emitError() << "cannot generate default storage for "
+                                     "non-rectangular shapes";
+          }
+
+          llvm::SmallVector<mlir::StringAttr> loop_names;
+          llvm::SmallVector<MappingExpr> loop_iters;
+          for (auto attr : op.LoopNestLoops()) {
+            LoopAttr loop = attr.cast<LoopAttr>();
+            loop_names.push_back(loop.name());
+            loop_iters.push_back(loop.iter());
+          }
+
+          // Keep the original operation shape for the storage shape.
+          auto loops_mapping =
+              MappingAttr::get(context, sair_op.domain().size(), loop_iters);
+          auto layout =
+              NamedMappingAttr::get(loop_names, loops_mapping.Inverse());
+
+          buffer = BufferAttr::get(
+              /*space=*/sair_dialect->memory_attr(),
+              /*name=*/storage_analysis.GetFreshBufferName(),
+              /*layout=*/layout, context);
+        }
+        op.SetStorage(i, buffer);
       }
+      return mlir::success();
     });
+
+    if (result.wasInterrupted()) {
+      signalPassFailure();
+    }
   }
 };
 
@@ -103,8 +152,8 @@ mlir::ArrayAttr GetDefaultLoopNest(SairProgramOp program, int num_dimensions,
   return mlir::ArrayAttr::get(context, loop_nest);
 }
 
-std::unique_ptr<mlir::Pass> CreateDefaultMemorySpacePass() {
-  return std::make_unique<DefaultMemorySpace>();
+std::unique_ptr<mlir::Pass> CreateDefaultStoragePass() {
+  return std::make_unique<DefaultStorage>();
 }
 
 std::unique_ptr<mlir::Pass> CreateDefaultLoopNestPass() {
@@ -113,7 +162,7 @@ std::unique_ptr<mlir::Pass> CreateDefaultLoopNestPass() {
 
 void CreateDefaultLoweringAttributesPipeline(mlir::OpPassManager *pm) {
   pm->addPass(CreateDefaultLoopNestPass());
-  pm->addPass(CreateDefaultMemorySpacePass());
+  pm->addPass(CreateDefaultStoragePass());
 }
 
 }  // namespace sair

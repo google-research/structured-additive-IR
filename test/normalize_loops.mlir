@@ -21,7 +21,8 @@ func @identity(%arg0: index, %arg1: f32) {
         {name = "loopA", iter = #sair.mapping_expr<d0>},
         // CHECK: iter = #sair.mapping_expr<d1>, name = "loopB"
         {name = "loopB", iter = #sair.mapping_expr<d1>}
-      ]
+      ],
+      storage = [{space = "register", layout = #sair.named_mapping<[] -> ()>}]
     } : !sair.value<d0:range x d1:range, f32>
     // CHECK: %[[V4:.*]] = sair.proj_last of[d0:%[[D0]], d1:%[[D1]]] %[[V3]](d0, d1)
     %6 = sair.proj_last of[d0:%2, d1:%3] %5(d0, d1)
@@ -87,7 +88,8 @@ func @unstripe(%arg0: f32) {
     // CHECK: %[[V1:.*]] = sair.map_reduce %[[V0]] reduce[d0:%[[D0]]] attributes
     // CHECK: loop_nest = [{iter = #sair.mapping_expr<d0>, name = "loopA"}]
     %3 = sair.map_reduce %2 reduce[d0:%0, d1:%0] attributes {
-      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<unstripe(d0, d1, [4])>}]
+      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<unstripe(d0, d1, [4])>}],
+      storage = [{space = "register", layout = #sair.named_mapping<[] -> ()>}]
     } {
       // CHECK: ^bb0(%[[V2:.*]]: index, %[[V3:.*]]: f32):
       ^bb0(%arg1: index, %arg2: index, %arg3: f32):

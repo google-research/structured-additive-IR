@@ -50,6 +50,7 @@
 #include "sair_dialect.h"
 #include "sair_op_interfaces.h"
 #include "sair_types.h"
+#include "storage.h"
 #include "util.h"
 
 namespace sair {
@@ -1046,7 +1047,7 @@ void SairMapOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,
                       mlir::TypeRange result_types, mlir::ValueRange domain,
                       mlir::ArrayAttr mappings_array, mlir::ValueRange inputs,
                       DomainShapeAttr shape, ArrayAttr loop_nest,
-                      ArrayAttr memory_space) {
+                      ArrayAttr storage) {
   result.addTypes(result_types);
   result.addOperands(domain);
   result.addOperands(inputs);
@@ -1055,8 +1056,8 @@ void SairMapOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,
   if (loop_nest != nullptr) {
     result.addAttribute(ComputeOp::kLoopNestAttrName, loop_nest);
   }
-  if (memory_space != nullptr) {
-    result.addAttribute(ValueProducerOp::kMemorySpaceAttrName, memory_space);
+  if (storage != nullptr) {
+    result.addAttribute(ComputeOp::kStorageAttrName, storage);
   }
 
   auto operand_segment_sizes =
@@ -1196,15 +1197,6 @@ mlir::LogicalResult Verify(SairMapOp op) {
   }
 
   return mlir::success();
-}
-
-// Indicates if the operand at the given index is used to initialize to
-// reduction.
-bool SairMapReduceOp::IsInitOperand(int position) {
-  if (inits().empty()) return false;
-  const int inits_begin = inits().getBeginOperandIndex();
-  const int inits_end = inits_begin + inits().size();
-  return inits_begin <= position && position < inits_end;
 }
 
 llvm::SmallBitVector SairMapReduceOp::DimsDependingOnOperand(int sair_operand) {
@@ -1452,11 +1444,11 @@ void Print(SairProgramOp op, mlir::OpAsmPrinter &printer) {
 
 // Verifies the well-formedness of the given SairProgramOp, in particular that
 // all its non-terminator ops are Sair ops.
-mlir::LogicalResult Verify(SairProgramOp op) {
-  mlir::Block *body = &op.body().front();
+mlir::LogicalResult Verify(SairProgramOp program) {
+  mlir::Block *body = &program.body().front();
   for (mlir::Operation &nested_operation : *body) {
     if (!isa<SairOp>(nested_operation)) {
-      return op.emitOpError("expected only Sair operations in the body")
+      return program.emitOpError("expected only Sair operations in the body")
                  .attachNote(nested_operation.getLoc())
              << "found";
     }
@@ -1464,10 +1456,33 @@ mlir::LogicalResult Verify(SairProgramOp op) {
 
   // Check that the terminator operands are coherent with the results.
   if (body->empty() || !llvm::isa<SairExitOp>(body->back())) {
-    return op.emitError() << "expected a sair.exit terminator";
+    return program.emitError() << "expected a sair.exit terminator";
   }
 
-  return VerifyLoopNests(op);
+  // Verify operands of Sair operands are defined in the same program. This
+  // check is performed here rather that in SairOp as it is needed for other
+  // verifications.
+  mlir::WalkResult result = program.walk([&](SairOp op) -> mlir::WalkResult {
+    for (mlir::Value dimension : op.domain()) {
+      mlir::Operation *defining_op = dimension.getDefiningOp();
+      if (defining_op == nullptr || defining_op->getParentOp() != program) {
+        return op.emitError()
+               << "sair dimensions must be defined in the region they are used";
+      }
+    }
+    for (ValueOperand operand : op.ValueOperands()) {
+      mlir::Operation *defining_op = operand.value().getDefiningOp();
+      if (defining_op == nullptr || defining_op->getParentOp() != program) {
+        return op.emitError()
+               << "sair values must be defined in the region they are used";
+      }
+    }
+    return mlir::success();
+  });
+  if (result.wasInterrupted()) return mlir::failure();
+
+  if (mlir::failed(VerifyLoopNests(program))) return mlir::failure();
+  return VerifyStorages(program);
 }
 
 void SairProgramOp::build(mlir::OpBuilder &builder,
@@ -1671,7 +1686,7 @@ SairOp SairCopyOp::ReCreateWithNewDomain(
 
   auto new_op = builder.create<SairCopyOp>(getLoc(), new_type, new_domains[0],
                                            new_mappings, value(), new_loop_nest,
-                                           memory_spaceAttr());
+                                           storageAttr());
   ForwardAttributes(getOperation(), new_op.getOperation());
   return llvm::cast<SairOp>(new_op.getOperation());
 }
@@ -1739,7 +1754,7 @@ SairOp SairLoadFromMemRefOp::ReCreateWithNewDomain(
       ValueType::get(new_shape, getType().cast<ValueType>().ElementType());
   auto new_op = builder.create<SairLoadFromMemRefOp>(
       getLoc(), return_type, new_domains[0], new_domains[1], new_mappings,
-      memref(), access_mapAttr(), new_loop_nest, memory_spaceAttr());
+      memref(), access_mapAttr(), new_loop_nest, storageAttr());
   ForwardAttributes(getOperation(), new_op.getOperation());
   return llvm::cast<SairOp>(new_op.getOperation());
 }
@@ -1818,7 +1833,7 @@ SairOp SairMapOp::ReCreateWithNewDomain(
   }
   auto new_op = builder.create<SairMapOp>(
       getLoc(), new_return_types, new_domains[0], new_mappings, inputs(),
-      new_shape, new_loop_nest, memory_spaceAttr());
+      new_shape, new_loop_nest, storageAttr());
   ForwardAttributes(getOperation(), new_op.getOperation());
   MoveMapBody(getLoc(), block(), new_op.block(), new_to_old_mapping, builder);
   return llvm::cast<SairOp>(new_op.getOperation());
@@ -1843,7 +1858,7 @@ SairOp SairMapReduceOp::ReCreateWithNewDomain(
   }
   auto new_op = builder.create<SairMapReduceOp>(
       getLoc(), new_return_types, new_domains[0], new_domains[1], new_mappings,
-      inits(), inputs(), new_shape, new_loop_nest, memory_spaceAttr());
+      inits(), inputs(), new_shape, new_loop_nest, storageAttr());
   ForwardAttributes(getOperation(), new_op.getOperation());
   // Create the map body.
   llvm::SmallVector<mlir::Type> block_arg_types(new_shape.NumDimensions(),
@@ -1872,7 +1887,7 @@ SairOp SairProjLastOp::ReCreateWithNewDomain(
                      getType().cast<ValueType>().ElementType());
   auto new_op = builder.create<SairProjLastOp>(
       getLoc(), new_return_type, new_domains[0], new_domains[1], new_mappings,
-      value(), new_shape, memory_spaceAttr());
+      value(), new_shape);
   ForwardAttributes(getOperation(), new_op.getOperation());
   return llvm::cast<SairOp>(new_op.getOperation());
 }
@@ -1888,9 +1903,9 @@ SairOp SairProjAnyOp::ReCreateWithNewDomain(
   auto new_return_type =
       ValueType::get(new_shape.Prefix(new_domains[0].size()),
                      getType().cast<ValueType>().ElementType());
-  auto new_op = builder.create<SairProjAnyOp>(
-      getLoc(), new_return_type, new_domains[0], new_domains[1], new_mappings,
-      value(), new_shape, memory_spaceAttr());
+  auto new_op = builder.create<SairProjAnyOp>(getLoc(), new_return_type,
+                                              new_domains[0], new_domains[1],
+                                              new_mappings, value(), new_shape);
   ForwardAttributes(getOperation(), new_op.getOperation());
   return llvm::cast<SairOp>(new_op.getOperation());
 }
@@ -1905,9 +1920,9 @@ SairOp SairFbyOp::ReCreateWithNewDomain(
       ComposeMappings(new_to_old_mapping, mapping_array());
   auto new_return_type =
       ValueType::get(new_shape, getType().cast<ValueType>().ElementType());
-  auto new_op = builder.create<SairFbyOp>(
-      getLoc(), new_return_type, new_domains[0], new_domains[1], new_mappings,
-      init(), value(), memory_spaceAttr());
+  auto new_op =
+      builder.create<SairFbyOp>(getLoc(), new_return_type, new_domains[0],
+                                new_domains[1], new_mappings, init(), value());
   ForwardAttributes(getOperation(), new_op.getOperation());
   return llvm::cast<SairOp>(new_op.getOperation());
 }
@@ -1933,7 +1948,7 @@ SairOp SairAllocOp::ReCreateWithNewDomain(
   auto new_return_type = ValueType::get(new_shape, MemType());
   auto new_op = builder.create<SairAllocOp>(
       getLoc(), new_return_type, new_domains[0], new_mappings, dynamic_sizes(),
-      new_loop_nest, memory_spaceAttr());
+      new_loop_nest, storageAttr());
   ForwardAttributes(getOperation(), new_op.getOperation());
   return llvm::cast<SairOp>(new_op.getOperation());
 }
@@ -1952,6 +1967,52 @@ SairOp SairFreeOp::ReCreateWithNewDomain(
       getLoc(), new_domains[0], new_mappings, value(), new_loop_nest);
   ForwardAttributes(getOperation(), new_op.getOperation());
   return llvm::cast<SairOp>(new_op.getOperation());
+}
+
+std::optional<ValueStorage> SairFromScalarOp::InferStorage(
+    int result,
+    const llvm::DenseMap<mlir::Value, ValueStorage> &operand_storages) {
+  auto *sair_dialect = getContext()->getLoadedDialect<SairDialect>();
+  return ValueStorage(
+      {.space = sair_dialect->register_attr(), .buffer_name = nullptr});
+}
+
+std::optional<ValueStorage> SairProjLastOp::InferStorage(
+    int result,
+    const llvm::DenseMap<mlir::Value, ValueStorage> &operand_storages) {
+  return operand_storages.lookup(value());
+}
+
+std::optional<ValueStorage> SairProjAnyOp::InferStorage(
+    int result,
+    const llvm::DenseMap<mlir::Value, ValueStorage> &operand_storages) {
+  return operand_storages.lookup(value());
+}
+
+std::optional<ValueStorage> SairFbyOp::InferStorage(
+    int result,
+    const llvm::DenseMap<mlir::Value, ValueStorage> &operand_storages) {
+  auto init_it = operand_storages.find(init());
+
+  // If init depends on result.
+  if (init_it == operand_storages.end()) {
+    return operand_storages.lookup(value());
+  }
+
+  // If value depends on result.
+  auto value_it = operand_storages.find(value());
+  if (value_it == operand_storages.end()) return init_it->second;
+
+  if (value_it->second != init_it->second) return std::nullopt;
+  return value_it->second;
+}
+
+std::optional<ValueStorage> SairFromMemRefOp::InferStorage(
+    int result,
+    const llvm::DenseMap<mlir::Value, ValueStorage> &operand_storages) {
+  auto *sair_dialect = getContext()->getLoadedDialect<SairDialect>();
+  return ValueStorage(
+      {.space = sair_dialect->register_attr(), .buffer_name = nullptr});
 }
 
 }  // namespace sair

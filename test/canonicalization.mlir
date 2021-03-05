@@ -9,7 +9,7 @@ func @deduplicate_map_input(%arg0: f32) {
   sair.program {
     // CHECK: %[[V0:.*]] = sair.from_scalar
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    // CHECK: sair.map %[[V0]] attributes {memory_space = []} {
+    // CHECK: sair.map %[[V0]] attributes {storage = []} {
     sair.map %0, %0 {
       // CHECK: ^bb0(%[[V1:.*]]: f32):
       ^bb0(%arg1: f32, %arg2: f32):

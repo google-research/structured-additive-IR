@@ -69,10 +69,10 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
         op.shape(), init_value.getType().cast<ValueType>().ElementType());
 
     // Use `init_value` as both arguments temporarily, the second argument will
-    // be updated later. Keep memory space undefined for the produced value.
+    // be updated later.
     auto fby = builder.create<SairFbyOp>(loc, fby_type, parallel_domain,
                                          reduction_domain, mapping_attr,
-                                         init_value, init_value, nullptr);
+                                         init_value, init_value);
     fbys.push_back(fby);
     map_operands.push_back(fby.getResult());
   }
@@ -96,7 +96,7 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
   // Keep memory space undefined for the produced value.
   auto map = builder.create<SairMapOp>(loc, result_types, domain, map_mapping,
                                        map_operands, op.shape(),
-                                       op.loop_nestAttr(), nullptr);
+                                       op.loop_nestAttr(), op.storageAttr());
   map.getRegion().takeBody(op.getRegion());
 
   // For each original result of sair.map_reduce, create a sair.proj_last that
@@ -105,17 +105,13 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
     // Close the cycling definition of the sair.fby op.
     fbys[i].Value().set_value(map.getResult(i));
 
-    // Place this result into the same memory space as we need to respect the
-    // previous choice, unlike the temporaries we introduced above.
-    mlir::ArrayAttr memory_space =
-        op.IsMemorySpaceSet(i) ? builder.getI64ArrayAttr(*op.GetMemorySpace(i))
-                               : nullptr;
     auto proj = builder.create<SairProjLastOp>(
         loc, op.getResultTypes()[i], op.parallel_domain(),
         op.reduction_domain(), builder.getArrayAttr(identity_mapping),
-        map.getResult(i), op.shape(), memory_space);
+        map.getResult(i), op.shape());
     op.results()[i].replaceAllUsesWith(proj.result());
   }
+
   op.erase();
 }
 

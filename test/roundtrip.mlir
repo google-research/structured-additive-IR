@@ -607,3 +607,23 @@ func @free_nosize(%arg0: index) {
   }
   return
 }
+
+// CHECK-LABEL: @storage_stripe
+func @storage_stripe(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.static_range 16 : !sair.range
+    %2 = sair.copy[d0:%1] %0 {
+      loop_nest = [
+        {name = "A", iter = #sair.mapping_expr<stripe(d0, 4)>},
+        {name = "B", iter = #sair.mapping_expr<stripe(d0, 1 size 4)>}
+      ],
+      storage = [{
+        name = "B", space = "memory",
+        layout = #sair.named_mapping<[d0:"B"] -> (d0)>
+      }]
+    } : !sair.value<d0:range, f32>
+    sair.exit
+  }
+  return
+}

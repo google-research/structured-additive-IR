@@ -31,7 +31,7 @@ void CreateDefaultLoweringAttributesPipeline(mlir::OpPassManager *pm);
 
 // Returns a pass that sets the memory space of Sair values to its default
 // value. Leaves existing memory space attributes intact.
-std::unique_ptr<mlir::Pass> CreateDefaultMemorySpacePass();
+std::unique_ptr<mlir::Pass> CreateDefaultStoragePass();
 
 // Returns a pass that sets the `loop_nest` attribute of Sair operations to its
 // default value. Leaves the attribute untouched if already present.

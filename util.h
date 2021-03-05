@@ -16,9 +16,12 @@
 #define THIRD_PARTY_SAIR_TRANSFORMS_UTIL_H_
 
 #include "mlir/IR/Builders.h"
-#include "sair_op_interfaces.h"
+#include "sair_attributes.h"
 
 namespace sair {
+
+class ComputeOp;
+class SairOp;
 
 // Position of an operation relative to another.
 enum class Direction { kBefore, kAfter };
@@ -47,21 +50,19 @@ InsertionPoint FindInsertionPoint(
 void ForwardAttributes(mlir::Operation *old_op, mlir::Operation *new_op,
                        llvm::ArrayRef<llvm::StringRef> ignore = {});
 
-// Resolves a unfication constraint for dimension `dimension` of `op`.
-//
-// Adds dimension `dimension` to `target_domain` while making sure that the
-// expression pointing to `dimension` in `target_domain` can be unified with
-// `constraint`. Reports an error if unification fails. `origin` is used to
-// indicate where the error comes from.
-//
-// The target domain is defined with regard to a number of dimensions, called
-// its dependencies. Each value access in `target_domain` specifies how to
-// access a range variable given the current index along dependencies.
-// `target_deps_to_op` is a mapping from dependencies to `op` domain.
+// Extends `target_domain` to contain `dimension` while making sure expression
+// pointing to `dimension` in `target_domain` can be unified with `constraint`.
+// Updates `constraint` with the unified expression and reports an error if
+// unification fails. `origin` is used to indicate where the error comes from.
 mlir::LogicalResult ResolveUnificationConstraint(
-    ComputeOp op, int dimension, llvm::StringRef origin,
-    MappingAttr target_deps_to_op, MappingExpr &constraint,
-    llvm::SmallVectorImpl<ValueAccess> &target_domain);
+    mlir::Location loc, llvm::StringRef origin, const ValueAccess &dimension,
+    MappingExpr &constraint, llvm::SmallVectorImpl<ValueAccess> &target_domain);
+
+// Sets an element in the array attribute of an operation. If the array
+// attribute is missing, creates a new array of the given size filled with
+// `unit` attributes.
+void SetInArrayAttr(mlir::Operation *operation, llvm::StringRef attr_name,
+                    int array_size, int element, mlir::Attribute value);
 
 }  // namespace sair
 

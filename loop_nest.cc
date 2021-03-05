@@ -496,30 +496,8 @@ static mlir::LogicalResult VerifySubDomains(
 }
 
 mlir::LogicalResult VerifyLoopNests(SairProgramOp program) {
-  // Verify operands of Sair operands are defined in the same program. This
-  // check is performed here rather that in SairOp as it is needed for other
-  // verifications.
-  mlir::WalkResult result = program.walk([&](SairOp op) -> mlir::WalkResult {
-    for (mlir::Value dimension : op.domain()) {
-      mlir::Operation *defining_op = dimension.getDefiningOp();
-      if (defining_op == nullptr || defining_op->getParentOp() != program) {
-        return op.emitError()
-               << "sair dimensions must be defined in the region they are used";
-      }
-    }
-    for (ValueOperand operand : op.ValueOperands()) {
-      mlir::Operation *defining_op = operand.value().getDefiningOp();
-      if (defining_op == nullptr || defining_op->getParentOp() != program) {
-        return op.emitError()
-               << "sair values must be defined in the region they are used";
-      }
-    }
-    return mlir::success();
-  });
-  if (result.wasInterrupted()) return mlir::failure();
-
   // Verify loop nests are correct with regard to their operation.
-  result = program.walk([](ComputeOp op) -> mlir::WalkResult {
+  mlir::WalkResult result = program.walk([](ComputeOp op) -> mlir::WalkResult {
     if (!op.loop_nest().hasValue()) return mlir::WalkResult::advance();
     return VerifyLoopNestWellFormed(
         cast<SairOp>(op.getOperation()), op.LoopNestLoops());
@@ -569,7 +547,8 @@ mlir::LogicalResult VerifyLoopNests(SairProgramOp program) {
   return mlir::success();
 }
 
-LoopFusionAnalysis::LoopFusionAnalysis(mlir::Operation *operation) {
+LoopFusionAnalysis::LoopFusionAnalysis(mlir::Operation *operation)
+    : context_(operation->getContext()) {
   SairProgramOp program_op = dyn_cast<SairProgramOp>(operation);
   if (program_op == nullptr) return;
   mlir::LogicalResult status = Init(program_op);
@@ -579,19 +558,17 @@ LoopFusionAnalysis::LoopFusionAnalysis(mlir::Operation *operation) {
 
 std::optional<LoopFusionAnalysis> LoopFusionAnalysis::Create(
     SairProgramOp program_op) {
-  LoopFusionAnalysis analysis;
+  LoopFusionAnalysis analysis(program_op->getContext());
   if (mlir::failed(analysis.Init(program_op))) return std::nullopt;
   return analysis;
 }
 
 mlir::LogicalResult LoopFusionAnalysis::Init(SairProgramOp program_op) {
-  mlir::MLIRContext *context = program_op.getContext();
-
   llvm::SmallVector<ComputeOp> work_list;
   program_op.walk([&](ComputeOp op) {
     auto sair_op = cast<SairOp>(op.getOperation());
     int domain_size = sair_op.domain().size();
-    auto none_expr = MappingNoneExpr::get(context);
+    auto none_expr = MappingNoneExpr::get(context_);
     op_domain_mappings_[op.getOperation()].resize(domain_size, none_expr);
     if (!op.loop_nest().hasValue()) return;
     work_list.push_back(op);
@@ -638,9 +615,9 @@ mlir::LogicalResult LoopFusionAnalysis::Init(SairProgramOp program_op) {
 
     int domain_size = fusion_class.domain.size();
     MappingAttr inverse_loop_nest =
-        MappingAttr::get(context, domain_size, loop_nest).Inverse();
+        MappingAttr::get(context_, domain_size, loop_nest).Inverse();
 
-    auto hr_domain = DomainShapeAttr::HyperRectangular(context, domain_size);
+    auto hr_domain = DomainShapeAttr::HyperRectangular(context_, domain_size);
     DomainShapeDim loop_shape = fusion_class.iter_expr.AccessedShape(
         hr_domain.Dimensions(), inverse_loop_nest);
     if (!loop_shape.dependency_mapping().IsFullySpecified()) {
@@ -720,9 +697,23 @@ mlir::LogicalResult LoopFusionAnalysis::RegisterLoop(
   llvm::SmallBitVector constrained_dims =
       loop.iter().DependencyMask(domain_size);
   for (int dimension : constrained_dims.set_bits()) {
+    // Compute the mapping to access the dimension in from loop indices.
+    MappingAttr old_access_mapping = sair_op.shape()
+                                         .Dimension(dimension)
+                                         .dependency_mapping()
+                                         .ResizeUseDomain(domain_size);
+    MappingAttr new_access_mapping =
+        loops_to_op_domain_mapping.Compose(old_access_mapping);
+    if (!new_access_mapping.IsFullySpecified()) {
+      return op->emitError()
+             << "dimension d" << dimension << " in " << loop_name.str()
+             << " is used before its dependencies";
+    }
+
+    ValueAccess access = {sair_op.domain()[dimension], new_access_mapping};
     if (mlir::failed(ResolveUnificationConstraint(
-            op, dimension, loop_name.str(), loops_to_op_domain_mapping,
-            constraints[dimension], fusion_class.domain))) {
+            op.getLoc(), loop_name.str(), access, constraints[dimension],
+            fusion_class.domain))) {
       return mlir::failure();
     }
   }
@@ -732,6 +723,48 @@ mlir::LogicalResult LoopFusionAnalysis::RegisterLoop(
   assert(fusion_class.iter_expr != nullptr);
 
   return mlir::success();
+}
+
+LoopNest LoopFusionAnalysis::GetLoopNest(
+    llvm::ArrayRef<mlir::Attribute> loops) const {
+  llvm::SmallVector<mlir::StringAttr> loop_names;
+  loop_names.reserve(loops.size());
+  for (mlir::Attribute attr : loops) {
+    auto loop = attr.cast<LoopAttr>();
+    loop_names.push_back(loop.name());
+  }
+  return GetLoopNest(loop_names);
+}
+
+LoopNest LoopFusionAnalysis::GetLoopNest(
+    llvm::ArrayRef<mlir::StringAttr> loop_names) const {
+  LoopNest result;
+  if (!loop_names.empty()) {
+    result.domain = GetClass(loop_names.back()).domain;
+  }
+
+  llvm::SmallVector<MappingExpr> iters;
+  llvm::SmallVector<DomainShapeDim> shape_dims;
+  iters.reserve(loop_names.size());
+  shape_dims.reserve(loop_names.size());
+  for (mlir::StringAttr name : loop_names) {
+    const LoopFusionClass &fusion_class = GetClass(name);
+    iters.push_back(fusion_class.iter_expr);
+
+    // Resulting loop nest dependencies are pointwise dependencies to a prefix
+    // of the loop nest.
+    int num_dependencies = fusion_class.dependencies.size();
+    auto dim_type = RangeType::get(DomainShapeAttr::get(
+        context_, llvm::makeArrayRef(shape_dims).take_front(num_dependencies)));
+    auto dim_mapping =
+        MappingAttr::GetIdentity(context_, num_dependencies, shape_dims.size());
+    shape_dims.emplace_back(dim_type, dim_mapping);
+  }
+  result.domain_to_loops =
+      MappingAttr::get(context_, result.domain.size(), iters);
+  result.loops_shape = DomainShapeAttr::get(context_, shape_dims);
+
+  return result;
 }
 
 }  // namespace sair

@@ -56,6 +56,9 @@ SairDialect::SairDialect(mlir::MLIRContext *context)
 #define GET_OP_LIST
 #include "sair_ops.cc.inc"
       >();
+
+  register_ = mlir::StringAttr::get(context, "register");
+  memory_ = mlir::StringAttr::get(context, "memory");
 }
 
 namespace {

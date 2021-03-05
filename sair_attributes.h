@@ -123,6 +123,9 @@ class MappingAttr
   // depends on.
   llvm::SmallBitVector DependencyMask() const;
 
+  // Minimal use domain size the mapping could have while remaining valid.
+  int MinDomainSize() const;
+
   // Indicates if the mapping accesses a single element of the def
   // domain per element of the use domain, when considering only the first
   // `num_dimensions` of the use domain.
@@ -168,6 +171,10 @@ class NamedMappingAttr
   // Constructs an instance of NamedMappingAttr.
   static NamedMappingAttr get(llvm::ArrayRef<mlir::StringAttr> names,
                               MappingAttr mapping);
+
+  // Constructs an instance of NamedMappingAttr with an identity mapping.
+  static NamedMappingAttr GetIdentity(mlir::MLIRContext *context,
+                                      llvm::ArrayRef<mlir::StringAttr> names);
 
   llvm::ArrayRef<mlir::StringAttr> names() const;
 

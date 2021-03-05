@@ -30,6 +30,7 @@
 #include "sair_attributes.h"
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
+#include "storage.h"
 #include "transforms/default_lowering_attributes.h"
 #include "transforms/lowering_pass_classes.h"
 #include "util.h"
@@ -78,25 +79,22 @@ mlir::Operation *GetLastUse(mlir::Value value) {
 SairCopyOp MaterializeOperand(DomainShapeAttr shape, mlir::OperandRange domain,
                               ValueOperand &operand,
                               const InsertionPoint &insertion_point,
-                              llvm::Optional<int> memory_space,
-                              mlir::OpBuilder &builder) {
+                              BufferAttr buffer, mlir::OpBuilder &builder) {
   mlir::OpBuilder::InsertionGuard insertion_guard(builder);
   insertion_point.Set(builder);
+
+  auto storage_attr =
+      buffer == nullptr ? nullptr : builder.getArrayAttr({buffer});
 
   // Build the copy operation.
   mlir::Type type = ValueType::get(shape, operand.GetType().ElementType());
   auto mappings = builder.getArrayAttr(
       operand.Mapping().ResizeUseDomain(shape.NumDimensions()));
   mlir::Location loc = operand.getOwner()->getLoc();
-  mlir::ArrayAttr memory_space_attr;
-  if (memory_space.hasValue()) {
-    memory_space_attr = builder.getArrayAttr(
-        {builder.getI64IntegerAttr(memory_space.getValue())});
-  }
   SairCopyOp copy_op =
       builder.create<SairCopyOp>(loc, type, domain, mappings, operand.value(),
                                  /*loop_nest=*/insertion_point.loop_nest,
-                                 /*memory_space=*/memory_space_attr);
+                                 /*storage=*/storage_attr);
   // Point the operand to the result of the copy operation.
   operand.set_value(copy_op.result());
   int use_domain_size =
@@ -114,12 +112,18 @@ class InsertCopies : public InsertCopiesPassBase<InsertCopies> {
   // sair.to_memref operations are invertible and that sair.to_memref operations
   // are not using a value produced by a sair.from_memeref operation.
   void runOnFunction() override {
-    mlir::OpBuilder builder(&getContext());
+    mlir::MLIRContext *context = &getContext();
+    mlir::OpBuilder builder(context);
+
+    auto *sair_dialect = context->getLoadedDialect<SairDialect>();
 
     // Insert copies before sair.to_memref if the value is produced by a
     // sair.from_memref operation or if the mapping is not invertible.
-    getFunction().walk([&builder](SairToMemRefOp op) {
+    getFunction().walk([&](SairToMemRefOp op) {
       mlir::Operation *defining_op = op.value().getDefiningOp();
+      auto &storage_analysis =
+          getChildAnalysis<StorageAnalysis>(op->getParentOp());
+
       if (!isa<SairFromMemRefOp>(defining_op) &&
           op.Value().Mapping().Inverse().IsFullySpecified()) {
         return;
@@ -136,8 +140,18 @@ class InsertCopies : public InsertCopiesPassBase<InsertCopies> {
       insertion_point.direction = Direction::kBefore;
       insertion_point.loop_nest =
           GetDefaultLoopNest(program_op, op.shape().NumDimensions());
+      llvm::SmallVector<mlir::StringAttr, 4> loop_names;
+      loop_names.reserve(insertion_point.loop_nest.size());
+      for (auto loop : insertion_point.loop_nest.getValue()) {
+        loop_names.push_back(loop.cast<LoopAttr>().name());
+      }
+      auto buffer = BufferAttr::get(
+          /*space=*/sair_dialect->memory_attr(),
+          /*name=*/storage_analysis.GetFreshBufferName(),
+          /*layout=*/NamedMappingAttr::GetIdentity(context, loop_names),
+          context);
       MaterializeOperand(op.shape(), op.domain(), operand, insertion_point,
-                         ValueProducerOp::kMemory, builder);
+                         buffer, builder);
     });
   }
 };
@@ -309,7 +323,7 @@ class InternMemRefsIntoMap : public mlir::OpConversionPattern<SairMapOp> {
         adaptor.mapping_array(), memrefs.size(), op.domain().size(), ctx);
     return builder.create<SairMapOp>(
         original.getLoc(), op.getResultTypes(), adaptor.domain(), mappings,
-        inputs, op.shape(), op.loop_nestAttr(), op.memory_spaceAttr());
+        inputs, op.shape(), op.loop_nestAttr(), op.storageAttr());
   }
 
  public:
@@ -523,6 +537,9 @@ void CreateMemRefForValue(mlir::Value value, SairMapOp producer,
                           llvm::SmallVectorImpl<mlir::Value> &memref_values,
                           llvm::SmallVectorImpl<mlir::Type> &memref_types,
                           mlir::OpBuilder &builder) {
+  mlir::MLIRContext *context = builder.getContext();
+  auto *sair_dialect = context->getLoadedDialect<SairDialect>();
+
   mlir::OpBuilder::InsertionGuard insertion_guard(builder);
   llvm::SmallVector<int64_t, 4> memref_shape;
   memref_shape.reserve(producer.domain().size());
@@ -545,14 +562,13 @@ void CreateMemRefForValue(mlir::Value value, SairMapOp producer,
   InsertionPoint alloc_insertion_point =
       FindInsertionPoint(0, 0, cast<ComputeOp>(producer.getOperation()));
   alloc_insertion_point.Set(builder);
-  mlir::ArrayAttr memory_space_attr = builder.getArrayAttr(
-      {builder.getI64IntegerAttr(ValueProducerOp::kRegister)});
+  auto buffer = BufferAttr::get(
+      sair_dialect->register_attr(), /*name=*/nullptr,
+      NamedMappingAttr::get({}, MappingAttr::GetIdentity(context, 0)), context);
   SairMapOp alloc_map_op = builder.create<SairMapOp>(
       value.getLoc(), alloc_type, alloc_domain, alloc_mapping_attr,
       alloc_operands, alloc_shape, alloc_insertion_point.loop_nest,
-      memory_space_attr);
-  // The pointer to the memory is stored in registers.
-  alloc_map_op.SetMemorySpace(0, ValueProducerOp::kRegister);
+      builder.getArrayAttr({buffer}));
   builder.setInsertionPointToStart(&alloc_map_op.block());
   mlir::AllocOp alloc_op = builder.create<mlir::AllocOp>(
       value.getLoc(), memref_type, alloc_map_op.block_inputs());
@@ -588,6 +604,8 @@ void CreateMemRefForValue(mlir::Value value, SairMapOp producer,
 // Fails if the domain is not hyper-rectangular or if one of the results cannot
 // be materialized.
 mlir::LogicalResult IntroduceMemRef(SairMapOp op, mlir::OpBuilder &builder) {
+  auto *sair_dialect = builder.getContext()->getLoadedDialect<SairDialect>();
+
   if (op.results().empty()) return mlir::success();
   // TODO(ulysse): handle non-hyperectangular domains.
   // TODO(ulysse): handle the case where some memory spaces are not set
@@ -615,12 +633,13 @@ mlir::LogicalResult IntroduceMemRef(SairMapOp op, mlir::OpBuilder &builder) {
 
   for (int i = 0, e = op.getNumResults(); i < e; ++i) {
     mlir::Value result = op.getResult(i);
-    if (!op.IsMemorySpaceSet(i)) {
+    BufferAttr buffer = op.Storage(i);
+    if (buffer == nullptr) {
       return op.emitError() << "no memory space specified for result " << i;
     }
 
     if (result.use_empty() ||
-        op.GetMemorySpace(i) != ValueProducerOp::kMemory) {
+        op.Storage(i).space() == sair_dialect->register_attr()) {
       continue;
     }
 
@@ -655,8 +674,10 @@ mlir::LogicalResult IntroduceMemRef(SairMapOp op, mlir::OpBuilder &builder) {
     builder.create<mlir::StoreOp>(op.getLoc(), std::get<0>(p), std::get<1>(p),
                                   indices);
   }
+
   new_op.block().getTerminator()->setOperands({});
   op.erase();
+
   return mlir::success();
 }
 
@@ -684,6 +705,7 @@ mlir::LogicalResult IntroduceMemRef(SairFromMemRefOp op,
 // sair.map or sair.map_reduce operations only.
 //
 // Only hyper-rectangular domains are supported for now.
+// TODO(b/174127325): take the storage attribute into account.
 class MaterializeMemRefs
     : public MaterializeMemRefsPassBase<MaterializeMemRefs> {
   void runOnFunction() override {

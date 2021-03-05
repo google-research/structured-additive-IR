@@ -259,7 +259,14 @@ void EmitMemRefToValue(
     Value new_operand = rewriter.create<SairFromMemRefOp>(
         loc, value_type, mlir::ValueRange(), ranges, mappings, from_scalar,
         /*access_map=*/nullptr);
-    map_operands.push_back(new_operand);
+    // Insert a copy to avoid storage specification mismatch.
+    // TODO(b/181850491): introduce a sair.maybe_copy operation instead.
+    auto copy_mapping = rewriter.getArrayAttr(
+        {MappingAttr::GetIdentity(context, ranges.size())});
+    Value copied_operand = rewriter.create<SairCopyOp>(
+        loc, value_type, ranges, copy_mapping, new_operand,
+        /*loop_nest=*/nullptr, /*storage=*/nullptr);
+    map_operands.push_back(copied_operand);
 
     // For in/out operands, store the ranges.
     if (position >= num_inputs) {

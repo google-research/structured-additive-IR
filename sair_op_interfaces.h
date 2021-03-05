@@ -27,6 +27,7 @@
 #include "sair_attributes.h"
 #include "sair_dialect.h"
 #include "sair_types.h"
+#include "util.h"
 
 namespace sair {
 
@@ -110,9 +111,7 @@ class ValueOperandRange
   // Constructs the empty range.
   ValueOperandRange();
 
-  // Constructs a range from the list of !sair.value operands and the
-  // corresponding list of mappings. Both arguments must have the same
-  // size.
+  // Constructs a range from the list of !sair.value operands.
   explicit ValueOperandRange(llvm::MutableArrayRef<mlir::OpOperand> operands);
 
  private:
@@ -153,22 +152,23 @@ class ValueOrConstant {
   std::variant<ValueAccess, mlir::Attribute> variant_;
 };
 
-// Returns the memory space of the given result.
-llvm::Optional<int> GetMemorySpace(int result, mlir::Operation *op);
+// Describes how a value is stored.
+struct ValueStorage {
+  // Memory space the value is stored in. May be null if not yet specified.
+  mlir::StringAttr space;
+  // Name of the buffer where the value is stored, if specified.
+  mlir::StringAttr buffer_name;
 
-// Returns the memory space of a sair value, if set.
-llvm::Optional<int> GetMemorySpace(mlir::Value value);
+  // Returns the value storage for the value when viewed through the given
+  // mapping.
+  ValueStorage Map(MappingAttr map) const { return *this; }
+};
 
-// Sets the memory space of the given result. Expects operation to be a
-// `ValueProducerOp`.
-void SetMemorySpace(int result, llvm::Optional<int> memory_space,
-                    mlir::Operation *op);
+bool operator==(const ValueStorage &lhs, const ValueStorage &rhs);
+bool operator!=(const ValueStorage &lhs, const ValueStorage &rhs);
 
 // Verifies a `SairOp`.
 mlir::LogicalResult VerifySairOp(mlir::Operation *op);
-
-// Verifies a `ValueProducerOp`.
-mlir::LogicalResult VerifyValueProducerOp(mlir::Operation *op);
 
 // Verifies a `ComputeOp`.
 mlir::LogicalResult VerifyComputeOp(mlir::Operation *op);

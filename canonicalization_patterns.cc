@@ -77,7 +77,7 @@ bool SimplifyProjOp(ValueOperand &use, ProjOp op,
   rewriter.setInsertionPoint(op);
   ProjOp new_op = rewriter.create<ProjOp>(
       op.getLoc(), op.getType(), op.parallel_domain(), projection_domain,
-      mapping_array, prev_op.value(), shape, op.memory_spaceAttr());
+      mapping_array, prev_op.value(), shape);
   use.set_value(new_op.result());
 
   return true;
@@ -141,7 +141,7 @@ class DeduplicateMapInputsOutputs : public OpRewritePattern<SairMapOp> {
     llvm::SmallVector<mlir::Value, 4> old_results_to_keep;
     llvm::SmallVector<mlir::Value, 4> new_scalar_results;
     llvm::SmallVector<mlir::Type, 4> new_result_types;
-    llvm::SmallVector<mlir::Attribute, 4> new_memory_spaces;
+    llvm::SmallVector<mlir::Attribute, 4> new_storages;
 
     for (ValueOperand operand : op.ValueOperands()) {
       mlir::Value argument =
@@ -176,7 +176,7 @@ class DeduplicateMapInputsOutputs : public OpRewritePattern<SairMapOp> {
       // Deduplicate results.
       for (int j = 0; j < i; ++j) {
         if (scalar_value != return_op.getOperand(j)) continue;
-        if (op.GetMemorySpace(i) != op.GetMemorySpace(j)) continue;
+        if (op.Storage(i) != op.Storage(j)) continue;
         result.replaceAllUsesWith(op.getResult(j));
         break;
       }
@@ -187,13 +187,9 @@ class DeduplicateMapInputsOutputs : public OpRewritePattern<SairMapOp> {
       old_results_to_keep.push_back(result);
       new_scalar_results.push_back(scalar_value);
       new_result_types.push_back(result.getType());
-      mlir::Attribute memory_space =
-          op.GetMemorySpace(i)
-              .map([&](int value) -> mlir::Attribute {
-                return rewriter.getI32IntegerAttr(value);
-              })
-              .getValueOr(rewriter.getUnitAttr());
-      new_memory_spaces.push_back(memory_space);
+      mlir::Attribute new_storage = op.Storage(i);
+      new_storages.push_back(new_storage == nullptr ? rewriter.getUnitAttr()
+                                                    : new_storage);
     }
 
     // Create the new operation if necessary.
@@ -210,7 +206,7 @@ class DeduplicateMapInputsOutputs : public OpRewritePattern<SairMapOp> {
     SairMapOp new_op = rewriter.create<SairMapOp>(
         op.getLoc(), new_result_types, op.domain(),
         rewriter.getArrayAttr(new_mappings), new_operands, op.shape(),
-        op.loop_nestAttr(), rewriter.getArrayAttr(new_memory_spaces));
+        op.loop_nestAttr(), rewriter.getArrayAttr(new_storages));
     new_op.body().takeBody(op.body());
 
     for (auto p : llvm::zip(old_results_to_keep, new_op.results())) {
@@ -310,7 +306,7 @@ class RemoveUnreferencedDims : public OpRewritePattern<OpTy> {
         op.getType().template cast<ValueType>().AccessedType(partial_mapping),
         parallel_dimensions, projection_dimensions,
         rewriter.getArrayAttr(mapping.Inverse().Compose(op.Value().Mapping())),
-        op.value(), op.shape().AccessedShape(mapping), op.memory_spaceAttr());
+        op.value(), op.shape().AccessedShape(mapping));
     new_op->setDialectAttrs(op->getDialectAttrs());
 
     // Replace the original op.
@@ -356,7 +352,7 @@ class RemoveUnreferencedDims<SairFbyOp> : public OpRewritePattern<SairFbyOp> {
         parallel_dimensions, sequential_dimensions,
         rewriter.getArrayAttr({inverted_mapping.Compose(op.Init().Mapping()),
                                inverted_mapping.Compose(op.Value().Mapping())}),
-        op.init(), op.value(), op.memory_spaceAttr());
+        op.init(), op.value());
     new_op->setDialectAttrs(op->getDialectAttrs());
 
     // Replace the original op.

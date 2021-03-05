@@ -28,6 +28,7 @@
 #include "sair_attributes.h"
 #include "sair_dialect.h"
 #include "sair_ops.h"
+#include "storage.h"
 #include "transforms/lowering_pass_classes.h"
 #include "util.h"
 
@@ -40,7 +41,7 @@ void RewriteCopyToMap(SairCopyOp op, mlir::OpBuilder &builder) {
   mlir::OperandRange inputs = op.getOperands().slice(op.domain().size(), 1);
   SairMapOp new_op = builder.create<SairMapOp>(
       op.getLoc(), op.getType(), op.domain(), op.mapping_array(), inputs,
-      op.shape(), op.loop_nestAttr(), op.memory_spaceAttr());
+      op.shape(), op.loop_nestAttr(), op.storageAttr());
 
   // Set the block of code in the sair.map operation to return its argument
   // unchanged.
@@ -58,8 +59,7 @@ mlir::LogicalResult RewriteAllocToMap(SairAllocOp op,
 
   SairMapOp map_op = builder.create<SairMapOp>(
       op.getLoc(), op.getType(), op.domain(), op.mapping_array(),
-      op.dynamic_sizes(), op.shape(), op.loop_nestAttr(),
-      op.memory_spaceAttr());
+      op.dynamic_sizes(), op.shape(), op.loop_nestAttr(), op.storageAttr());
 
   builder.setInsertionPointToStart(&map_op.block());
   mlir::Value allocated = builder.create<mlir::AllocOp>(
@@ -117,7 +117,7 @@ void MemRefIndices(OpTy source_op, mlir::ValueRange block_indices,
 void RewriteToMap(SairLoadFromMemRefOp op, mlir::OpBuilder &builder) {
   SairMapOp map_op = builder.create<SairMapOp>(
       op.getLoc(), op.result().getType(), op.domain(), op.mapping_array(),
-      op.memref(), op.shape(), op.loop_nestAttr(), op.memory_spaceAttr());
+      op.memref(), op.shape(), op.loop_nestAttr(), op.storageAttr());
   ForwardAttributes(op, map_op, {SairDialect::kAccessMapAttrName});
 
   llvm::SmallVector<mlir::Value, 4> indices;

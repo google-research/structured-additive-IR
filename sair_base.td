@@ -158,6 +158,13 @@ def SairMappingAttr : Attr<IsSairMappingAttr, "mapping"> {
   let returnType = storageType;
 }
 
+def IsSairNamedMappingAttr : CPred<"$_self.isa<NamedMappingAttr>()">;
+
+def SairNamedMappingAttr : Attr<IsSairNamedMappingAttr, "named_mapping"> {
+  let storageType = [{NamedMappingAttr}];
+  let returnType = storageType;
+}
+
 // Tests if an attribute is a DomainShapeAttr.
 def IsSairDomainShapeAttr : CPred<"$_self.isa<DomainShapeAttr>()">;
 
@@ -215,13 +222,16 @@ def SairLoopAttr : SairStructAttr<"LoopAttr", [
 def SairLoopNestAttr
   : OptionalAttr<TypedArrayAttrBase<SairLoopAttr, "array of LoopAttr">>;
 
-// An attribute holding the memory space of operations results.
-def SairMemorySpaceAttr
-  : OptionalAttr<TypedArrayAttrBase<
-      Attr<
-        CPred<"$_self.isa<UnitAttr>() || $_self.isa<IntegerAttr>()">,
-        "memory space">,
-      "array of memory space">>;
+// An attribute that specifies how a value is stored in a buffer.
+def SairBufferAttr : SairStructAttr<"BufferAttr", [
+  StructFieldAttr<"space", StrAttr>,
+  StructFieldAttr<"name", OptionalAttr<StrAttr>>,
+  StructFieldAttr<"layout", SairNamedMappingAttr>,
+]>;
+
+// An attribute that specifies how results of a sair operation are stored in
+// memory.
+def SairStorageAttr : OptionalAttr<ArrayAttr>;
 
 //===----------------------------------------------------------------------===//
 // Sair Types
@@ -373,52 +383,6 @@ class SairOp<string mnemonic,
   let hasCanonicalizer = 1;
 }
 
-def SairValueProducerOp : OpInterface<"ValueProducerOp"> {
-  let description = [{
-    A Sair operation that produces variables of type !sair.value. All operations
-    producing Sair values should implement this interface, and they should only
-    produce Sair values.
-
-    Assumes that the operation has an optional SairMemorySpaceAttr attribute.
-    This attribte is an array of integers that indicates the memory space of
-    each !sair.value variable produced. It containts `UnitAttr` for results
-    whose memory space is not set. Possible values are `kRegister` (`=0`) and
-    `kMemory` (`=1`).
-  }];
-
-  let methods = [
-    InterfaceMethod<
-      "Returns the array assigning a memory space to each result",
-      "Optional<mlir::ArrayAttr>", "memory_space"
-    >,
-    InterfaceMethod<
-      "Indicates if the memory space of the given result is set.",
-      "bool", "IsMemorySpaceSet", (ins "int":$result), [{}],
-      [{return sair::GetMemorySpace(result, this->getOperation()).hasValue();}]
-    >,
-    InterfaceMethod<
-      "Returns the memory space of the given result.",
-      "llvm::Optional<int>", "GetMemorySpace", (ins "int":$result), [{}],
-      [{return sair::GetMemorySpace(result, this->getOperation());}]
-    >,
-    InterfaceMethod<
-      "Sets the memory space of the given result.", "void", "SetMemorySpace",
-      (ins "int":$result, "llvm::Optional<int>":$memory_space), [{}],
-      [{sair::SetMemorySpace(result, memory_space, this->getOperation());}]
-    >,
-  ];
-
-  let verify = [{return sair::VerifyValueProducerOp(op);}];
-
-  // TODO(ulysse): use a machine description instead of fixed memory spaces.
-  let extraClassDeclaration = [{
-    static constexpr int kRegister = 0;
-    static constexpr int kMemory = 1;
-
-    static constexpr llvm::StringRef kMemorySpaceAttrName = "memory_space";
-  }];
-}
-
 def SairComputeOp : OpInterface<"ComputeOp"> {
   let description = [{
     A Sair operation that performs a computation and results in actual code.
@@ -443,16 +407,71 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
       }]
     >,
     InterfaceMethod<
-      "Returns the loops in the loop_nest attribute. Fails if it is missing.",
+      [{Returns the loops in the loop_nest attribute. Returns the empty loop nest
+        if the attribute is missing"}],
       "llvm::ArrayRef<mlir::Attribute>", "LoopNestLoops", (ins), [{}], [{
+        if (!$_op.loop_nest().hasValue()) {
+          return llvm::ArrayRef<mlir::Attribute>();
+        }
         return $_op.loop_nest().getValue().getValue();
+      }]
+    >,
+    InterfaceMethod<
+      "Returns the storage of the values produced by the operation",
+      "Optional<mlir::ArrayAttr>", "storage"
+    >,
+    InterfaceMethod<
+      "Returns the storage of the values produced by the operation",
+      "BufferAttr", "Storage", (ins "int":$result), [{}], [{
+        if (!$_op.storage().hasValue()) return nullptr;
+        mlir::Attribute attr = $_op.storage().getValue().getValue()[result];
+        if (attr.isa<mlir::UnitAttr>()) return nullptr;
+        return attr.template cast<BufferAttr>();
+      }]
+    >,
+    InterfaceMethod<
+      "Sets the storage of the values produced by the operation",
+      "void", "SetStorage", (ins "int":$result, "BufferAttr":$buffer), [{}], [{
+        SetInArrayAttr(
+          $_op, kStorageAttrName, $_op->getNumResults(), result, buffer);
       }]
     >
   ];
 
   let extraClassDeclaration = [{
     static constexpr llvm::StringRef kLoopNestAttrName = "loop_nest";
+    static constexpr llvm::StringRef kStorageAttrName = "storage";
   }];
+}
+
+def SairValueViewOp : OpInterface<"ValueViewOp"> {
+  let description = [{
+    Operations that manipulate Sair values without touching their storage.
+
+    Value-view operations, as opposed to compute operations, are erased at code
+    generation. They produce new Sair values by changing how the storage is
+    accessed, without touching the storage itself.
+
+    The storage of outputs is automatically infered from inputs. If the
+    operation has multiple inputs, they must have compatible storages. This is
+    enforced by the `InferStorage` method.
+  }];
+
+  let methods = [
+    InterfaceMethod < [{
+      Infers how result value at position `result` is stored.
+
+      Expects `operand_storages` to be filled with a value storage analysis
+      result for each of the arguments of the operation. If an analysis result
+      is missing, it means that it depends on the result provided by this
+      operation.
+
+      Returns `std::nullopt` if operand storages are incompatible.}],
+      "std::optional<ValueStorage>", "InferStorage", (ins
+        "int":$result,
+        "const llvm::DenseMap<mlir::Value, ValueStorage>&":$operand_storages
+      )>
+  ];
 }
 
 def SairInferIterationSpaceOp : OpInterface<"InferIterationSpaceOp"> {

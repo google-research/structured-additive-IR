@@ -45,14 +45,27 @@ func @map(%arg0: index) {
     // CHECK: %[[V2:.*]] = sair.dyn_range %[[V0]]
     %2 = sair.dyn_range %0 : !sair.range
 
-    // CHECK: %[[V3:.*]] = sair.map %[[V0]] attributes {memory_space = [0]} {
+    // CHECK: %[[V3:.*]] = sair.map %[[V0]] attributes {
+    // CHECK:   storage = [{layout = #sair.named_mapping<[] -> ()>, space = "register"}]
+    // CHECK: } {
     // CHECK: ^{{.*}}(%[[ARG1:.*]]: index):
     // CHECK: %[[V4:.*]] = alloc(%[[ARG1]]) : memref<8x?xf32>
     // CHECK: sair.return %[[V4]] : memref<8x?xf32>
     // CHECK: } : #sair.shape<()>, (index) -> memref<8x?xf32>
 
-    // CHECK: sair.map[d0:%[[V1]], d1:%[[V2]]] %[[V3]] attributes {memory_space = []} {
-    %3 = sair.map[d0:%1, d1:%2] attributes {memory_space=[1]} {
+    // CHECK: sair.map[d0:%[[V1]], d1:%[[V2]]] %[[V3]] attributes {
+    // CHECK:   storage = []
+    // CHECK: } {
+    %3 = sair.map[d0:%1, d1:%2] attributes {
+      loop_nest = [
+        {name = "loopA", iter = #sair.mapping_expr<d0>},
+        {name = "loopB", iter = #sair.mapping_expr<d1>}
+      ],
+      storage = [{
+        space = "memory", name = "A",
+        layout = #sair.named_mapping<[d0:"loopA", d1:"loopB"] -> (d0, d1)>
+      }]
+    } {
       // CHECK: ^{{.*}}(%[[ARG2:.*]]: index, %[[ARG3:.*]]: index,
       // CHECK-SAME: %[[ARG4:.*]]: memref<8x?xf32>):
       ^bb0(%arg1: index, %arg2: index):
@@ -73,7 +86,9 @@ func @map(%arg0: index) {
     // CHECK: } : #sair.shape<d0:range x d1:range>, (memref<8x?xf32>) -> ()
     } : #sair.shape<d0:range x d1:range>, (f32) -> ()
 
-    // CHECK: sair.map %[[V3]] attributes {memory_space = []} {
+    // CHECK: sair.map %[[V3]] attributes {
+    // CHECK:   storage = []
+    // CHECK: } {
     // CHECK: ^{{.*}}(%[[ARG5:.*]]: memref<8x?xf32>):
     // CHECK: dealloc %[[ARG5]]
     // CHECK: sair.return
@@ -108,7 +123,10 @@ func @loop_nest(%arg0: f32) {
     // CHECK: loop_nest = [{iter = #sair.mapping_expr<d0>, name = "B"}]
     %2 = sair.map[d0:%1] attributes {
       loop_nest = [{name = "B", iter = #sair.mapping_expr<d0>}],
-      memory_space = [1]
+      storage = [{
+        space = "memory", name = "bufferA",
+        layout = #sair.named_mapping<[d0:"B"] -> (d0)>
+      }]
     } {
       ^bb0(%arg1: index):
         %c0 = constant 1.0 : f32

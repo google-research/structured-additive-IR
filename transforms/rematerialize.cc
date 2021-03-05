@@ -98,7 +98,7 @@ SairCopyOp RecreateOp(SairCopyOp op, mlir::TypeRange result_types,
       MappingsExtendUseDomain(op.mapping_array(), extra_domain.size());
   return builder.create<SairCopyOp>(op.getLoc(), result_types[0], domain,
                                     mappings, op.value(), loop_nest_attr,
-                                    op.memory_spaceAttr());
+                                    op.storageAttr());
 }
 
 // Creates a new sair.map operation that is intended to replace `op`. Takes the
@@ -113,9 +113,9 @@ SairMapOp RecreateOp(SairMapOp op, mlir::TypeRange result_types,
   llvm::append_range(domain, extra_domain);
   mlir::ArrayAttr mappings =
       MappingsExtendUseDomain(op.mapping_array(), extra_domain.size());
-  auto new_op = builder.create<SairMapOp>(
-      op.getLoc(), result_types, domain, mappings, op.inputs(), domain_shape,
-      loop_nest_attr, op.memory_spaceAttr());
+  auto new_op = builder.create<SairMapOp>(op.getLoc(), result_types, domain,
+                                          mappings, op.inputs(), domain_shape,
+                                          loop_nest_attr, op.storageAttr());
 
   return TakeBodyAdjustArguments(new_op, op, op.domain().size(),
                                  extra_domain.size(), builder.getIndexType());
@@ -139,7 +139,7 @@ SairMapReduceOp RecreateOp(SairMapReduceOp op, mlir::TypeRange result_types,
   auto new_op = builder.create<SairMapReduceOp>(
       op.getLoc(), result_types, parallel_domain, op.reduction_domain(),
       mapping_attr, op.inits(), op.inputs(), domain_shape, loop_nest_attr,
-      op.memory_spaceAttr());
+      op.storageAttr());
 
   return TakeBodyAdjustArguments(new_op, op, op.parallel_domain().size(),
                                  extra_domain.size(), builder.getIndexType());
@@ -291,7 +291,6 @@ mlir::LogicalResult Rematerialize(ComputeOp op,
   if (!new_operation) return mlir::failure();
 
   // Project out the rematerialized dimensions from all results.
-  auto value_producer = cast<ValueProducerOp>(orig_operation);
   for (unsigned i = 0, e = new_types.size(); i < e; ++i) {
     mlir::Value orig_result = orig_operation->getResult(i);
     mlir::Value remat_result = new_operation->getResult(i);
@@ -305,10 +304,7 @@ mlir::LogicalResult Rematerialize(ComputeOp op,
 
     auto proj_op = builder.create<SairProjAnyOp>(
         op.getLoc(), orig_result.getType(), parallel_domain, extra_domain,
-        mapping, remat_result, shape, /*memory_space=*/nullptr);
-    if (llvm::Optional<int> memory_space = value_producer.GetMemorySpace(i)) {
-      proj_op.SetMemorySpace(i, memory_space);
-    }
+        mapping, remat_result, shape);
     orig_result.replaceAllUsesWith(proj_op.getResult());
   }
 

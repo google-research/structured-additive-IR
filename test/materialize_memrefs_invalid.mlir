@@ -43,7 +43,15 @@ func @invalid_consumer() {
   sair.program {
     %0 = sair.static_range 8 : !sair.range
     // expected-note @+1 {{while trying to materialize a value produced here}}
-    %1 = sair.map[d0:%0] attributes {memory_space=[1]} {
+    %1 = sair.map[d0:%0] attributes {
+      loop_nest = [
+        {name = "loopA", iter = #sair.mapping_expr<d0>}
+      ],
+      storage = [{
+        name = "bufferA", space = "memory",
+        layout = #sair.named_mapping<[d0:"loopA"] -> (d0)>
+      }]
+    } {
       ^bb0(%arg0: index):
         %2 = constant 1.0 : f32
         sair.return %2 : f32

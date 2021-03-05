@@ -109,7 +109,6 @@ def SairStaticRangeOp : SairOp<"static_range", [NoSideEffect, SairRangeOp]> {
 def SairCopyOp : SairOp<"copy", [
     NoSideEffect,
     SairComputeOp,
-    SairValueProducerOp,
     SairSameElementType<"value", "result">]> {
   let summary = "Creates a copy of a Sair value in a new iteration domain";
 
@@ -133,7 +132,7 @@ def SairCopyOp : SairOp<"copy", [
     SairMappingArrayAttr:$mapping_array,
     SairValue:$value,
     SairLoopNestAttr:$loop_nest,
-    SairMemorySpaceAttr:$memory_space
+    SairStorageAttr:$storage
   );
 
   let results = (outs SairValue:$result);
@@ -149,8 +148,9 @@ def SairCopyOp : SairOp<"copy", [
 }
 
 def SairFromScalarOp : SairOp<"from_scalar", [
-    NoSideEffect,
-    SairValueProducerOp]> {
+      NoSideEffect,
+      DeclareOpInterfaceMethods<SairValueViewOp>
+    ]> {
   let description = [{Converts an SSA value into a 0-dimensional Sair value.}];
 
   let arguments = (ins AnyType:$value);
@@ -169,20 +169,12 @@ def SairFromScalarOp : SairOp<"from_scalar", [
   ];
 
   DerivedAttr shape = SairEmptyDomainShapeAttr;
-
-  // The memory space is set to kRegister.
-  DerivedAttr memory_space = DerivedAttr<"llvm::Optional<ArrayAttr>", [{
-    mlir::Builder builder(getContext());
-    return builder.getArrayAttr(
-      {builder.getI64IntegerAttr(ValueProducerOp::kRegister)});
-  }], [{$_self.getValueOr(nullptr)}]>;
 }
 
 class SairFromMemRefOpBase<string mnemonic,
                            list<OpTrait> extraTraits = [],
                            dag extraArgs = (ins)> : SairOp<mnemonic,
-   !listconcat([AttrSizedOperandSegments,
-                SairValueProducerOp], extraTraits)> {
+   !listconcat([AttrSizedOperandSegments], extraTraits)> {
   let arguments = !con((ins
     Variadic<SairRange>:$parallel_domain,
     Variadic<SairRange>:$memref_domain,
@@ -231,8 +223,10 @@ class SairFromMemRefOpBase<string mnemonic,
   DerivedAttr shape = SairResultDomainShapeAttr;
 }
 
-def SairFromMemRefOp : SairFromMemRefOpBase<"from_memref",
-    [NoSideEffect, SairInferIterationSpaceOp]> {
+def SairFromMemRefOp : SairFromMemRefOpBase<"from_memref", [
+    DeclareOpInterfaceMethods<SairValueViewOp>,
+    NoSideEffect,
+    SairInferIterationSpaceOp]> {
   let summary = "Interprets a memref as a Sair value";
 
   let description = [{
@@ -264,19 +258,12 @@ def SairFromMemRefOp : SairFromMemRefOpBase<"from_memref",
   let extraClassDeclaration = !strconcat([{
     int infer_iteration_space_operand() { return 0; }
   }], commonClassDeclaration);
-
-  // The memory space is set to kMemory.
-  DerivedAttr memory_space = DerivedAttr<"llvm::Optional<ArrayAttr>", [{
-    mlir::Builder builder(getContext());
-    return builder.getArrayAttr(
-      {builder.getI64IntegerAttr(ValueProducerOp::kMemory)});
-  }], [{$_self.getValueOr(nullptr)}]>;
 }
 
 def SairLoadFromMemRefOp : SairFromMemRefOpBase<"load_from_memref",
     [SairComputeOp],
     (ins SairLoopNestAttr:$loop_nest,
-         SairMemorySpaceAttr:$memory_space)> {
+         SairStorageAttr:$storage)> {
   let summary = "Loads data from a memref to a Sair value";
 
   let description = [{
@@ -416,6 +403,12 @@ def SairStoreToMemRefOp : SairToMemRefOpBase<"store_to_memref",
       return mlir::failure();
     }
   }], commonVerifier);
+
+  let extraClassDeclaration = !strconcat(commonClassDeclaration, [{
+    llvm::Optional<mlir::ArrayAttr> storage() {
+      return mlir::ArrayAttr::get(getContext(), {});
+    }
+  }]);
 }
 
 def SairReturnOp : Op<SairDialect, "return", [Terminator]> {
@@ -438,7 +431,6 @@ def SairReturnOp : Op<SairDialect, "return", [Terminator]> {
 def SairMapOp : SairOp<"map", [
     AttrSizedOperandSegments,
     SairComputeOp,
-    SairValueProducerOp,
     IsolatedFromAbove]> {
   let summary = "Applies the computation across the given domain";
 
@@ -469,7 +461,7 @@ def SairMapOp : SairOp<"map", [
     Variadic<SairValue>:$inputs,
     SairDomainShapeAttr:$shape,
     SairLoopNestAttr:$loop_nest,
-    SairMemorySpaceAttr:$memory_space
+    SairStorageAttr:$storage
   );
 
   let results = (outs Variadic<SairValue>:$results);
@@ -483,7 +475,7 @@ def SairMapOp : SairOp<"map", [
       "mlir::ValueRange":$domain, "mlir::ArrayAttr":$mappings_array,
       "mlir::ValueRange":$inputs, "DomainShapeAttr":$shape,
       CArg<"/*optional*/ ArrayAttr", "nullptr">:$loop_nest,
-      CArg<"/*optional*/ ArrayAttr", "nullptr">:$memory_space)>
+      CArg<"/*optional*/ ArrayAttr", "nullptr">:$storage)>
   ];
 
   let extraClassDeclaration = [{
@@ -503,7 +495,6 @@ def SairMapOp : SairOp<"map", [
 def SairMapReduceOp : SairOp<"map_reduce", [
     AttrSizedOperandSegments,
     SairComputeOp,
-    SairValueProducerOp,
     IsolatedFromAbove]> {
   let summary = "Applies the computation to the domain and reduces the results";
 
@@ -545,7 +536,7 @@ def SairMapReduceOp : SairOp<"map_reduce", [
     Variadic<SairValue>:$inputs,
     SairDomainShapeAttr:$shape,
     SairLoopNestAttr:$loop_nest,
-    SairMemorySpaceAttr:$memory_space
+    SairStorageAttr:$storage
   );
 
   let results = (outs Variadic<SairValue>:$results);
@@ -558,9 +549,9 @@ def SairMapReduceOp : SairOp<"map_reduce", [
       return ChainOperandRanges(parallel_domain(), reduction_domain());
     }
 
-    // Indicates if the operand at the given position is used to initialize the
-    // reduction.
-    bool IsInitOperand(int position);
+    ValueOperandRange Inits() {
+      return ValueOperands().take_front(inits().size());
+    }
 
     llvm::SmallBitVector DimsDependingOnOperand(int sair_operand);
 
@@ -576,17 +567,16 @@ def SairMapReduceOp : SairOp<"map_reduce", [
 
 class SairProjectionOp<string name> : SairOp<name, [
     AttrSizedOperandSegments,
+    DeclareOpInterfaceMethods<SairValueViewOp>,
     NoSideEffect,
     SairInferIterationSpaceOp,
-    SairSameElementType<"value", "result">,
-    SairValueProducerOp]> {
+    SairSameElementType<"value", "result">]> {
   let arguments = (ins
     Variadic<SairRange>:$parallel_domain,
     Variadic<SairRange>:$projection_domain,
     SairMappingArrayAttr:$mapping_array,
     SairValue:$value,
-    SairDomainShapeAttr:$shape,
-    SairMemorySpaceAttr:$memory_space
+    SairDomainShapeAttr:$shape
   );
 
   let results = (outs SairValue:$result);
@@ -647,11 +637,11 @@ def SairProjLastOp : SairProjectionOp<"proj_last"> {
 
 def SairFbyOp : SairOp<"fby", [
     AttrSizedOperandSegments,
+    DeclareOpInterfaceMethods<SairValueViewOp>,
     NoSideEffect,
     SairInferIterationSpaceOp,
     SairSameElementType<"value", "init">,
-    SairSameElementType<"value", "result">,
-    SairValueProducerOp]> {
+    SairSameElementType<"value", "result">]> {
   let summary = "Creates a loop-carried variable.";
 
   let description = [{
@@ -671,8 +661,7 @@ def SairFbyOp : SairOp<"fby", [
     Variadic<SairRange>:$sequential_domain,
     SairMappingArrayAttr:$mapping_array,
     SairValue:$init,
-    SairValue:$value,
-    SairMemorySpaceAttr:$memory_space
+    SairValue:$value
   );
 
   let results = (outs SairValue:$result);
@@ -816,8 +805,7 @@ def SairUndefOp : Op<SairDialect, "undef", [NoSideEffect]> {
 
 def SairAllocOp : SairOp<"alloc", [
     AttrSizedOperandSegments,
-    SairComputeOp,
-    SairValueProducerOp]> {
+    SairComputeOp]> {
   let summary = "Creates a Sair value containing allocated memrefs.";
 
   let description = [{
@@ -839,7 +827,7 @@ def SairAllocOp : SairOp<"alloc", [
     SairMappingArrayAttr:$mapping_array,
     Variadic<SairValueOf<Index>>:$dynamic_sizes,
     SairLoopNestAttr:$loop_nest,
-    SairMemorySpaceAttr:$memory_space
+    SairStorageAttr:$storage
   );
 
   let results = (outs SairValueOf<AnyMemRef>:$result);
@@ -882,6 +870,10 @@ def SairFreeOp : SairOp<"free", [
 
   let extraClassDeclaration = [{
     ValueOperand Value() { return ValueOperands()[0]; }
+
+    llvm::Optional<mlir::ArrayAttr> storage() {
+      return mlir::ArrayAttr::get(getContext(), {});
+    }
   }];
 }
 

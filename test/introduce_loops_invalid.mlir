@@ -96,7 +96,8 @@ func @proj_of_fby(%arg0: f32) {
     %1 = sair.static_range 8 : !sair.range
     %2 = sair.fby %0 then[d0:%1] %3(d0) : !sair.value<d0:range, f32>
     %3 = sair.map[d0:%1] %2(d0) attributes {
-      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
+      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
+      storage = [{space = "register", layout = #sair.named_mapping<[] -> ()>}]
     } {
       ^bb0(%arg1: index, %arg2: f32):
         sair.return %arg2 : f32
@@ -115,11 +116,13 @@ func @foo() { return }
 func @size_not_in_register(%arg0: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
-    // expected-error @+1 {{range bounds must be stored in registers}}
-    %1 = sair.map %0 attributes { loop_nest = [] } {
+    %1 = sair.map %0 attributes {
+      loop_nest = []
+    } {
       ^bb0(%arg1: index):
         sair.return %arg1 : index
     } : #sair.shape<()>, (index) -> (index)
+    // expected-error @+1 {{range bounds must be stored in registers}}
     %2 = sair.dyn_range %1 : !sair.range
     sair.map[d0:%2] attributes {
       loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]

@@ -914,6 +914,14 @@ MappingAttr MappingAttr::Canonicalize() const {
   return MappingAttr::get(getContext(), UseDomainSize(), exprs);
 }
 
+int MappingAttr::MinDomainSize() const {
+  int min = 0;
+  for (MappingExpr expr : Dimensions()) {
+    min = std::max(min, expr.MinDomainSize());
+  }
+  return min;
+}
+
 //===----------------------------------------------------------------------===//
 // NamedMappingAttr
 //===----------------------------------------------------------------------===//
@@ -959,6 +967,12 @@ class impl::NamedMappingAttrStorage : public mlir::AttributeStorage {
 NamedMappingAttr NamedMappingAttr::get(llvm::ArrayRef<mlir::StringAttr> names,
                                        MappingAttr mapping) {
   return Base::get(mapping.getContext(), names, mapping);
+}
+
+NamedMappingAttr NamedMappingAttr::GetIdentity(
+    mlir::MLIRContext *context, llvm::ArrayRef<mlir::StringAttr> names) {
+  auto mapping = MappingAttr::GetIdentity(context, names.size());
+  return NamedMappingAttr::get(names, mapping);
 }
 
 llvm::ArrayRef<mlir::StringAttr> NamedMappingAttr::names() const {

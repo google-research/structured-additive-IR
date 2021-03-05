@@ -52,10 +52,7 @@ func @do_nothing() {
   sair.program {
     %1 = sair.static_range 8 : !sair.range
     %2 = sair.from_scalar %0 : !sair.value<(), f32>
-    %3 = sair.map_reduce %2 reduce[d0:%1] {
-      ^bb0(%arg0: index, %arg1: f32):
-        sair.return %arg1 : f32
-    } : #sair.shape<d0:range>, () -> f32
+    %3 = sair.copy %2 : !sair.value<(), f32>
     // The "map" should not be removed unless we can find the scalar value used
     // to construct its operand, which is not available in this case.
     // CHECK: sair.map

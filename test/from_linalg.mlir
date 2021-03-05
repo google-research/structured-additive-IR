@@ -14,8 +14,9 @@ func @pointwise(%arg0: memref<1x2x3xf32>, %arg1: memref<2x3x1xf32>) {
   // CHECK: %[[s0:.*]] = sair.static_range 1 : !sair.range
   // CHECK: %[[s1:.*]] = sair.static_range 2 : !sair.range
   // CHECK: %[[s2:.*]] = sair.static_range 3 : !sair.range
-  // CHECK: %[[v0:.*]] = sair.from_memref %{{.*}} memref[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]]
+  // CHECK: %[[v0_:.*]] = sair.from_memref %{{.*}} memref[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]]
   // CHECK: : #sair.shape<d0:range x d1:range x d2:range>, memref<1x2x3xf32>
+  // CHECK: %[[v0:.*]] = sair.copy[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]] %[[v0_]](d0, d1, d2)
   // GENERIC: %[[s0:.*]] = "sair.static_range"() {size = 1 : index, step = 1 : index}
   // GENERIC: %[[s1:.*]] = "sair.static_range"() {size = 2 : index, step = 1 : index}
   // GENERIC: %[[s2:.*]] = "sair.static_range"() {size = 3 : index, step = 1 : index}
@@ -24,8 +25,9 @@ func @pointwise(%arg0: memref<1x2x3xf32>, %arg1: memref<2x3x1xf32>) {
   // CHECK: %[[s0:.*]] = sair.static_range 2 : !sair.range
   // CHECK: %[[s1:.*]] = sair.static_range 3 : !sair.range
   // CHECK: %[[s2:.*]] = sair.static_range 1 : !sair.range
-  // CHECK: %[[v1:.*]] = sair.from_memref %{{.*}} memref[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]]
+  // CHECK: %[[v1_:.*]] = sair.from_memref %{{.*}} memref[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]]
   // CHECK: : #sair.shape<d0:range x d1:range x d2:range>, memref<2x3x1xf32>
+  // CHECK: %[[v1:.*]] = sair.copy[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]] %[[v1_]](d0, d1, d2)
 
   // CHECK: %[[d0:.*]] = sair.static_range 1 : !sair.range
   // CHECK: %[[d1:.*]] = sair.static_range 3 : !sair.range
@@ -64,16 +66,18 @@ func @dynamic(%arg0: memref<?x2x?xf32>, %arg1: memref<?x3x?xf32>) {
   // CHECK: %[[s1:.*]] = sair.static_range 2
   // CHECK: %[[DIM0_2_VAL:.*]] = sair.from_scalar %[[DIM0_2]] : !sair.value<(), index>
   // CHECK: %[[s2:.*]] = sair.dyn_range %[[DIM0_2_VAL]]
-  // CHECK: %[[v0:.*]] = sair.from_memref %{{.*}} memref[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]]
+  // CHECK: %[[v0_:.*]] = sair.from_memref %{{.*}} memref[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]]
   // CHECK:   : #sair.shape<d0:range x d1:range x d2:range>, memref<?x2x?xf32>
+  // CHECK: %[[v0:.*]] = sair.copy[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]] %[[v0_]](d0, d1, d2)
 
   // CHECK: %[[DIM1_0_VAL:.*]] = sair.from_scalar %[[DIM1_0]] : !sair.value<(), index>
   // CHECK: %[[s0:.*]] = sair.dyn_range %[[DIM1_0_VAL]]
   // CHECK: %[[s1:.*]] = sair.static_range 3
   // CHECK: %[[DIM1_2_VAL:.*]] = sair.from_scalar %[[DIM1_2]] : !sair.value<(), index>
   // CHECK: %[[s2:.*]] = sair.dyn_range %[[DIM1_2_VAL]]
-  // CHECK: %[[v1:.*]] = sair.from_memref %{{.*}} memref[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]]
+  // CHECK: %[[v1_:.*]] = sair.from_memref %{{.*}} memref[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]]
   // CHECK:   : #sair.shape<d0:range x d1:range x d2:range>, memref<?x3x?xf32>
+  // CHECK: %[[v1:.*]] = sair.copy[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]] %[[v1_]](d0, d1, d2)
 
   // CHECK: %[[DIM2_0_VAL:.*]] = sair.from_scalar %[[DIM2_0]] : !sair.value<(), index>
   // CHECK: %[[d0:.*]] = sair.dyn_range %[[DIM2_0_VAL]]
@@ -111,12 +115,14 @@ func @reductions(%arg0: memref<2x3x4x5x6xf32>, %arg1: memref<2x4x6xf32>) {
   // CHECK: %[[s2:.*]] = sair.static_range 4 : !sair.range
   // CHECK: %[[s3:.*]] = sair.static_range 5 : !sair.range
   // CHECK: %[[s4:.*]] = sair.static_range 6 : !sair.range
-  // CHECK: %[[INPUT:.*]] = sair.from_memref %{{.}} memref[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]], d3:%[[s3]], d4:%[[s4]]]
+  // CHECK: %[[INPUT_:.*]] = sair.from_memref %{{.}} memref[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]], d3:%[[s3]], d4:%[[s4]]]
+  // CHECK: %[[INPUT:.*]] = sair.copy[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]], d3:%[[s3]], d4:%[[s4]]]  %[[INPUT_]](d0, d1, d2, d3, d4)
 
   // CHECK: %[[r0:.*]] = sair.static_range 2 : !sair.range
   // CHECK: %[[r1:.*]] = sair.static_range 4 : !sair.range
   // CHECK: %[[r2:.*]] = sair.static_range 6 : !sair.range
-  // CHECK: %[[INIT:.*]] = sair.from_memref %{{.*}} memref[d0:%[[r0]], d1:%[[r1]], d2:%[[r2]]]
+  // CHECK: %[[INIT_:.*]] = sair.from_memref %{{.*}} memref[d0:%[[r0]], d1:%[[r1]], d2:%[[r2]]]
+  // CHECK: %[[INIT:.*]] = sair.copy[d0:%[[r0]], d1:%[[r1]], d2:%[[r2]]] %[[INIT_]](d0, d1, d2)
 
   // CHECK: %[[d0:.*]] = sair.static_range 2 : !sair.range
   // CHECK: %[[d1:.*]] = sair.static_range 4 : !sair.range

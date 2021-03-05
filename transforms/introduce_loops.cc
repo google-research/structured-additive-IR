@@ -39,6 +39,7 @@
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
 #include "sair_types.h"
+#include "storage.h"
 #include "transforms/lowering_pass_classes.h"
 
 namespace sair {
@@ -359,8 +360,7 @@ void EraseDimension(SairProjLastOp op, int dimension, mlir::Value new_value,
       /*projection_domain=*/EraseValue(op.projection_domain(), dim_pos),
       /*mapping_array*/ driver.getArrayAttr({mapping}),
       /*value=*/new_value,
-      /*shape=*/EraseDimension(op.shape(), dimension),
-      /*memory_space=*/op.memory_spaceAttr());
+      /*shape=*/EraseDimension(op.shape(), dimension));
 }
 
 // Erases a sequential dimension from a sair.fby operation and replaces
@@ -384,8 +384,7 @@ void EraseDimension(SairFbyOp op, int dimension, mlir::Value new_value,
       /*sequential_domain=*/EraseValue(op.sequential_domain(), dim_pos),
       /*mapping_array*/
       driver.getArrayAttr({op.Init().Mapping(), mapping}),
-      /*init=*/op.init(), /*value=*/new_value,
-      /*memory_space=*/op.memory_spaceAttr());
+      /*init=*/op.init(), /*value=*/new_value);
 }
 
 // Creates a for operation of size `size` at the current insertion point of
@@ -488,7 +487,11 @@ mlir::LogicalResult UpdateLoopUser(SairMapOp old_op, SairMapOp new_op,
 }
 
 // Replaces the innermost dimension of the domain by a loop.
-mlir::LogicalResult IntroduceLoop(SairMapOp op, Driver &driver) {
+mlir::LogicalResult IntroduceLoop(SairMapOp op,
+                                  const StorageAnalysis &storage_analysis,
+                                  Driver &driver) {
+  auto *sair_dialect = op.getContext()->getLoadedDialect<SairDialect>();
+
   llvm::ArrayRef<mlir::Attribute> loop_nest = op.LoopNestLoops();
   LoopAttr loop = loop_nest.back().cast<LoopAttr>();
 
@@ -514,16 +517,11 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op, Driver &driver) {
       return driver.create<ConstantOp>(op.getLoc(), bound.constant());
     }
     // Check that the value is stored in registers.
-    ValueProducerOp defining_op =
-        cast<ValueProducerOp>(bound.value().value.getDefiningOp());
-    int pos = 0;
-    while (defining_op->getResult(pos) != bound.value().value) {
-      ++pos;
-    }
-    if (defining_op.GetMemorySpace(pos) != ValueProducerOp::kRegister) {
+    if (storage_analysis.GetStorage(bound.value().value).space !=
+        sair_dialect->register_attr()) {
       // TODO(b/174127497): ensure that value stored in registers are produced
       // in the same loop nest.
-      defining_op->emitError() << "range bounds must be stored in registers";
+      range.emitError() << "range bounds must be stored in registers";
       return nullptr;
     }
 
@@ -550,7 +548,7 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op, Driver &driver) {
       /*inputs=*/inputs,
       /*shape=*/EraseDimension(op.shape(), dimension),
       /*loop_nest=*/new_loop_nest,
-      /*memory_space=*/op.memory_spaceAttr());
+      /*memory_space=*/op.storageAttr());
   new_op.body().takeBody(op.body());
 
   // Position of the sair.map in the results of the scf.for operation.
@@ -685,18 +683,17 @@ void Fuse(SairMapOp first_op, SairMapOp second_op, Driver &driver) {
   llvm::append_range(result_types, second_op.getResultTypes());
 
   // Gather memory space attributes for the new sair.map operation.
-  llvm::SmallVector<mlir::Attribute, 4> memory_spaces;
-  memory_spaces.reserve(num_results);
-  auto append_memory_spaces = [&](SairMapOp op) {
-    if (op.memory_space().hasValue()) {
-      llvm::append_range(memory_spaces,
-                         op.memory_space().getValue().getValue());
+  llvm::SmallVector<mlir::Attribute, 4> storages;
+  storages.reserve(num_results);
+  auto append_storages = [&](SairMapOp op) {
+    if (op.storage().hasValue()) {
+      llvm::append_range(storages, op.storage().getValue().getValue());
     } else {
-      memory_spaces.append(op.getNumResults(), driver.getUnitAttr());
+      storages.append(op.getNumResults(), driver.getUnitAttr());
     }
   };
-  append_memory_spaces(first_op);
-  append_memory_spaces(second_op);
+  append_storages(first_op);
+  append_storages(second_op);
 
   // Create the operation.
   driver.setInsertionPoint(second_op);
@@ -708,7 +705,7 @@ void Fuse(SairMapOp first_op, SairMapOp second_op, Driver &driver) {
       /*inputs=*/inputs,
       /*shape=*/first_op.shape(),
       /*loop_nest=*/first_op.loop_nestAttr(),
-      /*memory_space=*/driver.getArrayAttr(memory_spaces));
+      /*memory_space=*/driver.getArrayAttr(storages));
   new_op.body().takeBody(first_op.body());
   driver.replaceOp(first_op,
                    new_op.getResults().take_front(first_op.getNumResults()));
@@ -727,7 +724,9 @@ bool CanFuse(mlir::ArrayAttr lhs, mlir::ArrayAttr rhs) {
 
 // Introduces the innermost loop of `op` or fuse it with one of its immediate
 // neigbors if possible.
-mlir::LogicalResult IntroduceLoopOrFuse(SairMapOp op, Driver &driver) {
+mlir::LogicalResult IntroduceLoopOrFuse(SairMapOp op,
+                                        const StorageAnalysis &storage_analysis,
+                                        Driver &driver) {
   SairMapOp prev_op = PrevMapOp(op);
   SairMapOp next_op = NextMapOp(op);
   mlir::ArrayAttr curr_loop_nest = op.loop_nest().getValue();
@@ -743,7 +742,7 @@ mlir::LogicalResult IntroduceLoopOrFuse(SairMapOp op, Driver &driver) {
   } else if (!curr_loop_nest.empty() &&
              !IsPrefix(curr_loop_nest, prev_loop_nest) &&
              !IsPrefix(curr_loop_nest, next_loop_nest)) {
-    return IntroduceLoop(op, driver);
+    return IntroduceLoop(op, storage_analysis, driver);
   }
 
   return mlir::success();
@@ -758,6 +757,7 @@ class IntroduceLoops : public IntroduceLoopsPassBase<IntroduceLoops> {
   // Introduce loops for a sair.program operation.
   void IntroduceProgramLoops(SairProgramOp program) {
     Driver driver(&getContext());
+    auto storage_analysis = getChildAnalysis<StorageAnalysis>(program);
     if (mlir::failed(RegisterOperations(program, driver))) {
       signalPassFailure();
       return;
@@ -766,7 +766,7 @@ class IntroduceLoops : public IntroduceLoopsPassBase<IntroduceLoops> {
     driver.Simplify();
 
     while (SairMapOp op = driver.PopMapOp()) {
-      if (mlir::failed(IntroduceLoopOrFuse(op, driver))) {
+      if (mlir::failed(IntroduceLoopOrFuse(op, storage_analysis, driver))) {
         signalPassFailure();
         return;
       }

@@ -43,6 +43,10 @@ class SairDialect : public mlir::Dialect {
   // The string identifier used for affine access map attribute in Sair ops.
   static constexpr llvm::StringRef kAccessMapAttrName = "access_map";
 
+  // Identifiers for memory spaces.
+  mlir::StringAttr register_attr() const { return register_; }
+  mlir::StringAttr memory_attr() const { return memory_; }
+
   // Constructs the dialect in the provided context.
   explicit SairDialect(mlir::MLIRContext *context);
 
@@ -65,6 +69,9 @@ class SairDialect : public mlir::Dialect {
   // Prints the dialect attribute. Hook for the MLIR asm printer.
   void printAttribute(mlir::Attribute attribute,
                       mlir::DialectAsmPrinter &os) const override;
+
+ private:
+  mlir::StringAttr register_, memory_;
 };
 
 // Pretty-prints an mapping, for use in custom printers. In particular,

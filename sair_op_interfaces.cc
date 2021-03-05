@@ -122,6 +122,14 @@ ValueOrConstant ValueOrConstant::Map(MappingAttr mapping) const {
   return value_access;
 }
 
+bool operator==(const ValueStorage &lhs, const ValueStorage &rhs) {
+  return lhs.space == rhs.space && lhs.buffer_name == rhs.buffer_name;
+}
+
+bool operator!=(const ValueStorage &lhs, const ValueStorage &rhs) {
+  return !(lhs == rhs);
+}
+
 // Sair operations are only allowed inside a SairProgramOp.
 mlir::LogicalResult VerifySairOpParent(mlir::Operation *operation) {
   if (isa<SairProgramOp>(operation->getParentOp())) {
@@ -131,49 +139,6 @@ mlir::LogicalResult VerifySairOpParent(mlir::Operation *operation) {
   return operation->emitOpError()
          << "expected to be immediately contained in a '"
          << SairProgramOp::getOperationName() << "'";
-}
-
-llvm::Optional<int> GetMemorySpace(int result, mlir::Operation *op) {
-  llvm::Optional<mlir::ArrayAttr> array =
-      cast<ValueProducerOp>(op).memory_space();
-  if (!array.hasValue()) return llvm::None;
-  mlir::IntegerAttr space = array.getValue()[result].dyn_cast<IntegerAttr>();
-  if (space == nullptr) return llvm::None;
-  return space.getInt();
-}
-
-llvm::Optional<int> GetMemorySpace(mlir::Value value) {
-  assert(value.getType().isa<ValueType>());
-  // Sair requires !sair.value operands to be defined by an operation in the
-  // same block, ensuring that value.getDefiningOp() is well defined.
-  ValueProducerOp producer = cast<ValueProducerOp>(value.getDefiningOp());
-  for (int i = 0, e = producer.getOperation()->getNumResults(); i < e; ++i) {
-    if (producer.getOperation()->getResult(i) == value) {
-      return producer.GetMemorySpace(i);
-    }
-  }
-  llvm_unreachable("value not found in the defining operation");
-}
-
-void SetMemorySpace(int result, llvm::Optional<int> memory_space,
-                    mlir::Operation *op) {
-  auto old_attribute =
-      op->getAttrOfType<mlir::ArrayAttr>(ValueProducerOp::kMemorySpaceAttrName);
-  llvm::SmallVector<mlir::Attribute, 4> memory_spaces;
-  if (old_attribute == nullptr) {
-    auto unit_attr = mlir::UnitAttr::get(op->getContext());
-    memory_spaces.resize(op->getNumResults(), unit_attr);
-  } else {
-    llvm::append_range(memory_spaces, old_attribute.getValue());
-  }
-  if (memory_space.hasValue()) {
-    memory_spaces[result] = mlir::IntegerAttr::get(
-        mlir::IntegerType::get(op->getContext(), 64), memory_space.getValue());
-  } else {
-    memory_spaces[result] = mlir::UnitAttr::get(op->getContext());
-  }
-  auto new_attribute = mlir::ArrayAttr::get(op->getContext(), memory_spaces);
-  op->setAttr(ValueProducerOp::kMemorySpaceAttrName, new_attribute);
 }
 
 mlir::LogicalResult VerifySairOp(Operation *op) {
@@ -278,86 +243,6 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
   }
 
   return ::sair::VerifySairOpParent(sair_op);
-}
-
-// Returns the first loop of the loop_nest attribute of the operation, if any.
-static LoopAttr FirstLoopOrNull(mlir::Operation *op) {
-  ComputeOp compute_op = dyn_cast_or_null<ComputeOp>(op);
-  if (compute_op == nullptr) return nullptr;
-  if (!compute_op.loop_nest().hasValue()) return nullptr;
-  if (compute_op.LoopNestLoops().empty()) return nullptr;
-  return compute_op.LoopNestLoops().front().dyn_cast<LoopAttr>();
-}
-
-
-mlir::LogicalResult VerifyValueProducerOp(mlir::Operation *operation) {
-  ValueProducerOp op = cast<ValueProducerOp>(operation);
-  // All results must be Sair values. This is not a user-facing error. It should
-  // be verified by operations implementing `SairValueProducerOp`.
-  assert(llvm::all_of(operation->getResultTypes(),
-                      [](mlir::Type type) { return type.isa<ValueType>(); }));
-  llvm::Optional<mlir::ArrayAttr> memory_space_attr = op.memory_space();
-  if (!memory_space_attr.hasValue()) return mlir::success();
-  llvm::ArrayRef<mlir::Attribute> memory_spaces =
-      memory_space_attr.getValue().getValue();
-
-  if (memory_spaces.size() != operation->getNumResults()) {
-    return op.emitError()
-           << "wrong number of entries for the memory_space attribute";
-  }
-
-  bool needs_allocation = false;
-  for (int i = 0, e = memory_spaces.size(); i < e; ++i) {
-    mlir::Attribute attr = memory_spaces[i];
-    if (attr.isa<mlir::UnitAttr>()) continue;
-
-    int memory_space = attr.cast<mlir::IntegerAttr>().getInt();
-    ValueType type = operation->getResult(i).getType().cast<ValueType>();
-    switch (memory_space) {
-      case ValueProducerOp::kMemory:
-        // TODO(ulysse): support lowering index values to memory.
-        if (type.ElementType().isa<mlir::IndexType>()) {
-          return op.emitError()
-                 << "index variables cannot be allocated in memory";
-        }
-        needs_allocation = true;
-        break;
-      case ValueProducerOp::kRegister:
-        // TODO(b/174127497): ensure that the value is not overwritten before it
-        // is used
-        break;
-      default:
-        return op.emitError() << "unexpected memory space";
-    }
-  }
-
-  // Ensure that we can introduce the malloc between the producer of dimension
-  // sizes and the current op.
-  // TODO(ulysse): can we fold this in the generic interface for exposing
-  // dependencies?
-  LoopAttr first_loop = FirstLoopOrNull(op);
-  if (!needs_allocation || first_loop == nullptr) return mlir::success();
-
-  for (mlir::Value dimension : cast<SairOp>(operation).domain()) {
-    SairDynRangeOp defining_op =
-        dyn_cast<SairDynRangeOp>(dimension.getDefiningOp());
-    if (defining_op == nullptr) continue;
-    auto is_producer_fused = [&](mlir::Value value) {
-      if (value == nullptr) return false;
-      LoopAttr loop = FirstLoopOrNull(value.getDefiningOp());
-      if (loop == nullptr) return false;
-      return first_loop.name() == loop.name();
-    };
-    if (is_producer_fused(defining_op.lower_bound()) ||
-        is_producer_fused(defining_op.upper_bound())) {
-      return op.emitError()
-             << "operation cannot be nested in loop " << first_loop.name()
-             << ": dimension sizes must be defined before entering the loop "
-                "nest";
-    }
-  }
-
-  return mlir::success();
 }
 
 mlir::LogicalResult VerifyRangeOp(mlir::Operation *op) {

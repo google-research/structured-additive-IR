@@ -23,8 +23,8 @@
 
 namespace sair {
 
-// Verifies loop nest attributes of operations nested in the
-// sair.program operation.
+// Verifies loop nest attributes of operations nested in the sair.program
+// operation. Assumes that Sair operands are defined in the same program.
 mlir::LogicalResult VerifyLoopNests(SairProgramOp program);
 
 // Analysis of how data is distributed on loop nests iterations. It indicates,
@@ -75,20 +75,31 @@ class IterationSpaceAnalysis {
 // A class of fused loops.
 struct LoopFusionClass {
   // Loops this class depends on.
-  llvm::SmallVector<mlir::StringAttr, 2> dependencies;
+  llvm::SmallVector<mlir::StringAttr> dependencies;
 
   // Domain in which the loop size is defined. This is a list of dimensions,
   // with an access pattern from dependencies indicies to the domain of each
   // dimension.
   //
   // Domains of outer fusion classes must be a prefix of this one.
-  llvm::SmallVector<ValueAccess, 4> domain;
+  llvm::SmallVector<ValueAccess> domain;
 
   // Mapping from domain indices to the loop indices.
   MappingExpr iter_expr;
 
   // An occurence on the fusion class, for error reporting purposes.
   ComputeOp occurence;
+};
+
+// A loop nest of fused loops.
+// TODO: use in normalize_loops.cc
+struct LoopNest {
+  // Domain used to define loop ranges.
+  llvm::ArrayRef<ValueAccess> domain;
+  // Mapping from `domain` to loops.
+  MappingAttr domain_to_loops;
+  // Shape of the resulting loop nest.
+  DomainShapeAttr loops_shape;
 };
 
 // Computes loop fusion classes in a sair program.
@@ -106,8 +117,12 @@ class LoopFusionAnalysis {
     return fusion_classes_.find(name)->second;
   }
 
+  // Retrives the unified loop nest corresponding to loops.
+  LoopNest GetLoopNest(llvm::ArrayRef<mlir::Attribute> loops) const;
+  LoopNest GetLoopNest(llvm::ArrayRef<mlir::StringAttr> loop_names) const;
+
  private:
-  LoopFusionAnalysis() {}
+  LoopFusionAnalysis(mlir::MLIRContext *context) : context_(context) {}
 
   // Populates the analysis with the operations appearing in `program_op`.
   mlir::LogicalResult Init(SairProgramOp program_op);
@@ -117,6 +132,7 @@ class LoopFusionAnalysis {
   mlir::LogicalResult RegisterLoop(ComputeOp op, LoopAttr loop,
                                    llvm::ArrayRef<mlir::Attribute> outer_loops);
 
+  mlir::MLIRContext *context_;
   llvm::DenseMap<mlir::Attribute, LoopFusionClass> fusion_classes_;
   llvm::DenseMap<mlir::Operation *, llvm::SmallVector<MappingExpr, 4>>
       op_domain_mappings_;

@@ -71,7 +71,8 @@ func @fby(%arg0: f32) {
     %2 = sair.fby %1 then[d0:%0] %3(d0) : !sair.value<d0:range, f32>
     // CHECK: %[[V1:.*]] = sair.map %[[V0]] attributes
     %3 = sair.map[d0: %0] %2(d0) attributes {
-      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
+      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
+      storage = [{space = "register", layout = #sair.named_mapping<[] -> ()>}]
     } {
     // CHECK: ^bb0(%[[V2:.*]]: f32):
       ^bb0(%arg1: index, %5: f32):
@@ -140,7 +141,10 @@ func @dependent_dims() {
     %0 = sair.static_range 64 step 8 : !sair.range
     %1, %2 = sair.map[d0:%0] attributes {
       loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
-      memory_space = [0, 0]
+      storage = [
+        {space = "register", layout = #sair.named_mapping<[] -> ()>},
+        {space = "register", layout = #sair.named_mapping<[] -> ()>}
+      ]
     } {
       ^bb0(%arg0: index):
         // CHECK: %[[V4:.*]] = constant 8
