@@ -656,3 +656,17 @@ func @placeholder_with_loop_nest(%arg0: f32) {
   }
   return
 }
+
+// CHECK-LABEL: @free_with_mapping
+func @free_with_mapping() {
+  sair.program {
+    %0 = sair.static_range 8 : !sair.range
+    %1 = sair.alloc[d0:%0] : !sair.value<d0:range, memref<f32>>
+    %2 = sair.placeholder : !sair.range
+    %3 = sair.placeholder[d0:%2] : !sair.range<d0:range>
+    sair.free[d0:%2, d1:%3] %1(unstripe(d0, d1, [4]))
+      : !sair.value<d0:range x d1:range(d0), memref<f32>>
+    sair.exit
+  }
+  return
+}

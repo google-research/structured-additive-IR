@@ -781,7 +781,8 @@ static void Print(SairFreeOp op, mlir::OpAsmPrinter &printer) {
   PrintValueAccess(op.Value(), printer);
   printer.printOptionalAttrDict(op->getAttrs(),
                                 {SairDialect::kMappingAttrName});
-  printer << " : " << op.value().getType();
+  mlir::Type element_type = op.Value().GetType().ElementType();
+  printer << " : " << ValueType::get(op.shape(), element_type);
 }
 
 mlir::LogicalResult Verify(SairFromScalarOp op) {
@@ -1648,8 +1649,8 @@ llvm::SmallVector<int, 2> SairFreeOp::SubDomains() {
 }
 
 DomainShapeAttr SairFreeOp::shape() {
-  return value().getType().cast<ValueType>().Shape().AccessedShape(
-      mapping_array()[0].cast<MappingAttr>());
+  ValueOperand value = Value();
+  return value.GetType().Shape().AccessedShape(value.Mapping().Inverse());
 }
 
 // Takes a mapping `lhs` and an array of mappings `rhs_array`. Returns a new
