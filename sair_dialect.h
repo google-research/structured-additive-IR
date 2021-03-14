@@ -71,6 +71,11 @@ class SairDialect : public mlir::Dialect {
                       mlir::DialectAsmPrinter &os) const override;
 
  private:
+  /// Register the attributes of this dialect.
+  void registerAttributes();
+  /// Register the types of this dialect.
+  void registerTypes();
+
   mlir::StringAttr register_, memory_;
 };
 

@@ -26,6 +26,7 @@
 #include "mlir/IR/Identifier.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Types.h"
+#include "sair_dialect.h"
 #include "sair_op_interfaces.h"
 
 namespace sair {
@@ -1136,3 +1137,14 @@ DomainShapeAttr DomainShapeAttr::ProductAt(int pos,
 }  // namespace sair
 
 #include "sair_structs.cc.inc"
+
+//===----------------------------------------------------------------------===//
+// SairDialect
+//===----------------------------------------------------------------------===//
+
+namespace sair {
+void SairDialect::registerAttributes() {
+  addAttributes<DomainShapeAttr, MappingAttr, NamedMappingAttr, MappingDimExpr,
+                MappingNoneExpr, MappingStripeExpr, MappingUnStripeExpr>();
+}
+}  // namespace sair

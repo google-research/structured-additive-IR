@@ -49,9 +49,8 @@ namespace sair {
 SairDialect::SairDialect(mlir::MLIRContext *context)
     : mlir::Dialect(getDialectNamespace(), context,
                     TypeID::get<SairDialect>()) {
-  addTypes<RangeType, ValueType>();
-  addAttributes<DomainShapeAttr, MappingAttr, NamedMappingAttr, MappingDimExpr,
-                MappingNoneExpr, MappingStripeExpr, MappingUnStripeExpr>();
+  registerTypes();
+  registerAttributes();
   addOperations<
 #define GET_OP_LIST
 #include "sair_ops.cc.inc"

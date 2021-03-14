@@ -21,6 +21,7 @@
 #include "mlir/IR/TypeSupport.h"
 #include "mlir/Support/LLVM.h"
 #include "sair_attributes.h"
+#include "sair_dialect.h"
 
 namespace sair {
 
@@ -135,5 +136,11 @@ mlir::Type ValueType::ElementType() const { return getImpl()->element_type(); }
 ValueType ValueType::AccessedType(MappingAttr mapping) const {
   return ValueType::get(Shape().AccessedShape(mapping), ElementType());
 }
+
+//===----------------------------------------------------------------------===//
+// SairDialect
+//===----------------------------------------------------------------------===//
+
+void SairDialect::registerTypes() { addTypes<RangeType, ValueType>(); }
 
 }  // namespace sair
