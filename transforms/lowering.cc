@@ -68,7 +68,7 @@ class LowerToLLVMPass : public LowerToLLVMBase<LowerToLLVMPass> {
     patterns.insert<LowerUndef>(converter);
 
     LLVMConversionTarget target(getContext());
-    target.addLegalOp<mlir::ModuleOp, mlir::ModuleTerminatorOp>();
+    target.addLegalOp<mlir::ModuleOp>();
     target.addIllegalDialect<SairDialect>();
     if (failed(applyFullConversion(module, target, std::move(patterns)))) {
       signalPassFailure();
