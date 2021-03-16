@@ -29,6 +29,7 @@ add_mlir_library(sair_from_linalg
   MLIRPass
   MLIRTransforms
   MLIRLinalg
+  MLIRMemRef
   MLIRStandard
   MLIRSupport
   sair_dialect
@@ -76,6 +77,7 @@ add_mlir_library(sair_lowering
   MLIRAffineToStandard
   MLIRIR
   MLIRLLVMIR
+  MLIRMemRef
   MLIRPass
   MLIRSCF
   MLIRSCFToStandard

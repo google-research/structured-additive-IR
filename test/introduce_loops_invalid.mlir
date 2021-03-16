@@ -79,7 +79,7 @@ func @unable_to_create_default_value() {
       loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
     } {
       ^bbo(%arg0: index):
-        %3 = alloc() : memref<f32>
+        %3 = memref.alloc() : memref<f32>
         sair.return %3 : memref<f32>
     } : #sair.shape<d0:range>, () -> memref<f32>
     %4 = sair.proj_last of[d0:%1] %2(d0) : #sair.shape<d0:range>, memref<f32>

@@ -16,6 +16,7 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/Dialect/Utils/StructuredOpsUtils.h"
 #include "mlir/IR/AffineMap.h"
@@ -99,8 +100,8 @@ mlir::Value CreateSairRange(mlir::Location loc, const LoopBound &bound,
   mlir::Value bound_dim = [&] {
     mlir::OpBuilder::InsertionGuard raii(rewriter);
     rewriter.setInsertionPoint(sair_program);
-    return rewriter.create<mlir::DimOp>(loc, bound.referenced_value,
-                                        bound.dimension);
+    return rewriter.create<mlir::memref::DimOp>(loc, bound.referenced_value,
+                                                bound.dimension);
   }();
   mlir::Value bound_value =
       rewriter.create<SairFromScalarOp>(loc, value_type, bound_dim);

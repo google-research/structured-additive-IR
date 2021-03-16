@@ -18,6 +18,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -62,7 +63,7 @@ mlir::LogicalResult RewriteAllocToMap(SairAllocOp op,
       op.dynamic_sizes(), op.shape(), op.loop_nestAttr(), op.storageAttr());
 
   builder.setInsertionPointToStart(&map_op.block());
-  mlir::Value allocated = builder.create<mlir::AllocOp>(
+  mlir::Value allocated = builder.create<mlir::memref::AllocOp>(
       op.getLoc(), op.MemType(), map_op.block_inputs(),
       /*alignment=*/nullptr);
   builder.create<SairReturnOp>(op.getLoc(), allocated);
@@ -79,7 +80,8 @@ void RewriteFreeToMap(SairFreeOp op, mlir::OpBuilder &builder) {
       op.shape(), op.loop_nestAttr(), /*memory_space=*/nullptr);
 
   builder.setInsertionPointToStart(&map_op.block());
-  builder.create<mlir::DeallocOp>(op.getLoc(), map_op.block_inputs()[0]);
+  builder.create<mlir::memref::DeallocOp>(op.getLoc(),
+                                          map_op.block_inputs()[0]);
   builder.create<SairReturnOp>(op.getLoc(), llvm::None);
   op->erase();
 }
@@ -123,7 +125,7 @@ void RewriteToMap(SairLoadFromMemRefOp op, mlir::OpBuilder &builder) {
   llvm::SmallVector<mlir::Value, 4> indices;
   builder.setInsertionPointToStart(&map_op.block());
   MemRefIndices(op, map_op.block().getArguments(), builder, indices);
-  mlir::Value loaded = builder.create<mlir::LoadOp>(
+  mlir::Value loaded = builder.create<mlir::memref::LoadOp>(
       op.getLoc(), map_op.block_inputs()[0], indices);
   builder.create<SairReturnOp>(op.getLoc(), loaded);
   op.result().replaceAllUsesWith(map_op.getResult(0));
@@ -142,8 +144,8 @@ void RewriteToMap(SairStoreToMemRefOp op, mlir::OpBuilder &builder) {
   llvm::SmallVector<mlir::Value, 4> indices;
   builder.setInsertionPointToStart(&map_op.block());
   MemRefIndices(op, map_op.block().getArguments(), builder, indices);
-  builder.create<mlir::StoreOp>(op.getLoc(), map_op.block_inputs()[1],
-                                map_op.block_inputs()[0], indices);
+  builder.create<mlir::memref::StoreOp>(op.getLoc(), map_op.block_inputs()[1],
+                                        map_op.block_inputs()[0], indices);
   builder.create<SairReturnOp>(op.getLoc());
   op->erase();
 }

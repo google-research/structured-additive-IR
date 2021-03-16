@@ -20,8 +20,8 @@ func @check_memrefs_equal(%lhs: memref<8xi32>, %rhs: memref<8xi32>) -> f32 {
   // Return 1.0 if we reached the end without error.
   cond_br %1, ^bb1(%0 : index), ^bb2(%c1f : f32)
 ^bb1(%2: index):
-  %4 = load %lhs[%2] : memref<8xi32>
-  %5 = load %rhs[%2] : memref<8xi32>
+  %4 = memref.load %lhs[%2] : memref<8xi32>
+  %5 = memref.load %rhs[%2] : memref<8xi32>
   %3 = addi %2, %c1 : index
   %6 = cmpi eq, %4, %5 : i32
   // Returns 0.0 if we found an error.
@@ -46,13 +46,13 @@ func @from_to_memref() -> f32 {
   %c8 = constant 8 : index
 
   // Create two memrefs such that %0[i] = 2*%1[i].
-  %0 = alloca() : memref<8xi32>
-  %1 = alloca() : memref<8xi32>
+  %0 = memref.alloca() : memref<8xi32>
+  %1 = memref.alloca() : memref<8xi32>
   scf.for %i = %c0 to %c8 step %c1 {
     %2 = index_cast %i : index to i32
     %3 = addi %2, %2 : i32
-    store %2, %0[%i] : memref<8xi32>
-    store %3, %1[%i] : memref<8xi32>
+    memref.store %2, %0[%i] : memref<8xi32>
+    memref.store %3, %1[%i] : memref<8xi32>
   }
 
   // Multiply the elements of %1 by two.

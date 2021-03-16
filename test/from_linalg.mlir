@@ -52,12 +52,12 @@ func @pointwise(%arg0: memref<1x2x3xf32>, %arg1: memref<2x3x1xf32>) {
 // CHECK-LABEL: @dynamic
 // CHECK: (%[[ARG0:.*]]: memref<?x2x?xf32>, %[[ARG1:.*]]: memref<?x3x?xf32>)
 func @dynamic(%arg0: memref<?x2x?xf32>, %arg1: memref<?x3x?xf32>) {
-  // CHECK: %[[DIM0_0:.*]] = dim %[[ARG0]], %c0
-  // CHECK: %[[DIM0_2:.*]] = dim %[[ARG0]], %c2
-  // CHECK: %[[DIM1_0:.*]] = dim %[[ARG1]], %c0
-  // CHECK: %[[DIM1_2:.*]] = dim %[[ARG1]], %c2
-  // CHECK: %[[DIM2_0:.*]] = dim %[[ARG0]], %c0
-  // CHECK: %[[DIM2_2:.*]] = dim %[[ARG0]], %c2
+  // CHECK: %[[DIM0_0:.*]] = memref.dim %[[ARG0]], %c0
+  // CHECK: %[[DIM0_2:.*]] = memref.dim %[[ARG0]], %c2
+  // CHECK: %[[DIM1_0:.*]] = memref.dim %[[ARG1]], %c0
+  // CHECK: %[[DIM1_2:.*]] = memref.dim %[[ARG1]], %c2
+  // CHECK: %[[DIM2_0:.*]] = memref.dim %[[ARG0]], %c0
+  // CHECK: %[[DIM2_2:.*]] = memref.dim %[[ARG0]], %c2
 
   // CHECK: sair.program
 

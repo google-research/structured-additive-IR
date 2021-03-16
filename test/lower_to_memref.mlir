@@ -19,7 +19,7 @@ func @to_memref(%arg0: memref<?x?xf32>) {
         %2 = constant 1.0 : f32
         // CHECK: %[[IDX0:.*]] = affine.apply #[[$map0]](%[[ARG1]], %[[ARG2]])
         // CHECK: %[[IDX1:.*]] = affine.apply #[[$map1]](%[[ARG1]], %[[ARG2]])
-        // CHECK: store %[[V1]], %[[ARG3]][%[[IDX0]], %[[IDX1]]] : memref<?x?xf32>
+        // CHECK: memref.store %[[V1]], %[[ARG3]][%[[IDX0]], %[[IDX1]]] : memref<?x?xf32>
         sair.return %2 : f32
     } : #sair.shape<d0:range x d1:range>, () -> f32
     // CHECK-NOT: sair.to_memref

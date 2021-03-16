@@ -17,6 +17,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/SCF.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BlockAndValueMapping.h"
@@ -174,25 +175,26 @@ void EmitAffineApplyMap(mlir::Location loc, mlir::AffineMap map,
 // Uses `builder` to emit an equivalent of an AffineStoreOp that does the
 // application separately and uses standard StoreOp to circumvent Affine dialect
 // restrictions on value provenance.
-mlir::StoreOp EmitPseudoAffineStore(mlir::Location loc,
-                                    mlir::Value value_to_store,
-                                    mlir::Value memref, mlir::AffineMap map,
-                                    mlir::ValueRange indices,
-                                    mlir::OpBuilder &builder) {
+mlir::memref::StoreOp EmitPseudoAffineStore(
+    mlir::Location loc, mlir::Value value_to_store, mlir::Value memref,
+    mlir::AffineMap map, mlir::ValueRange indices, mlir::OpBuilder &builder) {
   llvm::SmallVector<mlir::Value, 6> applied;
   EmitAffineApplyMap(loc, map, indices, builder, applied);
-  return builder.create<mlir::StoreOp>(loc, value_to_store, memref, applied);
+  return builder.create<mlir::memref::StoreOp>(loc, value_to_store, memref,
+                                               applied);
 }
 
 // Uses `builder` to emit an equivalent of an AffineLoadOp that performs the
 // index transformation separately and uses standard Load Op to circumvent
 // Affine dialect value provenance restrictions.
-mlir::LoadOp EmitPseudoAffineLoad(mlir::Location loc, mlir::Value memref,
-                                  mlir::AffineMap map, mlir::ValueRange indices,
-                                  mlir::OpBuilder &builder) {
+mlir::memref::LoadOp EmitPseudoAffineLoad(mlir::Location loc,
+                                          mlir::Value memref,
+                                          mlir::AffineMap map,
+                                          mlir::ValueRange indices,
+                                          mlir::OpBuilder &builder) {
   llvm::SmallVector<mlir::Value, 6> applied;
   EmitAffineApplyMap(loc, map, indices, builder, applied);
-  return builder.create<mlir::LoadOp>(loc, memref, applied);
+  return builder.create<mlir::memref::LoadOp>(loc, memref, applied);
 }
 
 // Information about a `to_memref` op about to be eliminated.
@@ -358,6 +360,7 @@ class LowerToMemRef : public LowerToMemRefPassBase<LowerToMemRef> {
     });
 
     target.addLegalDialect<mlir::StandardOpsDialect>();
+    target.addLegalDialect<mlir::memref::MemRefDialect>();
     target.addLegalDialect<mlir::AffineDialect>();
     target.addLegalDialect<mlir::scf::SCFDialect>();
     target.addLegalOp<mlir::FuncOp>();
@@ -568,7 +571,7 @@ void CreateMemRefForValue(mlir::Value value, SairMapOp producer,
       alloc_operands, alloc_shape, alloc_insertion_point.loop_nest,
       builder.getArrayAttr({buffer}));
   builder.setInsertionPointToStart(&alloc_map_op.block());
-  mlir::AllocOp alloc_op = builder.create<mlir::AllocOp>(
+  auto alloc_op = builder.create<mlir::memref::AllocOp>(
       value.getLoc(), memref_type, alloc_map_op.block_inputs());
   builder.create<SairReturnOp>(value.getLoc(), alloc_op.getResult());
 
@@ -587,8 +590,8 @@ void CreateMemRefForValue(mlir::Value value, SairMapOp producer,
       dealloc_mapping, alloc_map_op.getResult(0), alloc_shape,
       dealloc_insertion_point.loop_nest, builder.getArrayAttr({}));
   builder.setInsertionPointToStart(&dealloc_map_op.block());
-  builder.create<mlir::DeallocOp>(value.getLoc(),
-                                  dealloc_map_op.block_inputs().front());
+  builder.create<mlir::memref::DeallocOp>(
+      value.getLoc(), dealloc_map_op.block_inputs().front());
   builder.create<SairReturnOp>(value.getLoc(), llvm::ArrayRef<mlir::Value>());
 
   // Register the memref in output arrays.
@@ -669,8 +672,8 @@ mlir::LogicalResult IntroduceMemRef(SairMapOp op, mlir::OpBuilder &builder) {
   auto memref_arguments = new_op.block().addArguments(memref_types);
   auto indices = new_op.block().getArguments().take_front(op.domain().size());
   for (auto p : llvm::zip(returned_values, memref_arguments)) {
-    builder.create<mlir::StoreOp>(op.getLoc(), std::get<0>(p), std::get<1>(p),
-                                  indices);
+    builder.create<mlir::memref::StoreOp>(op.getLoc(), std::get<0>(p),
+                                          std::get<1>(p), indices);
   }
 
   new_op.block().getTerminator()->setOperands({});

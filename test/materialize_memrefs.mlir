@@ -24,7 +24,7 @@ func @from_memref(%arg0: index, %arg1: memref<?x8xf32>) {
       ^bb0(%arg2: index, %arg3: index, %arg4: f32):
         // CHECK: %[[IDX0:.*]] = affine.apply #[[$map2d1]](%[[ARG2]], %[[ARG3]])
         // CHECK: %[[IDX1:.*]] = affine.apply #[[$map2d0]](%[[ARG2]], %[[ARG3]])
-        // CHECK: %[[V1:.*]] = load %[[ARG4]][%[[IDX0]], %[[IDX1]]]
+        // CHECK: %[[V1:.*]] = memref.load %[[ARG4]][%[[IDX0]], %[[IDX1]]]
         // CHECK: %{{.*}} = addf %[[V1]], %[[V1]] : f32
         %4 = addf %arg4, %arg4 : f32
         sair.return
@@ -49,7 +49,7 @@ func @map(%arg0: index) {
     // CHECK:   storage = [{layout = #sair.named_mapping<[] -> ()>, space = "register"}]
     // CHECK: } {
     // CHECK: ^{{.*}}(%[[ARG1:.*]]: index):
-    // CHECK: %[[V4:.*]] = alloc(%[[ARG1]]) : memref<8x?xf32>
+    // CHECK: %[[V4:.*]] = memref.alloc(%[[ARG1]]) : memref<8x?xf32>
     // CHECK: sair.return %[[V4]] : memref<8x?xf32>
     // CHECK: } : #sair.shape<()>, (index) -> memref<8x?xf32>
 
@@ -71,7 +71,7 @@ func @map(%arg0: index) {
       ^bb0(%arg1: index, %arg2: index):
         // CHECK: %[[V5:.*]] = constant
         %4 = constant 1.0 : f32
-        // CHECK: store %[[V5]], %[[ARG4]][%[[ARG2]], %[[ARG3]]] : memref<8x?xf32>
+        // CHECK: memref.store %[[V5]], %[[ARG4]][%[[ARG2]], %[[ARG3]]] : memref<8x?xf32>
         // CHECK-NOT: sair.return %{{.*}}
         // CHECK: sair.return
         sair.return %4 : f32
@@ -90,7 +90,7 @@ func @map(%arg0: index) {
     // CHECK:   storage = []
     // CHECK: } {
     // CHECK: ^{{.*}}(%[[ARG5:.*]]: memref<8x?xf32>):
-    // CHECK: dealloc %[[ARG5]]
+    // CHECK: memref.dealloc %[[ARG5]]
     // CHECK: sair.return
     // CHECK: } : #sair.shape<()>, (memref<8x?xf32>) -> ()
     sair.exit
@@ -111,7 +111,7 @@ func @loop_nest(%arg0: f32) {
 
     // CHECK: sair.map
     // CHECK: loop_nest = []
-    // CHECK: alloc
+    // CHECK: memref.alloc
 
     // CHECK: sair.copy
     // CHECK: loop_nest = [{iter = #sair.mapping_expr<d0>, name = "B"}]
@@ -150,7 +150,7 @@ func @loop_nest(%arg0: f32) {
 
     // CHECK: sair.map
     // CHECK: loop_nest = []
-    // CHECK: dealloc
+    // CHECK: memref.dealloc
 
     // CHECK: sair.copy
     // CHECK: loop_nest = [{iter = #sair.mapping_expr<d0>, name = "D"}]

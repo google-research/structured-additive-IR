@@ -34,7 +34,7 @@ func @alloc(%arg0: index) {
     %3 = sair.copy[d0:%1] %idx : !sair.value<d0:range, index>
     // CHECK: sair.map[d0:%[[D0]], d1:%[[D1]]] %[[SZ0]](d0), %[[SZ1]](d1) {
     // CHECK: ^{{.*}}(%{{.*}}: index, %{{.*}}: index, %[[ARG2:.*]]: index, %[[ARG3:.*]]: index):
-    // CHECK:   %[[ALLOC:.*]] = alloc(%[[ARG2]], %[[ARG3]]) : memref<?x?xf32>
+    // CHECK:   %[[ALLOC:.*]] = memref.alloc(%[[ARG2]], %[[ARG3]]) : memref<?x?xf32>
     // CHECK:   sair.return %[[ALLOC]]
     // CHECK: } : #sair.shape<d0:range x d1:range>, (index, index) -> memref<?x?xf32>
     sair.alloc[d0:%0, d1:%1] %2(d0), %3(d1) : !sair.value<d0:range x d1:range, memref<?x?xf32>>
@@ -59,7 +59,7 @@ func @sair_free(%arg0: index) {
     %4 = sair.alloc[d0:%0, d1:%1] %2(d0), %3(d1) : !sair.value<d0:range x d1:range, memref<?x?xf32>>
     // CHECK: sair.map[d0:%[[D1]], d1:%[[D0]]] %[[ALLOC]](d1, d0) {
     // CHECK: ^{{.*}}(%{{.*}}: index, %{{.*}}: index, %[[ARG2:.*]]: memref<?x?xf32>):
-    // CHECK:   dealloc %[[ARG2]] : memref<?x?xf32>
+    // CHECK:   memref.dealloc %[[ARG2]] : memref<?x?xf32>
     // CHECK:   sair.return
     // CHECK: } : #sair.shape<d0:range x d1:range>, (memref<?x?xf32>) -> ()
     sair.free[d0:%1, d1:%0] %4(d1, d0) : !sair.value<d0:range x d1:range, memref<?x?xf32>>
@@ -75,7 +75,7 @@ func @load_from_memref(%arg0 : memref<?x?xf32>) {
     %1 = sair.from_scalar %arg0 : !sair.value<(), memref<?x?xf32>>
     // CHECK: = sair.map[d0:%{{.*}}, d1:%{{.*}}, d2:%{{.*}}] %{{.*}} {
     // CHECK: ^{{.*}}(%[[ARG1:.*]]: index, %[[ARG2:.*]]: index, %[[ARG3:.*]]: index, %[[MEMREF:.*]]: memref<?x?xf32>):
-    // CHECK:   %[[VALUE:.*]] = load %[[MEMREF]][%[[ARG2]], %[[ARG3]]] : memref<?x?xf32>
+    // CHECK:   %[[VALUE:.*]] = memref.load %[[MEMREF]][%[[ARG2]], %[[ARG3]]] : memref<?x?xf32>
     // CHECK:   sair.return %[[VALUE]] : f32
     // CHECK: } : #sair.shape<d0:range x d1:range x d2:range>, (memref<?x?xf32>) -> f32
     %2 = sair.load_from_memref[d0:%0] %1 memref[d1:%0, d2:%0]
@@ -97,7 +97,7 @@ func @load_from_memref_permuted(%arg0 : memref<?x?xf32>) {
     // CHECK: ^{{.*}}(%[[ARG1:.*]]: index, %[[ARG2:.*]]: index, %[[ARG3:.*]]: index, %[[MEMREF:.*]]: memref<?x?xf32>):
     // CHECK:   %[[IDX1:.*]] = affine.apply affine_map<(d0, d1) -> (d1)>(%[[ARG2]], %[[ARG3]])
     // CHECK:   %[[IDX2:.*]] = affine.apply affine_map<(d0, d1) -> (d0)>(%[[ARG2]], %[[ARG3]])
-    // CHECK:   %[[VALUE:.*]] = load %[[MEMREF]][%[[IDX1]], %[[IDX2]]] : memref<?x?xf32>
+    // CHECK:   %[[VALUE:.*]] = memref.load %[[MEMREF]][%[[IDX1]], %[[IDX2]]] : memref<?x?xf32>
     // CHECK:   sair.return %[[VALUE]] : f32
     // CHECK: } : #sair.shape<d0:range x d1:range x d2:range>, (memref<?x?xf32>) -> f32
     %3 = sair.load_from_memref[d0:%0] %2(d0) memref[d1:%0, d2:%0]
@@ -120,7 +120,7 @@ func @store_to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
 
     // CHECK: sair.map[d0:%{{.*}}, d1:%{{.*}}, d2:%{{.*}}] %{{.*}}, %{{.*}}(d0, d1, d2) {
     // CHECK: ^{{.*}}(%[[ARG1:.*]]: index, %[[ARG2:.*]]: index, %[[ARG3:.*]]: index, %[[MEMREF:.*]]: memref<?x?xf32>, %[[VALUE:.*]]: f32):
-    // CHECK:   store %[[VALUE]], %[[MEMREF]][%[[ARG2]], %[[ARG3]]]
+    // CHECK:   memref.store %[[VALUE]], %[[MEMREF]][%[[ARG2]], %[[ARG3]]]
     // CHECK:   sair.return
     // CHECK: } : #sair.shape<d0:range x d1:range x d2:range>, (memref<?x?xf32>, f32) -> ()
     sair.store_to_memref[d0:%0] %2 memref[d1:%0, d2:%0] %3(d0, d1, d2)
@@ -147,7 +147,7 @@ func @store_to_memref_permuted(%arg0 : f32, %arg1 : memref<?x?xf32>) {
     // CHECK: ^{{.*}}(%[[ARG1:.*]]: index, %[[ARG2:.*]]: index, %[[ARG3:.*]]: index, %[[MEMREF:.*]]: memref<?x?xf32>, %[[VALUE:.*]]: f32):
     // CHECK:   %[[IDX1:.*]] = affine.apply affine_map<(d0, d1) -> (d1)>(%[[ARG2]], %[[ARG3]])
     // CHECK:   %[[IDX2:.*]] = affine.apply affine_map<(d0, d1) -> (d0)>(%[[ARG2]], %[[ARG3]])
-    // CHECK:   store %[[VALUE]], %[[MEMREF]][%[[IDX1]], %[[IDX2]]]
+    // CHECK:   memref.store %[[VALUE]], %[[MEMREF]][%[[IDX1]], %[[IDX2]]]
     // CHECK:   sair.return
     // CHECK: } : #sair.shape<d0:range x d1:range x d2:range>, (memref<?x?xf32>, f32) -> ()
     sair.store_to_memref[d0:%0] %4(d0) memref[d1:%0, d2:%0] %3(d0, d1, d2)
