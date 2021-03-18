@@ -158,8 +158,8 @@ ParseResult ParseDynRangeOp(mlir::OpAsmParser &parser,
       ArrayAttr::get(parser.getBuilder().getContext(), mapping_attrs));
   result.addAttribute(
       SairDynRangeOp::getOperandSegmentSizeAttr(),
-      builder.getI64VectorAttr({static_cast<int64_t>(domain.size()),
-                                static_cast<int64_t>(operands.size() - 1), 1}));
+      builder.getI32VectorAttr({static_cast<int32_t>(domain.size()),
+                                static_cast<int32_t>(operands.size() - 1), 1}));
 
   ValueType index_value_type =
       ValueType::get(type.Shape(), builder.getIndexType());
@@ -297,10 +297,10 @@ ParseResult ParseFromMemRef(mlir::OpAsmParser &parser,
   // comes from a trait. However, we cannot call a trait method directly.
   result.addAttribute(
       SairFromMemRefOp::getOperandSegmentSizeAttr(),
-      parser.getBuilder().getI64VectorAttr(
-          {static_cast<int64_t>(parallel_domain_size),
-           static_cast<int64_t>(domain.size() - parallel_domain_size),
-           static_cast<int64_t>(1)}));
+      parser.getBuilder().getI32VectorAttr(
+          {static_cast<int32_t>(parallel_domain_size),
+           static_cast<int32_t>(domain.size() - parallel_domain_size),
+           static_cast<int32_t>(1)}));
 
   mapping = mapping.ResizeUseDomain(domain.size());
   result.addAttribute(SairDialect::kMappingAttrName,
@@ -384,10 +384,10 @@ ParseResult ParseToMemRef(mlir::OpAsmParser &parser,
   // comes from a trait. However, we cannot call a trait method directly.
   result.addAttribute(
       SairFromMemRefOp::getOperandSegmentSizeAttr(),
-      parser.getBuilder().getI64VectorAttr(
-          {static_cast<int64_t>(parallel_domain_size),
-           static_cast<int64_t>(domain.size() - parallel_domain_size),
-           static_cast<int64_t>(1), static_cast<int64_t>(1)}));
+      parser.getBuilder().getI32VectorAttr(
+          {static_cast<int32_t>(parallel_domain_size),
+           static_cast<int32_t>(domain.size() - parallel_domain_size),
+           static_cast<int32_t>(1), static_cast<int32_t>(1)}));
 
   auto value_type = ValueType::get(shape.AccessedShape(value_mapping),
                                    memref_type.getElementType());
@@ -471,13 +471,13 @@ ParseResult ParseProjection(mlir::OpAsmParser &parser,
   result.addTypes(ValueType::get(result_shape, element_type));
 
   // Store the number of operands in each variadic segments as required by MLIR,
-  // it expects specifically int64_t.
+  // it expects specifically int32_t.
   int num_projection_dimensions = domain.size() - num_parallel_dimensions;
   result.addAttribute(SairProjAnyOp::getOperandSegmentSizeAttr(),
-                      parser.getBuilder().getI64VectorAttr(
-                          {static_cast<int64_t>(num_parallel_dimensions),
-                           static_cast<int64_t>(num_projection_dimensions),
-                           static_cast<int64_t>(1)}));
+                      parser.getBuilder().getI32VectorAttr(
+                          {static_cast<int32_t>(num_parallel_dimensions),
+                           static_cast<int32_t>(num_projection_dimensions),
+                           static_cast<int32_t>(1)}));
 
   ValueType type = ValueType::get(shape, element_type).AccessedType(mapping);
   return parser.resolveOperand(value, type, result.operands);
@@ -573,9 +573,9 @@ static mlir::ParseResult ParseAllocOp(mlir::OpAsmParser &parser,
   }
 
   result.attributes.append(SairAllocOp::getOperandSegmentSizeAttr(),
-                           parser.getBuilder().getI64VectorAttr(
-                               {static_cast<int64_t>(domain.size()),
-                                static_cast<int64_t>(values.size())}));
+                           parser.getBuilder().getI32VectorAttr(
+                               {static_cast<int32_t>(domain.size()),
+                                static_cast<int32_t>(values.size())}));
   result.attributes.append(SairDialect::kMappingAttrName,
                            parser.getBuilder().getArrayAttr(access_patterns));
 
@@ -654,12 +654,12 @@ static mlir::ParseResult ParseFbyOp(mlir::OpAsmParser &parser,
           {init_mapping.ResizeUseDomain(domain.size()), value_mapping}));
 
   // Store the number of operands in each variadic segments as required by MLIR,
-  // it expects specifically int64_t.
+  // it expects specifically int32_t.
   result.addAttribute(
       SairMapOp::getOperandSegmentSizeAttr(),
-      parser.getBuilder().getI64VectorAttr(
-          {static_cast<int64_t>(num_parallel_dimensions),
-           static_cast<int64_t>(domain.size() - num_parallel_dimensions), 1,
+      parser.getBuilder().getI32VectorAttr(
+          {static_cast<int32_t>(num_parallel_dimensions),
+           static_cast<int32_t>(domain.size() - num_parallel_dimensions), 1,
            1}));
 
   ValueType init_type = type.AccessedType(init_mapping);
@@ -1127,11 +1127,11 @@ ParseResult ParseMapOp(mlir::OpAsmParser &parser,
   }
 
   // Store the number of operands in each variadic segments as required by MLIR,
-  // it expects specifically int64_t.
+  // it expects specifically int32_t.
   result.addAttribute(
       SairMapOp::getOperandSegmentSizeAttr(),
-      builder.getI64VectorAttr({static_cast<int64_t>(domain.size()),
-                                static_cast<int64_t>(operands.size())}));
+      builder.getI32VectorAttr({static_cast<int32_t>(domain.size()),
+                                static_cast<int32_t>(operands.size())}));
 
   return mlir::success();
 }
@@ -1408,14 +1408,14 @@ ParseResult ParseMapReduceOp(mlir::OpAsmParser &parser,
   }
 
   // Store the number of operands in each variadic segments as required by MLIR,
-  // it expects specifically int64_t.
-  std::array<int64_t, 4> segment_sizes(
+  // it expects specifically int32_t.
+  std::array<int32_t, 4> segment_sizes(
       {num_parallel_dimensions,
-       static_cast<int64_t>(domain.size()) - num_parallel_dimensions,
+       static_cast<int32_t>(domain.size()) - num_parallel_dimensions,
        num_reduction_init_operands,
-       static_cast<int64_t>(operands.size()) - num_reduction_init_operands});
+       static_cast<int32_t>(operands.size()) - num_reduction_init_operands});
   result.addAttribute(SairMapOp::getOperandSegmentSizeAttr(),
-                      builder.getI64VectorAttr(segment_sizes));
+                      builder.getI32VectorAttr(segment_sizes));
 
   return mlir::success();
 }

@@ -232,7 +232,7 @@ func @from_memref_exected_same_element_type(%arg0 : memref<f32>) {
     %1 = "sair.from_memref"(%0) {
       shape = #sair.shape<()>,
       mapping_array = [#sair.mapping<0>],
-      operand_segment_sizes = dense<[0, 0, 1]> : vector<3xi64>
+      operand_segment_sizes = dense<[0, 0, 1]> : vector<3xi32>
     } : (!sair.value<(), memref<f32>>) -> (!sair.value<(), i32>)
     sair.exit
   }
@@ -478,7 +478,7 @@ func @map_reduce_init_accessing_reduction(%arg0 : f32) {
       ^bb0(%arg1: index, %arg2: index, %arg3: f32, %arg4: f32):
         "sair.return"(%arg3) : (f32) -> ()
       }) {mapping_array = [#sair.mapping<2:d1>, #sair.mapping<2:d1>],
-          operand_segment_sizes = dense<1> : vector<4xi64>,
+          operand_segment_sizes = dense<1> : vector<4xi32>,
           shape = #sair.shape<d0:range x d1:range>}
        : (!sair.range, !sair.range, !sair.value<d0:range, f32>, !sair.value<d0:range, f32>)
        -> !sair.value<d0:range, f32>
@@ -498,7 +498,7 @@ func @map_reduce_unexpected_shape() {
         sair.return %0 : f32
     }) {
       mapping_array = [],
-      operand_segment_sizes = dense<0> : vector<4xi64>,
+      operand_segment_sizes = dense<0> : vector<4xi32>,
       shape = #sair.shape<()>
     } : () -> !sair.value<d0:range, f32>
     sair.exit
