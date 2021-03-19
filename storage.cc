@@ -81,7 +81,8 @@ void Buffer::TrimLoopNest(int new_size) {
 
   mlir::MLIRContext *context = element_type_.getContext();
   // Compute dimensions used by layout.
-  llvm::SmallBitVector used_dimensions = loop_nest_mapping_.DependencyMask();
+  llvm::SmallBitVector used_dimensions(domain_.size());
+  used_dimensions |= loop_nest_mapping_.DependencyMask();
   for (MappingExpr layout_expr : layout_) {
     layout_expr.SetDependenciesInMask(used_dimensions);
   }
