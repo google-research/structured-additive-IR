@@ -430,6 +430,10 @@ static mlir::LogicalResult CheckLayoutMapping(
   int loop_nest_size = buffer.loop_nest().size();
 
   MappingAttr mapping = buffer.PrefixedLayout();
+  if (!mapping.IsFullySpecified()) {
+    return mlir::emitError(buffer.getLoc())
+           << "buffer " << buffer_name << " layout is not fully specified";
+  }
 
   // Update `min_num_loops` based on domain dimensions layout depends on.
   llvm::SmallBitVector used_dimensions(domain_size);

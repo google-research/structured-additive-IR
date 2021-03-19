@@ -1533,3 +1533,20 @@ func @placeholder_loop_nest_unspecified(%arg0: f32) {
   }
   return
 }
+
+// -----
+
+func @partial_layout(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.static_range 8 : !sair.range
+    // expected-error @+1 {{buffer "bufferA" layout is not fully specified}}
+    %2 = sair.copy[d0:%1] %0 {
+      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
+      storage = [{name = "bufferA", space = "memory",
+                  layout = #sair.named_mapping<[d0:"loopA"] -> (d0, none)>}]
+    } : !sair.value<d0:range, f32>
+    sair.exit
+  }
+  return
+}
