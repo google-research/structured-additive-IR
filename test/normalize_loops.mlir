@@ -126,27 +126,31 @@ func @load_store_memref(%arg0: index) {
         {name = "B", iter = #sair.mapping_expr<stripe(d0, 1 size 4)>}
       ]
     } : !sair.value<d0:range, memref<?xf32>>
-    // CHECK: sair.load_from_memref[d0:%[[D0]], d1:%[[D1]]] %{{.*}}(d0, d1) memref[d2:%[[D2]]]
+    // CHECK: sair.load_from_memref[d0:%[[D0]], d1:%[[D1]], d2:%[[D2]]] %{{.*}}(d0, d1)
+    // CHECK: layout = #sair.mapping<3 : d2>,
     // CHECK: loop_nest = [
     // CHECK:   {iter = #sair.mapping_expr<d0>, name = "A"}
     // CHECK:   {iter = #sair.mapping_expr<d1>, name = "B"}
     // CHECK:   {iter = #sair.mapping_expr<d2>, name = "C"}
-    // CHECK: #sair.shape<d0:range x d1:range(d0) x d2:range>
-    %2 = sair.load_from_memref[d0:%0] %memref(d0) memref[d1:%1]
-      { loop_nest = [
+    // CHECK: memref<?xf32> -> !sair.value<d0:range x d1:range(d0) x d2:range, f32>
+    %2 = sair.load_from_memref[d0:%0, d1:%1] %memref(d0) {
+        layout = #sair.mapping<2 : d1>,
+        loop_nest = [
           {name = "A", iter = #sair.mapping_expr<stripe(d0, 4)>},
           {name = "B", iter = #sair.mapping_expr<stripe(d0, 1 size 4)>},
           {name = "C", iter = #sair.mapping_expr<d1>}
         ]
-      } : #sair.shape<d0:range x d1:range>, memref<?xf32>
-    // CHECK: sair.store_to_memref[d0:%[[D0]], d1:%[[D1]]] %{{.*}}(d0, d1) memref[d2:%[[D2]]] %{{.*}}(d0, d1, d2)
+      } : memref<?xf32> -> !sair.value<d0:range x d1:range, f32>
+    // CHECK: sair.store_to_memref[d0:%[[D0]], d1:%[[D1]], d2:%[[D2]]] %{{.*}}(d0, d1), %{{.*}}(d0, d1, d2)
+    // CHECK: layout = #sair.mapping<3 : d2>,
     // CHECK: loop_nest = [
     // CHECK:   {iter = #sair.mapping_expr<d0>, name = "A"}
     // CHECK:   {iter = #sair.mapping_expr<d1>, name = "B"}
     // CHECK:   {iter = #sair.mapping_expr<d2>, name = "C"}
     // CHECK: #sair.shape<d0:range x d1:range(d0) x d2:range>
-    sair.store_to_memref[d0:%0] %memref(d0) memref[d1:%1] %2(d0, d1)
-      { loop_nest = [
+    sair.store_to_memref[d0:%0, d1:%1] %memref(d0), %2(d0, d1) {
+        layout = #sair.mapping<2 : d1>,
+        loop_nest = [
           {name = "A", iter = #sair.mapping_expr<stripe(d0, 4)>},
           {name = "B", iter = #sair.mapping_expr<stripe(d0, 1 size 4)>},
           {name = "C", iter = #sair.mapping_expr<d1>}

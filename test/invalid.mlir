@@ -241,6 +241,45 @@ func @from_memref_exected_same_element_type(%arg0 : memref<f32>) {
 
 // -----
 
+func @load_from_memref_exected_same_element_type(%arg0 : memref<f32>) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), memref<f32>>
+    // expected-error @+1 {{memref and value type must have the same element type}}
+    %1 = sair.load_from_memref %0 { layout = #sair.mapping<0> }
+      : memref<f32> -> !sair.value<(), i32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @load_from_memref_rank_mismatch(%arg0 : memref<?xf32>) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), memref<?xf32>>
+    // expected-error @+1 {{memref and layout must have the same rank}}
+    %1 = sair.load_from_memref %0 { layout = #sair.mapping<0> }
+      : memref<?xf32> -> !sair.value<(), f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @load_from_memref_layout_partially_specified(%arg0 : memref<?xf32>) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), memref<?xf32>>
+    // expected-error @+1 {{layout must be fully specified}}
+    %1 = sair.load_from_memref %0 { layout = #sair.mapping<0 : none> }
+      : memref<?xf32> -> !sair.value<(), f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
 func @hyper_rectangular_domain(%arg0: index, %arg1 : memref<?x?xf32>) {
   sair.program {
     %0 = sair.static_range 8 :!sair.range
@@ -263,20 +302,6 @@ func @from_memref_rank(%arg0 : memref<?xf32>) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), memref<?xf32>>
     // expected-error @+1 {{expected memref of rank 0, got 1}}
     %1 = sair.from_memref %0 memref : #sair.shape<()>, memref<?xf32>
-    sair.exit
-  }
-  return
-}
-
-// -----
-
-func @from_memref_access_map_dims(%arg0 : memref<?xf32>) {
-  sair.program {
-    %0 = sair.from_scalar %arg0 : !sair.value<(), memref<?xf32>>
-    // expected-error @+1 {{access_map has 1 dimensions, expected 0}}
-    %1 = sair.from_memref %0 memref {
-      access_map = affine_map<(d0) -> (d0)>
-    } : #sair.shape<()>, memref<?xf32>
     sair.exit
   }
   return
@@ -1121,32 +1146,6 @@ func @loop_crosses_subdomain_boundaries(%arg0: f32) {
     // expected-error @+1 {{loop "loopA" crosses sub-domains boundaries}}
     %4 = sair.proj_last[d0:%1] of[d1:%0] %3(d0, d1)
       : #sair.shape<d0:range x d1:range>, f32
-    sair.exit
-  }
-  return
-}
-
-// -----
-
-func @non_identity_loop_nest_for_memref(%arg0: index) {
-  sair.program {
-    %size = sair.from_scalar %arg0 : !sair.value<(), index>
-    %0 = sair.static_range 4 : !sair.range
-    %1 = sair.dyn_range %size : !sair.range
-    %memref = sair.alloc[d0:%0] %size {
-      loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<d0>}
-      ]
-    } : !sair.value<d0:range, memref<?xf32>>
-    // expected-error @+2 {{expects loop_nest to be identity for the memref domain}}
-    // expected-note @+1 {{found #sair.mapping_expr<stripe(d1, 1 size 4)>}}
-    %2 = sair.load_from_memref[d0:%0] %memref(d0) memref[d1:%1]
-      { loop_nest = [
-          {name = "A", iter = #sair.mapping_expr<d0>},
-          {name = "B", iter = #sair.mapping_expr<stripe(d1, 4)>},
-          {name = "C", iter = #sair.mapping_expr<stripe(d1, 1 size 4)>}
-        ]
-      } : #sair.shape<d0:range x d1:range>, memref<?xf32>
     sair.exit
   }
   return

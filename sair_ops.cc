@@ -274,8 +274,8 @@ ParseResult ParseFromScalarOp(mlir::OpAsmParser &parser,
 // from-memref-op ::= 'sair.from_memref' parallel-domain memref-operand
 //    'memref' memref-domain attr-dict : shape, memref-type
 //
-ParseResult ParseFromMemRefLike(mlir::OpAsmParser &parser,
-                                mlir::OperationState &result) {
+ParseResult ParseFromMemRef(mlir::OpAsmParser &parser,
+                            mlir::OperationState &result) {
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
   mlir::OpAsmParser::OperandType memref;
   MappingAttr mapping;
@@ -314,6 +314,39 @@ ParseResult ParseFromMemRefLike(mlir::OpAsmParser &parser,
       parser.addTypeToList(result_type, result.types));
 }
 
+// Parses the LoadFromMemRef operation. This operations takes an iteration
+// domain and a memref as argument and returns a Sair value. The syntax is the
+// following.
+//
+// from-memref-op ::= 'sair.load_from_memref' domain memref-operand
+//    attr-dict : memref-type -> value_type
+//
+ParseResult ParseLoadFromMemRef(mlir::OpAsmParser &parser,
+                                mlir::OperationState &result) {
+  llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
+  mlir::OpAsmParser::OperandType memref;
+  MappingAttr mapping;
+  MemRefType memref_type;
+  ValueType value_type;
+
+  if (ParseDomain(parser, domain) ||
+      ParseValueAccess(domain.size(), parser, memref, mapping) ||
+      parser.parseOptionalAttrDict(result.attributes) ||
+      parser.parseColonType(memref_type) || parser.parseArrow() ||
+      parser.parseType(value_type) ||
+      parser.addTypeToList(value_type, result.types) ||
+      ResolveDomain(parser, value_type.Shape(), domain, result)) {
+    return failure();
+  }
+
+  result.addAttribute(SairDialect::kMappingAttrName,
+                      parser.getBuilder().getArrayAttr({mapping}));
+
+  auto operand_type = ValueType::get(value_type.Shape(), memref_type);
+  return parser.resolveOperand(memref, operand_type.AccessedType(mapping),
+                               result.operands);
+}
+
 // Parses the ToMemRef operation. This operation takes an iteration domain, a
 // Sair value and a memref as argument and returns nothing. Its syntax is the
 // following.
@@ -321,8 +354,8 @@ ParseResult ParseFromMemRefLike(mlir::OpAsmParser &parser,
 // to-memref-op ::= 'sair.from_memref' parallel-domain memref-operand
 //    'memref' memref-domain value-operand attr-dict : shape, memref-type
 //
-ParseResult ParseToMemRefLike(mlir::OpAsmParser &parser,
-                              mlir::OperationState &result) {
+ParseResult ParseToMemRef(mlir::OpAsmParser &parser,
+                          mlir::OperationState &result) {
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
   mlir::OpAsmParser::OperandType memref, value;
   MappingAttr memref_mapping, value_mapping;
@@ -355,6 +388,44 @@ ParseResult ParseToMemRefLike(mlir::OpAsmParser &parser,
           {static_cast<int64_t>(parallel_domain_size),
            static_cast<int64_t>(domain.size() - parallel_domain_size),
            static_cast<int64_t>(1), static_cast<int64_t>(1)}));
+
+  auto value_type = ValueType::get(shape.AccessedShape(value_mapping),
+                                   memref_type.getElementType());
+  auto memref_value_type =
+      ValueType::get(shape.AccessedShape(memref_mapping), memref_type);
+  return failure(
+      parser.resolveOperand(memref, memref_value_type, result.operands) ||
+      parser.resolveOperand(value, value_type, result.operands));
+}
+
+// Parses the StoreToMemRef operation. The syntax is the following.
+//
+// store-to-memref-op ::= 'sair.store_to_memref' domain memref-operand ','
+//   value-operand  attr-dict : shape, memref_type
+//
+ParseResult ParseStoreToMemRef(mlir::OpAsmParser &parser,
+                               mlir::OperationState &result) {
+  llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
+  mlir::OpAsmParser::OperandType memref, value;
+  MappingAttr memref_mapping, value_mapping;
+  MemRefType memref_type;
+  DomainShapeAttr shape;
+
+  if (ParseDomain(parser, domain) ||
+      ParseValueAccess(domain.size(), parser, memref, memref_mapping) ||
+      parser.parseComma() ||
+      ParseValueAccess(domain.size(), parser, value, value_mapping) ||
+      parser.parseOptionalAttrDict(result.attributes) || parser.parseColon() ||
+      parser.parseAttribute(shape, SairDialect::kShapeAttrName,
+                            result.attributes) ||
+      parser.parseComma() || parser.parseType(memref_type) ||
+      ResolveDomain(parser, shape, domain, result)) {
+    return failure();
+  }
+
+  result.addAttribute(
+      SairDialect::kMappingAttrName,
+      parser.getBuilder().getArrayAttr({memref_mapping, value_mapping}));
 
   auto value_type = ValueType::get(shape.AccessedShape(value_mapping),
                                    memref_type.getElementType());
@@ -657,9 +728,8 @@ void Print(SairFromScalarOp op, OpAsmPrinter &printer) {
 }
 
 // Prints the from_memref operation.
-template <typename OpTy>
-void PrintFromMemRefLike(OpTy op, OpAsmPrinter &printer) {
-  printer << OpTy::getOperationName();
+void Print(SairFromMemRefOp op, OpAsmPrinter &printer) {
+  printer << SairFromMemRefOp::getOperationName();
   PrintDomain(op.parallel_domain(), printer);
   printer << " ";
   PrintValueAccess(op.MemRef(), printer);
@@ -673,10 +743,20 @@ void PrintFromMemRefLike(OpTy op, OpAsmPrinter &printer) {
   printer << " : " << op.shape() << ", " << op.MemRefType();
 }
 
+// Prints the load_from_memref operation.
+void Print(SairLoadFromMemRefOp op, OpAsmPrinter &printer) {
+  printer << SairLoadFromMemRefOp::getOperationName();
+  PrintDomain(op.domain(), printer);
+  printer << " ";
+  PrintValueAccess(op.MemRef(), printer);
+  printer.printOptionalAttrDict(op->getAttrs(),
+                                {SairDialect::kMappingAttrName});
+  printer << " : " << op.MemRefType() << " -> " << op.getType();
+}
+
 // Prints the to_memref operation.
-template <typename OpTy>
-void PrintToMemRefLike(OpTy op, OpAsmPrinter &printer) {
-  printer << OpTy::getOperationName();
+void Print(SairToMemRefOp op, OpAsmPrinter &printer) {
+  printer << SairToMemRefOp::getOperationName();
   PrintDomain(op.parallel_domain(), printer);
   printer << " ";
   PrintValueAccess(op.MemRef(), printer);
@@ -690,6 +770,19 @@ void PrintToMemRefLike(OpTy op, OpAsmPrinter &printer) {
       op->getAttrs(),
       {SairFromMemRefOp::getOperandSegmentSizeAttr(),
        SairDialect::kShapeAttrName, SairDialect::kMappingAttrName});
+  printer << " : " << op.shape() << ", " << op.MemRefType();
+}
+
+// Prints the store_to_memref operation.
+void Print(SairStoreToMemRefOp op, OpAsmPrinter &printer) {
+  printer << SairStoreToMemRefOp::getOperationName();
+  PrintDomain(op.domain(), printer);
+  printer << " ";
+  PrintValueAccess(op.MemRef(), printer);
+  printer << ", ";
+  PrintValueAccess(op.Value(), printer);
+  printer.printOptionalAttrDict(op->getAttrs(), {SairDialect::kMappingAttrName,
+                                                 SairDialect::kShapeAttrName});
   printer << " : " << op.shape() << ", " << op.MemRefType();
 }
 
@@ -795,9 +888,28 @@ mlir::LogicalResult Verify(SairFromScalarOp op) {
   return mlir::success();
 }
 
-static mlir::LogicalResult VerifyFromToMemRef(
-    mlir::Operation *op, int parallel_domain_size, DomainShapeAttr shape,
-    mlir::Value memref, mlir::Value value, mlir::AffineMap access_map) {
+mlir::LogicalResult VerifyLoadFromStoreToMemRef(mlir::Operation *op,
+                                                mlir::MemRefType memref_type,
+                                                ValueType value_type,
+                                                MappingAttr layout) {
+  if (memref_type.getElementType() != value_type.ElementType()) {
+    return op->emitError()
+           << "memref and value type must have the same element type";
+  }
+  if (memref_type.getRank() != layout.size()) {
+    return op->emitError() << "memref and layout must have the same rank";
+  }
+  if (!layout.IsFullySpecified()) {
+    return op->emitError() << "layout must be fully specified";
+  }
+  return mlir::success();
+}
+
+static mlir::LogicalResult VerifyFromToMemRef(mlir::Operation *op,
+                                              int parallel_domain_size,
+                                              DomainShapeAttr shape,
+                                              mlir::Value memref,
+                                              mlir::Value value) {
   auto memref_type =
       memref.getType().cast<ValueType>().ElementType().cast<MemRefType>();
   auto value_type = value.getType().cast<ValueType>();
@@ -806,14 +918,9 @@ static mlir::LogicalResult VerifyFromToMemRef(
            << "memref and value must have the same element type";
   }
   int memref_domain_size = shape.NumDimensions() - parallel_domain_size;
-  if (access_map.getNumDims() != memref_domain_size) {
-    return op->emitError() << "access_map has " << access_map.getNumDims()
-                           << " dimensions, expected " << memref_domain_size;
-  }
-  if (memref_type.getRank() != access_map.getNumResults()) {
-    return op->emitError() << "expected memref of rank "
-                           << access_map.getNumResults() << ", got "
-                           << memref_type.getRank();
+  if (memref_type.getRank() != memref_domain_size) {
+    return op->emitError() << "expected memref of rank " << memref_domain_size
+                           << ", got " << memref_type.getRank();
   }
   for (const DomainShapeDim shape_dim :
        shape.Dimensions().drop_front(parallel_domain_size)) {
@@ -821,31 +928,6 @@ static mlir::LogicalResult VerifyFromToMemRef(
     if (max_dependency >= parallel_domain_size) {
       return op->emitError()
              << "memref domain dimensions cannot depend on each other";
-    }
-  }
-  return mlir::success();
-}
-
-// Verifies that the `loop_nest` attribute is identity in the range of
-// dimensions [domain_begin, domain_end). Reports errors at `op` in case of
-// failure. The loop nest may be missing (nullptr), which results in success.
-// Assumes the domain of interest is trailing in the general op domain.
-mlir::LogicalResult VerifyDomainLoopNestIsIdentity(mlir::Operation *op,
-                                                   mlir::ArrayAttr loop_nest,
-                                                   int domain_begin,
-                                                   int domain_end) {
-  if (!loop_nest) return mlir::success();
-
-  auto expressions = loop_nest.getValue().take_back(domain_end - domain_begin);
-  for (int i = domain_begin; i < domain_end; ++i) {
-    MappingExpr iter = expressions[i - domain_begin].cast<LoopAttr>().iter();
-    auto dim = iter.dyn_cast<MappingDimExpr>();
-    if (!dim || dim.dimension() != i) {
-      mlir::InFlightDiagnostic diag =
-          op->emitOpError()
-          << "expects loop_nest to be identity for the memref domain";
-      diag.attachNote() << "found " << iter;
-      return diag;
     }
   }
   return mlir::success();
@@ -899,17 +981,7 @@ llvm::SmallBitVector SairFromMemRefOp::DimsDependingOnOperand(
   return FromToMemRefLikeDimsDependingOnOperands(*this, sair_operand);
 }
 
-llvm::SmallBitVector SairLoadFromMemRefOp::DimsDependingOnOperand(
-    int sair_operand) {
-  return FromToMemRefLikeDimsDependingOnOperands(*this, sair_operand);
-}
-
 llvm::SmallBitVector SairToMemRefOp::DimsDependingOnOperand(int sair_operand) {
-  return FromToMemRefLikeDimsDependingOnOperands(*this, sair_operand);
-}
-
-llvm::SmallBitVector SairStoreToMemRefOp::DimsDependingOnOperand(
-    int sair_operand) {
   return FromToMemRefLikeDimsDependingOnOperands(*this, sair_operand);
 }
 
@@ -1601,8 +1673,7 @@ llvm::SmallVector<int, 2> SairFromMemRefOp::SubDomains() {
 }
 
 llvm::SmallVector<int, 2> SairLoadFromMemRefOp::SubDomains() {
-  return {static_cast<int>(parallel_domain().size()),
-          static_cast<int>(memref_domain().size())};
+  return {static_cast<int>(domain().size())};
 }
 
 llvm::SmallVector<int, 2> SairToMemRefOp::SubDomains() {
@@ -1611,8 +1682,7 @@ llvm::SmallVector<int, 2> SairToMemRefOp::SubDomains() {
 }
 
 llvm::SmallVector<int, 2> SairStoreToMemRefOp::SubDomains() {
-  return {static_cast<int>(parallel_domain().size()),
-          static_cast<int>(memref_domain().size())};
+  return {static_cast<int>(domain().size())};
 }
 
 llvm::SmallVector<int, 2> SairMapOp::SubDomains() {
@@ -1737,29 +1807,6 @@ SairOp SairFromScalarOp::ReCreateWithNewDomain(
       "not called by NormalizeLoops because the op has a 0D domain");
 }
 
-namespace {
-// Checks that the memref domain of a an op converting between memref and Sair
-// value would be preserved if an op is created with the given new domains.
-template <typename OpTy>
-void CheckMemRefDomainPreserved(
-    OpTy op, llvm::ArrayRef<llvm::SmallVector<mlir::Value>> new_domains,
-    MappingAttr new_to_old_mapping) {
-  assert(new_domains.size() == 2);
-  // Assert that memref domain is left untouched.
-  assert(new_domains[1].size() == op.memref_domain().size());
-  int old_parallel_domain_size = op.parallel_domain().size();
-  int new_parallel_domain_size = new_domains[0].size();
-  (void)new_parallel_domain_size;
-  for (int i = 0, e = op.memref_domain().size(); i < e; ++i) {
-    auto dim_expr = new_to_old_mapping.Dimension(i + old_parallel_domain_size)
-                        .template dyn_cast<MappingDimExpr>();
-    assert(dim_expr != nullptr &&
-           dim_expr.dimension() == i + new_parallel_domain_size);
-    (void)dim_expr;
-  }
-}
-}  // end namespace
-
 SairOp SairFromMemRefOp::ReCreateWithNewDomain(
     llvm::ArrayRef<llvm::SmallVector<mlir::Value>> new_domains,
     DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
@@ -1771,18 +1818,18 @@ SairOp SairLoadFromMemRefOp::ReCreateWithNewDomain(
     llvm::ArrayRef<llvm::SmallVector<mlir::Value>> new_domains,
     DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
     mlir::OpBuilder &builder) {
-  CheckMemRefDomainPreserved(*this, new_domains, new_to_old_mapping);
-
+  assert(new_domains.size() == 1);
   mlir::ArrayAttr new_mappings =
       ComposeMappings(new_to_old_mapping, mapping_array());
   mlir::ArrayAttr new_loop_nest =
       ComposeLoopNest(new_to_old_mapping, loop_nestAttr());
 
+  MappingAttr new_layout = new_to_old_mapping.Compose(layout());
   auto return_type =
       ValueType::get(new_shape, getType().cast<ValueType>().ElementType());
   auto new_op = builder.create<SairLoadFromMemRefOp>(
-      getLoc(), return_type, new_domains[0], new_domains[1], new_mappings,
-      memref(), access_mapAttr(), new_loop_nest, storageAttr());
+      getLoc(), return_type, new_domains[0], new_mappings, memref(), new_layout,
+      new_loop_nest, storageAttr());
   ForwardAttributes(getOperation(), new_op.getOperation());
   return llvm::cast<SairOp>(new_op.getOperation());
 }
@@ -1798,15 +1845,16 @@ SairOp SairStoreToMemRefOp::ReCreateWithNewDomain(
     llvm::ArrayRef<llvm::SmallVector<mlir::Value>> new_domains,
     DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
     mlir::OpBuilder &builder) {
-  CheckMemRefDomainPreserved(*this, new_domains, new_to_old_mapping);
+  assert(new_domains.size() == 1);
 
   mlir::ArrayAttr new_mappings =
       ComposeMappings(new_to_old_mapping, mapping_array());
   mlir::ArrayAttr new_loop_nest =
       ComposeLoopNest(new_to_old_mapping, loop_nestAttr());
+  MappingAttr new_layout = new_to_old_mapping.Compose(layout());
   auto new_op = builder.create<SairStoreToMemRefOp>(
-      getLoc(), new_domains[0], new_domains[1], new_mappings, memref(), value(),
-      new_shape, access_mapAttr(), new_loop_nest);
+      getLoc(), new_domains[0], new_mappings, memref(), value(), new_layout,
+      new_shape, new_loop_nest);
   ForwardAttributes(getOperation(), new_op.getOperation());
   return llvm::cast<SairOp>(new_op.getOperation());
 }

@@ -258,8 +258,7 @@ void EmitMemRefToValue(
     auto from_scalar =
         rewriter.create<SairFromScalarOp>(loc, memref_value_type, operand);
     Value new_operand = rewriter.create<SairFromMemRefOp>(
-        loc, value_type, mlir::ValueRange(), ranges, mappings, from_scalar,
-        /*access_map=*/nullptr);
+        loc, value_type, mlir::ValueRange(), ranges, mappings, from_scalar);
     // Insert a copy to avoid storage specification mismatch.
     // TODO(b/181850491): introduce a sair.maybe_copy operation instead.
     auto copy_mapping = rewriter.getArrayAttr(
@@ -303,7 +302,7 @@ void EmitValueToMemRef(mlir::Location loc, mlir::ValueRange sair_values,
         rewriter.create<SairFromScalarOp>(loc, memref_value_type, memrefs[i]);
     rewriter.create<SairToMemRefOp>(loc, mlir::ValueRange(), ranges[i],
                                     mapping_array, from_scalar, sair_values[i],
-                                    shape, /*access_map=*/nullptr);
+                                    shape);
   }
 }
 

@@ -195,59 +195,8 @@ def SairFromScalarOp : SairOp<"from_scalar", [
   DerivedAttr shape = SairEmptyDomainShapeAttr;
 }
 
-class SairFromMemRefOpBase<string mnemonic,
-                           list<OpTrait> extraTraits = [],
-                           dag extraArgs = (ins)> : SairOp<mnemonic,
-   !listconcat([AttrSizedOperandSegments], extraTraits)> {
-  let arguments = !con((ins
-    Variadic<SairRange>:$parallel_domain,
-    Variadic<SairRange>:$memref_domain,
-    SairMappingArrayAttr:$mapping_array,
-    SairValueOf<AnyMemRef>:$memref,
-    OptionalAttr<AffineMapAttr>:$access_map
-  ), extraArgs);
-
-  let results = (outs SairValue:$result);
-
-  let parser = [{return ParseFromMemRefLike(parser, result);}];
-  let printer = [{return PrintFromMemRefLike(*this, p);}];
-
-  code commonVerifier = [{
-    return VerifyFromToMemRef(
-      getOperation(), parallel_domain().size(), shape(), memref(), result(),
-      AccessMap());
-  }];
-  let verifier = commonVerifier;
-
-  code commonClassDeclaration = [{
-    ValueOperand MemRef() { return ValueOperands()[0]; }
-
-    OperandRange domain() {
-      return ChainOperandRanges(parallel_domain(), memref_domain());
-    }
-
-    llvm::SmallBitVector DimsDependingOnOperand(int sair_operand);
-
-    mlir::AffineMap AccessMap() {
-      if (access_map().hasValue()) return access_map().getValue();
-      return mlir::AffineMap::getMultiDimIdentityMap(memref_domain().size(),
-                                                     getContext());
-    }
-
-    mlir::MemRefType MemRefType() {
-      return memref()
-          .getType()
-          .cast<ValueType>()
-          .ElementType()
-          .cast<mlir::MemRefType>();
-    }
-  }];
-  let extraClassDeclaration = commonClassDeclaration;
-
-  DerivedAttr shape = SairResultDomainShapeAttr;
-}
-
-def SairFromMemRefOp : SairFromMemRefOpBase<"from_memref", [
+def SairFromMemRefOp : SairOp<"from_memref", [
+    AttrSizedOperandSegments,
     DeclareOpInterfaceMethods<SairValueViewOp>,
     NoSideEffect,
     SairInferIterationSpaceOp]> {
@@ -279,21 +228,50 @@ def SairFromMemRefOp : SairFromMemRefOpBase<"from_memref", [
     ```
   }];
 
-  let extraClassDeclaration = !strconcat([{
+  let arguments = (ins
+    Variadic<SairRange>:$parallel_domain,
+    Variadic<SairRange>:$memref_domain,
+    SairMappingArrayAttr:$mapping_array,
+    SairValueOf<AnyMemRef>:$memref
+  );
+
+  let results = (outs SairValue:$result);
+
+  let parser = [{return ParseFromMemRef(parser, result);}];
+  let printer = [{return Print(*this, p);}];
+  let verifier = [{
+    return VerifyFromToMemRef(
+      getOperation(), parallel_domain().size(), shape(), memref(), result());
+  }];
+
+  let extraClassDeclaration = [{
+    ValueOperand MemRef() { return ValueOperands()[0]; }
+
+    OperandRange domain() {
+      return ChainOperandRanges(parallel_domain(), memref_domain());
+    }
+
+    llvm::SmallBitVector DimsDependingOnOperand(int sair_operand);
+
+    mlir::MemRefType MemRefType() {
+      return MemRef()
+          .GetType()
+          .ElementType()
+          .cast<mlir::MemRefType>();
+    }
+
     int infer_iteration_space_operand() { return 0; }
-  }], commonClassDeclaration);
+  }];
+
+  DerivedAttr shape = SairResultDomainShapeAttr;
 }
 
-def SairLoadFromMemRefOp : SairFromMemRefOpBase<"load_from_memref",
-    [SairComputeOp],
-    (ins SairLoopNestAttr:$loop_nest,
-         SairStorageAttr:$storage)> {
+def SairLoadFromMemRefOp : SairOp<"load_from_memref", [SairComputeOp]> {
   let summary = "Loads data from a memref to a Sair value";
 
   let description = [{
-    Loads data from a memref into a Sair value. The Sair value must have an
-    hyper-rectangular domain with a number of dimensions equal to the rank of
-    the memref.
+    Loads data from a memref into a Sair value. Mapping from domain indices to
+    memref dimensions is given by the `layout` attribute.
 
     This operation is introduced by Sair during its lowering process and is NOT
     expected to be present in the input. It is implemented as an actual load
@@ -303,75 +281,43 @@ def SairLoadFromMemRefOp : SairFromMemRefOpBase<"load_from_memref",
 
     ```
     <var-name> =
-      sair.load_from_memeref[<parallel-domain>] <var-name>
-                       shape[<memref-domain>]
+      sair.load_from_memeref[<domain>] <var-name> <attr-dict>
           : <memref-type> -> <sair-value-type>
     ```
   }];
 
-  let verifier = !strconcat([{
-    if (failed(VerifyDomainLoopNestIsIdentity(getOperation(), loop_nestAttr(),
-                                              parallel_domain().size(),
-                                              domain().size()))) {
-      return mlir::failure();
-    }
-  }], commonVerifier);
-}
-
-class SairToMemRefOpBase<string mnemonic,
-                         list<OpTrait> extraTraits = [],
-                         dag extraArgs = (ins)> : SairOp<mnemonic,
-    !listconcat([AttrSizedOperandSegments], extraTraits)> {
-  let arguments = !con((ins
-    Variadic<SairRange>:$parallel_domain,
-    Variadic<SairRange>:$memref_domain,
+  let arguments = (ins
+    Variadic<SairRange>:$domain,
     SairMappingArrayAttr:$mapping_array,
     SairValueOf<AnyMemRef>:$memref,
-    SairValue:$value,
-    SairDomainShapeAttr:$shape,
-    OptionalAttr<AffineMapAttr>:$access_map
-  ), extraArgs);
+    SairMappingAttr:$layout,
+    SairLoopNestAttr:$loop_nest,
+    SairStorageAttr:$storage
+  );
 
-  let parser = [{return ParseToMemRefLike(parser, result);}];
-  let printer = [{return PrintToMemRefLike(*this, p);}];
+  let results = (outs SairValue:$result);
 
-  code commonVerifier = [{
-    return VerifyFromToMemRef(
-      getOperation(), parallel_domain().size(), shape(), memref(), value(),
-      AccessMap());
+  let parser = [{return ParseLoadFromMemRef(parser, result);}];
+  let printer = [{return Print(*this, p);}];
+  let verifier = [{
+    return VerifyLoadFromStoreToMemRef(getOperation(), MemRefType(),
+                                       getType().cast<ValueType>(), layout());
   }];
-  let verifier = commonVerifier;
 
-  code commonClassDeclaration = [{
+  let extraClassDeclaration = [{
     ValueOperand MemRef() { return ValueOperands()[0]; }
 
-    ValueOperand Value() { return ValueOperands()[1]; }
-
-    OperandRange domain() {
-      return ChainOperandRanges(parallel_domain(), memref_domain());
-    }
-
-    llvm::SmallBitVector DimsDependingOnOperand(int sair_operand);
-
-    mlir::AffineMap AccessMap() {
-      if (access_map().hasValue()) return access_map().getValue();
-      return mlir::AffineMap::getMultiDimIdentityMap(memref_domain().size(),
-                                                     getContext());
-    }
-
     mlir::MemRefType MemRefType() {
-      return memref()
-          .getType()
-          .cast<ValueType>()
-          .ElementType()
-          .cast<mlir::MemRefType>();
+      return MemRef().GetType().ElementType().cast<mlir::MemRefType>();
     }
   }];
-  let extraClassDeclaration = commonClassDeclaration;
+
+  DerivedAttr shape = SairResultDomainShapeAttr;
 }
 
-def SairToMemRefOp : SairToMemRefOpBase<"to_memref",
-    [SairInferIterationSpaceOp]> {
+def SairToMemRefOp : SairOp<"to_memref", [
+    AttrSizedOperandSegments,
+    SairInferIterationSpaceOp]> {
   let summary = "Interprets a Sair value as a memref";
 
   let description = [{
@@ -394,18 +340,51 @@ def SairToMemRefOp : SairToMemRefOpBase<"to_memref",
     ```
   }];
 
-  let extraClassDeclaration = !strconcat(commonClassDeclaration, [{
+  let arguments = (ins
+    Variadic<SairRange>:$parallel_domain,
+    Variadic<SairRange>:$memref_domain,
+    SairMappingArrayAttr:$mapping_array,
+    SairValueOf<AnyMemRef>:$memref,
+    SairValue:$value,
+    SairDomainShapeAttr:$shape
+  );
+
+  let parser = [{return ParseToMemRef(parser, result);}];
+  let printer = [{return Print(*this, p);}];
+  let verifier = [{
+    return VerifyFromToMemRef(
+      getOperation(), parallel_domain().size(), shape(), memref(), value());
+  }];
+
+  let extraClassDeclaration = [{
+    ValueOperand MemRef() { return ValueOperands()[0]; }
+
+    ValueOperand Value() { return ValueOperands()[1]; }
+
+    OperandRange domain() {
+      return ChainOperandRanges(parallel_domain(), memref_domain());
+    }
+
+    llvm::SmallBitVector DimsDependingOnOperand(int sair_operand);
+
+    mlir::MemRefType MemRefType() {
+      return memref()
+          .getType()
+          .cast<ValueType>()
+          .ElementType()
+          .cast<mlir::MemRefType>();
+    }
+
     int infer_iteration_space_operand() { return 0; }
-  }]);
+  }];
 }
 
-def SairStoreToMemRefOp : SairToMemRefOpBase<"store_to_memref",
-    [SairComputeOp], (ins SairLoopNestAttr:$loop_nest)> {
+def SairStoreToMemRefOp : SairOp<"store_to_memref", [SairComputeOp]> {
   let summary = "Storse a Sair value in a memref";
 
   let description = [{
-    Stores a Sair value in a memref. The operation has an hyper-rectangular
-    domain with a number of dimensions equal to the rank of the memref.
+    Loads data from a Sair value into a memref. Mapping from domain indices to
+    memref dimensions is given by the `layout` attribute.
 
     This operation is introduced by Sair during its lowering process and is NOT
     expected to be present in the input. It is implemented as an actual store
@@ -414,25 +393,44 @@ def SairStoreToMemRefOp : SairToMemRefOpBase<"store_to_memref",
     The syntax for the store_memref operation is as follows.
 
     ```
-    sair.store_to_memref[<parallel-domain>] <memref>
-                  memref[<memref-domain>] <value>
+    sair.store_to_memref[<parallel-domain>] <memref>, <value>
         : <shape>, <memref-type>
     ```
   }];
 
-  let verifier = !strconcat([{
-    if (failed(VerifyDomainLoopNestIsIdentity(getOperation(), loop_nestAttr(),
-                                              parallel_domain().size(),
-                                              domain().size()))) {
-      return mlir::failure();
-    }
-  }], commonVerifier);
+  let arguments = (ins
+    Variadic<SairRange>:$domain,
+    SairMappingArrayAttr:$mapping_array,
+    SairValueOf<AnyMemRef>:$memref,
+    SairValue:$value,
+    SairMappingAttr:$layout,
+    SairDomainShapeAttr:$shape,
+    SairLoopNestAttr:$loop_nest
+  );
 
-  let extraClassDeclaration = !strconcat(commonClassDeclaration, [{
+  let parser = [{return ParseStoreToMemRef(parser, result);}];
+  let printer = [{return Print(*this, p);}];
+  let verifier = [{
+    return VerifyLoadFromStoreToMemRef(getOperation(), MemRefType(),
+                                       Value().GetType(), layout());
+  }];
+
+  let extraClassDeclaration = [{
     llvm::Optional<mlir::ArrayAttr> storage() {
       return mlir::ArrayAttr::get(getContext(), {});
     }
-  }]);
+
+    ValueOperand MemRef() { return ValueOperands()[0]; }
+
+    ValueOperand Value() { return ValueOperands()[1]; }
+
+    mlir::MemRefType MemRefType() {
+      return MemRef()
+          .GetType()
+          .ElementType()
+          .cast<mlir::MemRefType>();
+    }
+  }];
 }
 
 def SairReturnOp : Op<SairDialect, "return", [Terminator]> {

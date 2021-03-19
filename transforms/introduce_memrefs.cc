@@ -229,8 +229,7 @@ mlir::LogicalResult internMemRefs(
   for (mlir::OpResult result : op.getOperation()->getResults()) {
     for (mlir::Operation *user : result.getUsers()) {
       if (auto to_memref = dyn_cast<SairToMemRefOp>(user)) {
-        if (!to_memref.parallel_domain().empty() ||
-            to_memref.access_map().hasValue()) {
+        if (!to_memref.parallel_domain().empty()) {
           return rewriter.notifyMatchFailure(
               user, "operation not supported by memref materialization");
         }
@@ -686,7 +685,7 @@ mlir::LogicalResult IntroduceMemRef(SairMapOp op, mlir::OpBuilder &builder) {
 // 0-dimensional value wrapping a memref.
 mlir::LogicalResult IntroduceMemRef(SairFromMemRefOp op,
                                     mlir::OpBuilder &builder) {
-  if (!op.parallel_domain().empty() || op.access_map().hasValue()) {
+  if (!op.parallel_domain().empty()) {
     return op.emitError()
            << "operation not supported by memref materialization";
   }
