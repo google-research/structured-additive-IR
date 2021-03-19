@@ -1504,8 +1504,11 @@ mlir::LogicalResult Verify(SairProgramOp program) {
   });
   if (result.wasInterrupted()) return mlir::failure();
 
-  if (mlir::failed(VerifyLoopNests(program))) return mlir::failure();
-  return VerifyStorages(program);
+  IterationSpaceAnalysis iteration_spaces;
+  if (mlir::failed(VerifyLoopNests(program, iteration_spaces))) {
+    return mlir::failure();
+  }
+  return VerifyStorages(program, iteration_spaces);
 }
 
 void SairProgramOp::build(mlir::OpBuilder &builder,
@@ -1987,49 +1990,51 @@ SairOp SairFreeOp::ReCreateWithNewDomain(
 }
 
 std::optional<ValueStorage> SairFromScalarOp::InferStorage(
-    int result,
-    const llvm::DenseMap<mlir::Value, ValueStorage> &operand_storages) {
+    int result, const IterationSpace &iteration_space,
+    llvm::ArrayRef<std::optional<ValueStorage>> operand_storages) {
+  assert(result == 0);
   auto *sair_dialect = getContext()->getLoadedDialect<SairDialect>();
-  return ValueStorage(
-      {.space = sair_dialect->register_attr(), .buffer_name = nullptr});
+  auto layout = MappingAttr::get(getContext(), 0, {});
+  return ValueStorage(sair_dialect->register_attr(), nullptr, layout);
 }
 
 std::optional<ValueStorage> SairProjLastOp::InferStorage(
-    int result,
-    const llvm::DenseMap<mlir::Value, ValueStorage> &operand_storages) {
-  return operand_storages.lookup(value());
+    int result, const IterationSpace &iteration_space,
+    llvm::ArrayRef<std::optional<ValueStorage>> operand_storages) {
+  assert(result == 0);
+  assert(operand_storages[0].has_value());
+  return operand_storages[0].value();
 }
 
 std::optional<ValueStorage> SairProjAnyOp::InferStorage(
-    int result,
-    const llvm::DenseMap<mlir::Value, ValueStorage> &operand_storages) {
-  return operand_storages.lookup(value());
+    int result, const IterationSpace &iteration_space,
+    llvm::ArrayRef<std::optional<ValueStorage>> operand_storages) {
+  assert(result == 0);
+  assert(operand_storages[0].has_value());
+  return operand_storages[0].value();
 }
 
 std::optional<ValueStorage> SairFbyOp::InferStorage(
-    int result,
-    const llvm::DenseMap<mlir::Value, ValueStorage> &operand_storages) {
-  auto init_it = operand_storages.find(init());
+    int result, const IterationSpace &iteration_space,
+    llvm::ArrayRef<std::optional<ValueStorage>> operand_storages) {
+  assert(result == 0);
+  assert(operand_storages[0].has_value());
 
-  // If init depends on result.
-  if (init_it == operand_storages.end()) {
-    return operand_storages.lookup(value());
+  if (operand_storages[1].has_value() &&
+      *operand_storages[0] != *operand_storages[1]) {
+    return std::nullopt;
   }
 
-  // If value depends on result.
-  auto value_it = operand_storages.find(value());
-  if (value_it == operand_storages.end()) return init_it->second;
-
-  if (value_it->second != init_it->second) return std::nullopt;
-  return value_it->second;
+  return *operand_storages[0];
 }
 
 std::optional<ValueStorage> SairFromMemRefOp::InferStorage(
-    int result,
-    const llvm::DenseMap<mlir::Value, ValueStorage> &operand_storages) {
+    int result, const IterationSpace &iteration_space,
+    llvm::ArrayRef<std::optional<ValueStorage>> operand_storages) {
   auto *sair_dialect = getContext()->getLoadedDialect<SairDialect>();
-  return ValueStorage(
-      {.space = sair_dialect->register_attr(), .buffer_name = nullptr});
+  auto layout = MappingAttr::get(getContext(),
+                                 iteration_space.mapping().UseDomainSize(), {});
+  return ValueStorage(sair_dialect->register_attr(), nullptr, layout);
 }
 
 }  // namespace sair

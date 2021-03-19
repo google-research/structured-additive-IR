@@ -524,7 +524,7 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
       return driver.create<ConstantOp>(op.getLoc(), bound.constant());
     }
     // Check that the value is stored in registers.
-    if (storage_analysis.GetStorage(bound.value().value).space !=
+    if (storage_analysis.GetStorage(bound.value().value).space() !=
         sair_dialect->register_attr()) {
       // TODO(b/174127497): ensure that value stored in registers are produced
       // in the same loop nest.

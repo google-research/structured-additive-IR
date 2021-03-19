@@ -31,6 +31,8 @@
 
 namespace sair {
 
+class IterationSpace;
+
 // A Sair value accessed with a mapping.
 struct ValueAccess {
   mlir::Value value;
@@ -68,7 +70,7 @@ class ValueOperand {
   }
 
   // Returns the operation owning the operand.
-  mlir::Operation *getOwner() { return operand_->getOwner(); }
+  mlir::Operation *getOwner() const { return operand_->getOwner(); }
 
   // Returns the position of the operand.
   int position() const { return index_; }
@@ -152,16 +154,34 @@ class ValueOrConstant {
   std::variant<ValueAccess, mlir::Attribute> variant_;
 };
 
-// Describes how a value is stored.
-struct ValueStorage {
-  // Memory space the value is stored in. May be null if not yet specified.
-  mlir::StringAttr space;
-  // Name of the buffer where the value is stored, if specified.
-  mlir::StringAttr buffer_name;
+class IterationSpaceAnalysis;
 
-  // Returns the value storage for the value when viewed through the given
-  // mapping.
-  ValueStorage Map(MappingAttr map) const { return *this; }
+// Describes how a value is stored. Attributes may be null if the buffer is not
+// yet specified.
+class ValueStorage {
+ public:
+  ValueStorage() {}
+  ValueStorage(mlir::StringAttr space, mlir::StringAttr buffer_name,
+               MappingAttr layout)
+      : space_(space), buffer_name_(buffer_name), layout_(layout) {}
+
+  // Memory space the value is stored in. May be null if not yet specified.
+  mlir::StringAttr space() const { return space_; }
+
+  // Name of the buffer where the value is stored, if specified.
+  mlir::StringAttr buffer_name() const { return buffer_name_; }
+
+  // Mapping from the iteration space of the value to buffer dimensions.
+  MappingAttr layout() const { return layout_; }
+
+  // Returns the value storage as seen through an operand.
+  ValueStorage Map(const ValueOperand &operand,
+                   const IterationSpaceAnalysis &iteration_spaces) const;
+
+ private:
+  mlir::StringAttr space_;
+  mlir::StringAttr buffer_name_;
+  MappingAttr layout_;
 };
 
 bool operator==(const ValueStorage &lhs, const ValueStorage &rhs);

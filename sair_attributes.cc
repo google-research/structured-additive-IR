@@ -923,6 +923,18 @@ int MappingAttr::MinDomainSize() const {
   return min;
 }
 
+MappingAttr MappingAttr::Unify(MappingAttr other) const {
+  assert(size() == other.size());
+  assert(UseDomainSize() == other.UseDomainSize());
+  llvm::SmallVector<MappingExpr> exprs;
+  exprs.reserve(size());
+  for (auto [x, y] : llvm::zip(Dimensions(), other.Dimensions())) {
+    exprs.push_back(x.Unify(y));
+    if (exprs.back() == nullptr) return nullptr;
+  }
+  return MappingAttr::get(getContext(), UseDomainSize(), exprs);
+}
+
 //===----------------------------------------------------------------------===//
 // NamedMappingAttr
 //===----------------------------------------------------------------------===//

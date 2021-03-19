@@ -153,6 +153,11 @@ class MappingAttr
   // Canonicalize dimension expressions.
   MappingAttr Canonicalize() const;
 
+  // Unifies this mapping with `other`. Returns `nullptr` if unification fails
+  // in one of the dimensions. Both expressions must have the same number of
+  // dimensions and domain size.
+  MappingAttr Unify(MappingAttr other) const;
+
   using iterator = llvm::ArrayRef<MappingExpr>::iterator;
   iterator begin() const { return Dimensions().begin(); }
   iterator end() const { return Dimensions().end(); }

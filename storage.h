@@ -25,7 +25,8 @@ namespace sair {
 
 // Verifies that storage attributes in the program are correct. Assumes that
 // Sair operands are defined in the same program.
-mlir::LogicalResult VerifyStorages(SairProgramOp program);
+mlir::LogicalResult VerifyStorages(
+    SairProgramOp program, const IterationSpaceAnalysis &iteration_spaces);
 
 // Returns the buffer attribute representing a 0-dimensional register.
 BufferAttr GetRegister0DBuffer(mlir::MLIRContext *context);

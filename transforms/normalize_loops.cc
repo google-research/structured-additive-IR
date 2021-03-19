@@ -221,19 +221,19 @@ llvm::SmallVector<llvm::SmallVector<mlir::Value>> PartitionDomain(
 void NormalizeLoops(SairOp op, const IterationSpace &iteration_space,
                     const LoopNest &loop_nest, mlir::OpBuilder &builder,
                     LoopRangeCache &loop_range_cache) {
-  if (iteration_space.empty()) return;
+  if (iteration_space.num_loops() == 0) return;
   mlir::OpBuilder::InsertionGuard insertion_guard(builder);
   mlir::MLIRContext *context = op.getContext();
 
   llvm::SmallVector<mlir::Attribute> normalized_loops;
-  normalized_loops.reserve(iteration_space.size());
-  for (int i = 0, e = iteration_space.size(); i < e; ++i) {
+  normalized_loops.reserve(iteration_space.num_loops());
+  for (int i = 0, e = iteration_space.num_loops(); i < e; ++i) {
     auto dim_expr = MappingDimExpr::get(i, context);
     mlir::StringAttr name = iteration_space.loop_names()[i];
     normalized_loops.push_back(LoopAttr::get(name, dim_expr, context));
   }
 
-  MappingAttr mapping = iteration_space.domain_to_loops();
+  MappingAttr mapping = iteration_space.MappingToLoops();
   DomainShapeAttr new_shape = loop_nest.normalized_shape;
   llvm::SmallVector<mlir::Value> new_domain =
       GetDomain(op, iteration_space.loop_names(), loop_nest, normalized_loops,
@@ -291,7 +291,7 @@ void NormalizeLoops(SairOp op, const IterationSpace &iteration_space,
   op.erase();
 }
 
-// Pass that rewrites operations domains so that each loop corresponds to a
+// Pass that rewrites operation domains so that each loop corresponds to a
 // single dimension.
 class NormalizeLoopsPass : public NormalizeLoopsPassBase<NormalizeLoopsPass> {
  public:
@@ -319,7 +319,7 @@ class NormalizeLoopsPass : public NormalizeLoopsPassBase<NormalizeLoopsPass> {
 
         // Do not normalize range operations.
         const IterationSpace &iteration_space = iteration_spaces.Get(op);
-        if (!iteration_space.domain_to_loops().Inverse().IsFullySpecified()) {
+        if (iteration_space.mapping() != iteration_space.MappingToLoops()) {
           // This error should only occur if
           // * memref introduction or canonicalization was not run beforehand or
           // * some loop-nests are missing.

@@ -21,8 +21,9 @@ namespace sair {
 
 IterationSpace::IterationSpace(llvm::SmallVector<mlir::StringAttr> loop_names,
                                MappingAttr domain_to_loops)
-    : loop_names_(std::move(loop_names)), domain_to_loops_(domain_to_loops) {
-  assert(loop_names_.size() == domain_to_loops_.size());
+    : loop_names_(std::move(loop_names)) {
+  assert(loop_names_.size() == domain_to_loops.size());
+  mapping_ = domain_to_loops.Inverse().MakeFullySpecified().Inverse();
 }
 
 // Infers the iteration space for the current operation from iteration space of
@@ -36,13 +37,13 @@ static IterationSpace InferIterationSpace(
   llvm::SmallVector<mlir::StringAttr> loop_names;
   for (auto [name, iter] :
        llvm::zip(operand_iteration_space.loop_names(),
-                 operand_iteration_space.domain_to_loops())) {
+                 operand_iteration_space.MappingToLoops())) {
     if (iter.MinDomainSize() > mapping.size()) break;
     loop_names.push_back(name);
   }
 
   MappingAttr domain_to_loops = mapping.Compose(
-      operand_iteration_space.domain_to_loops().Resize(loop_names.size()));
+      operand_iteration_space.MappingToLoops().Resize(loop_names.size()));
 
   // If the iteration space is infered from loop-carried dimensions, trim inner
   // parallel dimensions as inner parallel dimension open at the end of the
@@ -74,10 +75,6 @@ IterationSpaceAnalysis::IterationSpaceAnalysis(SairProgramOp program_op) {
 
 const IterationSpace &IterationSpaceAnalysis::Get(SairOp op) const {
   return iteration_space_.find(op.getOperation())->second;
-}
-
-const IterationSpace &IterationSpaceAnalysis::Get(mlir::Value value) const {
-  return Get(value.getDefiningOp());
 }
 
 const IterationSpace &IterationSpaceAnalysis::ComputeIterationSpace(
@@ -126,6 +123,38 @@ const IterationSpace &IterationSpaceAnalysis::ComputeIterationSpace(
   it = iteration_space_.find(operation);
   it->second = InferIterationSpace(parent_iteration_space, operand);
   return it->second;
+}
+
+MappingAttr IterationSpaceAnalysis::TranslateMapping(
+    SairOp from, SairOp to, MappingAttr mapping) const {
+  MappingAttr result = TryTranslateMapping(from, to, mapping);
+  assert(result != nullptr);
+  return result;
+}
+
+MappingAttr IterationSpaceAnalysis::TryTranslateMapping(
+    SairOp from, SairOp to, MappingAttr mapping) const {
+  const IterationSpace &from_space = Get(from);
+  const IterationSpace &to_space = Get(to);
+  MappingAttr space_mapping = from_space.mapping()
+                                  .Inverse()
+                                  .Compose(mapping)
+                                  .Compose(to_space.mapping())
+                                  .Canonicalize();
+
+  int num_common_loops = 0;
+  while (num_common_loops < from_space.num_loops() &&
+         num_common_loops < to_space.num_loops() &&
+         from_space.loop_names()[num_common_loops] ==
+             to_space.loop_names()[num_common_loops]) {
+    ++num_common_loops;
+  }
+
+  auto common_loops_mapping = MappingAttr::GetIdentity(
+      mapping.getContext(), num_common_loops, from_space.mapping().size());
+  MappingAttr loops_mapping =
+      common_loops_mapping.Resize(to_space.mapping().size());
+  return space_mapping.Unify(loops_mapping);
 }
 
 // Analysis that keeps track of dependencies between loops.
@@ -203,9 +232,9 @@ class LoopNestConstraintsAnalysis {
     const IterationSpace &iteration_space = iteration_spaces.Get(operation);
     llvm::SmallBitVector closed_dims = op.ResultsDimDependencies();
     bool closed_dims_seen = false;
-    for (int i = 0, e = iteration_space.size(); i < e; ++i) {
+    for (int i = 0, e = iteration_space.num_loops(); i < e; ++i) {
       constraints.open_loops.insert(iteration_space.loop_names()[i]);
-      MappingExpr expr = iteration_space.domain_to_loops().Dimension(i);
+      MappingExpr expr = iteration_space.mapping().Dimension(i);
       llvm::SmallBitVector iter_dims = expr.DependencyMask(op.domain().size());
       if (iter_dims.anyCommon(closed_dims)) {
         constraints.closed_loops.insert(iteration_space.loop_names()[i]);
@@ -376,28 +405,21 @@ static mlir::LogicalResult VerifyDependency(
     const llvm::SmallBitVector &carrying_dims,
     const IterationSpaceAnalysis &iteration_space_analysis,
     const LoopNestConstraintsAnalysis &loop_constraints_analysis) {
-  const IterationSpace &dep_loop_nest =
-      iteration_space_analysis.Get(dependency.value);
+  auto dependency_op = cast<SairOp>(dependency.value.getDefiningOp());
 
-  // Verify dependencies with the operand loop nest.
-  int min_size = std::min(op_loop_nest.size(), dep_loop_nest.size());
-  for (int i = 0; i < min_size; ++i) {
-    if (op_loop_nest.loop_names()[i] != dep_loop_nest.loop_names()[i]) break;
-    // Ensure that we can unify the iterator of both loops if they are fused.
-    MappingExpr expected_expr =
-        dep_loop_nest.domain_to_loops().Dimension(i).SubstituteDims(
-            dependency.mapping.Dimensions());
-    MappingExpr given_expr = op_loop_nest.domain_to_loops().Dimension(i);
-    if (expected_expr.Unify(given_expr) != nullptr) continue;
-    return (op.emitError() << "loop " << op_loop_nest.loop_names()[i]
-                           << " violates a data dependency")
+  MappingAttr domain_mapping =
+      dependency.mapping.Resize(dependency_op.domain().size())
+          .ResizeUseDomain(op.domain().size());
+  if (iteration_space_analysis.TryTranslateMapping(op, dependency_op,
+                                                   domain_mapping) == nullptr) {
+    return (op.emitError() << "loop nest violates a data dependency")
                .attachNote(dependency.value.getLoc())
            << "dependency from this operation";
   }
 
   const LoopNestConstraintsAnalysis::Constraints &constraints =
       loop_constraints_analysis.GetConstraints(dependency.value);
-  for (int i = 0, e = op_loop_nest.size(); i < e; ++i) {
+  for (int i = 0, e = op_loop_nest.num_loops(); i < e; ++i) {
     mlir::StringAttr name = op_loop_nest.loop_names()[i];
     if (constraints.closed_loops.contains(name)) {
       return op.emitError()
@@ -405,7 +427,7 @@ static mlir::LogicalResult VerifyDependency(
     }
 
     if (!constraints.open_loops.contains(name)) continue;
-    MappingExpr expr = op_loop_nest.domain_to_loops().Dimension(i);
+    MappingExpr expr = op_loop_nest.mapping().Dimension(i);
     llvm::SmallBitVector iter_dims = expr.DependencyMask(op.domain().size());
     if (!dim_dependencies.anyCommon(iter_dims)) continue;
 
@@ -490,10 +512,10 @@ static mlir::LogicalResult VerifyLoopRanges(
 static mlir::LogicalResult VerifySubDomains(
     SairOp op, const IterationSpace &iteration_space) {
   llvm::SmallVector<int> sub_domains = op.SubDomains();
-  assert(!sub_domains.empty() || iteration_space.empty());
+  assert(!sub_domains.empty() || iteration_space.num_loops() == 0);
 
-  for (int i = 0, e = iteration_space.size(); i < e; ++i) {
-    MappingExpr expr = iteration_space.domain_to_loops().Dimension(i);
+  for (int i = 0, e = iteration_space.num_loops(); i < e; ++i) {
+    MappingExpr expr = iteration_space.mapping().Dimension(i);
     llvm::SmallBitVector dimensions = expr.DependencyMask(op.domain().size());
     if (!dimensions.any()) continue;
 
@@ -523,7 +545,8 @@ static mlir::LogicalResult VerifySubDomains(
   return mlir::success();
 }
 
-mlir::LogicalResult VerifyLoopNests(SairProgramOp program) {
+mlir::LogicalResult VerifyLoopNests(SairProgramOp program,
+                                    IterationSpaceAnalysis &iteration_spaces) {
   // Verify loop nests are correct with regard to their operation.
   mlir::WalkResult result = program.walk([](ComputeOp op) -> mlir::WalkResult {
     if (!op.loop_nest().hasValue()) return mlir::WalkResult::advance();
@@ -532,9 +555,9 @@ mlir::LogicalResult VerifyLoopNests(SairProgramOp program) {
   });
   if (result.wasInterrupted()) return mlir::failure();
 
-  IterationSpaceAnalysis iteration_space_analysis(program);
-  LoopNestConstraintsAnalysis loop_constraints_analysis(
-      program, iteration_space_analysis);
+  iteration_spaces = IterationSpaceAnalysis(program);
+  LoopNestConstraintsAnalysis loop_constraints_analysis(program,
+                                                        iteration_spaces);
 
   // Verify that the loop structure forms a tree, loops are open when they need
   // to and loop ranges are well defined.
@@ -563,11 +586,10 @@ mlir::LogicalResult VerifyLoopNests(SairProgramOp program) {
 
   // Verify dependencies.
   result = program.walk([&](SairOp op) -> mlir::WalkResult {
-    if (mlir::failed(VerifySubDomains(op, iteration_space_analysis.Get(op)))) {
+    if (mlir::failed(VerifySubDomains(op, iteration_spaces.Get(op)))) {
       return mlir::failure();
     }
-    return VerifyDependencies(op, iteration_space_analysis,
-                              loop_constraints_analysis);
+    return VerifyDependencies(op, iteration_spaces, loop_constraints_analysis);
   });
   if (result.wasInterrupted()) return mlir::failure();
 

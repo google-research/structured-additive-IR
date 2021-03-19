@@ -853,7 +853,7 @@ func @mapped_dimensions(%arg0: f32) {
         {name = "B", iter = #sair.mapping_expr<d1>}
       ]
     } : !sair.value<d0:range x d1:range, f32>
-    // expected-error @+1 {{loop "A" violates a data dependency}}
+    // expected-error @+1 {{loop nest violates a data dependency}}
     %3 = sair.copy[d0:%1, d1:%1] %2(d1, d0) {
       loop_nest = [
         {name = "A", iter = #sair.mapping_expr<d0>},

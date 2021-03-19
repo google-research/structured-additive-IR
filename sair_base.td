@@ -459,17 +459,14 @@ def SairValueViewOp : OpInterface<"ValueViewOp"> {
 
   let methods = [
     InterfaceMethod < [{
-      Infers how result value at position `result` is stored.
-
-      Expects `operand_storages` to be filled with a value storage analysis
-      result for each of the arguments of the operation. If an analysis result
-      is missing, it means that it depends on the result provided by this
-      operation.
+      Infers how result value at position `result` is stored. `operand_storage`
+      constains storage information for inputs. If an input storage depends on
+      the storage of the current operation, `nullopt` will be passed instead.
 
       Returns `std::nullopt` if operand storages are incompatible.}],
       "std::optional<ValueStorage>", "InferStorage", (ins
-        "int":$result,
-        "const llvm::DenseMap<mlir::Value, ValueStorage>&":$operand_storages
+        "int":$result, "const IterationSpace &":$iteration_space,
+        "llvm::ArrayRef<std::optional<ValueStorage>>":$operand_storages
       )>
   ];
 }

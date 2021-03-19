@@ -28,6 +28,7 @@ static llvm::SmallVector<ValueViewOp, 4> SortValueViews(SairProgramOp program) {
 
   program.walk([&](ValueViewOp op) {
     llvm::SmallVector<ValueViewOp, 4> queue;
+    if (visited.count(op) > 0) return;
     queue.push_back(op);
 
     while (!queue.empty()) {
@@ -213,16 +214,14 @@ static mlir::LogicalResult VerifyStorageAttrWellFormed(ComputeOp op) {
 
 // Returns a mapping from the loop nest of `op` to the loops indexed by
 // `buffer_attr`.
-static MappingAttr LoopsToIndexedLoopsMapping(ComputeOp op,
-                                              BufferAttr buffer_attr,
-                                              const Buffer &buffer) {
+static MappingAttr LoopsToIndexedLoopsMapping(ComputeOp op, BufferAttr buffer) {
   mlir::MLIRContext *context = op.getContext();
   auto none_expr = MappingNoneExpr::get(context);
   auto loop_nest = op.LoopNestLoops();
 
-  llvm::SmallVector<MappingExpr> loops_to_indexed_loops_exprs(buffer.rank(),
-                                                              none_expr);
-  for (auto p : llvm::enumerate(buffer_attr.layout().names())) {
+  llvm::SmallVector<MappingExpr> loops_to_indexed_loops_exprs(
+      buffer.layout().mapping().size(), none_expr);
+  for (auto p : llvm::enumerate(buffer.layout().names())) {
     auto it = llvm::find_if(loop_nest, [&](mlir::Attribute attr) {
       auto loop = attr.cast<LoopAttr>();
       return loop.name() == p.value();
@@ -394,8 +393,9 @@ static mlir::LogicalResult CheckMallocInsertionPoint(
     }
 
     for (ValueOperand operand : dimension_op.ValueOperands()) {
+      auto defining_op = cast<SairOp>(operand.value().getDefiningOp());
       llvm::ArrayRef<mlir::StringAttr> operand_loops =
-          iteration_spaces.Get(operand.value()).loop_names();
+          iteration_spaces.Get(defining_op).loop_names();
       int new_min = std::min(write_loops.size(), operand_loops.size());
       for (; new_min > 0; --new_min) {
         if (operand_loops[new_min - 1] == write_loops[new_min - 1]) break;
@@ -461,25 +461,30 @@ static mlir::LogicalResult CheckLayoutMapping(
                                    iteration_spaces, min_num_loops);
 }
 
-mlir::LogicalResult StorageAnalysis::Init(SairProgramOp program) {
-  // TODO(b/181938550): use cached analysis.
-  LoopFusionAnalysis fusion_analysis(program);
-  IterationSpaceAnalysis iteration_spaces(program);
-
-  // Declare buffer uses and check element type/rank.
+// Declare buffers used by `program` in `buffers`. If a buffer has multiple
+// uses, chek that element type and rank are compatible.
+static mlir::LogicalResult DeclareBuffers(
+    SairProgramOp program, const LoopFusionAnalysis &fusion_analysis,
+    llvm::DenseMap<mlir::Attribute, Buffer> &buffers) {
   mlir::WalkResult result = program.walk([&](ComputeOp op) -> mlir::WalkResult {
     for (int i = 0, e = op->getNumResults(); i < e; ++i) {
       BufferAttr buffer_attr = op.Storage(i);
       if (mlir::failed(
-              DeclareBuffer(op, i, buffer_attr, fusion_analysis, buffers_))) {
+              DeclareBuffer(op, i, buffer_attr, fusion_analysis, buffers))) {
         return mlir::failure();
       }
     }
     return mlir::success();
   });
-  if (result.wasInterrupted()) return mlir::failure();
+  return mlir::failure(result.wasInterrupted());
+}
 
-  for (auto &[name_attr, buffer] : buffers_) {
+// Compute buffers shape by updating `buffers` in-place.
+static mlir::LogicalResult ComputeBuffersShape(
+    const LoopFusionAnalysis &fusion_analysis,
+    const IterationSpaceAnalysis &iteration_spaces,
+    llvm::DenseMap<mlir::Attribute, Buffer> &buffers) {
+  for (auto &[name_attr, buffer] : buffers) {
     mlir::StringAttr name = name_attr.cast<mlir::StringAttr>();
 
     // Prefix buffer domain with its loop nest domain.
@@ -496,7 +501,7 @@ mlir::LogicalResult StorageAnalysis::Init(SairProgramOp program) {
       BufferAttr buffer_attr = op.Storage(result);
       // Unify layouts.
       MappingAttr loops_to_indexed_loops =
-          LoopsToIndexedLoopsMapping(op, buffer_attr, buffer);
+          LoopsToIndexedLoopsMapping(op, buffer_attr);
       if (mlir::failed(UnifyBufferShape(op, buffer_attr, loop_nest,
                                         loops_to_indexed_loops, fusion_analysis,
                                         buffer))) {
@@ -516,33 +521,76 @@ mlir::LogicalResult StorageAnalysis::Init(SairProgramOp program) {
     buffer.TrimLoopNest(min_num_loops);
   }
 
+  return mlir::success();
+}
+
+// Computes how values are stored and stores the result into `value_storages`.
+static mlir::LogicalResult ComputeValueStorages(
+    SairProgramOp program, const IterationSpaceAnalysis &iteration_spaces,
+    llvm::DenseMap<mlir::Value, ValueStorage> &value_storages) {
   // Compute value storages.
   program.walk([&](ComputeOp op) {
     for (int i = 0, e = op->getNumResults(); i < e; ++i) {
-      ValueStorage &value_storage = value_storages_[op->getResult(i)];
+      ValueStorage &value_storage = value_storages[op->getResult(i)];
       BufferAttr buffer = op.Storage(i);
       if (buffer == nullptr) continue;
-      value_storage.space = buffer.space();
-      value_storage.buffer_name = buffer.name();
+      MappingAttr layout = LoopsToIndexedLoopsMapping(op, buffer)
+                               .Compose(buffer.layout().mapping());
+      value_storage = ValueStorage(buffer.space(), buffer.name(), layout);
     }
   });
 
   for (ValueViewOp op : SortValueViews(program)) {
+    auto sair_op = cast<SairOp>(op.getOperation());
+    const IterationSpace &iteration_space = iteration_spaces.Get(sair_op);
+    llvm::SmallVector<std::optional<ValueStorage>> operand_storages;
+    operand_storages.reserve(sair_op.ValueOperands().size());
+
+    for (ValueOperand operand : sair_op.ValueOperands()) {
+      auto it = value_storages.find(operand.value());
+      if (it == value_storages.end()) {
+        operand_storages.push_back(std::nullopt);
+      } else {
+        operand_storages.push_back(it->second.Map(operand, iteration_spaces));
+      }
+    }
+
     for (int i = 0, e = op->getNumResults(); i < e; ++i) {
-      auto result_opt = op.InferStorage(i, value_storages_);
+      auto result_opt = op.InferStorage(i, iteration_space, operand_storages);
       if (!result_opt.has_value()) {
         return op.emitError() << "operands have different storage";
       }
-      value_storages_[op->getResult(i)] = result_opt.value();
+      value_storages[op->getResult(i)] = result_opt.value();
     }
+  }
+  return mlir::success();
+}
+
+mlir::LogicalResult StorageAnalysis::Init(SairProgramOp program) {
+  // TODO(b/181938550): use cached analysis.
+  LoopFusionAnalysis fusion_analysis(program);
+  IterationSpaceAnalysis iteration_spaces(program);
+
+  if (mlir::failed(DeclareBuffers(program, fusion_analysis, buffers_))) {
+    return mlir::failure();
+  }
+
+  if (mlir::failed(
+          ComputeBuffersShape(fusion_analysis, iteration_spaces, buffers_))) {
+    return mlir::failure();
+  }
+
+  if (mlir::failed(
+          ComputeValueStorages(program, iteration_spaces, value_storages_))) {
+    return mlir::failure();
   }
 
   // Register buffer reads.
   program.walk([&](ComputeOp op) {
     for (ValueOperand operand : cast<SairOp>(*op).ValueOperands()) {
       const ValueStorage &storage = value_storages_[operand.value()];
-      if (storage.buffer_name == nullptr) continue;
-      buffers_.find(storage.buffer_name)
+      if (storage.buffer_name() == nullptr) continue;
+      buffers_.find(storage.buffer_name())
           ->second.AddRead(op, operand.position());
     }
   });
@@ -562,7 +610,8 @@ mlir::StringAttr StorageAnalysis::GetFreshBufferName() {
   return attr;
 }
 
-mlir::LogicalResult VerifyStorages(SairProgramOp program) {
+mlir::LogicalResult VerifyStorages(
+    SairProgramOp program, const IterationSpaceAnalysis &iteration_spaces) {
   // Check storage attributes are well-formed.
   mlir::WalkResult result = program.walk([](ComputeOp op) -> mlir::WalkResult {
     return VerifyStorageAttrWellFormed(op);
@@ -578,7 +627,7 @@ mlir::LogicalResult VerifyStorages(SairProgramOp program) {
   result = program.walk([&](SairMapReduceOp op) -> mlir::WalkResult {
     for (ValueOperand input : op.Inits()) {
       ValueStorage input_storage =
-          analysis.GetStorage(input.value()).Map(input.Mapping());
+          analysis.GetStorage(input.value()).Map(input, iteration_spaces);
       const ValueStorage &result_storage =
           analysis.GetStorage(op.getResult(input.position()));
       if (input_storage != result_storage) {
