@@ -505,4 +505,24 @@ def SairRangeOp : OpInterface<"RangeOp"> {
   let verify = [{return sair::VerifyRangeOp(op);}];
 }
 
+def SairFromToMemRefOp : OpInterface<"FromToMemRefOp"> {
+  let description = [{Sair operation that accesses an external memref}];
+
+  let methods = [
+    InterfaceMethod<"Domain dimensions not mapping to memref dimensions",
+                    "ValueRange", "parallel_domain">,
+    InterfaceMethod<"Domain dimensions mapping to memref dimensions",
+                    "ValueRange", "memref_domain">,
+    InterfaceMethod<"Memref accessed", "ValueOperand", "MemRef">,
+    InterfaceMethod<"Buffer name", "llvm::StringRef", "buffer_name">,
+    InterfaceMethod<"Memref type", "mlir::MemRefType", "MemRefType", (ins),
+                    [{}], [{
+                      return $_op.MemRef()
+                          .GetType()
+                          .ElementType()
+                          .template cast<mlir::MemRefType>();
+                    }]>
+  ];
+}
+
 #endif  // SAIR_SAIR_BASE_TD_

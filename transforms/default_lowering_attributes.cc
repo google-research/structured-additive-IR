@@ -41,17 +41,145 @@ namespace {
 #define GEN_PASS_CLASSES
 #include "transforms/default_lowering_attributes.h.inc"
 
+// Creates and sets a buffer attribute for result `result` of `op`.
+mlir::LogicalResult GenerateBufferAttr(ComputeOp op, int result,
+                                       StorageAnalysis &storage_analysis) {
+  mlir::MLIRContext *context = op->getContext();
+  auto *sair_dialect = context->getLoadedDialect<SairDialect>();
+  auto sair_op = cast<SairOp>(op.getOperation());
+
+  BufferAttr buffer;
+  if (sair_op.shape().Is0d()) {
+    buffer = BufferAttr::get(
+        /*space=*/sair_dialect->register_attr(),
+        /*name=*/nullptr,
+        /*layout=*/NamedMappingAttr::GetIdentity(context, {}), context);
+  } else {
+    auto type = op->getResultTypes()[result].cast<ValueType>();
+    if (type.ElementType().isa<mlir::IndexType>()) {
+      return op.emitError() << "cannot generate default storage for "
+                               "multi-dimensional index values";
+    }
+    if (!sair_op.shape().IsHyperRectangular()) {
+      return op.emitError() << "cannot generate default storage for "
+                               "non-rectangular shapes";
+    }
+
+    llvm::SmallVector<mlir::StringAttr> loop_names;
+    llvm::SmallVector<MappingExpr> loop_iters;
+    for (auto attr : op.LoopNestLoops()) {
+      LoopAttr loop = attr.cast<LoopAttr>();
+      loop_names.push_back(loop.name());
+      loop_iters.push_back(loop.iter());
+    }
+
+    // Keep the original operation shape for the storage shape.
+    auto loops_mapping =
+        MappingAttr::get(context, sair_op.domain().size(), loop_iters);
+    auto layout = NamedMappingAttr::get(loop_names, loops_mapping.Inverse());
+
+    buffer = BufferAttr::get(
+        /*space=*/sair_dialect->memory_attr(),
+        /*name=*/storage_analysis.GetFreshBufferName(),
+        /*layout=*/layout, context);
+  }
+  op.SetStorage(result, buffer);
+  return mlir::success();
+}
+
+// Walk producers of operations creating the value used by the sair.to_memref
+// operation to assign them a buffer.
+mlir::LogicalResult CreateBufferForToMemRef(
+    SairToMemRefOp to_memref_op,
+    const IterationSpaceAnalysis &iteration_spaces) {
+  mlir::MLIRContext *context = to_memref_op->getContext();
+  auto *sair_dialect = context->getLoadedDialect<SairDialect>();
+  mlir::Operation *memref_defining_op = to_memref_op.memref().getDefiningOp();
+
+  llvm::SmallVector<ValueAccess> work_list;
+  auto push_to_work_list = [&](ValueOperand operand, MappingAttr layout) {
+    work_list.push_back({
+        .value = operand.value(),
+        .mapping = operand.Mapping().Inverse().Compose(layout),
+    });
+  };
+
+  int memref_rank = to_memref_op.memref_domain().size();
+  auto layout = MappingAttr::GetIdentity(context, memref_rank)
+                    .ShiftRight(to_memref_op.parallel_domain().size());
+  push_to_work_list(to_memref_op.Value(), layout);
+  while (!work_list.empty()) {
+    ValueAccess access = work_list.pop_back_val();
+    mlir::Operation *defining_op = access.value.getDefiningOp();
+    if (defining_op->isBeforeInBlock(memref_defining_op)) {
+      return to_memref_op.emitError() << "operations producing to_memref "
+                                         "operand are scheduled before the "
+                                         "memref is defined";
+    }
+
+    if (auto compute_op = dyn_cast<ComputeOp>(defining_op)) {
+      const IterationSpace &iter_space =
+          iteration_spaces.Get(cast<SairOp>(defining_op));
+      MappingAttr layout_mapping =
+          iter_space.mapping().Inverse().Compose(access.mapping);
+      auto layout =
+          NamedMappingAttr::get(iter_space.loop_names(), layout_mapping);
+      layout = layout.DropUnusedDims();
+      auto buffer = BufferAttr::get(
+          /*space=*/sair_dialect->memory_attr(),
+          /*name=*/to_memref_op.buffer_nameAttr(),
+          /*layout=*/layout, context);
+      // Set storage for the value.
+      int result = 0;
+      for (; compute_op->getResult(result) != access.value; ++result) {
+      }
+      compute_op.SetStorage(result, buffer);
+    } else if (auto proj_last = dyn_cast<SairProjLastOp>(defining_op)) {
+      push_to_work_list(proj_last.Value(), access.mapping.ResizeUseDomain(
+                                               proj_last.domain().size()));
+    } else if (auto fby = dyn_cast<SairFbyOp>(defining_op)) {
+      if (layout.MinDomainSize() > fby.parallel_domain().size()) {
+        mlir::InFlightDiagnostic diag = to_memref_op.emitError()
+                                        << "layout maps to sair.fby dimensions";
+        diag.attachNote(fby.getLoc()) << "sair.fby operation here";
+        return mlir::failure();
+      }
+      push_to_work_list(fby.Init(), access.mapping);
+      push_to_work_list(fby.Value(), access.mapping);
+    } else {
+      // sair.from_scalar and sair.from_memref already define a storage
+      // attribute. This function should only be called if the storage attribute
+      // is missing. Other operations are either compute operations or have a
+      // special case above.
+      llvm_unreachable("unexpected operation");
+    }
+  }
+  return mlir::success();
+}
+
 // Assigns the default storage to sair values. This uses registers when possible
 // and materializes the minimum amount of dimensions in RAM otherwise. Fails if
-// the sub-domain of dimensions to materialize is a dependend domain.
+// the sub-domain of dimensions to materialize is a dependent domain.
 class DefaultStorage : public DefaultStoragePassBase<DefaultStorage> {
  public:
   void runOnFunction() override {
-    mlir::MLIRContext *context = &getContext();
-    auto *sair_dialect = context->getLoadedDialect<SairDialect>();
+    mlir::WalkResult result =
+        getFunction().walk([&](SairToMemRefOp op) -> mlir::WalkResult {
+          auto &storage_analysis =
+              getChildAnalysis<StorageAnalysis>(op->getParentOp());
+          if (storage_analysis.GetStorage(op.value()).space() != nullptr) {
+            return mlir::success();
+          }
+          const auto &iteration_spaces =
+              getChildAnalysis<IterationSpaceAnalysis>(op->getParentOp());
+          return CreateBufferForToMemRef(op, iteration_spaces);
+        });
+    if (result.wasInterrupted()) {
+      signalPassFailure();
+      return;
+    }
 
-    auto result = getFunction().walk([&](ComputeOp op) -> mlir::WalkResult {
-      auto sair_op = cast<SairOp>(op.getOperation());
+    result = getFunction().walk([&](ComputeOp op) -> mlir::WalkResult {
       auto &storage_analysis =
           getChildAnalysis<StorageAnalysis>(op->getParentOp());
 
@@ -60,44 +188,9 @@ class DefaultStorage : public DefaultStoragePassBase<DefaultStorage> {
         if (!op.loop_nest().hasValue()) {
           return op.emitError() << "expected a loop-nest attribute";
         }
-
-        BufferAttr buffer;
-        if (sair_op.shape().Is0d()) {
-          buffer = BufferAttr::get(
-              /*space=*/sair_dialect->register_attr(),
-              /*name=*/nullptr,
-              /*layout=*/NamedMappingAttr::GetIdentity(context, {}), context);
-        } else {
-          auto type = op->getResultTypes()[i].cast<ValueType>();
-          if (type.ElementType().isa<mlir::IndexType>()) {
-            return op.emitError() << "cannot generate default storage for "
-                                     "multi-dimensional index values";
-          }
-          if (!sair_op.shape().IsHyperRectangular()) {
-            return op.emitError() << "cannot generate default storage for "
-                                     "non-rectangular shapes";
-          }
-
-          llvm::SmallVector<mlir::StringAttr> loop_names;
-          llvm::SmallVector<MappingExpr> loop_iters;
-          for (auto attr : op.LoopNestLoops()) {
-            LoopAttr loop = attr.cast<LoopAttr>();
-            loop_names.push_back(loop.name());
-            loop_iters.push_back(loop.iter());
-          }
-
-          // Keep the original operation shape for the storage shape.
-          auto loops_mapping =
-              MappingAttr::get(context, sair_op.domain().size(), loop_iters);
-          auto layout =
-              NamedMappingAttr::get(loop_names, loops_mapping.Inverse());
-
-          buffer = BufferAttr::get(
-              /*space=*/sair_dialect->memory_attr(),
-              /*name=*/storage_analysis.GetFreshBufferName(),
-              /*layout=*/layout, context);
+        if (mlir::failed(GenerateBufferAttr(op, i, storage_analysis))) {
+          return mlir::failure();
         }
-        op.SetStorage(i, buffer);
       }
       return mlir::success();
     });

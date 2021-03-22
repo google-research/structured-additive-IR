@@ -33,6 +33,7 @@
 #include "sair_attributes.h"
 #include "sair_ops.h"
 #include "sair_types.h"
+#include "storage.h"
 
 namespace sair {
 namespace {
@@ -227,8 +228,8 @@ mlir::LogicalResult ConvertResultMappings(
 // created before "sair_program".
 void EmitMemRefToValue(
     mlir::ValueRange operands, int num_outputs, mlir::Location loc,
-    SairProgramOp sair_program, mlir::OpBuilder &rewriter,
-    llvm::SmallVectorImpl<mlir::Value> &map_operands,
+    SairProgramOp sair_program, StorageAnalysis &storage_analysis,
+    mlir::OpBuilder &rewriter, llvm::SmallVectorImpl<mlir::Value> &map_operands,
     llvm::SmallVectorImpl<llvm::SmallVector<mlir::Value, 4>> &result_ranges) {
   mlir::MLIRContext *context = loc.getContext();
   int num_operands = operands.size();
@@ -258,7 +259,8 @@ void EmitMemRefToValue(
     auto from_scalar =
         rewriter.create<SairFromScalarOp>(loc, memref_value_type, operand);
     Value new_operand = rewriter.create<SairFromMemRefOp>(
-        loc, value_type, mlir::ValueRange(), ranges, mappings, from_scalar);
+        loc, value_type, mlir::ValueRange(), ranges, mappings, from_scalar,
+        storage_analysis.GetFreshBufferName());
     // Insert a copy to avoid storage specification mismatch.
     // TODO(b/181850491): introduce a sair.maybe_copy operation instead.
     auto copy_mapping = rewriter.getArrayAttr(
@@ -284,6 +286,7 @@ void EmitValueToMemRef(mlir::Location loc, mlir::ValueRange sair_values,
                        mlir::ValueRange memrefs,
                        llvm::ArrayRef<mlir::Attribute> mappings,
                        llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> ranges,
+                       StorageAnalysis &storage_analysis,
                        mlir::OpBuilder &rewriter) {
   assert(sair_values.size() == memrefs.size());
   assert(sair_values.size() == mappings.size());
@@ -300,9 +303,9 @@ void EmitValueToMemRef(mlir::Location loc, mlir::ValueRange sair_values,
         ValueType::get(DomainShapeAttr::get(context), memrefs[i].getType());
     auto from_scalar =
         rewriter.create<SairFromScalarOp>(loc, memref_value_type, memrefs[i]);
-    rewriter.create<SairToMemRefOp>(loc, mlir::ValueRange(), ranges[i],
-                                    mapping_array, from_scalar, sair_values[i],
-                                    shape);
+    rewriter.create<SairToMemRefOp>(
+        loc, mlir::ValueRange(), ranges[i], mapping_array, from_scalar,
+        sair_values[i], shape, storage_analysis.GetFreshBufferName());
   }
 }
 
@@ -592,12 +595,14 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
 
   auto sair_program = rewriter.create<SairProgramOp>(loc);
   rewriter.setInsertionPointToStart(&sair_program.body().front());
+  StorageAnalysis storage_analysis(sair_program);
 
   // Convert input and input/output MemRefs used by Linalg to Sair values.
   llvm::SmallVector<mlir::Value, 4> map_operands;
   llvm::SmallVector<llvm::SmallVector<mlir::Value, 4>, 4> result_ranges;
   EmitMemRefToValue(op.getShapedOperands(), op.getNumOutputs(), loc,
-                    sair_program, rewriter, map_operands, result_ranges);
+                    sair_program, storage_analysis, rewriter, map_operands,
+                    result_ranges);
 
   // Prepare parameters of the Sair map operation.
   int num_loops = op.getNumLoops();
@@ -630,7 +635,7 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
 
   // Convert output values to input/output MemRefs used by Linalg.
   EmitValueToMemRef(loc, map_op->getResults(), op.getOutputBuffers(),
-                    result_mappings, result_ranges, rewriter);
+                    result_mappings, result_ranges, storage_analysis, rewriter);
 
   // Add the sair.program terminator.
   rewriter.create<SairExitOp>(loc);

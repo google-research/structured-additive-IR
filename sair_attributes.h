@@ -142,6 +142,7 @@ class MappingAttr
 
   // Returns this mapping with dimensions shifted right by `offset`. If
   // `start_from` is set, only starting from the given position will be shifted.
+  // Use domain size is also increased by `offset`.
   // For example:
   //   (d0,d1,d2).ShiftRight(2)  =>  (d2,d3,d4)
   //   (d0,d1,d2).ShiftRight(2,1) => (d0,d1,d4)
@@ -184,6 +185,9 @@ class NamedMappingAttr
   llvm::ArrayRef<mlir::StringAttr> names() const;
 
   MappingAttr mapping() const;
+
+  // Drop dimensions from the domain that are unused.
+  NamedMappingAttr DropUnusedDims() const;
 };
 
 // The shape of an iteration dimension of a Sair domain.

@@ -23,8 +23,9 @@ func @to_memref(%arg0: memref<?x?xf32>) {
         sair.return %2 : f32
     } : #sair.shape<d0:range x d1:range>, () -> f32
     // CHECK-NOT: sair.to_memref
-    sair.to_memref %1 memref[d0:%0, d1:%0] %2(d1, d0)
-      : #sair.shape<d0:range x d1:range>, memref<?x?xf32>
+    sair.to_memref %1 memref[d0:%0, d1:%0] %2(d1, d0) {
+      buffer_name = "bufferA"
+    } : #sair.shape<d0:range x d1:range>, memref<?x?xf32>
     sair.exit
   }
   return

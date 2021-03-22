@@ -30,11 +30,6 @@ std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateLowerMapReducePass();
 // Returns a pass that converts sair operations into sair.map operations.
 std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateLowerToMapPass();
 
-// Returns a pass that inserts copies before sair.to_memref and sair.map_reduce
-// operations in order to ensure that they can operate in place. No copy is
-// inserted if the operation can already execute in place.
-std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateInsertCopiesPass();
-
 // Returns a pass that lowers Sair and Standard dialect operations to the LLVM
 // dialect.
 std::unique_ptr<mlir::Pass> CreateLowerToLLVMPass();

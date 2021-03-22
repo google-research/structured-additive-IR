@@ -10,8 +10,9 @@ func @from_memref(%arg0: index) {
       loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
     } : !sair.value<d0:range, memref<?xf32>>
     // expected-error @+1 {{sair.from_memref and sair.to_memref must be eliminated before loop normalization}}
-    %2 = sair.from_memref[d0:%0] %memref(d0) memref[d1:%1]
-      : #sair.shape<d0:range x d1:range>, memref<?xf32>
+    %2 = sair.from_memref[d0:%0] %memref(d0) memref[d1:%1] {
+      buffer_name = "bufferA"
+    }  : #sair.shape<d0:range x d1:range>, memref<?xf32>
     sair.exit
   }
   return

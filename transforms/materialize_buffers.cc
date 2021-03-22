@@ -186,7 +186,7 @@ mlir::Value AllocateBuffer(const Buffer &buffer,
 
 // Insert a load from a buffer for the operand `operand_pos` of `op`.
 void InsertLoad(ComputeOp op, int operand_pos, const Buffer &buffer,
-                mlir::Value memref, const LoopFusionAnalysis &fusion_analysis,
+                ValueAccess memref, const LoopFusionAnalysis &fusion_analysis,
                 const IterationSpaceAnalysis &iteration_spaces,
                 const StorageAnalysis &storage_analysis,
                 mlir::OpBuilder &builder) {
@@ -209,16 +209,17 @@ void InsertLoad(ComputeOp op, int operand_pos, const Buffer &buffer,
       CreatePlaceholderDomain(buffer.getLoc(), load_shape, builder);
 
   // Create a load_from_memref operation.
-  auto memref_mapping = MappingAttr::GetIdentity(
-      context, buffer.loop_nest().size(), op_iter_space.num_loops());
+  auto memref_mapping =
+      memref.mapping.ResizeUseDomain(op_iter_space.num_loops());
   auto loaded_type = ValueType::get(load_shape, element_type);
   mlir::ArrayAttr loop_nest =
       PointwiseLoopNest(op_iter_space.loop_names(), builder);
   BufferAttr loaded_storage = GetRegister0DBuffer(context);
   mlir::Value loaded = builder.create<SairLoadFromMemRefOp>(
       op.getLoc(), loaded_type, load_domain,
-      builder.getArrayAttr({memref_mapping}), memref, operand_storage.layout(),
-      loop_nest, builder.getArrayAttr({loaded_storage}));
+      builder.getArrayAttr({memref_mapping}), memref.value,
+      operand_storage.layout(), loop_nest,
+      builder.getArrayAttr({loaded_storage}));
 
   // Insert a sair.proj_any operation in case the load is rematerialized.
   ValueAccess new_operand;
@@ -248,12 +249,11 @@ void InsertLoad(ComputeOp op, int operand_pos, const Buffer &buffer,
 
 // Insert a store for the result `result_pos` of `op`.
 void InsertStore(ComputeOp op, int result_pos, const Buffer &buffer,
-                 mlir::Value memref, const LoopFusionAnalysis &fusion_analysis,
+                 ValueAccess memref, const LoopFusionAnalysis &fusion_analysis,
                  const IterationSpaceAnalysis &iteration_spaces,
                  const StorageAnalysis &storage_analysis,
                  mlir::OpBuilder &builder) {
   mlir::OpBuilder::InsertionGuard guard(builder);
-  mlir::MLIRContext *context = op.getContext();
   builder.setInsertionPointAfter(op);
 
   auto sair_op = cast<SairOp>(op.getOperation());
@@ -268,15 +268,15 @@ void InsertStore(ComputeOp op, int result_pos, const Buffer &buffer,
       CreatePlaceholderDomain(buffer.getLoc(), store_shape, builder);
 
   // Create a store operation.
-  auto memref_mapping = MappingAttr::GetIdentity(
-      context, buffer.loop_nest().size(), op_iter_space.num_loops());
+  auto memref_mapping =
+      memref.mapping.ResizeUseDomain(op_iter_space.num_loops());
   auto result_mapping = op_iter_space.mapping().Inverse();
   mlir::ArrayAttr loop_nest =
       PointwiseLoopNest(op_iter_space.loop_names(), builder);
   builder.create<SairStoreToMemRefOp>(
       op.getLoc(), store_domain,
-      builder.getArrayAttr({memref_mapping, result_mapping}), memref, result,
-      result_storage.layout(), store_shape, loop_nest);
+      builder.getArrayAttr({memref_mapping, result_mapping}), memref.value,
+      result, result_storage.layout(), store_shape, loop_nest);
 
   // Change result storage to register.
   op.SetStorage(result_pos, GetRegister0DBuffer(op.getContext()));
@@ -294,6 +294,9 @@ class MaterializeBuffers
       for (mlir::Value result : op->getResults()) {
         if (!result.getType().isa<ValueType>()) continue;
         const ValueStorage &storage = storage_analysis.GetStorage(result);
+        if (storage.space() == nullptr) {
+          return op.emitError() << "missing storage information";
+        }
         if (!storage.layout().IsFullySpecified()) {
           return op.emitError() << "partial layouts are not yet supported";
         }
@@ -305,13 +308,29 @@ class MaterializeBuffers
       return;
     }
 
-    mlir::OpBuilder builder(&getContext());
+    mlir::MLIRContext *context = &getContext();
+    mlir::OpBuilder builder(context);
     getFunction().walk([&](SairProgramOp program) {
       auto storage_analysis = getChildAnalysis<StorageAnalysis>(program);
       auto fusion_analysis = getChildAnalysis<LoopFusionAnalysis>(program);
       auto iteration_spaces = getChildAnalysis<IterationSpaceAnalysis>(program);
       for (auto &[name, buffer] : storage_analysis.buffers()) {
-        mlir::Value memref = AllocateBuffer(buffer, fusion_analysis, builder);
+        ValueAccess memref;
+        // Allocate or retrieve the buffer.
+        if (buffer.is_external()) {
+          const IterationSpace &iter_space = iteration_spaces.Get(
+              cast<SairOp>(buffer.import_op().getOperation()));
+          ValueOperand memref_operand = buffer.import_op().MemRef();
+          memref.value = memref_operand.value();
+          memref.mapping =
+              iter_space.mapping().Inverse().Compose(memref_operand.Mapping());
+        } else {
+          memref.value = AllocateBuffer(buffer, fusion_analysis, builder);
+          memref.mapping =
+              MappingAttr::GetIdentity(context, buffer.loop_nest().size());
+        }
+
+        // Insert loads and stores.
         for (auto [op, pos] : buffer.reads()) {
           InsertLoad(op, pos, buffer, memref, fusion_analysis, iteration_spaces,
                      storage_analysis, builder);
@@ -319,6 +338,13 @@ class MaterializeBuffers
         for (auto [op, pos] : buffer.writes()) {
           InsertStore(op, pos, buffer, memref, fusion_analysis,
                       iteration_spaces, storage_analysis, builder);
+        }
+
+        // Erase ToMemRefOp as it has side effects and wont be considered by
+        // DCE.
+        if (buffer.is_external() &&
+            isa<SairToMemRefOp>(buffer.import_op().getOperation())) {
+          buffer.import_op()->erase();
         }
       }
     });

@@ -103,8 +103,9 @@ func @remove_cyclic_fby(%arg0: f32, %arg1: memref<?x?x?x?xf32>) {
     %3 = sair.fby[d0:%1, d1:%1, d2:%1] %2(d2, d1, d0) then[d3:%1] %3(d0, d1, d2, d3) : !sair.value<d0:range x d1:range x d2:range x d3:range, f32>
     %4 = sair.from_scalar %arg1 : !sair.value<(), memref<?x?x?x?xf32>>
     // CHECK: sair.to_memref %{{.*}} memref[{{.*}}] %[[INIT]](d1, d3, d0)
-    sair.to_memref %4 memref[d0:%1, d1:%1, d2:%1, d3:%1] %3(d0, d3, d1, d2)
-      : #sair.shape<d0:range x d1:range x d2:range x d3:range>, memref<?x?x?x?xf32>
+    sair.to_memref %4 memref[d0:%1, d1:%1, d2:%1, d3:%1] %3(d0, d3, d1, d2) {
+      buffer_name = "bufferA"
+    }  : #sair.shape<d0:range x d1:range x d2:range x d3:range>, memref<?x?x?x?xf32>
     sair.exit
   }
   return
@@ -126,8 +127,9 @@ func @remove_useless_dims_fby(%arg0: f32, %arg1: memref<?x?x?x?x?xf32>) {
     %5 = sair.from_scalar %arg1 : !sair.value<(), memref<?x?x?x?x?xf32>>
     // CHECK: sair.to_memref %{{.*}} memref[d0:%[[R]], d1:%[[R]], d2:%[[R]], d3:%[[R]], d4:%[[R]]]
     // CHECK:               %[[FBY]](d4, d2, d0)
-    sair.to_memref %5 memref[d0:%1, d1:%1, d2:%1, d3:%1, d4:%1] %4(d4, d3, d2, d1, d0)
-      : #sair.shape<d0:range x d1:range x d2:range x d3:range x d4:range>,
+    sair.to_memref %5 memref[d0:%1, d1:%1, d2:%1, d3:%1, d4:%1] %4(d4, d3, d2, d1, d0) {
+      buffer_name = "bufferA"
+    } : #sair.shape<d0:range x d1:range x d2:range x d3:range x d4:range>,
         memref<?x?x?x?x?xf32>
     sair.exit
   }
@@ -148,8 +150,9 @@ func @remove_useless_dims_proj(%arg0: f32, %arg2: memref<?x?x?xf32>, %arg3: inde
     %4 = sair.from_scalar %arg2 : !sair.value<(), memref<?x?x?xf32>>
     // CHECK: sair.to_memref %{{.*}} memref[d0:%[[R]], d1:%[[R]], d2:%[[R]]]
     // CHECK:               %[[PROJ]](d1, d2)
-    sair.to_memref %4 memref[d0:%1, d1:%1, d2:%1] %3(d0, d1, d2)
-      : #sair.shape<d0:range x d1:range x d2:range>, memref<?x?x?xf32>
+    sair.to_memref %4 memref[d0:%1, d1:%1, d2:%1] %3(d0, d1, d2) {
+      buffer_name = "bufferA"
+    } : #sair.shape<d0:range x d1:range x d2:range>, memref<?x?x?xf32>
     sair.exit
   }
   return
@@ -175,8 +178,9 @@ func @remove_useless_dims_proj_dependent(%arg0: f32, %arg2: memref<?x?x?xf32>, %
     // CHECK: sair.to_memref %{{.*}} memref[d0:%[[R]], d1:%[[DR]], d2:%[[R]]]
     // CHECK:               %[[PROJ]](d1, d2)
     %10 = sair.from_scalar %arg2 : !sair.value<(), memref<?x?x?xf32>>
-    sair.to_memref %10 memref[d0:%1, d1:%5, d2:%1] %9(d0, d1, d2)
-      : #sair.shape<d0:range x d1:range x d2:range>, memref<?x?x?xf32>
+    sair.to_memref %10 memref[d0:%1, d1:%5, d2:%1] %9(d0, d1, d2) {
+      buffer_name = "bufferA"
+    } : #sair.shape<d0:range x d1:range x d2:range>, memref<?x?x?xf32>
     sair.exit
   }
   return

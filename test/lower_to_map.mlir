@@ -7,8 +7,9 @@ func @copy(%arg0 : memref<?x?xf32>) {
     %0 = sair.static_range 8 : !sair.range
     %1 = sair.from_scalar %arg0 : !sair.value<(), memref<?x?xf32>>
     // CHECK: %[[V1:.*]] = sair.from_memref
-    %2 = sair.from_memref %1 memref[d0:%0, d1:%0]
-      : #sair.shape<d0:range x d1:range>, memref<?x?xf32>
+    %2 = sair.from_memref %1 memref[d0:%0, d1:%0] {
+      buffer_name = "bufferA"
+    } : #sair.shape<d0:range x d1:range>, memref<?x?xf32>
     // CHECK: sair.map[d0:%[[V0]], d1:%[[V0]]] %[[V1]](d1, d0) {
     // CHECK: ^{{.*}}(%{{.*}}: index, %{{.*}}: index, %[[ARG0:.*]]: f32):
     // CHECK: sair.return %[[ARG0]] : f32

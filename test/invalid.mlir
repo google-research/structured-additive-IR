@@ -232,7 +232,8 @@ func @from_memref_exected_same_element_type(%arg0 : memref<f32>) {
     %1 = "sair.from_memref"(%0) {
       shape = #sair.shape<()>,
       mapping_array = [#sair.mapping<0>],
-      operand_segment_sizes = dense<[0, 0, 1]> : vector<3xi64>
+      operand_segment_sizes = dense<[0, 0, 1]> : vector<3xi64>,
+      buffer_name = "bufferA"
     } : (!sair.value<(), memref<f32>>) -> (!sair.value<(), i32>)
     sair.exit
   }
@@ -288,8 +289,9 @@ func @hyper_rectangular_domain(%arg0: index, %arg1 : memref<?x?xf32>) {
     %3 = sair.from_scalar %arg1 : !sair.value<(), memref<?x?xf32>>
 
     // expected-error @+1 {{memref domain dimensions cannot depend on each other}}
-    %4 = sair.from_memref %3 memref[d0:%0, d1:%2]
-      : #sair.shape<d0:range x d1:range(d0)>, memref<?x?xf32>
+    %4 = sair.from_memref %3 memref[d0:%0, d1:%2] {
+      buffer_name = "bufferA"
+    } : #sair.shape<d0:range x d1:range(d0)>, memref<?x?xf32>
     sair.exit
   }
   return
@@ -301,7 +303,9 @@ func @from_memref_rank(%arg0 : memref<?xf32>) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), memref<?xf32>>
     // expected-error @+1 {{expected memref of rank 0, got 1}}
-    %1 = sair.from_memref %0 memref : #sair.shape<()>, memref<?xf32>
+    %1 = sair.from_memref %0 memref {
+      buffer_name = "bufferA"
+    } : #sair.shape<()>, memref<?xf32>
     sair.exit
   }
   return
@@ -946,7 +950,8 @@ func @loop_nest_non_compute(%arg0: memref<f32>) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), memref<f32>>
     // expected-error @+1 {{only compute Sair ops can have the 'loop_nest' attribute}}
-    sair.from_memref %0 memref { loop_nest = [] }: #sair.shape<()>, memref<f32>
+    sair.from_memref %0 memref { buffer_name = "bufferA", loop_nest = [] }
+      : #sair.shape<()>, memref<f32>
     sair.exit
   }
   return
@@ -1204,7 +1209,7 @@ func @invalid_memory_space(%arg0: f32) {
 func @index_variable_in_memory(%arg0: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
-    // expected-error @+1 {{index variables cannot be allocated in memory}}
+    // expected-error @+1 {{index and memref variables cannot be allocated in memory}}
     %1 = sair.copy %0 {
       loop_nest = [],
       storage = [{
@@ -1546,6 +1551,61 @@ func @partial_layout(%arg0: f32) {
       storage = [{name = "bufferA", space = "memory",
                   layout = #sair.named_mapping<[d0:"loopA"] -> (d0, none)>}]
     } : !sair.value<d0:range, f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @buffer_name_already_used(%arg0: memref<f32>, %arg1: memref<f32>) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), memref<f32>>
+    %1 = sair.from_scalar %arg1 : !sair.value<(), memref<f32>>
+    %2 = sair.from_memref %0 memref { buffer_name = "bufferA" }
+      : #sair.shape<()>, memref<f32>
+    // expected-error @+1 {{buffer name is already used}}
+    %3 = sair.from_memref %1 memref { buffer_name = "bufferA" }
+      : #sair.shape<()>, memref<f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @buffer_used_before_def(%arg0: f32, %arg1: memref<f32>) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    // expected-error @+1 {{buffer "bufferA" used before it is defined}}
+    %1 = sair.copy %0 {
+      loop_nest = [],
+      storage = [{name = "bufferA", space = "memory", layout = #sair.named_mapping<[] -> ()>}]
+    } : !sair.value<(), f32>
+    // expected-note @+1 {{buffer defined here}}
+    %2 = sair.from_scalar %arg1 : !sair.value<(), memref<f32>>
+    %3 = sair.from_memref %2 memref {
+      buffer_name = "bufferA"
+    } : #sair.shape<()>, memref<f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @to_memref_operand_storage(%arg0: f32, %arg1: memref<f32>) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.from_scalar %arg1 : !sair.value<(), memref<f32>>
+    %2 = sair.copy %0 {
+      loop_nest = [],
+      storage = [{name = "bufferA", space = "memory", layout = #sair.named_mapping<[] -> ()>}]
+    } : !sair.value<(), f32>
+    // expected-error @+1 {{invalid operand storage}}
+    sair.to_memref %1 memref %2 {
+      buffer_name = "bufferB"
+    } : #sair.shape<()>, memref<f32>
     sair.exit
   }
   return

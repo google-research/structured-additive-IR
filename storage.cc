@@ -55,7 +55,7 @@ static llvm::SmallVector<ValueViewOp, 4> SortValueViews(SairProgramOp program) {
 
 Buffer::Buffer(mlir::Type element_type, int rank, ComputeOp op, int result,
                const LoopFusionAnalysis &fusion_analysis)
-    : loc_(op.getLoc()), element_type_(element_type) {
+    : loc_(op.getLoc()), element_type_(element_type), import_op_(nullptr) {
   assert(element_type != nullptr);
   assert(rank >= 0);
 
@@ -69,6 +69,23 @@ Buffer::Buffer(mlir::Type element_type, int rank, ComputeOp op, int result,
   auto none_expr = MappingNoneExpr::get(element_type.getContext());
   layout_.resize(rank, none_expr);
   writes_.emplace_back(op, result);
+
+  loop_nest_mapping_ = fusion_analysis.GetLoopNest(loop_nest_).domain_to_loops;
+}
+
+Buffer::Buffer(FromToMemRefOp import_op,
+               const IterationSpaceAnalysis &iteration_spaces,
+               const LoopFusionAnalysis &fusion_analysis)
+    : loc_(import_op.getLoc()),
+      element_type_(import_op.MemRefType().getElementType()),
+      import_op_(import_op) {
+  const IterationSpace iter_space =
+      iteration_spaces.Get(cast<SairOp>(import_op.getOperation()));
+  llvm::append_range(loop_nest_, iter_space.loop_names());
+
+  int rank = import_op.memref_domain().size();
+  auto none_expr = MappingNoneExpr::get(element_type_.getContext());
+  layout_.resize(rank, none_expr);
 
   loop_nest_mapping_ = fusion_analysis.GetLoopNest(loop_nest_).domain_to_loops;
 }
@@ -188,8 +205,10 @@ static mlir::LogicalResult VerifyStorageAttrWellFormed(ComputeOp op) {
 
     ValueType type = value.getType().cast<ValueType>();
     if (buffer.space() == sair_dialect->memory_attr() &&
-        type.ElementType().isa<mlir::IndexType>()) {
-      return op.emitError() << "index variables cannot be allocated in memory";
+        (type.ElementType().isa<mlir::IndexType>() ||
+         type.ElementType().isa<mlir::MemRefType>())) {
+      return op.emitError()
+             << "index and memref variables cannot be allocated in memory";
     }
 
     if ((buffer.space() == sair_dialect->memory_attr()) ^
@@ -469,9 +488,27 @@ static mlir::LogicalResult CheckLayoutMapping(
 // Declare buffers used by `program` in `buffers`. If a buffer has multiple
 // uses, chek that element type and rank are compatible.
 static mlir::LogicalResult DeclareBuffers(
-    SairProgramOp program, const LoopFusionAnalysis &fusion_analysis,
+    SairProgramOp program, const IterationSpaceAnalysis &iteration_spaces,
+    const LoopFusionAnalysis &fusion_analysis,
     llvm::DenseMap<mlir::Attribute, Buffer> &buffers) {
-  mlir::WalkResult result = program.walk([&](ComputeOp op) -> mlir::WalkResult {
+  // Declare external buffers imported using from/to memref.
+  mlir::WalkResult result =
+      program.walk([&](FromToMemRefOp op) -> mlir::WalkResult {
+        auto name_attr =
+            mlir::StringAttr::get(op.getContext(), op.buffer_name());
+        bool was_inserted =
+            buffers
+                .try_emplace(name_attr, op, iteration_spaces, fusion_analysis)
+                .second;
+        if (!was_inserted) {
+          return op.emitError() << "buffer name is already used";
+        }
+        return mlir::success();
+      });
+  if (result.wasInterrupted()) return mlir::failure();
+
+  // Declare internal buffers.
+  result = program.walk([&](ComputeOp op) -> mlir::WalkResult {
     for (int i = 0, e = op->getNumResults(); i < e; ++i) {
       BufferAttr buffer_attr = op.Storage(i);
       if (mlir::failed(
@@ -486,7 +523,7 @@ static mlir::LogicalResult DeclareBuffers(
 
 // Compute buffers shape by updating `buffers` in-place.
 static mlir::LogicalResult ComputeBuffersShape(
-    const LoopFusionAnalysis &fusion_analysis,
+    mlir::MLIRContext *context, const LoopFusionAnalysis &fusion_analysis,
     const IterationSpaceAnalysis &iteration_spaces,
     llvm::DenseMap<mlir::Attribute, Buffer> &buffers) {
   for (auto &[name_attr, buffer] : buffers) {
@@ -499,6 +536,27 @@ static mlir::LogicalResult ComputeBuffersShape(
     for (const ValueAccess &access : loop_nest.domain) {
       buffer.domain().push_back(
           {access.value, access.mapping.ResizeUseDomain(num_loops)});
+    }
+
+    // Define external buffers shape.
+    if (buffer.is_external()) {
+      FromToMemRefOp op = buffer.import_op();
+      auto sair_op = cast<SairOp>(op.getOperation());
+      int parallel_domain_size = op.parallel_domain().size();
+      MappingAttr loops_to_domain_mapping =
+          iteration_spaces.Get(sair_op).MappingToLoops().Inverse();
+      for (int i = 0, e = buffer.rank(); i < e; ++i) {
+        int domain_dim = buffer.domain().size();
+        buffer.UnifyLayoutDim(i, MappingDimExpr::get(domain_dim, context));
+        const DomainShapeDim &shape_dim =
+            sair_op.shape().Dimensions()[parallel_domain_size + i];
+        MappingAttr shape_dim_mapping = shape_dim.dependency_mapping();
+        buffer.domain().push_back({
+            .value = op.memref_domain()[i],
+            .mapping = loops_to_domain_mapping.Compose(
+                shape_dim_mapping.ResizeUseDomain(parallel_domain_size)),
+        });
+      }
     }
 
     // Unify buffer layout.
@@ -514,8 +572,12 @@ static mlir::LogicalResult ComputeBuffersShape(
       }
     }
 
+    // If the buffer is external, we already know that its layout is correct and
+    // we cannot trim the list of loops its definition must be nested in.
+    if (buffer.is_external()) continue;
+
     // Check that layout mapping is correct and compute the minimal loop nest
-    // each buffer needs to be nested in.
+    // buffers needs to be nested in.
     int min_num_loops = 0;
     if (mlir::failed(CheckLayoutMapping(name, buffer, iteration_spaces,
                                         min_num_loops))) {
@@ -575,13 +637,15 @@ mlir::LogicalResult StorageAnalysis::Init(SairProgramOp program) {
   // TODO(b/181938550): use cached analysis.
   LoopFusionAnalysis fusion_analysis(program);
   IterationSpaceAnalysis iteration_spaces(program);
+  mlir::MLIRContext *context = program.getContext();
 
-  if (mlir::failed(DeclareBuffers(program, fusion_analysis, buffers_))) {
+  if (mlir::failed(DeclareBuffers(program, iteration_spaces, fusion_analysis,
+                                  buffers_))) {
     return mlir::failure();
   }
 
-  if (mlir::failed(
-          ComputeBuffersShape(fusion_analysis, iteration_spaces, buffers_))) {
+  if (mlir::failed(ComputeBuffersShape(context, fusion_analysis,
+                                       iteration_spaces, buffers_))) {
     return mlir::failure();
   }
 
@@ -599,6 +663,23 @@ mlir::LogicalResult StorageAnalysis::Init(SairProgramOp program) {
           ->second.AddRead(op, operand.position());
     }
   });
+
+  // Ensure that writes to external buffers occure after the buffer is defined.
+  for (auto &[name, buffer] : buffers_) {
+    if (!buffer.is_external()) continue;
+    mlir::Operation *defining_op =
+        buffer.import_op().MemRef().value().getDefiningOp();
+    // We only need to check writes as reads always occure after writes.
+    for (auto write : buffer.writes()) {
+      if (write.first->isBeforeInBlock(defining_op)) {
+        mlir::InFlightDiagnostic diag = write.first.emitError()
+                                        << "buffer " << name
+                                        << " used before it is defined";
+        diag.attachNote(defining_op->getLoc()) << "buffer defined here";
+        return mlir::failure();
+      }
+    }
+  }
 
   return mlir::success();
 }
@@ -638,6 +719,25 @@ mlir::LogicalResult VerifyStorages(
       if (input_storage != result_storage) {
         return op.emitError() << "initializer and result storages must match";
       }
+    }
+    return mlir::success();
+  });
+  if (result.wasInterrupted()) return mlir::failure();
+
+  // Ensure that sair.to_memref operands have the right storage.
+  result = program.walk([&](SairToMemRefOp op) -> mlir::WalkResult {
+    ValueStorage input_storage =
+        analysis.GetStorage(op.value()).Map(op.Value(), iteration_spaces);
+    // Case where the input storage is left unspecified.
+    if (input_storage.space() == nullptr) return mlir::success();
+
+    auto expected_layout =
+        MappingAttr::GetIdentity(op.getContext(), op.memref_domain().size())
+            .ShiftRight(op.parallel_domain().size());
+    if (input_storage.buffer_name() == nullptr ||
+        input_storage.buffer_name().getValue() != op.buffer_name() ||
+        input_storage.layout() != expected_layout) {
+      return op.emitError() << "invalid operand storage";
     }
     return mlir::success();
   });

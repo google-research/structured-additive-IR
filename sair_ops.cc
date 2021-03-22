@@ -2080,9 +2080,9 @@ std::optional<ValueStorage> SairFromMemRefOp::InferStorage(
     int result, const IterationSpace &iteration_space,
     llvm::ArrayRef<std::optional<ValueStorage>> operand_storages) {
   auto *sair_dialect = getContext()->getLoadedDialect<SairDialect>();
-  auto layout = MappingAttr::get(getContext(),
-                                 iteration_space.mapping().UseDomainSize(), {});
-  return ValueStorage(sair_dialect->register_attr(), nullptr, layout);
+  auto layout = MappingAttr::GetIdentity(getContext(), memref_domain().size())
+                    .ShiftRight(parallel_domain().size());
+  return ValueStorage(sair_dialect->register_attr(), buffer_nameAttr(), layout);
 }
 
 }  // namespace sair

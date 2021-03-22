@@ -39,6 +39,9 @@ class Buffer {
   // stored in `buffer`.
   Buffer(mlir::Type element_type, int rank, ComputeOp op, int result,
          const LoopFusionAnalysis &fusion_analysis);
+  Buffer(FromToMemRefOp import_op,
+         const IterationSpaceAnalysis &iteration_spaces,
+         const LoopFusionAnalysis &fusion_analysis);
 
   // Number of dimensions in the buffer layout.
   int rank() const { return layout_.size(); }
@@ -56,8 +59,16 @@ class Buffer {
   // Mapping from domain dimensions to buffer dimensions.
   llvm::ArrayRef<MappingExpr> layout() const { return layout_; }
 
+  // Indicates if the buffer is declared outside the Sair program.
+  bool is_external() const { return import_op_ != nullptr; }
+
+  // In the case where `is_external` is true, operation that imports the memref
+  // in the sair program.
+  FromToMemRefOp import_op() const { return import_op_; }
+
   // List of operations that write to the buffer, with the position of the
-  // result stored in the buffer. Never empty.
+  // result stored in the buffer. Non-external buffers must have at least one
+  // write.
   llvm::ArrayRef<std::pair<ComputeOp, int>> writes() const { return writes_; }
 
   // List of operations that read from the buffer, with the position of the Sair
@@ -86,6 +97,7 @@ class Buffer {
  private:
   mlir::Location loc_;
   mlir::Type element_type_;
+  FromToMemRefOp import_op_ = nullptr;
 
   llvm::SmallVector<mlir::StringAttr> loop_nest_;
   MappingAttr loop_nest_mapping_;

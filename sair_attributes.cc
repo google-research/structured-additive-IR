@@ -994,6 +994,26 @@ llvm::ArrayRef<mlir::StringAttr> NamedMappingAttr::names() const {
 
 MappingAttr NamedMappingAttr::mapping() const { return getImpl()->mapping(); }
 
+NamedMappingAttr NamedMappingAttr::DropUnusedDims() const {
+  mlir::MLIRContext *context = getContext();
+
+  auto none = MappingNoneExpr::get(context);
+  llvm::SmallVector<MappingExpr> subsitutions(names().size(), none);
+  llvm::SmallBitVector used_dims = mapping().DependencyMask();
+  llvm::SmallVector<mlir::StringAttr> new_dim_names;
+
+  new_dim_names.reserve(used_dims.count());
+  for (int dim : used_dims.set_bits()) {
+    subsitutions[dim] = MappingDimExpr::get(new_dim_names.size(), context);
+    new_dim_names.push_back(names()[dim]);
+  }
+
+  auto new_mapping =
+      MappingAttr::get(context, new_dim_names.size(), subsitutions)
+          .Compose(mapping());
+  return NamedMappingAttr::get(new_dim_names, new_mapping);
+}
+
 //===----------------------------------------------------------------------===//
 // DomainShapeDim
 //===----------------------------------------------------------------------===//

@@ -22,16 +22,19 @@ func @copy_to_memref(%arg0: memref<8xf32>, %arg1: memref<8xf32>) {
     // CHECK-DAG: %[[C8:.*]] = constant 8 : index
     // CHECK: scf.for %[[V0:.*]] = %[[C0]] to %[[C8]] step %[[C1]] {
     %0 = sair.static_range 8 : !sair.range
-    %2 = sair.from_scalar %arg0 : !sair.value<(), memref<8xf32>>
+    %1 = sair.from_scalar %arg0 : !sair.value<(), memref<8xf32>>
+    %4 = sair.from_scalar %arg1 : !sair.value<(), memref<8xf32>>
     // CHECK:   %[[V1:.*]] = affine.apply #[[$map0]](%[[V0]])
     // CHECK:   %[[V2:.*]] = memref.load %[[ARG0]][%[[V1]]] : memref<8xf32>
-    %1 = sair.from_memref %2 memref[d0:%0]
-      : #sair.shape<d0:range>, memref<8xf32>
+    %2 = sair.from_memref %1 memref[d0:%0] {
+      buffer_name = "bufferA"
+    } : #sair.shape<d0:range>, memref<8xf32>
+    %3 = sair.copy[d0:%0] %2(d0) : !sair.value<d0:range, f32>
     // CHECK:   %[[V3:.*]] = affine.apply #[[$map0]](%[[V0]])
     // CHECK:   memref.store %[[V2]], %[[ARG1]][%[[V3]]] : memref<8xf32>
-    %3 = sair.from_scalar %arg1 : !sair.value<(), memref<8xf32>>
-    sair.to_memref %3 memref[d0:%0] %1(d0)
-      : #sair.shape<d0:range>, memref<8xf32>
+    sair.to_memref %4 memref[d0:%0] %3(d0) {
+      buffer_name = "bufferB"
+    }  : #sair.shape<d0:range>, memref<8xf32>
     // CHECK: }
     // CHECK-NOT: sair.exit
     sair.exit

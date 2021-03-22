@@ -103,58 +103,6 @@ SairCopyOp MaterializeOperand(DomainShapeAttr shape, mlir::OperandRange domain,
   return copy_op;
 }
 
-// MLIR pass that inserts copies before sair.to_memref and sair.map_reduce
-// operations in order to ensure that they can operate in place. No copy is
-// inserted if the operation can already execute in place.
-class InsertCopies : public InsertCopiesPassBase<InsertCopies> {
-  // Inserts sair.copy operations in order to ensure that the mapping of
-  // sair.to_memref operations are invertible and that sair.to_memref operations
-  // are not using a value produced by a sair.from_memeref operation.
-  void runOnFunction() override {
-    mlir::MLIRContext *context = &getContext();
-    mlir::OpBuilder builder(context);
-
-    auto *sair_dialect = context->getLoadedDialect<SairDialect>();
-
-    // Insert copies before sair.to_memref if the value is produced by a
-    // sair.from_memref operation or if the mapping is not invertible.
-    getFunction().walk([&](SairToMemRefOp op) {
-      mlir::Operation *defining_op = op.value().getDefiningOp();
-      auto &storage_analysis =
-          getChildAnalysis<StorageAnalysis>(op->getParentOp());
-
-      if (!isa<SairFromMemRefOp>(defining_op) &&
-          op.Value().Mapping().Inverse().IsFullySpecified()) {
-        return;
-      }
-      ValueOperand operand = op.Value();
-      SairProgramOp program_op = cast<SairProgramOp>(op->getParentOp());
-      // Move the operation at the end of the program so that we can generate a
-      // new loop nest without causing interference with existing fusion
-      // constraints.
-      // TODO(ulysse): allow choosing the insertion point with an attribute.
-      op.getOperation()->moveBefore(program_op.body().front().getTerminator());
-      InsertionPoint insertion_point;
-      insertion_point.operation = op;
-      insertion_point.direction = Direction::kBefore;
-      insertion_point.loop_nest =
-          GetDefaultLoopNest(program_op, op.shape().NumDimensions());
-      llvm::SmallVector<mlir::StringAttr, 4> loop_names;
-      loop_names.reserve(insertion_point.loop_nest.size());
-      for (auto loop : insertion_point.loop_nest.getValue()) {
-        loop_names.push_back(loop.cast<LoopAttr>().name());
-      }
-      auto buffer = BufferAttr::get(
-          /*space=*/sair_dialect->memory_attr(),
-          /*name=*/storage_analysis.GetFreshBufferName(),
-          /*layout=*/NamedMappingAttr::GetIdentity(context, loop_names),
-          context);
-      MaterializeOperand(op.shape(), op.domain(), operand, insertion_point,
-                         buffer, builder);
-    });
-  }
-};
-
 // Uses `builder` to create a series of `affine.apply` operations that apply
 // individual expressions from the given `map` to `operands`, and populates the
 // `result` vector with the results of application.
@@ -736,10 +684,6 @@ class MaterializeMemRefs
 };
 
 }  // namespace
-
-std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateInsertCopiesPass() {
-  return std::make_unique<InsertCopies>();
-}
 
 std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateLowerToMemRefPass() {
   return std::make_unique<LowerToMemRef>();

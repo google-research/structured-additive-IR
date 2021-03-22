@@ -19,3 +19,15 @@ func @partial_layout(%arg0: f32) {
   }
   return
 }
+
+// -----
+
+func @missing_information(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    // expected-error @+1 {{missing storage information}}
+    %1 = sair.copy %0 : !sair.value<(), f32>
+    sair.exit
+  }
+  return
+}

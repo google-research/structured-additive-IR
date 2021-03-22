@@ -1,5 +1,36 @@
 // RUN: sair-opt %s -sair-materialize-buffers -mlir-print-local-scope | FileCheck %s
 
+// CHECK-LABEL: @from_to_memref
+func @from_to_memref(%arg0: memref<?xf32>, %arg1: memref<?xf32>) {
+  sair.program {
+    // CHECK: %[[M0:.*]] = sair.from_scalar
+    %0 = sair.from_scalar %arg0 : !sair.value<(), memref<?xf32>>
+    // CHECK: %[[M1:.*]] = sair.from_scalar
+    %1 = sair.from_scalar %arg1 : !sair.value<(), memref<?xf32>>
+    %2 = sair.static_range 8 : !sair.range
+    %3 = sair.from_memref %0 memref[d0:%2] {
+      buffer_name = "ARG0"
+    } : #sair.shape<d0:range>, memref<?xf32>
+    // CHECK: %[[V0:.*]] = sair.load_from_memref[d0:%{{.*}}] %[[M0]]
+    // CHECK:   layout = #sair.mapping<1 : d0>
+    // CHECK:   loop_nest = [{iter = #sair.mapping_expr<d0>, name = "loopA"}]
+    // CHECK: %[[V1:.*]] = sair.copy[d0:%{{.*}}] %[[V0]](d0)
+    %4 = sair.copy[d0:%2] %3(d0) {
+      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
+      storage = [{name = "ARG1", space = "memory",
+                  layout = #sair.named_mapping<[d0:"loopA"] -> (d0)>}]
+    } : !sair.value<d0:range, f32>
+    // CHECK: sair.store_to_memref[d0:%{{.*}}] %[[M1]], %[[V1]]
+    // CHECK:   layout = #sair.mapping<1 : d0>
+    // CHECK:   loop_nest = [{iter = #sair.mapping_expr<d0>, name = "loopA"}]
+    sair.to_memref %1 memref[d0:%2] %4(d0) {
+      buffer_name = "ARG1"
+    } : #sair.shape<d0:range>, memref<?xf32>
+    sair.exit
+  }
+  return
+}
+
 // CHECK-LABEL: @static_shape
 func @static_shape(%arg0: f32) {
   sair.program {

@@ -51,13 +51,6 @@ def InlineTrivialSairOpsPass : FunctionPass<"inline-trivial-sair-ops"> {
   let dependentDialects = Deps.dialects;
 }
 
-def InsertCopiesPass : FunctionPass<"sair-insert-copies"> {
-  let summary =
-    "Insert copies before operations when needed to operate in place";
-  let constructor = [{ ::sair::CreateInsertCopiesPass(); }];
-  let dependentDialects = Deps.dialects;
-}
-
 def MaterializeMemRefsPass : FunctionPass<"sair-materialize-memrefs"> {
   let summary = "Materializes Sair values as memrefs";
   let constructor = [{ ::sair::CreateMaterializeMemRefsPass(); }];

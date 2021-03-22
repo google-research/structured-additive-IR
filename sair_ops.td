@@ -198,6 +198,7 @@ def SairFromScalarOp : SairOp<"from_scalar", [
 def SairFromMemRefOp : SairOp<"from_memref", [
     AttrSizedOperandSegments,
     DeclareOpInterfaceMethods<SairValueViewOp>,
+    SairFromToMemRefOp,
     NoSideEffect,
     SairInferIterationSpaceOp]> {
   let summary = "Interprets a memref as a Sair value";
@@ -232,7 +233,8 @@ def SairFromMemRefOp : SairOp<"from_memref", [
     Variadic<SairRange>:$parallel_domain,
     Variadic<SairRange>:$memref_domain,
     SairMappingArrayAttr:$mapping_array,
-    SairValueOf<AnyMemRef>:$memref
+    SairValueOf<AnyMemRef>:$memref,
+    StrAttr:$buffer_name
   );
 
   let results = (outs SairValue:$result);
@@ -252,13 +254,6 @@ def SairFromMemRefOp : SairOp<"from_memref", [
     }
 
     llvm::SmallBitVector DimsDependingOnOperand(int sair_operand);
-
-    mlir::MemRefType MemRefType() {
-      return MemRef()
-          .GetType()
-          .ElementType()
-          .cast<mlir::MemRefType>();
-    }
 
     int infer_iteration_space_operand() { return 0; }
   }];
@@ -317,6 +312,7 @@ def SairLoadFromMemRefOp : SairOp<"load_from_memref", [SairComputeOp]> {
 
 def SairToMemRefOp : SairOp<"to_memref", [
     AttrSizedOperandSegments,
+    SairFromToMemRefOp,
     SairInferIterationSpaceOp]> {
   let summary = "Interprets a Sair value as a memref";
 
@@ -346,7 +342,8 @@ def SairToMemRefOp : SairOp<"to_memref", [
     SairMappingArrayAttr:$mapping_array,
     SairValueOf<AnyMemRef>:$memref,
     SairValue:$value,
-    SairDomainShapeAttr:$shape
+    SairDomainShapeAttr:$shape,
+    StrAttr:$buffer_name
   );
 
   let parser = [{return ParseToMemRef(parser, result);}];
@@ -366,14 +363,6 @@ def SairToMemRefOp : SairOp<"to_memref", [
     }
 
     llvm::SmallBitVector DimsDependingOnOperand(int sair_operand);
-
-    mlir::MemRefType MemRefType() {
-      return memref()
-          .getType()
-          .cast<ValueType>()
-          .ElementType()
-          .cast<mlir::MemRefType>();
-    }
 
     int infer_iteration_space_operand() { return 0; }
   }];

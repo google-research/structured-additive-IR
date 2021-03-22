@@ -44,3 +44,38 @@ func @non_rectangular_shape(%arg0: f32, %arg1: index) {
   }
   return
 }
+
+// -----
+
+func @to_memref_layout_fby(%arg0: f32, %arg1: memref<?xf32>) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.from_scalar %arg1 : !sair.value<(), memref<?xf32>>
+    %2 = sair.static_range 8 : !sair.range
+    %3 = sair.copy %0 : !sair.value<(), f32>
+    // expected-note @+1 {{sair.fby operation here}}
+    %4 = sair.fby %3 then[d0:%2] %4(d0) : !sair.value<d0:range, f32>
+    // expected-error @+1 {{layout maps to sair.fby dimensions}}
+    sair.to_memref %1 memref[d0:%2] %4(d0) {
+      buffer_name = "bufferA"
+    } : #sair.shape<d0:range>, memref<?xf32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @to_memref_value_producer_before_memref(%arg0: f32, %arg1: memref<f32>) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.copy %0 : !sair.value<(), f32>
+    %2 = sair.from_scalar %arg1 : !sair.value<(), memref<f32>>
+    // expected-error @+1 {{operations producing to_memref operand are scheduled before the memref is defined}}
+    sair.to_memref %2 memref %1 {
+      buffer_name = "bufferA"
+    } : #sair.shape<()>, memref<f32>
+    sair.exit
+  }
+  return
+}
