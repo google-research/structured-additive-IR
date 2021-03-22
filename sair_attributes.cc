@@ -902,6 +902,7 @@ MappingAttr MappingAttr::Inverse() const {
     MappingExpr dim_expr = MappingDimExpr::get(i, context);
     auto status = Dimension(i).SetInverse(dim_expr, inverted_exprs);
     assert(mlir::succeeded(status));
+    (void)status;
   }
   return MappingAttr::get(context, size(), inverted_exprs);
 }
