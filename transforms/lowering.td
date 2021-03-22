@@ -33,12 +33,6 @@ def LowerToMapPass : FunctionPass<"sair-lower-to-map"> {
   let dependentDialects = !listconcat(Deps.dialects, ["::mlir::AffineDialect"]);
 }
 
-def LowerToMemRefPass : FunctionPass<"sair-lower-tomemref"> {
-  let summary = "Folds sair.to_memref operations in their predecessors";
-  let constructor = [{ ::sair::CreateLowerToMemRefPass(); }];
-  let dependentDialects = Deps.dialects;
-}
-
 def LowerToLLVM : Pass<"sair-lower-to-llvm", "::mlir::ModuleOp"> {
   let summary = "Lowers Sair and Standard dialect operations to LLVM dialect";
   let constructor = [{ ::sair::CreateLowerToLLVMPass(); }];
@@ -48,12 +42,6 @@ def LowerToLLVM : Pass<"sair-lower-to-llvm", "::mlir::ModuleOp"> {
 def InlineTrivialSairOpsPass : FunctionPass<"inline-trivial-sair-ops"> {
   let summary = "Inlines Sair ops operating on and producing 0D values";
   let constructor = [{ ::sair::CreateInlineTrivialOpsPass(); }];
-  let dependentDialects = Deps.dialects;
-}
-
-def MaterializeMemRefsPass : FunctionPass<"sair-materialize-memrefs"> {
-  let summary = "Materializes Sair values as memrefs";
-  let constructor = [{ ::sair::CreateMaterializeMemRefsPass(); }];
   let dependentDialects = Deps.dialects;
 }
 

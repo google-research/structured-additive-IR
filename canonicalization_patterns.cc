@@ -153,7 +153,9 @@ class DeduplicateMapInputsOutputs : public OpRewritePattern<SairMapOp> {
       for (ValueOperand previous_operand : previous_operands) {
         if (operand.Get() != previous_operand.Get()) continue;
         mlir::Value previous_argument =
-            op.block().getArgument(domain_size + previous_operand.position());
+            op.block_inputs()[previous_operand.position()];
+        // Don't deduplicate with dead arguments that will be removed.
+        if (previous_argument.use_empty()) continue;
         argument.replaceAllUsesWith(previous_argument);
         break;
       }
@@ -177,6 +179,8 @@ class DeduplicateMapInputsOutputs : public OpRewritePattern<SairMapOp> {
       for (int j = 0; j < i; ++j) {
         if (scalar_value != return_op.getOperand(j)) continue;
         if (op.Storage(i) != op.Storage(j)) continue;
+        // Don't deduplicate with dead results that will be removed.
+        if (op.getResult(j).use_empty()) continue;
         result.replaceAllUsesWith(op.getResult(j));
         break;
       }
@@ -209,8 +213,9 @@ class DeduplicateMapInputsOutputs : public OpRewritePattern<SairMapOp> {
         op.loop_nestAttr(), rewriter.getArrayAttr(new_storages));
     new_op.body().takeBody(op.body());
 
-    for (auto p : llvm::zip(old_results_to_keep, new_op.results())) {
-      std::get<0>(p).replaceAllUsesWith(std::get<1>(p));
+    for (auto [old_res, new_res] :
+         llvm::zip(old_results_to_keep, new_op.results())) {
+      old_res.replaceAllUsesWith(new_res);
     }
 
     rewriter.eraseOp(op);

@@ -83,9 +83,14 @@ std::unique_ptr<mlir::Pass> CreateLowerToLLVMPass() {
 
 void CreateSairToLoopConversionPipeline(mlir::OpPassManager *pm) {
   pm->addPass(CreateLowerMapReducePass());
+  pm->addPass(CreateMaterializeBuffersPass());
+  // Canonicalize removes non-compute operations for values converted to
+  // buffers.
+  pm->addPass(mlir::createCanonicalizerPass());
+  pm->addPass(CreateNormalizeLoopsPass());
+  // Canonicalization removes trivial sair.proj_any operations.
+  pm->addPass(mlir::createCanonicalizerPass());
   pm->addPass(CreateLowerToMapPass());
-  pm->addPass(CreateLowerToMemRefPass());
-  pm->addPass(CreateMaterializeMemRefsPass());
   pm->addPass(CreateIntroduceLoopsPass());
   pm->addPass(CreateInlineTrivialOpsPass());
 }

@@ -34,21 +34,9 @@ std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateLowerToMapPass();
 // dialect.
 std::unique_ptr<mlir::Pass> CreateLowerToLLVMPass();
 
-// Lower sair.to_memref operations by inserting store in the operation that
-// produces its value. The producers must implement the SairPointwiseRegion
-// interface.
-std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateLowerToMemRefPass();
-
 // Returns a pass that replaces the first trivial Sair Op in the function with
 // the contents of its body.
 std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateInlineTrivialOpsPass();
-
-// Replaces multidimensional Sair values by 0-dimensional Sair values wrapping a
-// memref. Values must be produced by sair.from_memref, sair.map or
-// sair.map_reduce operations and consumed by sair.map or sair.map_reduce
-// operations.
-std::unique_ptr<mlir::OperationPass<mlir::FuncOp>>
-CreateMaterializeMemRefsPass();
 
 // Replaces Sair values by buffers as specified by the `storage` attribute.
 std::unique_ptr<mlir::OperationPass<mlir::FuncOp>>
