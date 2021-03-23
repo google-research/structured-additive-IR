@@ -142,7 +142,7 @@ func @loop_nest(%arg0: f32) {
     // CHECK:   : #sair.shape<d0:range x d1:range(d0)>, memref<?xf32>
 
     // CHECK: %[[V8:.*]] = sair.load_from_memref[d0:%{{.*}}, d1:%{{.*}}] %[[V6]](d0)
-    // CHECK:   layout = #sair.mapping<2 : d1>
+    // CHECK:   layout = #sair.mapping<3 : d1>
     // CHECK:   loop_nest = [
     // CHECK:     {iter = #sair.mapping_expr<d0>, name = "A"},
     // CHECK:     {iter = #sair.mapping_expr<d1>, name = "C"},

@@ -198,8 +198,8 @@ void InsertLoad(ComputeOp op, int operand_pos, const Buffer &buffer,
   int op_domain_size = sair_op.domain().size();
   ValueOperand operand = sair_op.ValueOperands()[operand_pos];
   const IterationSpace &op_iter_space = iteration_spaces.Get(sair_op);
-  const ValueStorage &operand_storage =
-      storage_analysis.GetStorage(operand.value());
+  ValueStorage operand_storage = storage_analysis.GetStorage(operand.value())
+                                     .Map(operand, iteration_spaces);
   mlir::Type element_type = operand.GetType().ElementType();
 
   // Create a placeholder domain for the load.
