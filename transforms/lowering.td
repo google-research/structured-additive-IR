@@ -30,7 +30,8 @@ def LowerMapReducePass : FunctionPass<"sair-lower-map-reduce"> {
 def LowerToMapPass : FunctionPass<"sair-lower-to-map"> {
   let summary = "Lowers sair operations into sair.map operations";
   let constructor = [{ ::sair::CreateLowerToMapPass(); }];
-  let dependentDialects = !listconcat(Deps.dialects, ["::mlir::AffineDialect"]);
+  let dependentDialects = !listconcat(
+      Deps.dialects, ["::mlir::AffineDialect", "::mlir::memref::MemRefDialect"]);
 }
 
 def LowerToLLVM : Pass<"sair-lower-to-llvm", "::mlir::ModuleOp"> {

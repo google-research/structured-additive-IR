@@ -92,5 +92,5 @@ int main(int argc, char **argv) {
       mlir::MlirOptMain(outputFile->os(), std::move(inputFile), passPipeline,
                         registry, split_input_file, verify_diagnostics,
                         /*verifyPasses=*/true, allowUnregisteredDialects,
-                        /*preloadDialectsInContext=*/true));
+                        /*preloadDialectsInContext=*/false));
 }
