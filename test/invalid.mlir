@@ -233,7 +233,8 @@ func @from_memref_exected_same_element_type(%arg0 : memref<f32>) {
     %1 = "sair.from_memref"(%0) {
       shape = #sair.shape<()>,
       mapping_array = [#sair.mapping<0>],
-      operand_segment_sizes = dense<[0, 0, 1]> : vector<3xi32>
+      operand_segment_sizes = dense<[0, 0, 1]> : vector<3xi64>,
+      buffer_name = "bufferA"
     } : (!sair.value<(), memref<f32>>) -> (!sair.value<(), i32>)
     sair.exit
   }

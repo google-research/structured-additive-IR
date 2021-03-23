@@ -62,7 +62,7 @@ class LowerToLLVMPass : public LowerToLLVMBase<LowerToLLVMPass> {
   void runOnOperation() override {
     auto module = getOperation();
 
-    OwningRewritePatternList patterns;
+    OwningRewritePatternList patterns(&getContext());
     LLVMTypeConverter converter(&getContext());
     populateStdToLLVMConversionPatterns(converter, patterns);
     patterns.insert<LowerUndef>(converter);

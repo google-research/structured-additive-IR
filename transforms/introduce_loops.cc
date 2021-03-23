@@ -56,7 +56,7 @@ void getAllPatterns(mlir::OwningRewritePatternList &list, mlir::MLIRContext *ctx
 // operations to lower.
 class Driver : public mlir::PatternRewriter {
  public:
-  Driver(mlir::MLIRContext *ctx) : PatternRewriter(ctx) {
+  Driver(mlir::MLIRContext *ctx) : PatternRewriter(ctx), canonicalization_patterns_(ctx) {
     getAllPatterns<
 #define GET_OP_LIST
 #include "sair_ops.cc.inc"
