@@ -37,11 +37,6 @@ std::unique_ptr<mlir::Pass> CreateDefaultStoragePass();
 // default value. Leaves the attribute untouched if already present.
 std::unique_ptr<mlir::Pass> CreateDefaultLoopNestPass();
 
-// Generates the default `loop_nest` attribute for an operation with the given
-// number of dimensions. The loop nest will start with the given prefix.
-mlir::ArrayAttr GetDefaultLoopNest(SairProgramOp program, int num_dimensions,
-                                   llvm::ArrayRef<mlir::Attribute> prefix = {});
-
 }  // namespace sair
 
 #endif  // SAIR_DEFAULT_LOWERING_ATTRIBUTES_H_

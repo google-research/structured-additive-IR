@@ -151,6 +151,13 @@ class LoopFusionAnalysis {
   LoopNest GetLoopNest(ComputeOp op) const;
   LoopNest GetLoopNest(llvm::ArrayRef<mlir::StringAttr> loop_names) const;
 
+  // Generates a fresh loop name. May be called multiple times without
+  // invalidating the analysis.
+  mlir::StringAttr GetFreshLoopName();
+
+  // Returns the analysis context.
+  mlir::MLIRContext *getContext() const { return context_; }
+
  private:
   LoopFusionAnalysis(mlir::MLIRContext *context) : context_(context) {}
 
@@ -162,6 +169,7 @@ class LoopFusionAnalysis {
   mlir::LogicalResult RegisterLoop(ComputeOp op, LoopAttr loop,
                                    llvm::ArrayRef<mlir::Attribute> outer_loops);
 
+  int next_loop_id_ = 0;
   mlir::MLIRContext *context_;
   llvm::DenseMap<mlir::Attribute, LoopFusionClass> fusion_classes_;
   llvm::DenseMap<mlir::Operation *, llvm::SmallVector<MappingExpr, 4>>

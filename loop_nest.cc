@@ -15,6 +15,7 @@
 #include "loop_nest.h"
 
 #include "llvm/ADT/SetVector.h"
+#include "llvm/ADT/SmallString.h"
 #include "util.h"
 
 namespace sair {
@@ -264,11 +265,6 @@ static mlir::LogicalResult VerifyLoopNestWellFormed(
   // Bitfield that keeps track of which dimensions are implemented by loops.
   for (int i = 0, e = loop_nest.size(); i < e; ++i) {
     LoopAttr loop = loop_nest[i].dyn_cast<LoopAttr>();
-    SairProgramOp parent = cast<SairProgramOp>(op->getParentOp());
-    if (llvm::count(parent.loop_name_table(), loop.name()) == 0) {
-      return op.emitError() << "loop " << loop.name()
-                            << " is not declared in the parent operation";
-    }
 
     // Ensure that symbols are unique in the loop nest.
     for (int j = 0; j < i; ++j) {
@@ -811,6 +807,18 @@ LoopNest LoopFusionAnalysis::GetLoopNest(
   result.normalized_shape = DomainShapeAttr::get(context_, shape_dims);
 
   return result;
+}
+
+mlir::StringAttr LoopFusionAnalysis::GetFreshLoopName() {
+  llvm::SmallString<10> name("loop_");
+  int original_size = name.size();
+  mlir::StringAttr attr;
+  do {
+    name.resize(original_size);
+    name += std::to_string(next_loop_id_++);
+    attr = mlir::StringAttr::get(context_, name);
+  } while (fusion_classes_.count(attr) > 0);
+  return attr;
 }
 
 DomainShapeAttr LoopNest::DomainShape() const {

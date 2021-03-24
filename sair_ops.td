@@ -724,7 +724,6 @@ def SairProgramOp : Op<SairDialect, "program", [RegionKindInterface]> {
     ```
   }];
 
-  let arguments = (ins StrArrayAttr:$loop_name_table);
   let regions = (region SizedRegion<1>:$body);
   let results = (outs Variadic<AnyType>:$results);
 
@@ -739,12 +738,6 @@ def SairProgramOp : Op<SairDialect, "program", [RegionKindInterface]> {
   ];
 
   let extraClassDeclaration = [{
-    static constexpr llvm::StringRef kLoopNameTable = "loop_name_table";
-
-    // Generates a loop name, unique in the scope of the sair.program operation,
-    // with the given prefix.
-    mlir::StringAttr GenLoopName(llvm::StringRef prefix);
-
     static mlir::RegionKind getRegionKind(unsigned index) {
       return mlir::RegionKind::Graph;
     }

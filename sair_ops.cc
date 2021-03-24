@@ -1489,22 +1489,6 @@ llvm::SmallBitVector SairProjLastOp::ResultsDimDependencies() {
   return mask;
 }
 
-// Returns an array containing the name of all loops used to implement sair
-// operations in the given block.
-static mlir::ArrayAttr GatherLoopNames(mlir::Block &block,
-                                       mlir::Builder &builder) {
-  llvm::SmallVector<mlir::Attribute, 8> loop_names;
-  block.walk([&](ComputeOp op) {
-    if (!op.loop_nest().hasValue()) return;
-    for (mlir::Attribute attribute : op.LoopNestLoops()) {
-      LoopAttr loop = attribute.dyn_cast<LoopAttr>();
-      if (loop == nullptr) continue;
-      loop_names.push_back(loop.name());
-    }
-  });
-  return builder.getArrayAttr(loop_names);
-}
-
 // Parses a SairProgramOp using "parser" and populates the "result" with data
 // sufficient for MLIR to construct the operation. The expected syntax is as
 // follows.
@@ -1519,16 +1503,13 @@ mlir::ParseResult ParseProgramOp(mlir::OpAsmParser &parser,
       parser.parseOptionalColonTypeList(result.types)) {
     return mlir::failure();
   }
-  result.addAttribute(SairProgramOp::kLoopNameTable,
-                      GatherLoopNames(body->front(), parser.getBuilder()));
   return mlir::success();
 }
 
 // Prints the given SairProgramOp using "printer".
 void Print(SairProgramOp op, mlir::OpAsmPrinter &printer) {
   printer << SairProgramOp::getOperationName() << " ";
-  printer.printOptionalAttrDictWithKeyword(op->getAttrs(),
-                                           {SairProgramOp::kLoopNameTable});
+  printer.printOptionalAttrDictWithKeyword(op->getAttrs());
   printer.printRegion(op.body(), /*printEntryBlockArgs=*/false,
                       /*printBlockTerminators=*/true);
   if (op.results().empty()) return;
@@ -1571,28 +1552,7 @@ void SairProgramOp::build(mlir::OpBuilder &builder,
                           mlir::OperationState &result,
                           mlir::TypeRange result_types) {
   result.addTypes(result_types);
-  result.addAttribute(kLoopNameTable, builder.getArrayAttr({}));
   result.addRegion()->push_back(new Block());
-}
-
-mlir::StringAttr SairProgramOp::GenLoopName(llvm::StringRef prefix) {
-  mlir::StringAttr name = mlir::StringAttr::get(getContext(), prefix);
-  std::vector<mlir::Attribute> name_table(loop_name_table().begin(),
-                                          loop_name_table().end());
-  if (llvm::count(loop_name_table(), name) > 0) {
-    llvm::SmallString<128> name_buffer(prefix);
-    int original_size = name_buffer.size();
-    int counter = 0;
-    do {
-      name_buffer.resize(original_size);
-      name_buffer += '_';
-      name_buffer += std::to_string(counter++);
-      name = mlir::StringAttr::get(getContext(), name_buffer);
-    } while (llvm::count(name_table, name) > 0);
-  }
-  name_table.push_back(name);
-  loop_name_tableAttr(mlir::ArrayAttr::get(getContext(), name_table));
-  return name;
 }
 
 // Builds a sair.exit operation with empty mappings. This is the

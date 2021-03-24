@@ -792,23 +792,6 @@ func @loop_definition_mismatch(%arg0: f32) {
 
 // -----
 
-func @loop_name_not_registered(%arg0: f32) {
-  "sair.program" () ({
-    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-
-    %1 = sair.static_range 8 : !sair.range
-    // expected-error @+1 {{loop "A" is not declared in the parent operation}}
-    sair.copy[d0: %1] %0 {loop_nest = [{name = "A", iter=#sair.mapping_expr<d0>}]}
-      : !sair.value<d0:range, f32>
-    sair.exit
-  }) {
-    loop_name_table = []
-  }: () -> ()
-  return
-}
-
-// -----
-
 func @init_nested_in_reduction_loop(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>

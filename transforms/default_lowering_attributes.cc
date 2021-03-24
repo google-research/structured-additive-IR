@@ -201,27 +201,12 @@ class DefaultStorage : public DefaultStoragePassBase<DefaultStorage> {
   }
 };
 
-// Sets the `loop_nest` attribute to its default value. The default loop nest
-// iterates over each dimension of the domain, in order, without
-// rematerialization or strip-mining.
-class DefaultLoopNest : public DefaultLoopNestPassBase<DefaultLoopNest> {
- public:
-  void runOnFunction() override {
-    getFunction().walk([](ComputeOp op) {
-      if (op.loop_nest().hasValue()) return;
-      SairOp sair_op = cast<SairOp>(op.getOperation());
-      SairProgramOp program_op = cast<SairProgramOp>(op->getParentOp());
-      int num_dimensions = sair_op.shape().NumDimensions();
-      op.setLoopNest(GetDefaultLoopNest(program_op, num_dimensions));
-    });
-  }
-};
-
-}  // namespace
-
-mlir::ArrayAttr GetDefaultLoopNest(SairProgramOp program, int num_dimensions,
-                                   llvm::ArrayRef<mlir::Attribute> prefix) {
-  mlir::MLIRContext *context = program.getContext();
+// Generates the default `loop_nest` attribute for an operation with the given
+// number of dimensions. The loop nest will start with the given prefix.
+mlir::ArrayAttr GetDefaultLoopNest(int num_dimensions,
+                                   llvm::ArrayRef<mlir::Attribute> prefix,
+                                   LoopFusionAnalysis &fusion_analysis) {
+  mlir::MLIRContext *context = fusion_analysis.getContext();
   llvm::SmallVector<MappingExpr, 4> iter_exprs;
   for (mlir::Attribute attr : prefix) {
     LoopAttr loop = attr.cast<LoopAttr>();
@@ -238,12 +223,31 @@ mlir::ArrayAttr GetDefaultLoopNest(SairProgramOp program, int num_dimensions,
   llvm::SmallVector<mlir::Attribute, 8> loop_nest(prefix.begin(), prefix.end());
   for (MappingExpr expr :
        new_iter_exprs.Dimensions().drop_front(prefix.size())) {
-    mlir::StringAttr name = program.GenLoopName("loop");
+    mlir::StringAttr name = fusion_analysis.GetFreshLoopName();
     loop_nest.push_back(LoopAttr::get(name, expr, context));
   }
 
   return mlir::ArrayAttr::get(context, loop_nest);
 }
+
+// Sets the `loop_nest` attribute to its default value. The default loop nest
+// iterates over each dimension of the domain, in order, without
+// rematerialization or strip-mining.
+class DefaultLoopNest : public DefaultLoopNestPassBase<DefaultLoopNest> {
+ public:
+  void runOnFunction() override {
+    getFunction().walk([&](ComputeOp op) {
+      if (op.loop_nest().hasValue()) return;
+      SairOp sair_op = cast<SairOp>(op.getOperation());
+      SairProgramOp program_op = cast<SairProgramOp>(op->getParentOp());
+      auto &fusion_analysis = getChildAnalysis<LoopFusionAnalysis>(program_op);
+      int num_dimensions = sair_op.shape().NumDimensions();
+      op.setLoopNest(GetDefaultLoopNest(num_dimensions, {}, fusion_analysis));
+    });
+  }
+};
+
+}  // namespace
 
 std::unique_ptr<mlir::Pass> CreateDefaultStoragePass() {
   return std::make_unique<DefaultStorage>();
