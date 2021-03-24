@@ -52,6 +52,12 @@ bool operator!=(const ValueAccess &lhs, const ValueAccess &rhs) {
   return !(lhs == rhs);
 }
 
+ValueOperand::ValueOperand(mlir::OpOperand *operand) : operand_(operand) {
+  auto owner = cast<SairOp>(operand->getOwner());
+  index_ = operand->getOperandNumber() - owner.domain().size();
+  assert(index_ >= 0 && "expected domain operands before value operands");
+}
+
 MappingAttr ValueOperand::Mapping() const {
   return cast<SairOp>(operand_->getOwner())
       .mapping_array()
@@ -85,7 +91,7 @@ ValueOperandRange::PtrPair ValueOperandRange::offset_base(PtrPair base_ptr,
 
 ValueOperand ValueOperandRange::dereference_iterator(PtrPair base_ptr,
                                                      ptrdiff_t offset) {
-  return ValueOperand(base_ptr.first + offset, base_ptr.second + offset);
+  return ValueOperand(base_ptr.first + offset);
 }
 
 llvm::SmallBitVector ValueOperand::DependingDims() const {
@@ -100,18 +106,9 @@ llvm::SmallBitVector ValueOperand::CarryingDims() const {
   return cast<SairOp>(operand_->getOwner()).CarryingDimensions(index_);
 }
 
-// Finds a ValueOperand that wraps the same Value as the given OpOperand. Value
-// operands immediately follow domain operands in Sair ops.
-static ValueOperand ValueOperandForOpOperand(OpOperand &operand) {
-  auto owner = cast<SairOp>(operand.getOwner());
-  ValueOperand value_operand =
-      owner.ValueOperands()[operand.getOperandNumber() - owner.domain().size()];
-  return value_operand;
-}
-
 void UpdateValueUses(mlir::Value value, ValueAccess new_value) {
   for (OpOperand &operand : llvm::make_early_inc_range(value.getUses())) {
-    ValueOperandForOpOperand(operand).SubstituteValue(new_value);
+    ValueOperand(&operand).SubstituteValue(new_value);
   }
 }
 

@@ -53,8 +53,7 @@ class ValueOperand {
   // the mapping in the array of mappings of the Sair operation.
   //
   // Stores the 'operand' pointer without taking ownership.
-  ValueOperand(mlir::OpOperand *operand, int index)
-      : operand_(operand), index_(index) {}
+  explicit ValueOperand(mlir::OpOperand *operand);
 
   // Returns the value referenced by the operand.
   mlir::Value value() const { return operand_->get(); }
