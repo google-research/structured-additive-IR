@@ -122,51 +122,39 @@ ValueOrConstant ValueOrConstant::Map(MappingAttr mapping) const {
   return value_access;
 }
 
-// Sair operations are only allowed inside a SairProgramOp.
-mlir::LogicalResult VerifySairOpParent(mlir::Operation *operation) {
-  if (isa<SairProgramOp>(operation->getParentOp())) {
-    return mlir::success();
-  }
-
-  return operation->emitOpError()
-         << "expected to be immediately contained in a '"
-         << SairProgramOp::getOperationName() << "'";
-}
-
 mlir::LogicalResult VerifySairOp(Operation *op) {
   SairOp sair_op = cast<SairOp>(op);
-  // Check that the domain has the right shape.
-  if (llvm::size(sair_op.domain()) != sair_op.shape().NumDimensions()) {
-    return sair_op.emitError("unexpected number of dimensions");
+
+  // Sair operations are only allowed inside a SairProgramOp.
+  auto program = dyn_cast<SairProgramOp>(op->getParentOp());
+  if (program == nullptr) {
+    return op->emitOpError() << "expected to be immediately contained in a '"
+                             << SairProgramOp::getOperationName() << "'";
   }
+
+  // Assert that the domain has the right shape.
+  assert(llvm::size(sair_op.domain()) == sair_op.shape().NumDimensions());
   for (auto pair :
        llvm::zip(sair_op.domain(), sair_op.shape().Dimensions())) {
-    if (std::get<0>(pair).getType() != std::get<1>(pair).type()) {
-      return sair_op.emitError("unexpected dimension type");
-    }
+    assert(std::get<0>(pair).getType() == std::get<1>(pair).type());
   }
+
+  // Assert that operands start with the domain.
+  assert(sair_op.domain().empty() ||
+         sair_op.domain().begin() == op->operand_begin());
+
   // Check that the domain is defined locally.
   for (mlir::Value dimension : sair_op.domain()) {
     mlir::Operation *defining_op = dimension.getDefiningOp();
+    if (defining_op == nullptr || defining_op->getParentOp() != program) {
+      return op->emitError()
+             << "sair dimensions must be defined in the region they are used";
+    }
     if (!defining_op->isBeforeInBlock(op)) {
       return (op->emitError() << "dimension used before its definition")
                  .attachNote(defining_op->getLoc())
              << "definition here";
     }
-  }
-  // Check that operands start with the domain.
-  if (!sair_op.domain().empty() &&
-      sair_op.domain().begin() != op->operand_begin()) {
-    return sair_op.emitError()
-           << "expected operands to start with the domain";
-  }
-  // Check that there is enough operands.
-  int min_num_operands =
-      sair_op.shape().NumDimensions() + sair_op.mapping_array().size();
-  if (op->getNumOperands() < min_num_operands) {
-    return sair_op.emitError()
-           << "unexpected number of operands, expected >= " << min_num_operands
-           << ", got " << op->getNumOperands();
   }
 
   if (!sair_op.ValueOperands().empty()) {
@@ -186,22 +174,23 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
 
   // Check !sair.value operands.
   for (::sair::ValueOperand v : sair_op.ValueOperands()) {
-    auto value_type =
-        v.value().getType().template dyn_cast<::sair::ValueType>();
-    if (!value_type) {
-      return mlir::emitError(v.value().getLoc())
-             << "expected a !sair.value operand";
+    auto value_type = v.value().getType().template cast<::sair::ValueType>();
+
+    // Verify operands of Sair operands are defined in the same program.
+    mlir::Operation *defining_op = v.value().getDefiningOp();
+    if (defining_op == nullptr || defining_op->getParentOp() != program) {
+      return op->emitError()
+             << "sair values must be defined in the region they are used";
     }
+
     if (v.Mapping().UseDomainSize() != sair_op.domain().size()) {
       return mlir::emitError(op->getLoc()) << "invalid use domain size";
     }
+
     ::sair::DomainShapeAttr expected_shape =
         sair_op.shape().AccessedShape(v.Mapping());
-    if (expected_shape != value_type.Shape()) {
-      return mlir::emitError(v.value().getLoc())
-             << "mapping incompatible with the operand shape";
-    }
-    mlir::Operation *defining_op = v.value().getDefiningOp();
+    assert(expected_shape == value_type.Shape());
+
     if (!defining_op->isBeforeInBlock(op) && !v.AllowUseBeforeDef()) {
       return (op->emitError() << "operand used before its definition")
                  .attachNote(defining_op->getLoc())
@@ -234,7 +223,7 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
                            << ComputeOp::kLoopNestAttrName << "' attribute";
   }
 
-  return ::sair::VerifySairOpParent(sair_op);
+  return ::mlir::success();
 }
 
 mlir::LogicalResult VerifyRangeOp(mlir::Operation *op) {

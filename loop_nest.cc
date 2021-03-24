@@ -264,9 +264,6 @@ static mlir::LogicalResult VerifyLoopNestWellFormed(
   // Bitfield that keeps track of which dimensions are implemented by loops.
   for (int i = 0, e = loop_nest.size(); i < e; ++i) {
     LoopAttr loop = loop_nest[i].dyn_cast<LoopAttr>();
-    if (loop == nullptr) {
-      return op.emitError() << "expected a `Loop` attribute";
-    }
     SairProgramOp parent = cast<SairProgramOp>(op->getParentOp());
     if (llvm::count(parent.loop_name_table(), loop.name()) == 0) {
       return op.emitError() << "loop " << loop.name()

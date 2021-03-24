@@ -1547,34 +1547,18 @@ mlir::LogicalResult Verify(SairProgramOp program) {
                  .attachNote(nested_operation.getLoc())
              << "found";
     }
+    const mlir::AbstractOperation &abstract_op =
+        *nested_operation.getAbstractOperation();
+    // Run operation verifier here so we can safely access their fields.
+    if (mlir::failed(abstract_op.verifyInvariants(&nested_operation))) {
+      return mlir::failure();
+    }
   }
 
   // Check that the terminator operands are coherent with the results.
   if (body->empty() || !llvm::isa<SairExitOp>(body->back())) {
     return program.emitError() << "expected a sair.exit terminator";
   }
-
-  // Verify operands of Sair operands are defined in the same program. This
-  // check is performed here rather that in SairOp as it is needed for other
-  // verifications.
-  mlir::WalkResult result = program.walk([&](SairOp op) -> mlir::WalkResult {
-    for (mlir::Value dimension : op.domain()) {
-      mlir::Operation *defining_op = dimension.getDefiningOp();
-      if (defining_op == nullptr || defining_op->getParentOp() != program) {
-        return op.emitError()
-               << "sair dimensions must be defined in the region they are used";
-      }
-    }
-    for (ValueOperand operand : op.ValueOperands()) {
-      mlir::Operation *defining_op = operand.value().getDefiningOp();
-      if (defining_op == nullptr || defining_op->getParentOp() != program) {
-        return op.emitError()
-               << "sair values must be defined in the region they are used";
-      }
-    }
-    return mlir::success();
-  });
-  if (result.wasInterrupted()) return mlir::failure();
 
   IterationSpaceAnalysis iteration_spaces;
   if (mlir::failed(VerifyLoopNests(program, iteration_spaces))) {

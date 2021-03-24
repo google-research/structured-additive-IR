@@ -374,10 +374,10 @@ class SairOp<string mnemonic,
              Dialect dialect = SairDialect>
   : Op<
       dialect, mnemonic,
-      !listconcat([
+      !listconcat(traits, [
         SairOpInterface,
         DeclareOpInterfaceMethods<SairOpInterface>
-      ], traits)
+      ])
     > {
 
   let hasCanonicalizer = 1;
