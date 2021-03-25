@@ -64,3 +64,9 @@ def NormalizeLoopsPass : FunctionPass<"sair-normalize-loops"> {
   let constructor = [{ ::sair::CreateNormalizeLoopsPass(); }];
   let dependentDialects = !listconcat(Deps.dialects, ["::mlir::AffineDialect"]);
 }
+
+def LowerProjAnyPass : FunctionPass<"sair-lower-proj-any"> {
+  let summary = "Eliminates or rewrite proj_any into proj_last operations";
+  let constructor = [{ ::sair::CreateLowerProjAnyPass(); }];
+  let dependentDialects = Deps.dialects;
+}

@@ -50,6 +50,9 @@ std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateIntroduceLoopsPass();
 // corresponds to a dimension.
 std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateNormalizeLoopsPass();
 
+// Returns a pass that lowers sair.proj_any operations.
+std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateLowerProjAnyPass();
+
 // Populates the pass manager to convert Sair operations to the Loops dialect.
 void CreateSairToLoopConversionPipeline(mlir::OpPassManager *pm);
 

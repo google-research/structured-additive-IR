@@ -88,8 +88,7 @@ void CreateSairToLoopConversionPipeline(mlir::OpPassManager *pm) {
   // buffers.
   pm->addPass(mlir::createCanonicalizerPass());
   pm->addPass(CreateNormalizeLoopsPass());
-  // Canonicalization removes trivial sair.proj_any operations.
-  pm->addPass(mlir::createCanonicalizerPass());
+  pm->addPass(CreateLowerProjAnyPass());
   pm->addPass(CreateLowerToMapPass());
   pm->addPass(CreateIntroduceLoopsPass());
   pm->addPass(CreateInlineTrivialOpsPass());

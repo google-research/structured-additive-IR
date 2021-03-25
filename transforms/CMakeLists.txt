@@ -64,7 +64,9 @@ add_mlir_library(sair_lowering
   lowering.cc
   inline_trivial_ops.cc
   introduce_loops.cc
+  lower_map_reduce.cc
   lower_to_map.cc
+  lower_proj_any.cc
   materialize_buffers.cc
   normalize_loops.cc
 
