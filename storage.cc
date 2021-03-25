@@ -240,7 +240,7 @@ static MappingAttr LoopsToIndexedLoopsMapping(ComputeOp op, BufferAttr buffer) {
   auto loop_nest = op.LoopNestLoops();
 
   llvm::SmallVector<MappingExpr> loops_to_indexed_loops_exprs(
-      buffer.layout().mapping().size(), none_expr);
+      buffer.layout().mapping().UseDomainSize(), none_expr);
   for (auto p : llvm::enumerate(buffer.layout().names())) {
     auto it = llvm::find_if(loop_nest, [&](mlir::Attribute attr) {
       auto loop = attr.cast<LoopAttr>();

@@ -139,6 +139,7 @@ mlir::LogicalResult DeduplicateMapInputsOutputs(
   llvm::SmallVector<mlir::Type, 4> new_result_types;
   llvm::SmallVector<mlir::Attribute, 4> new_storages;
 
+  std::vector<int> block_args_to_erase;
   for (ValueOperand operand : op.ValueOperands()) {
     mlir::Value argument =
         op.block().getArgument(domain_size + operand.position());
@@ -157,12 +158,16 @@ mlir::LogicalResult DeduplicateMapInputsOutputs(
 
     // Remove dead inputs.
     if (argument.use_empty()) {
-      op.block().eraseArgument(domain_size + operand.position());
+      block_args_to_erase.push_back(domain_size + operand.position());
       continue;
     }
 
     new_operands.push_back(operand.value());
     new_mappings.push_back(operand.Mapping());
+  }
+
+  for (int i = block_args_to_erase.size() - 1; i >= 0; --i) {
+    op.block().eraseArgument(block_args_to_erase[i]);
   }
 
   SairReturnOp return_op = cast<SairReturnOp>(op.block().getTerminator());

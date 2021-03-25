@@ -134,6 +134,7 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
   for (auto pair :
        llvm::zip(sair_op.domain(), sair_op.shape().Dimensions())) {
     assert(std::get<0>(pair).getType() == std::get<1>(pair).type());
+    (void)pair;
   }
 
   // Assert that operands start with the domain.
@@ -171,7 +172,6 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
 
   // Check !sair.value operands.
   for (::sair::ValueOperand v : sair_op.ValueOperands()) {
-    auto value_type = v.value().getType().template cast<::sair::ValueType>();
 
     // Verify operands of Sair operands are defined in the same program.
     mlir::Operation *defining_op = v.value().getDefiningOp();
@@ -184,9 +184,8 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
       return mlir::emitError(op->getLoc()) << "invalid use domain size";
     }
 
-    ::sair::DomainShapeAttr expected_shape =
-        sair_op.shape().AccessedShape(v.Mapping());
-    assert(expected_shape == value_type.Shape());
+    assert(sair_op.shape().AccessedShape(v.Mapping()) ==
+           v.value().getType().template cast<::sair::ValueType>().Shape());
 
     if (!defining_op->isBeforeInBlock(op) && !v.AllowUseBeforeDef()) {
       return (op->emitError() << "operand used before its definition")
