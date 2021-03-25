@@ -128,101 +128,95 @@ class SimplifySairOperands : public RewritePattern {
 };
 
 // Remove duplicate inputs and duplicate outputs of sair.map operations.
-class DeduplicateMapInputsOutputs : public OpRewritePattern<SairMapOp> {
- public:
-  using OpRewritePattern::OpRewritePattern;
+mlir::LogicalResult DeduplicateMapInputsOutputs(
+    SairMapOp op, mlir::PatternRewriter &rewriter) {
+  int domain_size = op.domain().size();
+  llvm::SmallVector<mlir::Value, 4> new_operands;
+  llvm::SmallVector<mlir::Attribute, 4> new_mappings;
 
-  mlir::LogicalResult matchAndRewrite(
-      SairMapOp op, mlir::PatternRewriter &rewriter) const override {
-    int domain_size = op.domain().size();
-    llvm::SmallVector<mlir::Value, 4> new_operands;
-    llvm::SmallVector<mlir::Attribute, 4> new_mappings;
+  llvm::SmallVector<mlir::Value, 4> old_results_to_keep;
+  llvm::SmallVector<mlir::Value, 4> new_scalar_results;
+  llvm::SmallVector<mlir::Type, 4> new_result_types;
+  llvm::SmallVector<mlir::Attribute, 4> new_storages;
 
-    llvm::SmallVector<mlir::Value, 4> old_results_to_keep;
-    llvm::SmallVector<mlir::Value, 4> new_scalar_results;
-    llvm::SmallVector<mlir::Type, 4> new_result_types;
-    llvm::SmallVector<mlir::Attribute, 4> new_storages;
+  for (ValueOperand operand : op.ValueOperands()) {
+    mlir::Value argument =
+        op.block().getArgument(domain_size + operand.position());
 
-    for (ValueOperand operand : op.ValueOperands()) {
-      mlir::Value argument =
-          op.block().getArgument(domain_size + operand.position());
-
-      // Deduplicate inputs.
-      auto previous_operands =
-          op.ValueOperands().take_front(operand.position());
-      for (ValueOperand previous_operand : previous_operands) {
-        if (operand.Get() != previous_operand.Get()) continue;
-        mlir::Value previous_argument =
-            op.block_inputs()[previous_operand.position()];
-        // Don't deduplicate with dead arguments that will be removed.
-        if (previous_argument.use_empty()) continue;
-        argument.replaceAllUsesWith(previous_argument);
-        break;
-      }
-
-      // Remove dead inputs.
-      if (argument.use_empty()) {
-        op.block().eraseArgument(domain_size + operand.position());
-        continue;
-      }
-
-      new_operands.push_back(operand.value());
-      new_mappings.push_back(operand.Mapping());
+    // Deduplicate inputs.
+    auto previous_operands = op.ValueOperands().take_front(operand.position());
+    for (ValueOperand previous_operand : previous_operands) {
+      if (operand.Get() != previous_operand.Get()) continue;
+      mlir::Value previous_argument =
+          op.block_inputs()[previous_operand.position()];
+      // Don't deduplicate with dead arguments that will be removed.
+      if (previous_argument.use_empty()) continue;
+      argument.replaceAllUsesWith(previous_argument);
+      break;
     }
 
-    SairReturnOp return_op = cast<SairReturnOp>(op.block().getTerminator());
-    for (int i = 0, e = op.getNumResults(); i < e; ++i) {
-      mlir::Value scalar_value = return_op.getOperand(i);
-      mlir::Value result = op.getResult(i);
-
-      // Deduplicate results.
-      for (int j = 0; j < i; ++j) {
-        if (scalar_value != return_op.getOperand(j)) continue;
-        if (op.Storage(i) != op.Storage(j)) continue;
-        // Don't deduplicate with dead results that will be removed.
-        if (op.getResult(j).use_empty()) continue;
-        result.replaceAllUsesWith(op.getResult(j));
-        break;
-      }
-
-      // Remove dead results.
-      if (result.use_empty()) continue;
-
-      old_results_to_keep.push_back(result);
-      new_scalar_results.push_back(scalar_value);
-      new_result_types.push_back(result.getType());
-      mlir::Attribute new_storage = op.Storage(i);
-      new_storages.push_back(new_storage == nullptr ? rewriter.getUnitAttr()
-                                                    : new_storage);
+    // Remove dead inputs.
+    if (argument.use_empty()) {
+      op.block().eraseArgument(domain_size + operand.position());
+      continue;
     }
 
-    // Create the new operation if necessary.
-    if (new_operands.size() == op.ValueOperands().size() &&
-        old_results_to_keep.size() == op.getNumResults()) {
-      return mlir::failure();
-    }
-
-    rewriter.setInsertionPoint(return_op);
-    rewriter.create<SairReturnOp>(return_op.getLoc(), new_scalar_results);
-    rewriter.eraseOp(return_op);
-
-    rewriter.setInsertionPoint(op);
-    SairMapOp new_op = rewriter.create<SairMapOp>(
-        op.getLoc(), new_result_types, op.domain(),
-        rewriter.getArrayAttr(new_mappings), new_operands, op.shape(),
-        op.loop_nestAttr(), rewriter.getArrayAttr(new_storages));
-    new_op.body().takeBody(op.body());
-
-    for (auto [old_res, new_res] :
-         llvm::zip(old_results_to_keep, new_op.results())) {
-      old_res.replaceAllUsesWith(new_res);
-    }
-
-    rewriter.eraseOp(op);
-
-    return mlir::success();
+    new_operands.push_back(operand.value());
+    new_mappings.push_back(operand.Mapping());
   }
-};
+
+  SairReturnOp return_op = cast<SairReturnOp>(op.block().getTerminator());
+  for (int i = 0, e = op.getNumResults(); i < e; ++i) {
+    mlir::Value scalar_value = return_op.getOperand(i);
+    mlir::Value result = op.getResult(i);
+
+    // Deduplicate results.
+    for (int j = 0; j < i; ++j) {
+      if (scalar_value != return_op.getOperand(j)) continue;
+      if (op.Storage(i) != op.Storage(j)) continue;
+      // Don't deduplicate with dead results that will be removed.
+      if (op.getResult(j).use_empty()) continue;
+      result.replaceAllUsesWith(op.getResult(j));
+      break;
+    }
+
+    // Remove dead results.
+    if (result.use_empty()) continue;
+
+    old_results_to_keep.push_back(result);
+    new_scalar_results.push_back(scalar_value);
+    new_result_types.push_back(result.getType());
+    mlir::Attribute new_storage = op.Storage(i);
+    new_storages.push_back(new_storage == nullptr ? rewriter.getUnitAttr()
+                                                  : new_storage);
+  }
+
+  // Create the new operation if necessary.
+  if (new_operands.size() == op.ValueOperands().size() &&
+      old_results_to_keep.size() == op.getNumResults()) {
+    return mlir::failure();
+  }
+
+  rewriter.setInsertionPoint(return_op);
+  rewriter.create<SairReturnOp>(return_op.getLoc(), new_scalar_results);
+  rewriter.eraseOp(return_op);
+
+  rewriter.setInsertionPoint(op);
+  SairMapOp new_op = rewriter.create<SairMapOp>(
+      op.getLoc(), new_result_types, op.domain(),
+      rewriter.getArrayAttr(new_mappings), new_operands, op.shape(),
+      op.loop_nestAttr(), rewriter.getArrayAttr(new_storages));
+  new_op.body().takeBody(op.body());
+
+  for (auto [old_res, new_res] :
+       llvm::zip(old_results_to_keep, new_op.results())) {
+    old_res.replaceAllUsesWith(new_res);
+  }
+
+  rewriter.eraseOp(op);
+
+  return mlir::success();
+}
 
 // Remove a followed-by operation that depends on its own result, i.e.
 //   %1 = sair.fby[...] %0(...) then[...] %1(d0, d1, ..., dn)
@@ -445,7 +439,7 @@ void SairStoreToMemRefOp::getCanonicalizationPatterns(
 void SairMapOp::getCanonicalizationPatterns(
     mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>();
-  patterns.insert<DeduplicateMapInputsOutputs>(context);
+  patterns.insert(DeduplicateMapInputsOutputs);
 }
 
 void SairAllocOp::getCanonicalizationPatterns(
