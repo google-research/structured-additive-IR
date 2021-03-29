@@ -2026,7 +2026,7 @@ std::optional<ValueStorage> SairFromMemRefOp::InferStorage(
   auto *sair_dialect = getContext()->getLoadedDialect<SairDialect>();
   auto layout = MappingAttr::GetIdentity(getContext(), memref_domain().size())
                     .ShiftRight(parallel_domain().size());
-  return ValueStorage(sair_dialect->register_attr(), buffer_nameAttr(), layout);
+  return ValueStorage(sair_dialect->memory_attr(), buffer_nameAttr(), layout);
 }
 
 }  // namespace sair
