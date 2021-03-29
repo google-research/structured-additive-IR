@@ -332,7 +332,8 @@ static mlir::LogicalResult UnifyBufferShape(
   // Get a mapping from domain to buffer layout.
   MappingAttr domain_to_layout =
       loop_nest.domain_to_loops.Compose(loops_to_indexed_loops)
-          .Compose(buffer_attr.layout().mapping());
+          .Compose(buffer_attr.layout().mapping())
+          .Canonicalize();
 
   // Compute unification constraints. Dimensions used by the buffer loop nest
   // must be exactly the same for both uses.

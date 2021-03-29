@@ -249,7 +249,7 @@ ValueStorage ValueStorage::Map(
     MappingAttr mapping = iteration_spaces.TranslateMapping(
         from, to, operand.Mapping().Resize(to.domain().size()));
     assert(mapping != nullptr);
-    layout = mapping.Compose(layout_);
+    layout = mapping.Compose(layout_).Canonicalize();
   }
   return ValueStorage(space_, buffer_name_, layout);
 }

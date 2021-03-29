@@ -281,6 +281,7 @@ MappingAttr EraseDimension(MappingAttr mapping, int dimension) {
     MappingDimExpr dim_expr = expr.cast<MappingDimExpr>();
     if (dim_expr.dimension() < dimension) {
       dimensions.push_back(expr);
+      continue;
     }
     if (dim_expr.dimension() == dimension) continue;
     dimensions.push_back(
