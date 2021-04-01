@@ -57,8 +57,8 @@ func @strip_mined_loop() {
     // expected-error @+1 {{loop must not rematerialize or be strip-mined}}
     sair.map[d0:%0] attributes {
       loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<stripe(d0, 4)>},
-        {name = "B", iter = #sair.mapping_expr<stripe(d0, 1 size 4)>}
+        {name = "A", iter = #sair.mapping_expr<stripe(d0, [4])>},
+        {name = "B", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
       ]
     } {
       ^bb0(%arg0: index):

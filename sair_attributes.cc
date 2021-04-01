@@ -174,89 +174,71 @@ class impl::MappingStripeExprStorage : public mlir::AttributeStorage {
  public:
   // Key type uniquely identifies MappingStripeExpr for MLIR attribute
   // unique-ing. This specific name is required by mlir::AttributeUniquer.
-  using KeyTy = std::tuple<mlir::Attribute, int, int>;
+  using KeyTy = std::pair<mlir::Attribute, llvm::ArrayRef<int>>;
 
   // Creates a MappingStripeExprStorage using the provided allocator. Hook
   // for MLIR attribute system.
   static MappingStripeExprStorage *construct(
       mlir::AttributeStorageAllocator &allocator, const KeyTy &key) {
     return new (allocator.allocate<MappingStripeExprStorage>())
-        MappingStripeExprStorage(key);
+        MappingStripeExprStorage(key.first, allocator.copyInto(key.second));
   }
 
   // Compares the MappingStripeExpr identification key with this object.
   bool operator==(const KeyTy &key) const {
-    return std::get<0>(key) == operand_ && std::get<1>(key) == step_ &&
-           std::get<2>(key) == size_;
+    return key.first == operand_ && key.second == factors_;
   }
 
   // The striped expression.
   MappingExpr operand() const { return operand_; }
 
-  // The stripe step. This is one for point expressions.
-  int step() const { return step_; }
-
-  // The expression range. This is `None` for outermost stripe expressions.
-  llvm::Optional<int> size() const {
-    return size_ == kNoSize ? llvm::Optional<int>() : size_;
-  }
-
-  // Internal encoding for a `None` size.
-  static constexpr int kNoSize = 0;
+  // Stripe factors.
+  llvm::ArrayRef<int> factors() const { return factors_; }
 
  private:
   // Constructs a storage object for the provided key. such objects must not be
   // constructed directly but rather created by MLIR's type system within an
   // arena allocator by calling ::construct.
-  explicit MappingStripeExprStorage(KeyTy key)
-      : operand_(std::get<0>(key)),
-        step_(std::get<1>(key)),
-        size_(std::get<2>(key)) {}
+  explicit MappingStripeExprStorage(MappingExpr operand,
+                                    llvm::ArrayRef<int> factors)
+      : operand_(operand), factors_(factors) {}
 
   MappingExpr operand_;
-  int step_;
-  int size_;
+  llvm::ArrayRef<int> factors_;
 };
 
-MappingStripeExpr MappingStripeExpr::get(MappingExpr operand, int step,
-                                         llvm::Optional<int> size) {
+MappingStripeExpr MappingStripeExpr::get(MappingExpr operand,
+                                         llvm::ArrayRef<int> factors) {
   assert(operand != nullptr);
-  assert(!size.hasValue() || size.getValue() >= step);
-  int int_size = size.hasValue() ? size.getValue()
-                                 : impl::MappingStripeExprStorage::kNoSize;
-  return Base::get(operand.getContext(),
-                   std::make_tuple(operand, step, int_size));
+  assert(!factors.empty());
+  return Base::get(operand.getContext(), std::make_tuple(operand, factors));
 }
 
 MappingExpr MappingStripeExpr::operand() const { return getImpl()->operand(); }
 
-int MappingStripeExpr::step() const { return getImpl()->step(); }
-
-llvm::Optional<int> MappingStripeExpr::size() const {
-  return getImpl()->size();
+llvm::ArrayRef<int> MappingStripeExpr::factors() const {
+  return getImpl()->factors();
 }
 
 MappingExpr MappingStripeExpr::MakeFullySpecified(int &num_dimensions) const {
   return MappingStripeExpr::get(operand().MakeFullySpecified(num_dimensions),
-                                step(), size());
+                                factors());
 }
 
 MappingExpr MappingStripeExpr::SubstituteDims(
     llvm::ArrayRef<MappingExpr> exprs) const {
-  return MappingStripeExpr::get(operand().SubstituteDims(exprs), step(),
-                                size());
+  return MappingStripeExpr::get(operand().SubstituteDims(exprs), factors());
 }
 
 MappingExpr MappingStripeExpr::Unify(MappingExpr other_expr) const {
   if (other_expr.isa<MappingNoneExpr>()) return *this;
   MappingStripeExpr other_stripe = other_expr.dyn_cast<MappingStripeExpr>();
-  if (other_stripe == nullptr || size() != other_stripe.size() ||
-      step() != other_stripe.step()) {
+  if (other_stripe == nullptr || factors() != other_stripe.factors()) {
     return MappingExpr();
   }
   MappingExpr unified_operand = operand().Unify(other_stripe.operand());
   if (unified_operand == nullptr) return MappingExpr();
-  return MappingStripeExpr::get(unified_operand, step(), size());
+  return MappingStripeExpr::get(unified_operand, factors());
 }
 
 mlir::LogicalResult MappingStripeExpr::UnificationConstraints(
@@ -264,8 +246,7 @@ mlir::LogicalResult MappingStripeExpr::UnificationConstraints(
     llvm::MutableArrayRef<MappingExpr> constraints) const {
   if (other_expr.isa<MappingNoneExpr>()) return mlir::success();
   auto other_stripe = other_expr.dyn_cast<MappingStripeExpr>();
-  if (other_stripe == nullptr || size() != other_stripe.size() ||
-      step() != other_stripe.step()) {
+  if (other_stripe == nullptr || factors() != other_stripe.factors()) {
     return mlir::failure();
   }
   return operand().UnificationConstraints(other_stripe.operand(), constraints);
@@ -291,13 +272,11 @@ DomainShapeDim MappingStripeExpr::AccessedShape(
   llvm::append_range(type_shape, inner_shape.type().Shape().Dimensions());
   RangeType type = inner_shape.type();
 
-  for (auto [expr, step] :
-       llvm::zip(inverse_subexpr.operands(), inverse_subexpr.factors())) {
-    if (step == this->step()) break;
+  for (int i = 0, e = factors().size() - 1; i < e; ++i) {
     type_shape.emplace_back(
         type, MappingAttr::GetIdentity(context, type_shape.size()));
     type = RangeType::get(DomainShapeAttr::get(context, type_shape));
-    dependency_mapping_exprs.push_back(expr);
+    dependency_mapping_exprs.push_back(inverse_subexpr.operands()[i]);
   }
 
   auto dependency_mapping = MappingAttr::get(
@@ -309,53 +288,57 @@ mlir::LogicalResult MappingStripeExpr::SetInverse(
     MappingExpr context_inverse,
     llvm::MutableArrayRef<MappingExpr> inverses) const {
   MappingExpr none = MappingNoneExpr::get(getContext());
-  llvm::SmallVector<MappingExpr, 3> operands;
-  llvm::SmallVector<int, 2> factors;
 
-  if (size().hasValue()) {
-    operands.push_back(none);
-    factors.push_back(size().getValue());
-  }
-  operands.push_back(context_inverse);
-  if (step() != 1) {
-    operands.push_back(none);
-    factors.push_back(step());
+  // Prefix unstripe operands by none for outer stripes.
+  llvm::SmallVector<MappingExpr, 3> unstripe_operands(factors().size() - 1,
+                                                      none);
+  unstripe_operands.push_back(context_inverse);
+  llvm::SmallVector<int, 2> unstripe_factors;
+  llvm::append_range(unstripe_factors, factors());
+
+  // Add a `none` operand for inner stripes.
+  if (unstripe_factors.back() != 1) {
+    unstripe_factors.push_back(1);
+    unstripe_operands.push_back(none);
   }
 
-  return operand().SetInverse(MappingUnStripeExpr::get(operands, factors),
-                              inverses);
+  auto unstripe = MappingUnStripeExpr::get(unstripe_operands, unstripe_factors);
+  return operand().SetInverse(unstripe, inverses);
 }
 
 MappingExpr MappingStripeExpr::FindInInverse(
     llvm::ArrayRef<MappingExpr> inverse) const {
   auto unstripe_expr =
       operand().FindInInverse(inverse).cast<MappingUnStripeExpr>();
-  auto factor_it = llvm::find(unstripe_expr.factors(), step());
-  int pos = std::distance(unstripe_expr.factors().begin(), factor_it);
-  return unstripe_expr.operands()[pos];
+  return unstripe_expr.operands()[factors().size() - 1];
 }
 
 mlir::AffineExpr MappingStripeExpr::AsAffineExpr() const {
-  return step() * operand().AsAffineExpr().floorDiv(step());
+  int step = factors().back();
+  return step * operand().AsAffineExpr().floorDiv(step);
 }
 
 MappingExpr MappingStripeExpr::Canonicalize() const {
   MappingExpr new_operand = operand().Canonicalize();
-  // Use a lambda so that we can break from the control flow.
-  auto simplify = [&]() {
-    auto unstripe = new_operand.dyn_cast<MappingUnStripeExpr>();
-    if (unstripe == nullptr) return MappingExpr();
-    llvm::ArrayRef<int> factors = unstripe.factors();
-    auto it = llvm::find(factors, step());
-    if (it == factors.end() && step() != 1) return MappingExpr();
-    if (it == factors.begin() && size().hasValue()) return MappingExpr();
-    if (it != factors.begin() && size() != *std::prev(it)) return MappingExpr();
-    return unstripe.operands()[it - factors.begin()];
-  };
+  auto unstripe = new_operand.dyn_cast<MappingUnStripeExpr>();
+  if (unstripe == nullptr) {
+    return MappingStripeExpr::get(new_operand, factors());
+  }
 
-  MappingExpr simplified = simplify();
-  if (simplified != nullptr) return simplified;
-  return MappingStripeExpr::get(new_operand, step(), size());
+  auto it = std::mismatch(factors().begin(), factors().end(),
+                          unstripe.factors().begin(), unstripe.factors().end());
+
+  // If all factors match, stripe(unstripe) is the identity function.
+  if (it.first == factors().end()) {
+    return unstripe.operands()[factors().size() - 1];
+  }
+
+  // Otherwise, we trip common factors.
+  int num_common = std::distance(factors().begin(), it.first);
+  auto new_unstripe =
+      MappingUnStripeExpr::get(unstripe.operands().drop_front(num_common),
+                               unstripe.factors().drop_front(num_common));
+  return MappingStripeExpr::get(new_unstripe, factors().drop_front(num_common));
 }
 
 RangeParameters MappingStripeExpr::GetRangeParameters(
@@ -365,13 +348,14 @@ RangeParameters MappingStripeExpr::GetRangeParameters(
   // Compute range parameters for the operand.
   RangeParameters operand_parameters = operand().GetRangeParameters(
       loc, domain, inverse_mapping, builder, map_arguments);
-  int step = this->step() * operand_parameters.step;
+  int step = factors().back() * operand_parameters.step;
 
   // If the stripe covers the entire operand range, no additional computation is
   // needed.
-  if (!size().hasValue()) {
+  if (factors().size() == 1) {
     return {operand_parameters.begin, operand_parameters.end, step};
   }
+  int size = factors()[factors().size() - 2];
 
   // Compute the begin index. For this, look for the unstripe operation
   // corresponding to `this` in the inverse mapping, and find the expression of
@@ -379,21 +363,18 @@ RangeParameters MappingStripeExpr::GetRangeParameters(
   auto inverse_expr = operand()
                           .FindInInverse(inverse_mapping.Dimensions())
                           .cast<MappingUnStripeExpr>();
-  int inverse_pos = llvm::find(inverse_expr.factors(), size().getValue()) -
-                    inverse_expr.factors().begin();
-  auto begin_map =
-      mlir::AffineMap::get(map_arguments.Indices().size(), 0,
-                           inverse_expr.operands()[inverse_pos].AsAffineExpr());
+  auto begin_map = mlir::AffineMap::get(
+      map_arguments.Indices().size(), 0,
+      inverse_expr.operands()[factors().size() - 2].AsAffineExpr());
   mlir::Value begin = builder.create<mlir::AffineApplyOp>(
       loc, begin_map, map_arguments.Indices());
 
   // Compute the end index as `min(begin + size, operand_size)`.
   mlir::Type index_type = builder.getIndexType();
-  auto size = builder.create<mlir::ConstantOp>(
-      loc, index_type,
-      builder.getIndexAttr(this->size().getValue() * operand_parameters.step));
+  auto size_op = builder.create<mlir::ConstantOp>(
+      loc, index_type, builder.getIndexAttr(size * operand_parameters.step));
   auto uncapped_end =
-      builder.create<mlir::AddIOp>(loc, index_type, begin, size);
+      builder.create<mlir::AddIOp>(loc, index_type, begin, size_op);
   mlir::Value operand_end;
   if (operand_parameters.end.is<mlir::Attribute>()) {
     operand_end = builder.create<mlir::ConstantOp>(
@@ -457,8 +438,8 @@ class impl::MappingUnStripeExprStorage : public mlir::AttributeStorage {
 
 MappingUnStripeExpr MappingUnStripeExpr::get(
     llvm::ArrayRef<MappingExpr> stripes, llvm::ArrayRef<int> factors) {
-  assert(factors.empty() || factors[0] > 1);
-  assert(stripes.size() == factors.size() + 1);
+  assert(stripes.size() == factors.size());
+  assert(factors.back() == 1);
 #ifndef NDEBUG
   for (int i = 0; i + 1 < factors.size(); ++i) {
     assert(factors[i] > factors[i + 1]);
@@ -526,13 +507,10 @@ DomainShapeDim MappingUnStripeExpr::AccessedShape(
 mlir::LogicalResult MappingUnStripeExpr::SetInverse(
     MappingExpr context_inverse,
     llvm::MutableArrayRef<MappingExpr> inverses) const {
-  for (int i = 0, e = factors().size(); i <= e; ++i) {
-    int step = i == e ? 1 : factors()[i];
-    llvm::Optional<int> size =
-        i == 0 ? llvm::Optional<int>() : factors()[i - 1];
-    auto stripe_expr = MappingStripeExpr::get(context_inverse, step, size);
-    if (mlir::failed(operands()[i].SetInverse(stripe_expr.cast<MappingExpr>(),
-                                              inverses))) {
+  for (int i = 0, e = factors().size(); i < e; ++i) {
+    MappingExpr stripe_expr =
+        MappingStripeExpr::get(context_inverse, factors().take_front(i + 1));
+    if (mlir::failed(operands()[i].SetInverse(stripe_expr, inverses))) {
       return mlir::failure();
     }
   }
@@ -545,43 +523,43 @@ MappingExpr MappingUnStripeExpr::Unify(MappingExpr other_expr) const {
       other_expr.dyn_cast<MappingUnStripeExpr>();
   if (other_unstripe == nullptr) return MappingExpr();
 
-  llvm::SmallVector<MappingExpr, 4> new_exprs;
-  llvm::SmallVector<int, 3> new_factors;
+  llvm::SmallVector<MappingExpr> new_operands;
+  llvm::ArrayRef<int> new_factors;
 
-  int this_cursor = 0;
-  int other_cursor = 0;
-  while (this_cursor < operands().size()) {
-    int this_step = this_cursor < factors().size() ? factors()[this_cursor] : 1;
-    int other_step = other_cursor < other_unstripe.factors().size()
-                         ? other_unstripe.factors()[other_cursor]
-                         : 1;
-    if (this_step < other_step) {
-      // We can only subdivide none exprs.
-      if (!operands()[this_cursor].isa<MappingNoneExpr>()) {
-        return MappingExpr();
-      }
-      new_factors.push_back(other_step);
-      new_exprs.push_back(other_unstripe.operands()[other_cursor]);
-      ++other_cursor;
-    } else if (this_step > other_step) {
-      // We can only subdivide none exprs.
-      if (!other_unstripe.operands()[other_cursor].isa<MappingNoneExpr>()) {
-        return MappingExpr();
-      }
-      new_factors.push_back(this_step);
-      new_exprs.push_back(operands()[this_cursor]);
-      ++this_cursor;
-    } else {
-      if (this_step > 1) {
-        new_factors.push_back(this_step);
-      }
-      new_exprs.push_back(operands()[this_cursor].Unify(
-          other_unstripe.operands()[other_cursor]));
-      ++this_cursor;
-      ++other_cursor;
-    }
+  // Operands and factors of the expression with a minimal number of factors
+  // among this and other.
+  llvm::ArrayRef<MappingExpr> min_operands;
+  llvm::ArrayRef<int> min_factors;
+  if (factors().size() >= other_unstripe.factors().size()) {
+    llvm::append_range(new_operands, operands());
+    new_factors = factors();
+    min_operands = other_unstripe.operands();
+    min_factors = other_unstripe.factors();
+  } else {
+    llvm::append_range(new_operands, other_unstripe.operands());
+    new_factors = other_unstripe.factors();
+    min_operands = operands();
+    min_factors = factors();
   }
-  return MappingUnStripeExpr::get(new_exprs, new_factors);
+
+  // If the last operand is `none`, we can replace it by an arbitrary number of
+  // operands.
+  if (min_operands.back().isa<MappingNoneExpr>()) {
+    min_operands = min_operands.drop_back();
+    min_factors = min_factors.drop_back();
+  }
+
+  // Ensure that the factors of one are a prefix of the factors of the other.
+  if (min_factors != new_factors.take_front(min_factors.size())) {
+    return MappingExpr();
+  }
+
+  for (int i = 0, e = min_operands.size(); i < e; ++i) {
+    new_operands[i] = new_operands[i].Unify(min_operands[i]);
+    if (new_operands[i] == nullptr) return MappingExpr();
+  }
+
+  return MappingUnStripeExpr::get(new_operands, new_factors);
 }
 
 mlir::LogicalResult MappingUnStripeExpr::UnificationConstraints(
@@ -592,34 +570,33 @@ mlir::LogicalResult MappingUnStripeExpr::UnificationConstraints(
       other_expr.dyn_cast<MappingUnStripeExpr>();
   if (other_unstripe == nullptr) return mlir::failure();
 
-  int this_cursor = 0;
-  int other_cursor = 0;
-  while (this_cursor < operands().size()) {
-    int this_step = this_cursor < factors().size() ? factors()[this_cursor] : 1;
-    int other_step = other_cursor < other_unstripe.factors().size()
-                         ? other_unstripe.factors()[other_cursor]
-                         : 1;
-    if (this_step < other_step) {
-      // We can only subdivide none exprs.
-      if (!operands()[this_cursor].isa<MappingNoneExpr>()) {
-        return mlir::failure();
-      }
-      ++other_cursor;
-    } else if (this_step > other_step) {
-      // We can only subdivide none exprs.
-      if (!other_unstripe.operands()[other_cursor].isa<MappingNoneExpr>()) {
-        return mlir::failure();
-      }
-      ++this_cursor;
-    } else {
-      if (mlir::failed(operands()[this_cursor].UnificationConstraints(
-              other_unstripe.operands()[other_cursor], constraints))) {
-        return mlir::failure();
-      }
-      ++this_cursor;
-      ++other_cursor;
+  int num_common;
+  llvm::ArrayRef<MappingExpr> min_operands;
+  if (factors().size() >= other_unstripe.factors().size()) {
+    num_common = other_unstripe.factors().size();
+    min_operands = other_unstripe.operands();
+  } else {
+    num_common = factors().size();
+    min_operands = operands();
+  }
+
+  // If the last operand is `none`, we can replace it by an arbitrary number of
+  // operands.
+  if (min_operands.back().isa<MappingNoneExpr>()) --num_common;
+
+  // Ensure that the factors of one are a prefix of the factors of the other.
+  if (factors().take_front(num_common) !=
+      other_unstripe.factors().take_front(num_common)) {
+    return mlir::failure();
+  }
+
+  for (int i = 0; i < num_common; ++i) {
+    if (mlir::failed(operands()[i].UnificationConstraints(
+            other_unstripe.operands()[i], constraints))) {
+      return mlir::failure();
     }
   }
+
   return mlir::success();
 }
 
@@ -638,29 +615,25 @@ mlir::AffineExpr MappingUnStripeExpr::AsAffineExpr() const {
 MappingExpr MappingUnStripeExpr::Canonicalize() const {
   llvm::SmallVector<MappingExpr, 4> new_operands;
   new_operands.reserve(operands().size());
-  for (MappingExpr operand : operands()) {
-    new_operands.push_back(operand.Canonicalize());
+
+  MappingExpr stripe_operand;
+  bool is_identity = true;
+  for (int i = 0, e = operands().size(); i < e; ++i) {
+    new_operands.push_back(operands()[i].Canonicalize());
+    auto stripe = new_operands.back().dyn_cast<MappingStripeExpr>();
+    if (!is_identity) continue;
+
+    // Check if all operands are stripe expressions with the same factors than
+    // this expression and share the same operand.
+    if (stripe == nullptr || stripe.factors() != factors().take_front(i + 1)) {
+      is_identity = false;
+      continue;
+    }
+    is_identity &= i == 0 || stripe.operand() == stripe_operand;
+    stripe_operand = stripe.operand();
   }
 
-  // Use a lambda so that we can easily break the control flow.
-  auto simplify = [&]() -> MappingExpr {
-    auto stripe = new_operands.front().dyn_cast<MappingStripeExpr>();
-    if (stripe == nullptr) return MappingExpr();
-    if (stripe.size().hasValue()) return MappingExpr();
-    auto inner_stripes = llvm::makeArrayRef(new_operands).drop_front();
-    for (auto [expr, factor] : llvm::zip(inner_stripes, factors())) {
-      if (factor != stripe.step()) return MappingExpr();
-      auto new_stripe = expr.dyn_cast<MappingStripeExpr>();
-      if (new_stripe == nullptr) return MappingExpr();
-      if (new_stripe.size() != factor) return MappingExpr();
-      if (new_stripe.operand() != stripe.operand()) return MappingExpr();
-      stripe = new_stripe;
-    }
-    return stripe.operand();
-  };
-
-  MappingExpr simplified = simplify();
-  if (simplified != nullptr) return simplified;
+  if (is_identity) return stripe_operand;
   return MappingUnStripeExpr::get(new_operands, factors());
 }
 

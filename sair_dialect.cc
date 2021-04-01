@@ -241,11 +241,9 @@ void PrintMappingExpr(MappingExpr expr, llvm::raw_ostream &os) {
   } else if (auto stripe_expr = expr.dyn_cast<MappingStripeExpr>()) {
     os << MappingStripeExpr::kAttrName << "(";
     PrintMappingExpr(stripe_expr.operand(), os);
-    os << ", " << stripe_expr.step();
-    if (stripe_expr.size().hasValue()) {
-      os << " size " << stripe_expr.size().getValue();
-    }
-    os << ")";
+    os << ", [";
+    llvm::interleaveComma(stripe_expr.factors(), os);
+    os << "])";
   } else if (auto unstripe_expr = expr.dyn_cast<MappingUnStripeExpr>()) {
     os << MappingUnStripeExpr::kAttrName << "(";
     for (auto operand : unstripe_expr.operands()) {

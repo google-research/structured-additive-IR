@@ -708,8 +708,8 @@ func @loop_step_increasing(%arg0: f32) {
     // expected-error @+1 {{loop "A" must be nested inside the loops it depends on}}
     sair.copy[d0: %0] %1 {
       loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<stripe(d0, 1 size 4)>},
-        {name = "B", iter = #sair.mapping_expr<stripe(d0, 4)>}
+        {name = "A", iter = #sair.mapping_expr<stripe(d0, [4, 1])>},
+        {name = "B", iter = #sair.mapping_expr<stripe(d0, [4])>}
       ]
     } : !sair.value<d0:range, f32>
     sair.exit
@@ -1030,15 +1030,15 @@ func @loop_unification_failed(%arg0: f32) {
     %1 = sair.static_range 8 : !sair.range
     %2 = sair.copy[d0:%1] %0 {
       loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<stripe(d0, 4)>},
-        {name = "B", iter = #sair.mapping_expr<stripe(d0, 1 size 4)>}
+        {name = "A", iter = #sair.mapping_expr<stripe(d0, [4])>},
+        {name = "B", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
       ]
     } : !sair.value<d0:range, f32>
     // expected-error @+1 {{cannot unify loop "A" with previous occurences}}
     %3 = sair.copy[d0:%1] %2(d0) {
       loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<stripe(d0, 2)>},
-        {name = "B", iter = #sair.mapping_expr<stripe(d0, 1 size 2)>}
+        {name = "A", iter = #sair.mapping_expr<stripe(d0, [2])>},
+        {name = "B", iter = #sair.mapping_expr<stripe(d0, [2, 1])>}
       ]
     } : !sair.value<d0:range, f32>
     sair.exit
@@ -1054,8 +1054,8 @@ func @loop_unification_failed_subexpr(%arg0: f32) {
     %1 = sair.static_range 8 : !sair.range
     %2 = sair.copy[d0:%1] %0 {
       loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<stripe(d0, 2)>},
-        {name = "B", iter = #sair.mapping_expr<stripe(d0, 1 size 2)>}
+        {name = "A", iter = #sair.mapping_expr<stripe(d0, [2])>},
+        {name = "B", iter = #sair.mapping_expr<stripe(d0, [2, 1])>}
       ]
     } : !sair.value<d0:range, f32>
     // expected-error @+1 {{cannot unify loop "A" with previous occurences}}
@@ -1087,16 +1087,29 @@ func @incompatible_loop_iterators(%arg0: f32) {
 
 // -----
 
-func @invalid_stripe() {
-  // expected-error @+1 {{expected an integer >= 4}}
-  "foo"() { bar = #sair.mapping_expr<stripe(d0, 4 size 2)> } : () -> ()
+func @stripe_expected_less_than() {
+  // expected-error @+1 {{expected an integer > 2}}
+  "foo"() { bar = #sair.mapping_expr<stripe(d0, [2, 4])> } : () -> ()
 }
 
 // -----
 
-func @invalid_unstripe() {
-  // expected-error @+1 {{expected an integer < 2}}
-  "foo"() { bar = #sair.mapping_expr<unstripe(d0, d1, d2, [2, 4])> } : () -> ()
+func @invalid_expected_positive() {
+  // expected-error @+1 {{expected a positive integer}}
+  "foo"() { bar = #sair.mapping_expr<stripe(d0, [-1])> } : () -> ()
+}
+
+// -----
+
+func @unstripe_must_end_with_1() {
+  // expected-error @+1 {{unstripe factors must end with 1}}
+  "foo"() { bar = #sair.mapping_expr<unstripe(d0, d1, [3, 2])> } : () -> ()
+}
+// -----
+
+func @unstripe_invalid_number_of_factors() {
+  // expected-error @+1 {{invalid number of factors}}
+  "foo"() { bar = #sair.mapping_expr<unstripe(d0, d1, [2])> } : () -> ()
 }
 
 // -----
@@ -1128,7 +1141,7 @@ func @loop_crosses_subdomain_boundaries(%arg0: f32) {
     %2 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %3 = sair.copy[d0:%1, d1:%0] %2 {
       loop_nest = [
-        {name = "loopA", iter = #sair.mapping_expr<unstripe(d0, d1, [4])>}
+        {name = "loopA", iter = #sair.mapping_expr<unstripe(d0, d1, [4, 1])>}
       ]
     } : !sair.value<d0:range x d1:range, f32>
     // expected-error @+1 {{loop "loopA" crosses sub-domains boundaries}}
@@ -1325,7 +1338,7 @@ func @buffer_layout_incompatible(%arg0: f32) {
       loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
       storage = [{
         space = "memory", name = "bufferA",
-        layout = #sair.named_mapping<[d0:"loopA"] -> (stripe(d0, 1 size 4))>
+        layout = #sair.named_mapping<[d0:"loopA"] -> (stripe(d0, [4, 1]))>
       }]
     } : !sair.value<d0:range, f32>
     sair.exit
@@ -1404,8 +1417,8 @@ func @layout_depends_indexed_loop(%arg0: f32) {
     // expected-error @+1 {{buffer "bufferA" layout depends on loops it cannot be nested in}}
     %2 = sair.copy[d0:%1] %0 {
       loop_nest = [
-        {name = "loopA", iter = #sair.mapping_expr<stripe(d0, 4)>},
-        {name = "loopB", iter = #sair.mapping_expr<stripe(d0, 1 size 4)>}
+        {name = "loopA", iter = #sair.mapping_expr<stripe(d0, [4])>},
+        {name = "loopB", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
       ],
       storage = [{
         space = "memory", name = "bufferA",

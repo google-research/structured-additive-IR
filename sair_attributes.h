@@ -470,18 +470,15 @@ class MappingStripeExpr
 
   static constexpr llvm::StringRef kAttrName = "stripe";
 
-  static MappingStripeExpr get(MappingExpr operand, int step,
-                               llvm::Optional<int> size);
+  static MappingStripeExpr get(MappingExpr operand,
+                               llvm::ArrayRef<int> factors);
 
   // The striped expression.
   MappingExpr operand() const;
 
-  // Iteration step. This is 1 for point expressions.
-  int step() const;
-
-  // The range of the expression. This is the stripe factor for point
-  // expressions and none for outer stripe expressions.
-  llvm::Optional<int> size() const;
+  // Successive stripe factors to apply to `operand` to obtain this dimension.
+  // Cannot be empty.
+  llvm::ArrayRef<int> factors() const;
 
   bool IsFullySpecified() const { return operand().IsFullySpecified(); }
 
@@ -522,8 +519,7 @@ class MappingStripeExpr
 };
 
 // Stiches together stripe expressions to iterate on a full dimension. Specifies
-// the step of stripe expressions, except for the innermost which always has
-// step 1.
+// the step of stripe expression. The last step must be 1.
 class MappingUnStripeExpr
     : public mlir::Attribute::AttrBase<MappingUnStripeExpr, mlir::Attribute,
                                        impl::MappingUnStripeExprStorage,

@@ -194,7 +194,7 @@ func @mappings(%arg0: f32) {
     // CHECK: %[[V0:.*]] = sair.copy
     %2 = sair.copy[d0:%1] %0 : !sair.value<d0:range, f32>
     // CHECK: sair.copy[d0:%{{.*}}] %[[V0]](d0)
-    %3 = sair.copy[d0:%1] %2(unstripe(stripe(d0, 4), stripe(d0, 1 size 4), [4]))
+    %3 = sair.copy[d0:%1] %2(unstripe(stripe(d0, [4]), stripe(d0, [4, 1]), [4, 1]))
       : !sair.value<d0:range, f32>
     %4 = sair.proj_last of[d0:%1] %3(d0) : #sair.shape<d0:range>, f32
     sair.exit %4 : f32

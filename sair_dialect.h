@@ -84,24 +84,6 @@ class SairDialect : public mlir::Dialect {
 // can be used with different flavors of printers.
 void PrintMapping(MappingAttr mapping, llvm::raw_ostream &os);
 
-// Parses an integer in [min, max). Stores the result in `result`.
-template <typename Parser>
-mlir::ParseResult ParseInteger(
-    Parser &parser, int &result, int min,
-    llvm::Optional<int> max = llvm::Optional<int>()) {
-  llvm::SMLoc loc = parser.getCurrentLocation();
-  mlir::IntegerAttr attr;
-  if (mlir::failed(parser.parseAttribute(attr))) return mlir::failure();
-  result = attr.getInt();
-  if (result < min) {
-    return parser.emitError(loc) << "expected an integer >= " << min;
-  }
-  if (max.hasValue() && result >= max.getValue()) {
-    return parser.emitError(loc) << "expected an integer < " << max.getValue();
-  }
-  return mlir::success();
-}
-
 // Parses a dimension name of the form 'd<id>' where <id> is an integer in the
 // half open interval [0, num_dimensions). Stores <id> in `dimension`.
 template <typename Parser>
@@ -114,6 +96,30 @@ mlir::ParseResult ParseDimensionName(Parser &parser, int &dimension) {
     return parser.emitError(loc) << "invalid dimension name";
   }
 
+  return mlir::success();
+}
+
+// Parses stripe factors for stripe and unstripe expressions. This is a list
+// of comma-separated decreasing integers.
+template <typename Parser>
+mlir::ParseResult ParseStripeFactors(Parser &parser,
+                                     llvm::SmallVector<int> &factors) {
+  do {
+    llvm::SMLoc loc = parser.getCurrentLocation();
+    int factor;
+    if (mlir::failed(parser.parseInteger(factor))) {
+      return mlir::failure();
+    }
+
+    if (factor < 1) {
+      return parser.emitError(loc) << "expected a positive integer";
+    } else if (!factors.empty() && factor >= factors.back()) {
+      return parser.emitError(loc)
+             << "expected an integer > " << factors.back();
+    }
+
+    factors.push_back(factor);
+  } while (mlir::succeeded(parser.parseOptionalComma()));
   return mlir::success();
 }
 
@@ -132,26 +138,18 @@ MappingExpr ParseMappingExpr(Parser &parser, int num_dimensions = -1) {
     // `stripe` `(` <operand>`,` <step> (`size` <size>)? `)`
     if (mlir::failed(parser.parseLParen())) return MappingExpr();
     MappingExpr operand = ParseMappingExpr(parser, num_dimensions);
-    int step;
-    if (parser.parseComma() || ParseInteger(parser, step, 1)) {
+    llvm::SmallVector<int> factors;
+    if (parser.parseComma() || parser.parseLSquare() ||
+        ParseStripeFactors(parser, factors) || parser.parseRSquare() ||
+        parser.parseRParen()) {
       return MappingExpr();
     }
-    llvm::Optional<int> size_opt;
-    if (mlir::succeeded(parser.parseOptionalKeyword("size"))) {
-      int size;
-      if (mlir::failed(ParseInteger(parser, size, step))) {
-        return MappingExpr();
-      }
-      size_opt = size;
-    }
-    if (mlir::failed(parser.parseRParen())) return MappingExpr();
-    return MappingStripeExpr::get(operand, step, size_opt);
+    return MappingStripeExpr::get(operand, factors);
   } else if (mlir::succeeded(
                  parser.parseOptionalKeyword(MappingUnStripeExpr::kAttrName))) {
     // Parse an unstrip expression of the form:
     // `unstripe` `(` (<operand> `,`)+ `[` (<factor> (`,` <factor>)*)? `]` `)`
-    llvm::SmallVector<int, 3> factors;
-    llvm::SmallVector<MappingExpr, 4> operands;
+    llvm::SmallVector<MappingExpr> operands;
     if (mlir::failed(parser.parseLParen())) return MappingExpr();
     do {
       MappingExpr operand = ParseMappingExpr(parser, num_dimensions);
@@ -161,18 +159,19 @@ MappingExpr ParseMappingExpr(Parser &parser, int num_dimensions = -1) {
       operands.push_back(operand);
     } while (mlir::failed(parser.parseOptionalLSquare()));
 
-    if (operands.size() > 1 &&
-        mlir::failed(ParseInteger(parser, factors.emplace_back(), 1))) {
+    llvm::SmallVector<int> factors;
+    if (ParseStripeFactors(parser, factors) || parser.parseRSquare() ||
+        parser.parseRParen()) {
       return MappingExpr();
     }
-    for (int i = 1, e = operands.size() - 1; i < e; ++i) {
-      int last_factor = factors.back();
-      if (parser.parseComma() ||
-          ParseInteger(parser, factors.emplace_back(), 1, last_factor)) {
-        return MappingExpr();
-      }
+    if (factors.size() != operands.size()) {
+      parser.emitError(parser.getCurrentLocation())
+          << "invalid number of factors";
+      return MappingExpr();
     }
-    if (parser.parseRSquare() || parser.parseRParen()) {
+    if (factors.back() != 1) {
+      parser.emitError(parser.getCurrentLocation())
+          << "unstripe factors must end with 1";
       return MappingExpr();
     }
     return MappingUnStripeExpr::get(operands, factors);

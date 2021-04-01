@@ -59,9 +59,9 @@ func @stripe() {
     %1 = sair.map[d0: %0] attributes {
       loop_nest = [
         // CHECK: iter = #sair.mapping_expr<d0>, name = "loopA"
-        {name = "loopA", iter = #sair.mapping_expr<stripe(d0, 4)>},
+        {name = "loopA", iter = #sair.mapping_expr<stripe(d0, [4])>},
         // CHECK: iter = #sair.mapping_expr<d1>, name = "loopB"
-        {name = "loopB", iter = #sair.mapping_expr<stripe(d0, 1 size 4)>}
+        {name = "loopB", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
       ]
     } {
       // CHECK: ^bb0(%[[ARG0:.*]]: index, %[[ARG1:.*]]: index):
@@ -90,7 +90,7 @@ func @unstripe(%arg0: f32) {
     // CHECK: %[[V1:.*]] = sair.map_reduce %[[V0]] reduce[d0:%[[D0]]] attributes
     // CHECK: loop_nest = [{iter = #sair.mapping_expr<d0>, name = "loopA"}]
     %3 = sair.map_reduce %2 reduce[d0:%0, d1:%0] attributes {
-      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<unstripe(d0, d1, [4])>}],
+      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<unstripe(d0, d1, [4, 1])>}],
       storage = [{space = "register", layout = #sair.named_mapping<[] -> ()>}]
     } {
       // CHECK: ^bb0(%[[V2:.*]]: index, %[[V3:.*]]: f32):
@@ -122,8 +122,8 @@ func @load_store_memref(%arg0: index) {
     // CHECK:   {iter = #sair.mapping_expr<d1>, name = "B"}
     %memref = sair.alloc[d0:%0] %size {
       loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<stripe(d0, 4)>},
-        {name = "B", iter = #sair.mapping_expr<stripe(d0, 1 size 4)>}
+        {name = "A", iter = #sair.mapping_expr<stripe(d0, [4])>},
+        {name = "B", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
       ]
     } : !sair.value<d0:range, memref<?xf32>>
     // CHECK: sair.load_from_memref[d0:%[[D0]], d1:%[[D1]], d2:%[[D2]]] %{{.*}}(d0, d1)
@@ -136,8 +136,8 @@ func @load_store_memref(%arg0: index) {
     %2 = sair.load_from_memref[d0:%0, d1:%1] %memref(d0) {
         layout = #sair.mapping<2 : d1>,
         loop_nest = [
-          {name = "A", iter = #sair.mapping_expr<stripe(d0, 4)>},
-          {name = "B", iter = #sair.mapping_expr<stripe(d0, 1 size 4)>},
+          {name = "A", iter = #sair.mapping_expr<stripe(d0, [4])>},
+          {name = "B", iter = #sair.mapping_expr<stripe(d0, [4, 1])>},
           {name = "C", iter = #sair.mapping_expr<d1>}
         ]
       } : memref<?xf32> -> !sair.value<d0:range x d1:range, f32>
@@ -151,15 +151,15 @@ func @load_store_memref(%arg0: index) {
     sair.store_to_memref[d0:%0, d1:%1] %memref(d0), %2(d0, d1) {
         layout = #sair.mapping<2 : d1>,
         loop_nest = [
-          {name = "A", iter = #sair.mapping_expr<stripe(d0, 4)>},
-          {name = "B", iter = #sair.mapping_expr<stripe(d0, 1 size 4)>},
+          {name = "A", iter = #sair.mapping_expr<stripe(d0, [4])>},
+          {name = "B", iter = #sair.mapping_expr<stripe(d0, [4, 1])>},
           {name = "C", iter = #sair.mapping_expr<d1>}
         ]
       } : #sair.shape<d0:range x d1:range>, memref<?xf32>
     sair.free[d0:%0] %memref(d0) {
       loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<stripe(d0, 4)>},
-        {name = "B", iter = #sair.mapping_expr<stripe(d0, 1 size 4)>}
+        {name = "A", iter = #sair.mapping_expr<stripe(d0, [4])>},
+        {name = "B", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
       ]
     } : !sair.value<d0:range, memref<?xf32>>
     sair.exit

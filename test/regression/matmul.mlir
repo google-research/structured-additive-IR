@@ -16,33 +16,33 @@ func @main(%arg0: memref<512x512xf32>, %arg1: memref<512x512xf32>, %arg2: memref
     %9 = sair.from_scalar %cst : !sair.value<(), f32>
     %10 = sair.copy[d0:%6, d1:%6] %9 {
       loop_nest = [
-        {iter = #sair.mapping_expr<stripe(d0, 2)>, name = "loop_0"},
-        {iter = #sair.mapping_expr<stripe(d1, 29)>, name = "loop_1"},
-        {iter = #sair.mapping_expr<stripe(d0, 1 size 2)>, name = "loop_2"},
-        {iter = #sair.mapping_expr<stripe(d1, 3 size 29)>, name = "loop_3"},
-        {iter = #sair.mapping_expr<stripe(d1, 1 size 3)>, name = "loop_4"}
+        {iter = #sair.mapping_expr<stripe(d0, [2])>, name = "loop_0"},
+        {iter = #sair.mapping_expr<stripe(d1, [29])>, name = "loop_1"},
+        {iter = #sair.mapping_expr<stripe(d0, [2, 1])>, name = "loop_2"},
+        {iter = #sair.mapping_expr<stripe(d1, [29, 3])>, name = "loop_3"},
+        {iter = #sair.mapping_expr<stripe(d1, [29, 3, 1])>, name = "loop_4"}
       ],
       storage = [{
         layout = #sair.named_mapping<
           [d0:"loop_0", d1:"loop_1", d2:"loop_2", d3:"loop_3", d4:"loop_4"]
-            -> (unstripe(d0, d2, [2]), unstripe(d1, d3, d4, [29, 3]))>,
+            -> (unstripe(d0, d2, [2, 1]), unstripe(d1, d3, d4, [29, 3, 1]))>,
           name = "C", space = "memory"
       }]
     } : !sair.value<d0:range x d1:range, f32>
     %11 = sair.fby[d0:%6, d1:%6] %10(d0, d1) then[d2:%6] %12(d0, d1, d2) : !sair.value<d0:range x d1:range x d2:range, f32>
     %12 = sair.map[d0:%6, d1:%6, d2:%6] %11(d0, d1, d2), %7(d0, d2), %8(d1, d2) attributes {
       loop_nest = [
-        {iter = #sair.mapping_expr<stripe(d0, 3)>, name = "loop_5"},
-        {iter = #sair.mapping_expr<stripe(d2, 3)>, name = "loop_6"},
-        {iter = #sair.mapping_expr<stripe(d2, 1 size 3)>, name = "loop_7"},
-        {iter = #sair.mapping_expr<stripe(d0, 1 size 3)>, name = "loop_8"},
-        {iter = #sair.mapping_expr<stripe(d1, 3)>, name = "loop_9"},
-        {iter = #sair.mapping_expr<stripe(d1, 1 size 3)>, name = "loop_10"}
+        {iter = #sair.mapping_expr<stripe(d0, [3])>, name = "loop_5"},
+        {iter = #sair.mapping_expr<stripe(d2, [3])>, name = "loop_6"},
+        {iter = #sair.mapping_expr<stripe(d2, [3, 1])>, name = "loop_7"},
+        {iter = #sair.mapping_expr<stripe(d0, [3, 1])>, name = "loop_8"},
+        {iter = #sair.mapping_expr<stripe(d1, [3])>, name = "loop_9"},
+        {iter = #sair.mapping_expr<stripe(d1, [3, 1])>, name = "loop_10"}
       ],
       storage = [{
         layout = #sair.named_mapping<
           [d0:"loop_5", d1:"loop_8", d2:"loop_9", d3:"loop_10"]
-            -> (unstripe(d0, d1, [3]), unstripe(d2, d3, [3]))>,
+            -> (unstripe(d0, d1, [3, 1]), unstripe(d2, d3, [3, 1]))>,
         name = "C", space = "memory"}
       ]} {
     ^bb0(%arg3: index, %arg4: index, %arg5: index, %arg6: f32, %arg7: f32, %arg8: f32):  // no predecessors
