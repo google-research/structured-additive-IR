@@ -318,27 +318,33 @@ mlir::AffineExpr MappingStripeExpr::AsAffineExpr() const {
   return step * operand().AsAffineExpr().floorDiv(step);
 }
 
-MappingExpr MappingStripeExpr::Canonicalize() const {
-  MappingExpr new_operand = operand().Canonicalize();
-  auto unstripe = new_operand.dyn_cast<MappingUnStripeExpr>();
+static MappingExpr GetCanonicalStripe(MappingExpr canonical_operand,
+                                        llvm::ArrayRef<int> factors) {
+  if (factors.size() == 1 && factors.back() == 1) return canonical_operand;
+
+  auto unstripe = canonical_operand.dyn_cast<MappingUnStripeExpr>();
   if (unstripe == nullptr) {
-    return MappingStripeExpr::get(new_operand, factors());
+    return MappingStripeExpr::get(canonical_operand, factors);
   }
 
-  auto it = std::mismatch(factors().begin(), factors().end(),
+  auto it = std::mismatch(factors.begin(), factors.end(),
                           unstripe.factors().begin(), unstripe.factors().end());
 
   // If all factors match, stripe(unstripe) is the identity function.
-  if (it.first == factors().end()) {
-    return unstripe.operands()[factors().size() - 1];
+  if (it.first == factors.end()) {
+    return unstripe.operands()[factors.size() - 1];
   }
 
   // Otherwise, we trip common factors.
-  int num_common = std::distance(factors().begin(), it.first);
+  int num_common = std::distance(factors.begin(), it.first);
   auto new_unstripe =
       MappingUnStripeExpr::get(unstripe.operands().drop_front(num_common),
                                unstripe.factors().drop_front(num_common));
-  return MappingStripeExpr::get(new_unstripe, factors().drop_front(num_common));
+  return MappingStripeExpr::get(new_unstripe, factors.drop_front(num_common));
+}
+
+MappingExpr MappingStripeExpr::Canonicalize() const {
+  return GetCanonicalStripe(operand().Canonicalize(), factors());
 }
 
 RangeParameters MappingStripeExpr::GetRangeParameters(
@@ -613,28 +619,81 @@ mlir::AffineExpr MappingUnStripeExpr::AsAffineExpr() const {
 }
 
 MappingExpr MappingUnStripeExpr::Canonicalize() const {
-  llvm::SmallVector<MappingExpr, 4> new_operands;
+  llvm::SmallVector<MappingExpr> new_operands;
   new_operands.reserve(operands().size());
-
-  MappingExpr stripe_operand;
-  bool is_identity = true;
-  for (int i = 0, e = operands().size(); i < e; ++i) {
-    new_operands.push_back(operands()[i].Canonicalize());
-    auto stripe = new_operands.back().dyn_cast<MappingStripeExpr>();
-    if (!is_identity) continue;
-
-    // Check if all operands are stripe expressions with the same factors than
-    // this expression and share the same operand.
-    if (stripe == nullptr || stripe.factors() != factors().take_front(i + 1)) {
-      is_identity = false;
-      continue;
-    }
-    is_identity &= i == 0 || stripe.operand() == stripe_operand;
-    stripe_operand = stripe.operand();
+  for (MappingExpr operand : operands()) {
+    new_operands.push_back(operand.Canonicalize());
   }
+  llvm::SmallVector<int> new_factors;
+  llvm::append_range(new_factors, factors());
 
-  if (is_identity) return stripe_operand;
-  return MappingUnStripeExpr::get(new_operands, factors());
+  // Use lambdas to break the control flow. Each lambda returns true if the
+  // corresponding canonicalization rule was applied.
+
+  // If the last argument is an unstripe, it can be collapsed in the current
+  // expression.
+  auto collapse_unstripes = [&]() {
+    auto unstripe = new_operands.back().dyn_cast<MappingUnStripeExpr>();
+    if (unstripe == nullptr) return false;
+    // Stripe factors must be strictly decreasing.
+    if (new_factors.size() > 1 &&
+        new_factors[new_factors.size() - 2] <= unstripe.factors().front()) {
+      return false;
+    }
+    new_operands.pop_back();
+    new_factors.pop_back();
+    llvm::append_range(new_operands, unstripe.operands());
+    llvm::append_range(new_factors, unstripe.factors());
+    return true;
+  };
+
+  // Stiches stripe expressions that have the same operand.
+  auto stiche_stripes = [&]() {
+    auto stripe = new_operands.back().dyn_cast<MappingStripeExpr>();
+    if (stripe == nullptr) return false;
+    int min_num_factors =
+        std::min(new_factors.size(), stripe.factors().size());
+    // Ensure factors are the same.
+    if (llvm::makeArrayRef(new_factors).take_back(min_num_factors) !=
+        stripe.factors().take_back(min_num_factors)) {
+      return false;
+    }
+
+
+    // Find how many stripes we can stich together.
+    int first_stripe = new_operands.size() - 1;
+    for(; first_stripe > 0; --first_stripe) {
+      auto other_stripe =
+          new_operands[first_stripe - 1].dyn_cast<MappingStripeExpr>();
+      if (other_stripe == nullptr ||
+          other_stripe.operand() != stripe.operand()) {
+        break;
+      }
+    }
+
+    // Only one stripe, we can't stich anything.
+    if (first_stripe == new_operands.size() - 1) return false;
+
+    llvm::SmallVector<int> new_stripe_factors;
+    llvm::append_range(
+        new_stripe_factors,
+        stripe.factors().drop_back(new_operands.size() - first_stripe));
+    new_stripe_factors.push_back(1);
+
+    new_operands.resize(first_stripe);
+    new_factors.resize(first_stripe);
+    new_operands.push_back(
+        GetCanonicalStripe(stripe.operand(), new_stripe_factors));
+    new_factors.push_back(1);
+    return true;
+  };
+
+  // Apply canonicalization rules.
+  while (collapse_unstripes() || stiche_stripes()) { }
+
+  if (new_factors.size() == 1 && new_factors.back() == 1)
+    return new_operands[0];
+  return MappingUnStripeExpr::get(new_operands, new_factors);
 }
 
 RangeParameters MappingUnStripeExpr::GetRangeParameters(

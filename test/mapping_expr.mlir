@@ -256,4 +256,32 @@ module {
   expr = #sair.mapping_expr<unstripe(stripe(d0, [8]), stripe(d0, [8, 4]), stripe(d0, [8, 4, 1]), [8, 3, 1])>
 } : () -> ()
 
+// CHECK: "test.canonicalize"() {label = @trivial_stripe,
+// CHECK-SAME: result = #sair.mapping_expr<d0>
+"test.canonicalize"() {
+  label = @trivial_stripe,
+  expr = #sair.mapping_expr<stripe(d0, [1])>
+} : () -> ()
+
+// CHECK: "test.canonicalize"() {label = @trivial_unstripe,
+// CHECK-SAME: result = #sair.mapping_expr<d0>
+"test.canonicalize"() {
+  label = @trivial_unstripe,
+  expr = #sair.mapping_expr<unstripe(d0, [1])>
+} : () -> ()
+
+// CHECK: "test.canonicalize"() {label = @unstripe_stripe_partial,
+// CHECK-SAME: result = #sair.mapping_expr<unstripe(d0, d1, d2, [11, 7, 1])>
+"test.canonicalize"() {
+  label = @unstripe_stripe_partial,
+  expr = #sair.mapping_expr<unstripe(d0, d1, stripe(d2, [4]), stripe(d2, [4, 1]), [11, 7, 4, 1])>
+} : () -> ()
+
+// CHECK: "test.canonicalize"() {label = @unstripe_collapse,
+// CHECK-SAME: result = #sair.mapping_expr<unstripe(d0, d1, d2, [11, 7, 1])>
+"test.canonicalize"() {
+  label = @unstripe_collapse,
+  expr = #sair.mapping_expr<unstripe(d0, unstripe(d1, d2, [7, 1]), [11, 1])>
+} : () -> ()
+
 }
