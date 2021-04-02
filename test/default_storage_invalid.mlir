@@ -79,3 +79,19 @@ func @to_memref_value_producer_before_memref(%arg0: f32, %arg1: memref<f32>) {
   }
   return
 }
+
+// -----
+
+func @loop_layout_mismatch(%arg0: memref<4xf32>) {
+  %c = constant 42.0 : f32
+  sair.program {
+    %r = sair.static_range 4 : !sair.range
+    %mem = sair.from_scalar %arg0 : !sair.value<(), memref<4xf32>>
+    %0 = sair.from_scalar %c : !sair.value<(), f32>
+    // expected-error@below {{invalid or incomplete loop_nest attribute}}
+    %1 = sair.copy[d0:%r] %0 : !sair.value<d0:range, f32>
+    sair.to_memref %mem memref[d0:%r] %1(d0) { buffer_name = "buffer" } : #sair.shape<d0:range>, memref<4xf32>
+    sair.exit
+  }
+  return
+}

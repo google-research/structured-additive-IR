@@ -122,6 +122,10 @@ mlir::LogicalResult CreateBufferForToMemRef(
           iteration_spaces.Get(cast<SairOp>(defining_op));
       MappingAttr layout_mapping =
           iter_space.mapping().Inverse().Compose(access.mapping);
+      if (iter_space.loop_names().size() != layout_mapping.UseDomainSize()) {
+        return compute_op.emitError()
+               << "invalid or incomplete loop_nest attribute";
+      }
       auto layout =
           NamedMappingAttr::get(iter_space.loop_names(), layout_mapping);
       layout = layout.DropUnusedDims();

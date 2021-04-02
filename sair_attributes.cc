@@ -1012,6 +1012,7 @@ class impl::NamedMappingAttrStorage : public mlir::AttributeStorage {
 
 NamedMappingAttr NamedMappingAttr::get(llvm::ArrayRef<mlir::StringAttr> names,
                                        MappingAttr mapping) {
+  assert(names.size() == mapping.UseDomainSize());
   return Base::get(mapping.getContext(), names, mapping);
 }
 
