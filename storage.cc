@@ -53,11 +53,10 @@ static llvm::SmallVector<ValueViewOp, 4> SortValueViews(SairProgramOp program) {
   return sorted;
 }
 
-Buffer::Buffer(mlir::Type element_type, int rank, ComputeOp op, int result,
+Buffer::Buffer(mlir::Type element_type, ComputeOp op, int result,
                const LoopFusionAnalysis &fusion_analysis)
     : loc_(op.getLoc()), element_type_(element_type), import_op_(nullptr) {
   assert(element_type != nullptr);
-  assert(rank >= 0);
 
   llvm::ArrayRef<mlir::Attribute> loop_nest = op.LoopNestLoops();
   loop_nest_.reserve(loop_nest.size());
@@ -65,12 +64,8 @@ Buffer::Buffer(mlir::Type element_type, int rank, ComputeOp op, int result,
     auto loop = attr.cast<LoopAttr>();
     loop_nest_.push_back(loop.name());
   }
-
-  auto none_expr = MappingNoneExpr::get(element_type.getContext());
-  layout_.resize(rank, none_expr);
-  writes_.emplace_back(op, result);
-
   loop_nest_mapping_ = fusion_analysis.GetLoopNest(loop_nest_).domain_to_loops;
+  writes_.emplace_back(op, result);
 }
 
 Buffer::Buffer(FromToMemRefOp import_op,
@@ -82,12 +77,12 @@ Buffer::Buffer(FromToMemRefOp import_op,
   const IterationSpace iter_space =
       iteration_spaces.Get(cast<SairOp>(import_op.getOperation()));
   llvm::append_range(loop_nest_, iter_space.loop_names());
-
-  int rank = import_op.memref_domain().size();
-  auto none_expr = MappingNoneExpr::get(element_type_.getContext());
-  layout_.resize(rank, none_expr);
-
   loop_nest_mapping_ = fusion_analysis.GetLoopNest(loop_nest_).domain_to_loops;
+}
+
+std::optional<int> Buffer::rank() const {
+  return layout_.has_value() ? std::make_optional(layout_->size())
+                             : std::nullopt;
 }
 
 void Buffer::TrimLoopNest(int new_size) {
@@ -100,8 +95,10 @@ void Buffer::TrimLoopNest(int new_size) {
   // Compute dimensions used by layout.
   llvm::SmallBitVector used_dimensions(domain_.size());
   used_dimensions |= loop_nest_mapping_.DependencyMask();
-  for (MappingExpr layout_expr : layout_) {
-    layout_expr.SetDependenciesInMask(used_dimensions);
+  if (layout_.has_value()) {
+    for (MappingExpr layout_expr : layout_.value()) {
+      layout_expr.SetDependenciesInMask(used_dimensions);
+    }
   }
 
   // Trim domain from unused dimensions.
@@ -119,15 +116,19 @@ void Buffer::TrimLoopNest(int new_size) {
     });
   }
 
-  for (MappingExpr &layout_expr : layout_) {
-    layout_expr = layout_expr.SubstituteDims(renaming);
-    assert(layout_expr.IsFullySpecified());
+  if (layout_.has_value()) {
+    auto renaming_mapping = MappingAttr::get(context, domain_.size(), renaming);
+    layout_ = renaming_mapping.Compose(layout_.value());
+    assert(layout_->IsFullySpecified());
   }
 }
 
-void Buffer::UnifyLayoutDim(int layout_dim, MappingExpr expr) {
-  layout_[layout_dim] = layout_[layout_dim].Unify(expr);
-  assert(layout_[layout_dim] != nullptr);
+void Buffer::UnifyLayout(MappingAttr layout) {
+  if (!layout_.has_value()) {
+    layout_ = layout;
+  } else {
+    layout_ = layout_.value().ResizeUseDomain(domain_.size()).Unify(layout);
+  }
 }
 
 void Buffer::AddWrite(ComputeOp op, int result) {
@@ -139,11 +140,13 @@ void Buffer::AddRead(ComputeOp op, int operand) {
 }
 
 MappingAttr Buffer::PrefixedLayout() const {
+  assert(layout_.has_value());
+
   mlir::MLIRContext *context = loop_nest_mapping_.getContext();
   llvm::SmallVector<MappingExpr> exprs;
-  exprs.reserve(loop_nest_.size() + layout_.size());
+  exprs.reserve(loop_nest_.size() + layout_->size());
   llvm::append_range(exprs, loop_nest_mapping_);
-  llvm::append_range(exprs, layout_);
+  llvm::append_range(exprs, layout_.value());
   return MappingAttr::get(context, domain_.size(), exprs);
 }
 
@@ -222,6 +225,8 @@ static mlir::LogicalResult VerifyStorageAttrWellFormed(ComputeOp op) {
       return op.emitError() << "only 0D buffers can be stored in registers";
     }
 
+    if (buffer.layout() == nullptr) continue;
+
     for (mlir::StringAttr loop_name : buffer.layout().names()) {
       if (!loop_names.contains(loop_name)) {
         return op.emitError() << "unknown loop name " << loop_name;
@@ -266,8 +271,7 @@ static mlir::LogicalResult DeclareBuffer(
   mlir::Type element_type =
       op->getResult(result).getType().cast<ValueType>().ElementType();
 
-  int rank = attr.layout().mapping().size();
-  auto it = buffer_map.try_emplace(attr.name(), element_type, rank, op, result,
+  auto it = buffer_map.try_emplace(attr.name(), element_type, op, result,
                                    fusion_analysis);
   Buffer &buffer = it.first->second;
 
@@ -285,15 +289,6 @@ static mlir::LogicalResult DeclareBuffer(
     return mlir::failure();
   }
 
-  // Ensure that the number of dimension is coherent.
-  if (buffer.rank() != rank) {
-    mlir::InFlightDiagnostic diag = op.emitError()
-                                    << "buffer " << attr.name()
-                                    << " rank differs from previous occurence";
-    diag.attachNote(buffer.getLoc()) << "previous occurence here";
-    return mlir::failure();
-  }
-
   // Trims the buffer loop nest
   auto loop_nest = op.LoopNestLoops();
   int num_deps = std::min(loop_nest.size(), buffer.loop_nest().size());
@@ -302,16 +297,18 @@ static mlir::LogicalResult DeclareBuffer(
     if (loop.name() == buffer.loop_nest()[num_deps - 1]) break;
   }
 
-  llvm::DenseSet<mlir::Attribute> loop_names;
-  for (mlir::StringAttr name : attr.layout().names()) {
-    loop_names.insert(name);
-  }
+  if (attr.layout() != nullptr) {
+    llvm::DenseSet<mlir::Attribute> loop_names;
+    for (mlir::StringAttr name : attr.layout().names()) {
+      loop_names.insert(name);
+    }
 
-  for (int i = 0; i < num_deps; ++i) {
-    // Trim indexed loops from the loop nest.
-    if (loop_names.count(buffer.loop_nest()[i]) > 0) {
-      num_deps = i;
-      break;
+    for (int i = 0; i < num_deps; ++i) {
+      // Trim indexed loops from the loop nest.
+      if (loop_names.count(buffer.loop_nest()[i]) > 0) {
+        num_deps = i;
+        break;
+      }
     }
   }
 
@@ -343,12 +340,15 @@ static mlir::LogicalResult UnifyBufferShape(
     constraints[i] = MappingDimExpr::get(i, context);
   }
 
-  for (auto [old_expr, new_expr] :
-       llvm::zip(buffer.layout(), domain_to_layout)) {
-    if (mlir::failed(new_expr.UnificationConstraints(old_expr, constraints))) {
-      return op.emitError()
-             << "buffer " << buffer_attr.name()
-             << " layout is incompatible with previous occurences";
+  if (buffer.layout().has_value()) {
+    for (auto [old_expr, new_expr] :
+         llvm::zip(buffer.layout().value(), domain_to_layout)) {
+      if (mlir::failed(
+              new_expr.UnificationConstraints(old_expr, constraints))) {
+        return op.emitError()
+               << "buffer " << buffer_attr.name()
+               << " layout is incompatible with previous occurences";
+      }
     }
   }
 
@@ -375,10 +375,9 @@ static mlir::LogicalResult UnifyBufferShape(
   }
 
   // Unify dimensions.
-  for (int i = 0; i < buffer.rank(); ++i) {
-    buffer.UnifyLayoutDim(
-        i, domain_to_layout.Dimension(i).SubstituteDims(constraints));
-  }
+  auto buffer_domain_to_domain =
+      MappingAttr::get(context, buffer.domain().size(), constraints);
+  buffer.UnifyLayout(buffer_domain_to_domain.Compose(domain_to_layout));
 
   return mlir::success();
 }
@@ -446,6 +445,8 @@ static mlir::LogicalResult CheckMallocInsertionPoint(
 static mlir::LogicalResult CheckLayoutMapping(
     mlir::StringAttr buffer_name, const Buffer &buffer,
     const IterationSpaceAnalysis &iteration_spaces, int &min_num_loops) {
+  if (!buffer.layout().has_value()) return mlir::success();
+
   mlir::MLIRContext *context = buffer_name.getContext();
   int domain_size = buffer.domain().size();
   int loop_nest_size = buffer.loop_nest().size();
@@ -457,10 +458,7 @@ static mlir::LogicalResult CheckLayoutMapping(
   }
 
   // Update `min_num_loops` based on domain dimensions layout depends on.
-  llvm::SmallBitVector used_dimensions(domain_size);
-  for (MappingExpr layout_expr : buffer.layout()) {
-    layout_expr.SetDependenciesInMask(used_dimensions);
-  }
+  llvm::SmallBitVector used_dimensions = buffer.layout()->DependencyMask();
   for (int dim : used_dimensions.set_bits()) {
     int new_min = buffer.domain()[dim].mapping.MinDomainSize();
     min_num_loops = std::max(new_min, min_num_loops);
@@ -470,7 +468,7 @@ static mlir::LogicalResult CheckLayoutMapping(
   // loop-nest dimensions.
   auto hr_shape = DomainShapeAttr::HyperRectangular(context, domain_size);
   MappingAttr inverse = mapping.Inverse().ResizeUseDomain(loop_nest_size);
-  for (MappingExpr layout_expr : buffer.layout()) {
+  for (MappingExpr layout_expr : buffer.layout()->Dimensions()) {
     DomainShapeDim shape_dim =
         layout_expr.AccessedShape(hr_shape.Dimensions(), inverse);
     if (!shape_dim.dependency_mapping().IsFullySpecified()) {
@@ -546,9 +544,8 @@ static mlir::LogicalResult ComputeBuffersShape(
       int parallel_domain_size = op.parallel_domain().size();
       MappingAttr loops_to_domain_mapping =
           iteration_spaces.Get(sair_op).MappingToLoops().Inverse();
-      for (int i = 0, e = buffer.rank(); i < e; ++i) {
-        int domain_dim = buffer.domain().size();
-        buffer.UnifyLayoutDim(i, MappingDimExpr::get(domain_dim, context));
+      int rank = op.memref_domain().size();
+      for (int i = 0; i < rank; ++i) {
         const DomainShapeDim &shape_dim =
             sair_op.shape().Dimensions()[parallel_domain_size + i];
         MappingAttr shape_dim_mapping = shape_dim.dependency_mapping();
@@ -558,11 +555,24 @@ static mlir::LogicalResult ComputeBuffersShape(
                 shape_dim_mapping.ResizeUseDomain(parallel_domain_size)),
         });
       }
+      buffer.UnifyLayout(MappingAttr::GetIdentity(context, rank));
     }
 
     // Unify buffer layout.
     for (auto [op, result] : buffer.writes()) {
       BufferAttr buffer_attr = op.Storage(result);
+      if (buffer_attr.layout() == nullptr) continue;
+
+      // Ensure that the number of dimension is coherent.
+      if (buffer.rank().has_value() &&
+          buffer.rank() != buffer_attr.layout().mapping().size()) {
+        mlir::InFlightDiagnostic diag =
+            op.emitError() << "buffer " << name
+                           << " rank differs from previous occurence";
+        diag.attachNote(buffer.getLoc()) << "previous occurence here";
+        return mlir::failure();
+      }
+
       // Unify layouts.
       MappingAttr loops_to_indexed_loops =
           LoopsToIndexedLoopsMapping(op, buffer_attr);
@@ -602,8 +612,11 @@ static mlir::LogicalResult ComputeValueStorages(
       ValueStorage &value_storage = value_storages[op->getResult(i)];
       BufferAttr buffer = op.Storage(i);
       if (buffer == nullptr) continue;
-      MappingAttr layout = LoopsToIndexedLoopsMapping(op, buffer)
-                               .Compose(buffer.layout().mapping());
+      MappingAttr layout;
+      if (buffer.layout() != nullptr) {
+        layout = LoopsToIndexedLoopsMapping(op, buffer)
+                     .Compose(buffer.layout().mapping());
+      }
       value_storage = ValueStorage(buffer.space(), buffer.name(), layout);
     }
   });

@@ -93,7 +93,9 @@ std::pair<mlir::SmallVector<int64_t>, ValueRange> GetMemRefShape(
   llvm::SmallVector<int64_t> memref_shape;
   llvm::SmallVector<mlir::Value> scalar_sizes;
   auto inverse_layout = buffer.PrefixedLayout().Inverse();
-  for (MappingExpr layout_dim : buffer.layout()) {
+
+  MappingAttr layout = buffer.layout().value();
+  for (MappingExpr layout_dim : layout) {
     RangeParameters params =
         layout_dim.GetRangeParameters(buffer.getLoc(), buffer.domain(),
                                       inverse_layout, builder, map_arguments);
@@ -295,7 +297,10 @@ class MaterializeBuffers
         if (!result.getType().isa<ValueType>()) continue;
         const ValueStorage &storage = storage_analysis.GetStorage(result);
         if (storage.space() == nullptr) {
-          return op.emitError() << "missing storage information";
+          return op.emitError() << "missing memory space";
+        }
+        if (storage.layout() == nullptr) {
+          return op.emitError() << "missing layout";
         }
         if (!storage.layout().IsFullySpecified()) {
           return op.emitError() << "partial layouts are not yet supported";

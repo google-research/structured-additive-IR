@@ -22,11 +22,26 @@ func @partial_layout(%arg0: f32) {
 
 // -----
 
-func @missing_information(%arg0: f32) {
+func @missing_memory_space(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    // expected-error @+1 {{missing storage information}}
+    // expected-error @+1 {{missing memory space}}
     %1 = sair.copy %0 : !sair.value<(), f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @missing_layout(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    // expected-error @+1 {{missing layout}}
+    %1 = sair.copy %0 {
+      loop_nest = [],
+      storage = [{space = "memory", name = "A"}]
+    } : !sair.value<(), f32>
     sair.exit
   }
   return

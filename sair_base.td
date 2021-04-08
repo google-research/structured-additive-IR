@@ -226,7 +226,7 @@ def SairLoopNestAttr
 def SairBufferAttr : SairStructAttr<"BufferAttr", [
   StructFieldAttr<"space", StrAttr>,
   StructFieldAttr<"name", OptionalAttr<StrAttr>>,
-  StructFieldAttr<"layout", SairNamedMappingAttr>,
+  StructFieldAttr<"layout", OptionalAttr<SairNamedMappingAttr>>,
 ]>;
 
 // An attribute that specifies how results of a sair operation are stored in

@@ -633,6 +633,20 @@ func @storage_stripe(%arg0: f32) {
   return
 }
 
+// CHECK-LABEL: @storage_no_layout
+func @storage_no_layout(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.static_range 16 : !sair.range
+    %2 = sair.copy[d0:%1] %0 {
+      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
+      storage = [{name = "B", space = "memory"}]
+    } : !sair.value<d0:range, f32>
+    sair.exit
+  }
+  return
+}
+
 // CHECK-LABEL: @placeholder
 func @placeholder(%arg0: f32) {
   sair.program {

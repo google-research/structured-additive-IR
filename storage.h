@@ -37,14 +37,14 @@ class Buffer {
   // Create a new buffer written to by the given operation. The operation must
   // have a loop_nest attribute set. `result` is the position of `op` result
   // stored in `buffer`.
-  Buffer(mlir::Type element_type, int rank, ComputeOp op, int result,
+  Buffer(mlir::Type element_type, ComputeOp op, int result,
          const LoopFusionAnalysis &fusion_analysis);
   Buffer(FromToMemRefOp import_op,
          const IterationSpaceAnalysis &iteration_spaces,
          const LoopFusionAnalysis &fusion_analysis);
 
   // Number of dimensions in the buffer layout.
-  int rank() const { return layout_.size(); }
+  std::optional<int> rank() const;
 
   // Types of the scalars stored in the buffer.
   mlir::Type element_type() const { return element_type_; }
@@ -57,7 +57,7 @@ class Buffer {
   llvm::SmallVectorImpl<ValueAccess> &domain() { return domain_; }
 
   // Mapping from domain dimensions to buffer dimensions.
-  llvm::ArrayRef<MappingExpr> layout() const { return layout_; }
+  std::optional<MappingAttr> layout() const { return layout_; }
 
   // Indicates if the buffer is declared outside the Sair program.
   bool is_external() const { return import_op_ != nullptr; }
@@ -79,7 +79,8 @@ class Buffer {
   mlir::Location getLoc() const { return loc_; }
 
   // Mapping of domain to layout prefixed by loop nest iterators. The prefix
-  // corresponds to the different instances of the buffer.
+  // corresponds to the different instances of the buffer. Cannot be called if
+  // the layout is not yet specified.
   MappingAttr PrefixedLayout() const;
 
   // Registers an operation writting to the buffer.
@@ -91,8 +92,8 @@ class Buffer {
   // Trims the loop-nest to the given size.
   void TrimLoopNest(int new_size);
 
-  // Unifies a dimension of the layout with another expression.
-  void UnifyLayoutDim(int layout_dim, MappingExpr expr);
+  // Unifies this buffer layout with another layout.
+  void UnifyLayout(MappingAttr layout);
 
  private:
   mlir::Location loc_;
@@ -103,7 +104,7 @@ class Buffer {
   MappingAttr loop_nest_mapping_;
 
   llvm::SmallVector<ValueAccess> domain_;
-  llvm::SmallVector<MappingExpr> layout_;
+  std::optional<MappingAttr> layout_;
   llvm::SmallVector<std::pair<ComputeOp, int>> writes_;
   llvm::SmallVector<std::pair<ComputeOp, int>> reads_;
 };
