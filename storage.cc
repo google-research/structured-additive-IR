@@ -159,6 +159,7 @@ static mlir::LogicalResult VerifyStorageAttrWellFormed(ComputeOp op) {
     }
   }
 
+  llvm::DenseSet<mlir::Attribute> buffer_names;
   for (auto [attr, value] : llvm::zip(storage, op->getResults())) {
     if (attr.isa<UnitAttr>()) continue;
     BufferAttr buffer = attr.dyn_cast<BufferAttr>();
@@ -184,6 +185,12 @@ static mlir::LogicalResult VerifyStorageAttrWellFormed(ComputeOp op) {
         buffer.name() != nullptr) {
       return op.emitError() << "buffers must have a name if and only if they "
                                "are stored in memory";
+    }
+
+    if (buffer.name() != nullptr &&
+        !buffer_names.insert(buffer.name()).second) {
+      return op.emitError()
+             << "operation cannot store two results in the same buffer";
     }
 
     if (buffer.layout() == nullptr) continue;
@@ -795,7 +802,32 @@ mlir::LogicalResult VerifyStorages(
   if (!analysis_result.has_value()) return mlir::failure();
   StorageAnalysis analysis = std::move(analysis_result).value();
 
-  // TODO(b/174127497): dependency analysis
+  // Ensure that operation updating a buffers in place use the same layout for
+  // both inputs and outputs.
+  result = program.walk([&](ComputeOp op) -> mlir::WalkResult {
+    for (mlir::Value result : op->getResults()) {
+      const ValueStorage &result_storage = analysis.GetStorage(result);
+      if (result_storage.buffer_name() == nullptr) continue;
+      auto sair_op = cast<SairOp>(op.getOperation());
+      for (ValueOperand operand : sair_op.ValueOperands()) {
+        const ValueStorage &operand_storage =
+            analysis.GetStorage(operand.value());
+        if (operand_storage.buffer_name() != result_storage.buffer_name()) {
+          continue;
+        }
+        ValueStorage mapped_storage =
+            operand_storage.Map(operand, iteration_spaces);
+        if (mapped_storage.layout() != result_storage.layout()) {
+          return op.emitError()
+                 << "in-place update of buffer " << result_storage.buffer_name()
+                 << " must use the same layout in input and output ("
+                 << mapped_storage.layout() << " vs " << result_storage.layout()
+                 << ")";
+        }
+      }
+    }
+    return mlir::success();
+  });
   return mlir::failure(result.wasInterrupted());
 }
 

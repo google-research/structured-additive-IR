@@ -1634,3 +1634,56 @@ func @to_memref_layout(%arg0: f32, %arg1: memref<?x?xf32>) {
   }
   return
 }
+
+// -----
+
+func @two_results_same_buffer() {
+  sair.program {
+    // expected-error @+1 {{operation cannot store two results in the same buffer}}
+    %0, %1 = sair.map attributes {
+      loop_nest = [],
+      storage = [
+        {name = "A", space = "memory", layout = #sair.named_mapping<[] -> ()>},
+        {name = "A", space = "memory", layout = #sair.named_mapping<[] -> ()>}
+      ]
+    } {
+      ^bb0:
+        %c0 = constant 1.0 : f32
+        sair.return %c0, %c0 : f32, f32
+    } : #sair.shape<()>, () -> (f32, f32)
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @inplace_update_different_layout(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.static_range 8 : !sair.range
+    %2 = sair.copy[d0:%1, d1:%1] %0 {
+      loop_nest = [
+        {name = "A", iter = #sair.mapping_expr<d0>},
+        {name = "B", iter = #sair.mapping_expr<d1>}
+      ],
+      storage = [{
+        name = "bufferA", space = "memory",
+        layout = #sair.named_mapping<[d0:"A", d1:"B"] -> (d0, d1)>
+      }]
+    } : !sair.value<d0:range x d1:range, f32>
+    // expected-error @+1 {{in-place update of buffer "bufferA" must use the same layout in input and output}}
+    %3 = sair.copy[d0:%1, d1:%1] %2(d0, d1) {
+      loop_nest = [
+        {name = "C", iter = #sair.mapping_expr<d0>},
+        {name = "D", iter = #sair.mapping_expr<d1>}
+      ],
+      storage = [{
+        name = "bufferA", space = "memory",
+        layout = #sair.named_mapping<[d0:"C", d1:"D"] -> (d1, d0)>
+      }]
+    } : !sair.value<d0:range x d1:range, f32>
+    sair.exit
+  }
+  return
+}
