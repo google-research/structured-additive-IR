@@ -102,3 +102,17 @@ func @to_memref_proj_fby(%arg0: f32, %arg1: memref<f32>) {
   }
   return
 }
+
+// CHECK-LABEL: @propagate_storage
+func @propagate_storage(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.static_range 8 : !sair.range
+    %2 = sair.fby %0 then[d0:%1] %3(d0) : !sair.value<d0:range, f32>
+    // CHECK: sair.copy
+    // CHECK: storage = [{layout = #sair.named_mapping<[] -> ()>, space = "register"}]
+    %3 = sair.copy[d0:%1] %2(d0) : !sair.value<d0:range, f32>
+    sair.exit
+  }
+  return
+}

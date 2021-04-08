@@ -230,30 +230,6 @@ mlir::LogicalResult VerifyRangeOp(mlir::Operation *op) {
   return mlir::success();
 }
 
-bool operator==(const ValueStorage &lhs, const ValueStorage &rhs) {
-  return lhs.space() == rhs.space() && lhs.buffer_name() == rhs.buffer_name() &&
-         lhs.layout() == rhs.layout();
-}
-
-bool operator!=(const ValueStorage &lhs, const ValueStorage &rhs) {
-  return !(lhs == rhs);
-}
-
-ValueStorage ValueStorage::Map(
-    const ValueOperand &operand,
-    const IterationSpaceAnalysis &iteration_spaces) const {
-  MappingAttr layout;
-  if (layout_ != nullptr) {
-    auto from = cast<SairOp>(operand.getOwner());
-    auto to = cast<SairOp>(operand.value().getDefiningOp());
-    MappingAttr mapping = iteration_spaces.TranslateMapping(
-        from, to, operand.Mapping().Resize(to.domain().size()));
-    assert(mapping != nullptr);
-    layout = mapping.Compose(layout_).Canonicalize();
-  }
-  return ValueStorage(space_, buffer_name_, layout);
-}
-
 #include "sair_op_interfaces.cc.inc"
 
 }  // namespace sair

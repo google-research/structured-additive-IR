@@ -1015,6 +1015,11 @@ NamedMappingAttr NamedMappingAttr::get(llvm::ArrayRef<mlir::StringAttr> names,
   assert(names.size() == mapping.UseDomainSize());
   return Base::get(mapping.getContext(), names, mapping);
 }
+NamedMappingAttr NamedMappingAttr::get(llvm::ArrayRef<mlir::StringAttr> names,
+                                       llvm::ArrayRef<MappingExpr> exprs,
+                                       mlir::MLIRContext *context) {
+  return get(names, MappingAttr::get(context, names.size(), exprs));
+}
 
 NamedMappingAttr NamedMappingAttr::GetIdentity(
     mlir::MLIRContext *context, llvm::ArrayRef<mlir::StringAttr> names) {
@@ -1046,6 +1051,10 @@ NamedMappingAttr NamedMappingAttr::DropUnusedDims() const {
       MappingAttr::get(context, new_dim_names.size(), subsitutions)
           .Compose(mapping());
   return NamedMappingAttr::get(new_dim_names, new_mapping);
+}
+
+NamedMappingAttr NamedMappingAttr::Compose(MappingAttr other) const {
+  return NamedMappingAttr::get(names(), mapping().Compose(other));
 }
 
 //===----------------------------------------------------------------------===//

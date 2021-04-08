@@ -444,33 +444,6 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
   }];
 }
 
-def SairValueViewOp : OpInterface<"ValueViewOp"> {
-  let description = [{
-    Operations that manipulate Sair values without touching their storage.
-
-    Value-view operations, as opposed to compute operations, are erased at code
-    generation. They produce new Sair values by changing how the storage is
-    accessed, without touching the storage itself.
-
-    The storage of outputs is automatically infered from inputs. If the
-    operation has multiple inputs, they must have compatible storages. This is
-    enforced by the `InferStorage` method.
-  }];
-
-  let methods = [
-    InterfaceMethod < [{
-      Infers how result value at position `result` is stored. `operand_storage`
-      constains storage information for inputs. If an input storage depends on
-      the storage of the current operation, `nullopt` will be passed instead.
-
-      Returns `std::nullopt` if operand storages are incompatible.}],
-      "std::optional<ValueStorage>", "InferStorage", (ins
-        "int":$result, "const IterationSpace &":$iteration_space,
-        "llvm::ArrayRef<std::optional<ValueStorage>>":$operand_storages
-      )>
-  ];
-}
-
 def SairInferIterationSpaceOp : OpInterface<"InferIterationSpaceOp"> {
   let description = [{
     A Sair operation whose loop nest is infered from the loop nest of an
@@ -521,6 +494,12 @@ def SairFromToMemRefOp : OpInterface<"FromToMemRefOp"> {
                           .GetType()
                           .ElementType()
                           .template cast<mlir::MemRefType>();
+                    }]>,
+    InterfaceMethod<"Mapping from value domain to layout", "MappingAttr",
+                    "Layout", (ins), [{}], [{
+                      return MappingAttr::GetIdentity(
+                                 $_op.getContext(), $_op.memref_domain().size())
+                          .ShiftRight($_op.parallel_domain().size());
                     }]>
   ];
 }

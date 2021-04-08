@@ -1277,11 +1277,35 @@ func @storage_unknown_loop_name(%arg0: f32) {
 
 func @fby_operand_different_storage(%arg0: f32) {
   sair.program {
+    // expected-error @+1 {{conflicting memory spaces: expected "register", got "memory"}}
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range 8 : !sair.range
-    // expected-error @+1 {{operands have different storage}}
     %2 = sair.fby %0 then[d0:%1] %3(d0) : !sair.value<d0:range, f32>
     %3 = sair.copy[d0:%1] %2(d0) {
+      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
+      storage = [{
+        name = "bufferA", space = "memory",
+        layout = #sair.named_mapping<[] -> ()>
+      }]
+    } : !sair.value<d0:range, f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @fby_operand_different_storage2(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.static_range 8 : !sair.range
+    %2 = sair.copy %0 {
+      loop_nest = [],
+      storage = [{space = "register"}]
+    }: !sair.value<(), f32>
+    %3 = sair.fby %2 then[d0:%1] %4(d0) : !sair.value<d0:range, f32>
+    // expected-error @+1 {{conflicting memory spaces: expected "memory", got "register"}}
+    %4 = sair.copy[d0:%1] %3(d0) {
       loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
       storage = [{
         name = "bufferA", space = "memory",
@@ -1500,28 +1524,6 @@ func @buffer_used_before_dimension_def(%arg0: f32, %arg1: index) {
 
 // -----
 
-func @map_reduce_init_result_storages_must_match(%arg0: f32) {
-  sair.program {
-    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    // expected-error @+1 {{initializer and result storages must match}}
-    %1 = sair.map_reduce %0 reduce attributes {
-      loop_nest = [],
-      storage = [{
-        name = "bufferA",
-        space = "memory",
-        layout = #sair.named_mapping<[] -> ()>
-      }]
-    } {
-      ^bb0(%arg1: f32):
-        sair.return %arg1 : f32
-    } : #sair.shape<()>, () -> (f32)
-    sair.exit
-  }
-  return
-}
-
-// -----
-
 func @placeholder_loop_nest_unspecified(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -1590,18 +1592,44 @@ func @buffer_used_before_def(%arg0: f32, %arg1: memref<f32>) {
 
 // -----
 
-func @to_memref_operand_storage(%arg0: f32, %arg1: memref<f32>) {
+func @to_memref_buffer_name(%arg0: f32, %arg1: memref<f32>) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.from_scalar %arg1 : !sair.value<(), memref<f32>>
+    // expected-error @+1 {{conflicting buffer names: expected "bufferB", got "bufferA"}}
     %2 = sair.copy %0 {
       loop_nest = [],
       storage = [{name = "bufferA", space = "memory", layout = #sair.named_mapping<[] -> ()>}]
     } : !sair.value<(), f32>
-    // expected-error @+1 {{invalid operand storage}}
     sair.to_memref %1 memref %2 {
       buffer_name = "bufferB"
     } : #sair.shape<()>, memref<f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @to_memref_layout(%arg0: f32, %arg1: memref<?x?xf32>) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.from_scalar %arg1 : !sair.value<(), memref<?x?xf32>>
+    %2 = sair.static_range 8 : !sair.range
+    // expected-error @+1 {{conflicting layouts: expected #sair.mapping<2 : d1, d0>, got #sair.mapping<2 : d0, d1>}}
+    %3 = sair.copy[d0:%2, d1:%2] %0 {
+      loop_nest = [
+        {name = "A", iter = #sair.mapping_expr<d0>},
+        {name = "B", iter = #sair.mapping_expr<d1>}
+      ],
+      storage = [{
+        name = "bufferA", space = "memory",
+        layout = #sair.named_mapping<[d0:"A", d1:"B"] -> (d0, d1)>
+      }]
+    } : !sair.value<d0:range x d1:range, f32>
+    sair.to_memref %1 memref[d0:%2, d1:%2] %3(d1, d0) {
+      buffer_name = "bufferA"
+    } : #sair.shape<d0:range x d1:range>, memref<?x?xf32>
     sair.exit
   }
   return

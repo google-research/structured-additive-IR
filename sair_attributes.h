@@ -177,6 +177,9 @@ class NamedMappingAttr
   // Constructs an instance of NamedMappingAttr.
   static NamedMappingAttr get(llvm::ArrayRef<mlir::StringAttr> names,
                               MappingAttr mapping);
+  static NamedMappingAttr get(llvm::ArrayRef<mlir::StringAttr> names,
+                              llvm::ArrayRef<MappingExpr> exprs,
+                              mlir::MLIRContext *context);
 
   // Constructs an instance of NamedMappingAttr with an identity mapping.
   static NamedMappingAttr GetIdentity(mlir::MLIRContext *context,
@@ -188,6 +191,9 @@ class NamedMappingAttr
 
   // Drop dimensions from the domain that are unused.
   NamedMappingAttr DropUnusedDims() const;
+
+  // Returns the mapping resulting from applying `this` and then `other`.
+  NamedMappingAttr Compose(MappingAttr other) const;
 };
 
 // The shape of an iteration dimension of a Sair domain.

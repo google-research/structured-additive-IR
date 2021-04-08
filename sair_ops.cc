@@ -1981,54 +1981,6 @@ SairOp SairFreeOp::ReCreateWithNewDomain(
   return llvm::cast<SairOp>(new_op.getOperation());
 }
 
-std::optional<ValueStorage> SairFromScalarOp::InferStorage(
-    int result, const IterationSpace &iteration_space,
-    llvm::ArrayRef<std::optional<ValueStorage>> operand_storages) {
-  assert(result == 0);
-  auto *sair_dialect = getContext()->getLoadedDialect<SairDialect>();
-  auto layout = MappingAttr::get(getContext(), 0, {});
-  return ValueStorage(sair_dialect->register_attr(), nullptr, layout);
-}
-
-std::optional<ValueStorage> SairProjLastOp::InferStorage(
-    int result, const IterationSpace &iteration_space,
-    llvm::ArrayRef<std::optional<ValueStorage>> operand_storages) {
-  assert(result == 0);
-  assert(operand_storages[0].has_value());
-  return operand_storages[0].value();
-}
-
-std::optional<ValueStorage> SairProjAnyOp::InferStorage(
-    int result, const IterationSpace &iteration_space,
-    llvm::ArrayRef<std::optional<ValueStorage>> operand_storages) {
-  assert(result == 0);
-  assert(operand_storages[0].has_value());
-  return operand_storages[0].value();
-}
-
-std::optional<ValueStorage> SairFbyOp::InferStorage(
-    int result, const IterationSpace &iteration_space,
-    llvm::ArrayRef<std::optional<ValueStorage>> operand_storages) {
-  assert(result == 0);
-  assert(operand_storages[0].has_value());
-
-  if (operand_storages[1].has_value() &&
-      *operand_storages[0] != *operand_storages[1]) {
-    return std::nullopt;
-  }
-
-  return *operand_storages[0];
-}
-
-std::optional<ValueStorage> SairFromMemRefOp::InferStorage(
-    int result, const IterationSpace &iteration_space,
-    llvm::ArrayRef<std::optional<ValueStorage>> operand_storages) {
-  auto *sair_dialect = getContext()->getLoadedDialect<SairDialect>();
-  auto layout = MappingAttr::GetIdentity(getContext(), memref_domain().size())
-                    .ShiftRight(parallel_domain().size());
-  return ValueStorage(sair_dialect->memory_attr(), buffer_nameAttr(), layout);
-}
-
 }  // namespace sair
 
 #define GET_OP_CLASSES

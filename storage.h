@@ -109,6 +109,47 @@ class Buffer {
   llvm::SmallVector<std::pair<ComputeOp, int>> reads_;
 };
 
+// Describes how a value is stored. Attributes may be null if the buffer is not
+// yet specified. Merge* methods replace null attributes by a new value or
+// verify that the new value is the same as the existing one if both old and
+// new values are not null.
+class ValueStorage {
+ public:
+  ValueStorage() {}
+  ValueStorage(mlir::StringAttr space, mlir::StringAttr buffer_name,
+               MappingAttr layout)
+      : space_(space), buffer_name_(buffer_name), layout_(layout) {}
+
+  // Memory space the value is stored in. May be null if not yet specified.
+  mlir::StringAttr space() const { return space_; }
+  mlir::LogicalResult MergeSpace(mlir::StringAttr new_space);
+
+  // Name of the buffer where the value is stored, if specified.
+  mlir::StringAttr buffer_name() const { return buffer_name_; }
+  mlir::LogicalResult MergeBufferName(mlir::StringAttr new_name);
+
+  // Mapping from the iteration space of the value to buffer dimensions.
+  MappingAttr layout() const { return layout_; }
+  mlir::LogicalResult MergeLayout(MappingAttr new_layout);
+
+  // Converts a value storage from the domain of the value to the domain of the
+  // operand.
+  ValueStorage Map(const ValueOperand &operand,
+                   const IterationSpaceAnalysis &iteration_spaces) const;
+  // Converts a value storage from the domain of `from` to the domain of `to`
+  // given a mapping from the domain of `to` to the domain of `from`.
+  ValueStorage Map(SairOp from, SairOp to, MappingAttr mapping,
+                   const IterationSpaceAnalysis &iteration_spaces) const;
+
+ private:
+  mlir::StringAttr space_;
+  mlir::StringAttr buffer_name_;
+  MappingAttr layout_;
+};
+
+bool operator==(const ValueStorage &lhs, const ValueStorage &rhs);
+bool operator!=(const ValueStorage &lhs, const ValueStorage &rhs);
+
 // Computes buffers metadata and storage information for each value.
 class StorageAnalysis {
  public:
@@ -145,6 +186,16 @@ class StorageAnalysis {
 
   // Populates the analysis.
   mlir::LogicalResult Init(SairProgramOp program);
+
+  // Fills value_storages_.
+  mlir::LogicalResult ComputeValueStorages(
+      SairProgramOp program, const IterationSpaceAnalysis &iteration_spaces);
+
+  // Sets the storage of a value and propagates the information to other values.
+  // Emits an error if the new storage conflicts with existing storage.
+  mlir::LogicalResult SetStorage(
+      mlir::Value value, ValueStorage storage,
+      const IterationSpaceAnalysis &iteration_spaces);
 
   mlir::MLIRContext *context_;
   int next_buffer_id_ = 0;

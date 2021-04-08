@@ -19,40 +19,6 @@
 
 namespace sair {
 
-// Sort value view so that all predecesors of a value view are visited before
-// the view is visited, except in presence of cycles. This is achieved by doing
-// a reverse post-order traversal.
-static llvm::SmallVector<ValueViewOp, 4> SortValueViews(SairProgramOp program) {
-  llvm::SmallVector<ValueViewOp, 4> sorted;
-  llvm::DenseSet<mlir::Operation *> visited;
-
-  program.walk([&](ValueViewOp op) {
-    llvm::SmallVector<ValueViewOp, 4> queue;
-    if (visited.count(op) > 0) return;
-    queue.push_back(op);
-
-    while (!queue.empty()) {
-      ValueViewOp current = queue.back();
-      for (mlir::Value result : current->getResults()) {
-        for (mlir::Operation *user : result.getUsers()) {
-          auto user_view = dyn_cast<ValueViewOp>(user);
-          if (user_view == nullptr || visited.count(user) > 0) continue;
-          queue.push_back(user_view);
-          visited.insert(user);
-        }
-      }
-
-      // Add to sorted and pop after all children are visited.
-      if (queue.back() != current) continue;
-      queue.pop_back();
-      sorted.push_back(current);
-    }
-  });
-
-  std::reverse(sorted.begin(), sorted.end());
-  return sorted;
-}
-
 Buffer::Buffer(mlir::Type element_type, ComputeOp op, int result,
                const LoopFusionAnalysis &fusion_analysis)
     : loc_(op.getLoc()), element_type_(element_type), import_op_(nullptr) {
@@ -220,12 +186,12 @@ static mlir::LogicalResult VerifyStorageAttrWellFormed(ComputeOp op) {
                                "are stored in memory";
     }
 
+    if (buffer.layout() == nullptr) continue;
+
     if (buffer.space() == sair_dialect->register_attr() &&
         !buffer.layout().mapping().empty()) {
       return op.emitError() << "only 0D buffers can be stored in registers";
     }
-
-    if (buffer.layout() == nullptr) continue;
 
     for (mlir::StringAttr loop_name : buffer.layout().names()) {
       if (!loop_names.contains(loop_name)) {
@@ -237,26 +203,25 @@ static mlir::LogicalResult VerifyStorageAttrWellFormed(ComputeOp op) {
   return mlir::success();
 }
 
-// Returns a mapping from the loop nest of `op` to the loops indexed by
+// Returns a mapping from the iteration space of `op` to the loops indexed by
 // `buffer_attr`.
-static MappingAttr LoopsToIndexedLoopsMapping(ComputeOp op, BufferAttr buffer) {
+static MappingAttr IterSpaceToIndexedLoopsMapping(
+    ComputeOp op, BufferAttr buffer,
+    const IterationSpaceAnalysis &iteration_spaces) {
   mlir::MLIRContext *context = op.getContext();
   auto none_expr = MappingNoneExpr::get(context);
-  auto loop_nest = op.LoopNestLoops();
+  const IterationSpace &iter_space = iteration_spaces.Get(op.getOperation());
 
   llvm::SmallVector<MappingExpr> loops_to_indexed_loops_exprs(
       buffer.layout().mapping().UseDomainSize(), none_expr);
   for (auto p : llvm::enumerate(buffer.layout().names())) {
-    auto it = llvm::find_if(loop_nest, [&](mlir::Attribute attr) {
-      auto loop = attr.cast<LoopAttr>();
-      return loop.name() == p.value();
-    });
-    assert(it != loop_nest.end());
-    int pos = std::distance(loop_nest.begin(), it);
+    auto it = llvm::find(iter_space.loop_names(), p.value());
+    assert(it != iter_space.loop_names().end());
+    int pos = std::distance(iter_space.loop_names().begin(), it);
     loops_to_indexed_loops_exprs[p.index()] = MappingDimExpr::get(pos, context);
   }
 
-  return MappingAttr::get(context, loop_nest.size(),
+  return MappingAttr::get(context, iter_space.mapping().size(),
                           loops_to_indexed_loops_exprs);
 }
 
@@ -575,7 +540,7 @@ static mlir::LogicalResult ComputeBuffersShape(
 
       // Unify layouts.
       MappingAttr loops_to_indexed_loops =
-          LoopsToIndexedLoopsMapping(op, buffer_attr);
+          IterSpaceToIndexedLoopsMapping(op, buffer_attr, iteration_spaces);
       if (mlir::failed(UnifyBufferShape(op, buffer_attr, loop_nest,
                                         loops_to_indexed_loops, fusion_analysis,
                                         buffer))) {
@@ -603,47 +568,68 @@ static mlir::LogicalResult ComputeBuffersShape(
 }
 
 // Computes how values are stored and stores the result into `value_storages`.
-static mlir::LogicalResult ComputeValueStorages(
-    SairProgramOp program, const IterationSpaceAnalysis &iteration_spaces,
-    llvm::DenseMap<mlir::Value, ValueStorage> &value_storages) {
-  // Compute value storages.
-  program.walk([&](ComputeOp op) {
+mlir::LogicalResult StorageAnalysis::ComputeValueStorages(
+    SairProgramOp program, const IterationSpaceAnalysis &iteration_spaces) {
+  mlir::MLIRContext *context = program.getContext();
+  auto *sair_dialect = context->getLoadedDialect<SairDialect>();
+  mlir::StringAttr memory_space = sair_dialect->memory_attr();
+
+  // Initialize storage information from compute operations.
+  auto result = program.walk([&](ComputeOp op) -> mlir::WalkResult {
     for (int i = 0, e = op->getNumResults(); i < e; ++i) {
-      ValueStorage &value_storage = value_storages[op->getResult(i)];
       BufferAttr buffer = op.Storage(i);
       if (buffer == nullptr) continue;
       MappingAttr layout;
       if (buffer.layout() != nullptr) {
-        layout = LoopsToIndexedLoopsMapping(op, buffer)
+        layout = IterSpaceToIndexedLoopsMapping(op, buffer, iteration_spaces)
                      .Compose(buffer.layout().mapping());
       }
-      value_storage = ValueStorage(buffer.space(), buffer.name(), layout);
+      ValueStorage storage(buffer.space(), buffer.name(), layout);
+      if (mlir::failed(
+              SetStorage(op->getResult(i), storage, iteration_spaces))) {
+        return mlir::failure();
+      }
+    }
+    return mlir::success();
+  });
+  if (result.wasInterrupted()) return mlir::failure();
+
+  // Initialize from from_memref operations.
+  result = program.walk([&](SairFromMemRefOp op) -> mlir::WalkResult {
+    const IterationSpace &iter_space = iteration_spaces.Get(op);
+    MappingAttr layout = iter_space.mapping().Inverse().Compose(op.Layout());
+    ValueStorage storage(memory_space, op.buffer_nameAttr(), layout);
+    return SetStorage(op.result(), storage, iteration_spaces);
+  });
+  if (result.wasInterrupted()) return mlir::failure();
+
+  // Initialize from from_scalar operations.
+  result = program.walk([&](SairFromScalarOp op) -> mlir::WalkResult {
+    auto layout = MappingAttr::get(context, 0, {});
+    ValueStorage storage(sair_dialect->register_attr(), nullptr, layout);
+    return SetStorage(op.result(), storage, iteration_spaces);
+  });
+  if (result.wasInterrupted()) return mlir::failure();
+
+  // Initialize from to_memref operations.
+  result = program.walk([&](SairToMemRefOp op) -> mlir::WalkResult {
+    const IterationSpace &iter_space = iteration_spaces.Get(op);
+    MappingAttr layout = iter_space.mapping().Inverse().Compose(op.Layout());
+    ValueStorage operand_storage(memory_space, op.buffer_nameAttr(), layout);
+    mlir::Operation *defining_op = op.value().getDefiningOp();
+    ValueStorage storage = operand_storage.Map(
+        op, defining_op, op.Value().Mapping().Inverse(), iteration_spaces);
+    return SetStorage(op.value(), storage, iteration_spaces);
+  });
+  if (result.wasInterrupted()) return mlir::failure();
+
+  // Ensure all sair values have an entry.
+  program.walk([&](SairOp op) {
+    for (mlir::Value result : op->getResults()) {
+      value_storages_.FindAndConstruct(result);
     }
   });
 
-  for (ValueViewOp op : SortValueViews(program)) {
-    auto sair_op = cast<SairOp>(op.getOperation());
-    const IterationSpace &iteration_space = iteration_spaces.Get(sair_op);
-    llvm::SmallVector<std::optional<ValueStorage>> operand_storages;
-    operand_storages.reserve(sair_op.ValueOperands().size());
-
-    for (ValueOperand operand : sair_op.ValueOperands()) {
-      auto it = value_storages.find(operand.value());
-      if (it == value_storages.end()) {
-        operand_storages.push_back(std::nullopt);
-      } else {
-        operand_storages.push_back(it->second.Map(operand, iteration_spaces));
-      }
-    }
-
-    for (int i = 0, e = op->getNumResults(); i < e; ++i) {
-      auto result_opt = op.InferStorage(i, iteration_space, operand_storages);
-      if (!result_opt.has_value()) {
-        return op.emitError() << "operands have different storage";
-      }
-      value_storages[op->getResult(i)] = result_opt.value();
-    }
-  }
   return mlir::success();
 }
 
@@ -663,8 +649,7 @@ mlir::LogicalResult StorageAnalysis::Init(SairProgramOp program) {
     return mlir::failure();
   }
 
-  if (mlir::failed(
-          ComputeValueStorages(program, iteration_spaces, value_storages_))) {
+  if (mlir::failed(ComputeValueStorages(program, iteration_spaces))) {
     return mlir::failure();
   }
 
@@ -710,6 +695,93 @@ mlir::StringAttr StorageAnalysis::GetFreshBufferName() {
   return attr;
 }
 
+mlir::LogicalResult StorageAnalysis::SetStorage(
+    mlir::Value value, ValueStorage storage,
+    const IterationSpaceAnalysis &iteration_spaces) {
+  llvm::SmallVector<mlir::Value> work_list;
+
+  // Merge storage information for a value with existing information. Fails and
+  // emits an error in case of conflicts.
+  auto merge_storage = [&](mlir::Value value,
+                           ValueStorage new_storage) -> mlir::LogicalResult {
+    ValueStorage &storage = value_storages_[value];
+    if (new_storage == storage) return mlir::success();
+    if (mlir::failed(storage.MergeSpace(new_storage.space()))) {
+      return value.getDefiningOp()->emitError()
+             << "conflicting memory spaces: expected " << new_storage.space()
+             << ", got " << storage.space();
+    }
+    if (mlir::failed(storage.MergeBufferName(new_storage.buffer_name()))) {
+      return value.getDefiningOp()->emitError()
+             << "conflicting buffer names: expected "
+             << new_storage.buffer_name() << ", got " << storage.buffer_name();
+    }
+    if (mlir::failed(storage.MergeLayout(new_storage.layout()))) {
+      return value.getDefiningOp()->emitError()
+             << "conflicting layouts: expected " << new_storage.layout()
+             << ", got " << storage.layout();
+    }
+
+    work_list.push_back(value);
+    return mlir::success();
+  };
+
+  if (mlir::failed(merge_storage(value, storage))) return mlir::failure();
+
+  // Propagate storage information.
+  while (!work_list.empty()) {
+    mlir::Value value = work_list.pop_back_val();
+    ValueStorage storage = value_storages_[value];
+
+    // Forward propagation.
+    for (mlir::OpOperand &mlir_operand : value.getUses()) {
+      mlir::Operation *user = mlir_operand.getOwner();
+      ValueOperand operand(&mlir_operand);
+      int result;
+      if (isa<SairProjAnyOp, SairProjLastOp, SairFbyOp>(user)) {
+        result = 0;
+      } else if (auto map_reduce = dyn_cast<SairMapReduceOp>(user)) {
+        if (operand.position() >= map_reduce.Inits().size()) continue;
+        result = operand.position();
+      } else {
+        continue;
+      }
+      ValueStorage new_storage = storage.Map(operand, iteration_spaces);
+      if (mlir::failed(merge_storage(user->getResult(result), new_storage))) {
+        return mlir::failure();
+      }
+    }
+
+    // Backward propagation.
+    mlir::Operation *defining_op = value.getDefiningOp();
+
+    // Handle map-reduce separately.
+    if (auto map_reduce = dyn_cast<SairMapReduceOp>(defining_op)) {
+      int pos = value.cast<OpResult>().getResultNumber();
+      ValueOperand operand = map_reduce.Inits()[pos];
+      ValueStorage new_storage =
+          storage.Map(defining_op, operand.value().getDefiningOp(),
+                      operand.Mapping().Inverse(), iteration_spaces);
+      if (mlir::failed(merge_storage(operand.value(), new_storage))) {
+        return mlir::failure();
+      }
+      continue;
+    }
+
+    if (!isa<SairProjAnyOp, SairProjLastOp, SairFbyOp>(defining_op)) continue;
+    for (ValueOperand operand : cast<SairOp>(defining_op).ValueOperands()) {
+      ValueStorage new_storage =
+          storage.Map(defining_op, operand.value().getDefiningOp(),
+                      operand.Mapping().Inverse(), iteration_spaces);
+      if (mlir::failed(merge_storage(operand.value(), new_storage))) {
+        return mlir::failure();
+      }
+    }
+  }
+
+  return mlir::success();
+}
+
 mlir::LogicalResult VerifyStorages(
     SairProgramOp program, const IterationSpaceAnalysis &iteration_spaces) {
   // Check storage attributes are well-formed.
@@ -723,39 +795,6 @@ mlir::LogicalResult VerifyStorages(
   if (!analysis_result.has_value()) return mlir::failure();
   StorageAnalysis analysis = std::move(analysis_result).value();
 
-  // Ensure that map-reduce arguments are compatible.
-  result = program.walk([&](SairMapReduceOp op) -> mlir::WalkResult {
-    for (ValueOperand input : op.Inits()) {
-      ValueStorage input_storage =
-          analysis.GetStorage(input.value()).Map(input, iteration_spaces);
-      const ValueStorage &result_storage =
-          analysis.GetStorage(op.getResult(input.position()));
-      if (input_storage != result_storage) {
-        return op.emitError() << "initializer and result storages must match";
-      }
-    }
-    return mlir::success();
-  });
-  if (result.wasInterrupted()) return mlir::failure();
-
-  // Ensure that sair.to_memref operands have the right storage.
-  result = program.walk([&](SairToMemRefOp op) -> mlir::WalkResult {
-    ValueStorage input_storage =
-        analysis.GetStorage(op.value()).Map(op.Value(), iteration_spaces);
-    // Case where the input storage is left unspecified.
-    if (input_storage.space() == nullptr) return mlir::success();
-
-    auto expected_layout =
-        MappingAttr::GetIdentity(op.getContext(), op.memref_domain().size())
-            .ShiftRight(op.parallel_domain().size());
-    if (input_storage.buffer_name() == nullptr ||
-        input_storage.buffer_name().getValue() != op.buffer_name() ||
-        input_storage.layout() != expected_layout) {
-      return op.emitError() << "invalid operand storage";
-    }
-    return mlir::success();
-  });
-
   // TODO(b/174127497): dependency analysis
   return mlir::failure(result.wasInterrupted());
 }
@@ -766,6 +805,57 @@ BufferAttr GetRegister0DBuffer(mlir::MLIRContext *context) {
                          /*name=*/nullptr,
                          /*layout=*/NamedMappingAttr::GetIdentity(context, {}),
                          context);
+}
+
+bool operator==(const ValueStorage &lhs, const ValueStorage &rhs) {
+  return lhs.space() == rhs.space() && lhs.buffer_name() == rhs.buffer_name() &&
+         lhs.layout() == rhs.layout();
+}
+
+bool operator!=(const ValueStorage &lhs, const ValueStorage &rhs) {
+  return !(lhs == rhs);
+}
+
+mlir::LogicalResult ValueStorage::MergeSpace(mlir::StringAttr new_space) {
+  if (new_space == nullptr) return mlir::success();
+  if (space_ == nullptr) space_ = new_space;
+  return mlir::success(space_ == new_space);
+}
+
+mlir::LogicalResult ValueStorage::MergeBufferName(mlir::StringAttr new_name) {
+  if (new_name == nullptr) return mlir::success();
+  if (buffer_name_ == nullptr) buffer_name_ = new_name;
+  return mlir::success(buffer_name_ == new_name);
+}
+
+mlir::LogicalResult ValueStorage::MergeLayout(MappingAttr new_layout) {
+  if (new_layout == nullptr) return mlir::success();
+  if (layout_ == nullptr) layout_ = new_layout;
+  return mlir::success(layout_ == new_layout);
+}
+
+ValueStorage ValueStorage::Map(
+    const ValueOperand &operand,
+    const IterationSpaceAnalysis &iteration_spaces) const {
+  return Map(operand.value().getDefiningOp(), operand.getOwner(),
+             operand.Mapping(), iteration_spaces);
+}
+
+ValueStorage ValueStorage::Map(
+    SairOp from, SairOp to, MappingAttr mapping,
+    const IterationSpaceAnalysis &iteration_spaces) const {
+  MappingAttr layout;
+  if (layout_ != nullptr) {
+    // We need to resize mapping to match operations domain size as values may
+    // have a smaller rank than the operations that creates them.
+    MappingAttr domain_mapping = mapping.Resize(from.domain().size())
+                                     .ResizeUseDomain(to.domain().size());
+    MappingAttr iter_space_mapping =
+        iteration_spaces.TranslateMapping(to, from, domain_mapping);
+    assert(iter_space_mapping != nullptr);
+    layout = iter_space_mapping.Compose(layout_).Canonicalize();
+  }
+  return ValueStorage(space_, buffer_name_, layout);
 }
 
 }  // namespace sair

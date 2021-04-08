@@ -171,10 +171,7 @@ def SairCopyOp : SairOp<"copy", [
   }];
 }
 
-def SairFromScalarOp : SairOp<"from_scalar", [
-      NoSideEffect,
-      DeclareOpInterfaceMethods<SairValueViewOp>
-    ]> {
+def SairFromScalarOp : SairOp<"from_scalar", [NoSideEffect]> {
   let description = [{Converts an SSA value into a 0-dimensional Sair value.}];
 
   let arguments = (ins AnyType:$value);
@@ -197,7 +194,6 @@ def SairFromScalarOp : SairOp<"from_scalar", [
 
 def SairFromMemRefOp : SairOp<"from_memref", [
     AttrSizedOperandSegments,
-    DeclareOpInterfaceMethods<SairValueViewOp>,
     SairFromToMemRefOp,
     NoSideEffect,
     SairInferIterationSpaceOp]> {
@@ -578,7 +574,6 @@ def SairMapReduceOp : SairOp<"map_reduce", [
 
 class SairProjectionOp<string name> : SairOp<name, [
     AttrSizedOperandSegments,
-    DeclareOpInterfaceMethods<SairValueViewOp>,
     NoSideEffect,
     SairInferIterationSpaceOp,
     SairSameElementType<"value", "result">]> {
@@ -648,7 +643,6 @@ def SairProjLastOp : SairProjectionOp<"proj_last"> {
 
 def SairFbyOp : SairOp<"fby", [
     AttrSizedOperandSegments,
-    DeclareOpInterfaceMethods<SairValueViewOp>,
     NoSideEffect,
     SairInferIterationSpaceOp,
     SairSameElementType<"value", "init">,
