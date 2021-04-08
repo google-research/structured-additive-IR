@@ -27,6 +27,13 @@ IterationSpace::IterationSpace(llvm::SmallVector<mlir::StringAttr> loop_names,
   mapping_ = domain_to_loops.Inverse().MakeFullySpecified().Inverse();
 }
 
+int IterationSpace::NumCommonLoops(const IterationSpace &other) const {
+  llvm::ArrayRef<mlir::StringAttr> other_loops = other.loop_names();
+  auto it_pair = std::mismatch(loop_names().begin(), loop_names().end(),
+                               other_loops.begin(), other_loops.end());
+  return std::distance(loop_names().begin(), it_pair.first);
+}
+
 // Infers the iteration space for the current operation from iteration space of
 // the given operand. Trims inner loops so than only loops iterating on
 // dimensions mapped by the mapping remain. The resulting loop nest may
@@ -143,14 +150,7 @@ MappingAttr IterationSpaceAnalysis::TryTranslateMapping(
                                   .Compose(to_space.mapping())
                                   .Canonicalize();
 
-  int num_common_loops = 0;
-  while (num_common_loops < from_space.num_loops() &&
-         num_common_loops < to_space.num_loops() &&
-         from_space.loop_names()[num_common_loops] ==
-             to_space.loop_names()[num_common_loops]) {
-    ++num_common_loops;
-  }
-
+  int num_common_loops = from_space.NumCommonLoops(to_space);
   auto common_loops_mapping = MappingAttr::GetIdentity(
       mapping.getContext(), num_common_loops, from_space.mapping().size());
   MappingAttr loops_mapping =

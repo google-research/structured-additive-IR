@@ -47,15 +47,7 @@ class LowerProjAny : public LowerProjAnyPassBase<LowerProjAny> {
                  << "operation iteration space not normalized";
         }
 
-        // Compute number of common loops between source and user.
-        llvm::ArrayRef<mlir::StringAttr> source_loops =
-            source_space.loop_names();
-        llvm::ArrayRef<mlir::StringAttr> user_loops = user_space.loop_names();
-        auto it_pair = std::mismatch(source_loops.begin(), source_loops.end(),
-                                     user_loops.begin(), user_loops.end());
-        int num_common_loops =
-            std::distance(source_loops.begin(), it_pair.first);
-
+        int num_common_loops = source_space.NumCommonLoops(user_space);
         auto loops_mapping =
             MappingAttr::GetIdentity(context, num_common_loops);
         auto value_mapping =

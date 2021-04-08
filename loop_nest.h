@@ -60,6 +60,10 @@ class IterationSpace {
   // Mapping from operation domain to loops.
   MappingAttr MappingToLoops() const { return mapping_.Resize(num_loops()); }
 
+  // Returns the number of common loops between this iteration space and
+  // another.
+  int NumCommonLoops(const IterationSpace &other) const;
+
  private:
   llvm::SmallVector<mlir::StringAttr> loop_names_;
   MappingAttr mapping_;
