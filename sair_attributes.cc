@@ -49,6 +49,54 @@ mlir::ValueRange MapArguments::Indices() const {
 }
 
 //===----------------------------------------------------------------------===//
+// MappingExpr
+//===----------------------------------------------------------------------===//
+
+MappingExpr MappingExpr::SubstituteDims(
+    mlir::ArrayRef<MappingExpr> exprs) const {
+  return Map([&](MappingExpr sub_expr) -> MappingExpr {
+    auto dim_expr = sub_expr.dyn_cast<MappingDimExpr>();
+    if (dim_expr == nullptr) return sub_expr;
+    if (dim_expr.dimension() >= exprs.size()) {
+      return MappingNoneExpr::get(getContext());
+    }
+    return exprs[dim_expr.dimension()];
+  });
+}
+
+llvm::SmallBitVector MappingExpr::DependencyMask(int domain_size) const {
+  llvm::SmallBitVector mask(domain_size);
+  SetDependenciesInMask(mask);
+  return mask;
+}
+
+bool MappingExpr::IsFullySpecified() const {
+  bool is_fully_specified = true;
+  Walk([&](MappingExpr sub_expr) {
+    is_fully_specified &= !sub_expr.isa<MappingNoneExpr>();
+  });
+  return is_fully_specified;
+}
+
+void MappingExpr::SetDependenciesInMask(llvm::SmallBitVector &mask) const {
+  Walk([&](MappingExpr sub_expr) {
+    auto dim_expr = sub_expr.dyn_cast<MappingDimExpr>();
+    if (dim_expr == nullptr) return;
+    mask.set(dim_expr.dimension());
+  });
+}
+
+int MappingExpr::MinDomainSize() const {
+  int min_domain_size = 0;
+  Walk([&](MappingExpr sub_expr) {
+    auto dim_expr = sub_expr.dyn_cast<MappingDimExpr>();
+    if (dim_expr == nullptr) return;
+    min_domain_size = std::max(min_domain_size, dim_expr.dimension() + 1);
+  });
+  return min_domain_size;
+}
+
+//===----------------------------------------------------------------------===//
 // MappingDimExpr
 //===----------------------------------------------------------------------===//
 
@@ -91,12 +139,14 @@ MappingDimExpr MappingDimExpr::get(int dimension, mlir::MLIRContext *context) {
 
 int MappingDimExpr::dimension() const { return getImpl()->dimension(); }
 
-MappingExpr MappingDimExpr::SubstituteDims(
-    mlir::ArrayRef<MappingExpr> exprs) const {
-  if (dimension() >= exprs.size()) {
-    return MappingNoneExpr::get(getContext());
-  }
-  return exprs[dimension()];
+MappingExpr MappingDimExpr::Map(
+    llvm::function_ref<MappingExpr(MappingExpr)> function) const {
+  return function(*this);
+}
+
+void MappingDimExpr::Walk(
+    llvm::function_ref<void(MappingExpr)> function) const {
+  function(*this);
 }
 
 DomainShapeDim MappingDimExpr::AccessedShape(
@@ -159,8 +209,14 @@ MappingNoneExpr MappingNoneExpr::get(mlir::MLIRContext *context) {
   return Base::get(context);
 }
 
-MappingExpr MappingNoneExpr::MakeFullySpecified(int &num_dimensions) const {
-  return MappingDimExpr::get(num_dimensions++, getContext());
+MappingExpr MappingNoneExpr::Map(
+    llvm::function_ref<MappingExpr(MappingExpr)> function) const {
+  return function(*this);
+}
+
+void MappingNoneExpr::Walk(
+    llvm::function_ref<void(MappingExpr)> function) const {
+  function(*this);
 }
 
 //===----------------------------------------------------------------------===//
@@ -220,14 +276,16 @@ llvm::ArrayRef<int> MappingStripeExpr::factors() const {
   return getImpl()->factors();
 }
 
-MappingExpr MappingStripeExpr::MakeFullySpecified(int &num_dimensions) const {
-  return MappingStripeExpr::get(operand().MakeFullySpecified(num_dimensions),
-                                factors());
+MappingExpr MappingStripeExpr::Map(
+    llvm::function_ref<MappingExpr(MappingExpr)> function) const {
+  MappingExpr new_operand = operand().Map(function);
+  return function(MappingStripeExpr::get(new_operand, factors()));
 }
 
-MappingExpr MappingStripeExpr::SubstituteDims(
-    llvm::ArrayRef<MappingExpr> exprs) const {
-  return MappingStripeExpr::get(operand().SubstituteDims(exprs), factors());
+void MappingStripeExpr::Walk(
+    llvm::function_ref<void(MappingExpr)> function) const {
+  operand().Walk(function);
+  function(*this);
 }
 
 MappingExpr MappingStripeExpr::Unify(MappingExpr other_expr) const {
@@ -462,43 +520,17 @@ llvm::ArrayRef<int> MappingUnStripeExpr::factors() const {
   return getImpl()->factors();
 }
 
-bool MappingUnStripeExpr::IsFullySpecified() const {
-  return llvm::all_of(operands(),
-                      [](MappingExpr expr) { return expr.IsFullySpecified(); });
+MappingExpr MappingUnStripeExpr::Map(
+    llvm::function_ref<MappingExpr(MappingExpr)> function) const {
+  auto new_operands = llvm::to_vector<4>(llvm::map_range(
+      operands(), [&](MappingExpr expr) { return expr.Map(function); }));
+  return function(MappingUnStripeExpr::get(new_operands, factors()));
 }
 
-void MappingUnStripeExpr::SetDependenciesInMask(
-    llvm::SmallBitVector &mask) const {
-  for (MappingExpr expr : operands()) {
-    expr.SetDependenciesInMask(mask);
-  }
-}
-
-int MappingUnStripeExpr::MinDomainSize() const {
-  int max = 0;
-  for (MappingExpr expr : operands()) {
-    max = std::max(max, expr.MinDomainSize());
-  }
-  return max;
-}
-
-MappingExpr MappingUnStripeExpr::MakeFullySpecified(int &num_dimensions) const {
-  llvm::SmallVector<MappingExpr, 4> new_exprs;
-  new_exprs.reserve(operands().size());
-  for (MappingExpr expr : operands()) {
-    new_exprs.push_back(expr.MakeFullySpecified(num_dimensions));
-  }
-  return MappingUnStripeExpr::get(new_exprs, factors());
-}
-
-MappingExpr MappingUnStripeExpr::SubstituteDims(
-    llvm::ArrayRef<MappingExpr> exprs) const {
-  llvm::SmallVector<MappingExpr, 4> new_exprs;
-  new_exprs.reserve(operands().size());
-  for (MappingExpr expr : operands()) {
-    new_exprs.push_back(expr.SubstituteDims(exprs));
-  }
-  return MappingUnStripeExpr::get(new_exprs, factors());
+void MappingUnStripeExpr::Walk(
+    llvm::function_ref<void(MappingExpr)> function) const {
+  for (MappingExpr operand : operands()) operand.Walk(function);
+  function(*this);
 }
 
 DomainShapeDim MappingUnStripeExpr::AccessedShape(
@@ -841,7 +873,11 @@ MappingAttr MappingAttr::MakeFullySpecified() const {
   llvm::SmallVector<MappingExpr, 4> new_exprs;
   new_exprs.reserve(size());
   for (MappingExpr expr : Dimensions()) {
-    new_exprs.push_back(expr.MakeFullySpecified(num_dimensions));
+    MappingExpr new_expr = expr.Map([&](MappingExpr sub_expr) -> MappingExpr {
+      if (!sub_expr.isa<MappingNoneExpr>()) return sub_expr;
+      return MappingDimExpr::get(num_dimensions++, getContext());
+    });
+    new_exprs.push_back(new_expr);
   }
   return MappingAttr::get(getContext(), num_dimensions, new_exprs);
 }

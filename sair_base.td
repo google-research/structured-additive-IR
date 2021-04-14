@@ -45,35 +45,15 @@ def MappingExpr : AttrInterface<"MappingExpr"> {
 
   let methods = [
     InterfaceMethod<
-      "Indicates if the expression does not contain `none`",
-      "bool", "IsFullySpecified"
+      [{Applies a function to all sub-expressions and constructs a result in
+        post-order}],
+      "MappingExpr", "Map",
+      (ins "llvm::function_ref<MappingExpr(MappingExpr)>":$function)
     >,
     InterfaceMethod<
-      [{Replaces occurences of `none` by freshly allocated dimensions. Starts
-        allocating at `num_dimensions` and increase it each time a new dimension
-        is allocated.}],
-      "MappingExpr", "MakeFullySpecified", (ins "int&":$num_dimensions)
-    >,
-    InterfaceMethod<
-      "Sets the dimensions referenced by the expression in `mask`",
-      "void", "SetDependenciesInMask", (ins "llvm::SmallBitVector&":$mask)
-    >,
-    InterfaceMethod<
-      "Returns a mask of the dimensions referenced by the expression.",
-      "llvm::SmallBitVector", "DependencyMask", (ins "int":$domain_size), [{
-        llvm::SmallBitVector mask(domain_size);
-        $_attr.SetDependenciesInMask(mask);
-        return mask;
-      }]
-    >,
-    InterfaceMethod<
-      "Returns the minimal domain size for the expression to be valid.",
-      "int", "MinDomainSize"
-    >,
-    InterfaceMethod<
-      "Substitutes dimension expressions by the given expressions",
-      "MappingExpr", "SubstituteDims",
-      (ins "mlir::ArrayRef<MappingExpr>":$exprs)
+      "Applies a function to all sub-expressions in post-order.",
+      "void", "Walk",
+      (ins "llvm::function_ref<void(MappingExpr)>":$function)
     >,
     InterfaceMethod<
       [{Returns the shape of the dimension accessed by the given expression.
@@ -147,6 +127,23 @@ def MappingExpr : AttrInterface<"MappingExpr"> {
            "MapArguments&":$map_arguments)
     >
   ];
+
+  let extraClassDeclaration = [{
+    // Substitute dimensions by the given expressions.
+    MappingExpr SubstituteDims(llvm::ArrayRef<MappingExpr> exprs) const;
+
+    // Return a mask of the dimensions appearing in the expression.
+    llvm::SmallBitVector DependencyMask(int domain_size) const;
+
+    // Sets the dimensions appearing in the expression in `mask`.
+    void SetDependenciesInMask(llvm::SmallBitVector& mask) const;
+
+    // Returns `true` if no subexpression is equal to `none`.
+    bool IsFullySpecified() const;
+
+    // Returns the minimal domain size for the expression to be valid.
+    int MinDomainSize() const;
+  }];
 }
 
 // Tests if an attribute is an MappingAttr.

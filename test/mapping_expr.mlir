@@ -34,11 +34,6 @@ module {
   expr = #sair.mapping_expr<unstripe(stripe(d2, [4]), none, [2, 1])>
 } : () -> ()
 
-// CHECK: "test.make_fully_specified"() {result = #sair.mapping_expr<unstripe(stripe(d1, [4]), d0, d2, [4, 2, 1])>}
-"test.make_fully_specified"() {
-  expr = #sair.mapping_expr<unstripe(stripe(none, [4]), d0, none, [4, 2, 1])>
-} : () -> ()
-
 // CHECK: "test.substitute_dims"() {result = #sair.mapping_expr<unstripe(stripe(d1, [4]), none, [4, 1])>}
 "test.substitute_dims"() {
   expr = #sair.mapping_expr<unstripe(stripe(d0, [4]), none, [4, 1])>,

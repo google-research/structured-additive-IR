@@ -357,15 +357,9 @@ class MappingDimExpr
   // Returns the dimensions represented by the expression
   int dimension() const;
 
-  void SetDependenciesInMask(llvm::SmallBitVector &mask) const {
-    mask.set(dimension());
-  }
+  MappingExpr Map(llvm::function_ref<MappingExpr(MappingExpr)> function) const;
 
-  bool IsFullySpecified() const { return true; }
-
-  MappingExpr MakeFullySpecified(int &num_dimensions) const { return *this; }
-
-  MappingExpr SubstituteDims(mlir::ArrayRef<MappingExpr> exprs) const;
+  void Walk(llvm::function_ref<void(MappingExpr)> function) const;
 
   DomainShapeDim AccessedShape(llvm::ArrayRef<DomainShapeDim> accessing_shape,
                                MappingAttr inverted_mapping) const;
@@ -379,8 +373,6 @@ class MappingDimExpr
   mlir::LogicalResult UnificationConstraints(
       MappingExpr other_expr,
       llvm::MutableArrayRef<MappingExpr> constraints) const;
-
-  int MinDomainSize() const { return dimension() + 1; }
 
   MappingExpr FindInInverse(llvm::ArrayRef<MappingExpr> inverse) const {
     return inverse[dimension()];
@@ -410,15 +402,9 @@ class MappingNoneExpr
 
   static MappingNoneExpr get(mlir::MLIRContext *context);
 
-  bool IsFullySpecified() const { return false; }
+  MappingExpr Map(llvm::function_ref<MappingExpr(MappingExpr)> function) const;
 
-  MappingExpr MakeFullySpecified(int &num_dimensions) const;
-
-  void SetDependenciesInMask(llvm::SmallBitVector &mask) const {}
-
-  MappingExpr SubstituteDims(mlir::ArrayRef<MappingExpr> exprs) const {
-    return *this;
-  }
+  void Walk(llvm::function_ref<void(MappingExpr)> function) const;
 
   DomainShapeDim AccessedShape(llvm::ArrayRef<DomainShapeDim> accessing_shape,
                                MappingAttr inversed_mapping) const {
@@ -439,8 +425,6 @@ class MappingNoneExpr
       llvm::MutableArrayRef<MappingExpr> constraints) const {
     return mlir::success();
   }
-
-  int MinDomainSize() const { return 0; }
 
   MappingExpr FindInInverse(llvm::ArrayRef<MappingExpr> inverse) const {
     llvm_unreachable(
@@ -486,17 +470,9 @@ class MappingStripeExpr
   // Cannot be empty.
   llvm::ArrayRef<int> factors() const;
 
-  bool IsFullySpecified() const { return operand().IsFullySpecified(); }
+  MappingExpr Map(llvm::function_ref<MappingExpr(MappingExpr)> function) const;
 
-  MappingExpr MakeFullySpecified(int &num_dimensions) const;
-
-  int MinDomainSize() const { return operand().MinDomainSize(); }
-
-  void SetDependenciesInMask(llvm::SmallBitVector &mask) const {
-    operand().SetDependenciesInMask(mask);
-  }
-
-  MappingExpr SubstituteDims(mlir::ArrayRef<MappingExpr> exprs) const;
+  void Walk(llvm::function_ref<void(MappingExpr)> function) const;
 
   DomainShapeDim AccessedShape(llvm::ArrayRef<DomainShapeDim> accessing_shape,
                                MappingAttr inverted_mapping) const;
@@ -546,15 +522,9 @@ class MappingUnStripeExpr
   // Stripe expression sizes.
   llvm::ArrayRef<int> factors() const;
 
-  bool IsFullySpecified() const;
+  MappingExpr Map(llvm::function_ref<MappingExpr(MappingExpr)> function) const;
 
-  MappingExpr MakeFullySpecified(int &num_dimensions) const;
-
-  void SetDependenciesInMask(llvm::SmallBitVector &mask) const;
-
-  int MinDomainSize() const;
-
-  MappingExpr SubstituteDims(mlir::ArrayRef<MappingExpr> exprs) const;
+  void Walk(llvm::function_ref<void(MappingExpr)> function) const;
 
   DomainShapeDim AccessedShape(llvm::ArrayRef<DomainShapeDim> accessing_shape,
                                MappingAttr inverted_mapping) const;

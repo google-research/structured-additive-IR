@@ -62,9 +62,7 @@ void Buffer::TrimLoopNest(int new_size) {
   llvm::SmallBitVector used_dimensions(domain_.size());
   used_dimensions |= loop_nest_mapping_.DependencyMask();
   if (layout_.has_value()) {
-    for (MappingExpr layout_expr : layout_.value()) {
-      layout_expr.SetDependenciesInMask(used_dimensions);
-    }
+    used_dimensions |= layout_.value().DependencyMask();
   }
 
   // Trim domain from unused dimensions.

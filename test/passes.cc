@@ -57,9 +57,6 @@ class TestMappingExprsPass
     mlir::Builder builder(&getContext());
     if (op_name == "is_fully_specified") {
       return builder.getBoolAttr(expr.IsFullySpecified());
-    } else if (op_name == "make_fully_specified") {
-      int num_dimensions = expr.MinDomainSize();
-      return expr.MakeFullySpecified(num_dimensions);
     } else if (op_name == "substitute_dims") {
       return expr.SubstituteDims(
           GetAttrVector<MappingExpr>("substitutions", op));
