@@ -1687,3 +1687,47 @@ func @inplace_update_different_layout(%arg0: f32) {
   }
   return
 }
+
+// -----
+
+func @unknown_operand_mapping(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.static_range 8 : !sair.range
+    %2 = sair.copy[d0:%1] %0 : !sair.value<d0:range, f32>
+    // expected-error @+1 {{expected mapping to a concrete element, got 'none' or '?'}}
+    %3 = sair.copy %2(?) : !sair.value<(), f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @unknown_loop_nest(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    // expected-error @+1 {{loop iterators cannot contain `?` expressions}}
+    %2 = sair.copy %0 {
+      loop_nest = [{name = "A", iter = #sair.mapping_expr<?>}]
+    } : !sair.value<(), f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @unknown_layout(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    // expected-error @+1 {{layouts cannot contain `?` expressions}}
+    %2 = sair.copy %0 {
+      loop_nest = [],
+      storage = [{name = "A", space = "memory",
+                  layout = #sair.named_mapping<[] -> (?)>}]
+    } : !sair.value<(), f32>
+    sair.exit
+  }
+  return
+}

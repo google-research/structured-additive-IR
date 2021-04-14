@@ -112,6 +112,10 @@ class MappingAttr
   bool HasNoneExprs() const;
   bool IsSurjective() const { return !HasNoneExprs(); }
 
+  // HasUnknownExprs indicates if any sub-expression is `?`.
+  bool HasUnknownExprs() const;
+  bool IsFullySpecified() const { return !HasUnknownExprs(); }
+
   // Replaces `none` expressions by new dimensions to make the mapping
   // surjective.
   MappingAttr MakeSurjective() const;
@@ -390,8 +394,7 @@ class MappingDimExpr
                                      MapArguments &map_arguments) const;
 };
 
-// Mapping expression that maps to no dimensions. This used when
-// computing dependencies and is invalid in types and operations.
+// Mapping expression that maps to no dimensions.
 class MappingNoneExpr
     : public mlir::Attribute::AttrBase<MappingNoneExpr, mlir::Attribute,
                                        mlir::AttributeStorage,
@@ -419,7 +422,7 @@ class MappingNoneExpr
     return mlir::success();
   }
 
-  MappingExpr Unify(MappingExpr other_expr) const { return other_expr; }
+  MappingExpr Unify(MappingExpr other_expr) const;
 
   mlir::LogicalResult UnificationConstraints(
       MappingExpr other_expr,
@@ -428,13 +431,11 @@ class MappingNoneExpr
   }
 
   MappingExpr FindInInverse(llvm::ArrayRef<MappingExpr> inverse) const {
-    llvm_unreachable(
-        "cannot call `FindInInverse` on partially-specified expressions");
+    llvm_unreachable("cannot call `FindInInverse` on none expressions");
   }
 
   mlir::AffineExpr AsAffineExpr() const {
-    llvm_unreachable(
-        "cannot call `AsAffineExpr` on partially specified expressions");
+    llvm_unreachable("cannot call `AsAffineExpr` on none expressions");
   }
 
   MappingExpr Canonicalize() const { return *this; }
@@ -444,8 +445,61 @@ class MappingNoneExpr
                                      MappingAttr inverse_mapping,
                                      mlir::OpBuilder &builder,
                                      MapArguments &map_arguments) const {
-    llvm_unreachable(
-        "cannot call `GetRangeParameters` on partially specified expressions");
+    llvm_unreachable("cannot call `GetRangeParameters` on none expressions");
+  }
+};
+
+// To be specified mapping expression.
+class MappingUnknownExpr
+    : public mlir::Attribute::AttrBase<MappingUnknownExpr, mlir::Attribute,
+                                       mlir::AttributeStorage,
+                                       MappingExpr::Trait> {
+ public:
+  using Base::Base;
+
+  static constexpr llvm::StringRef kAttrName = "?";
+
+  static MappingUnknownExpr get(mlir::MLIRContext *context);
+
+  MappingExpr Map(std::function<MappingExpr(MappingExpr)> function) const;
+
+  void Walk(std::function<void(MappingExpr)> function) const;
+
+  DomainShapeDim AccessedShape(llvm::ArrayRef<DomainShapeDim> accessing_shape,
+                               MappingAttr inversed_mapping) const {
+    llvm_unreachable("'?' mapping expression cannot be used to access values");
+  }
+
+  mlir::LogicalResult SetInverse(
+      MappingExpr context_inverse,
+      llvm::MutableArrayRef<MappingExpr> inverses) const {
+    return mlir::success();
+  }
+
+  MappingExpr Unify(MappingExpr other_expr) const { return other_expr; }
+
+  mlir::LogicalResult UnificationConstraints(
+      MappingExpr other_expr,
+      llvm::MutableArrayRef<MappingExpr> constraints) const {
+    return mlir::success();
+  }
+
+  MappingExpr FindInInverse(llvm::ArrayRef<MappingExpr> inverse) const {
+    llvm_unreachable("cannot call `FindInInverse` on unknown expressions");
+  }
+
+  mlir::AffineExpr AsAffineExpr() const {
+    llvm_unreachable("cannot call `AsAffineExpr` on unknown expressions");
+  }
+
+  MappingExpr Canonicalize() const { return *this; }
+
+  RangeParameters GetRangeParameters(mlir::Location loc,
+                                     llvm::ArrayRef<ValueAccess> domain,
+                                     MappingAttr inverse_mapping,
+                                     mlir::OpBuilder &builder,
+                                     MapArguments &map_arguments) const {
+    llvm_unreachable("cannot call `GetRangeParameters` on unknown expressions");
   }
 };
 

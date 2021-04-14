@@ -193,6 +193,10 @@ static mlir::LogicalResult VerifyStorageAttrWellFormed(ComputeOp op) {
 
     if (buffer.layout() == nullptr) continue;
 
+    if (buffer.layout().mapping().HasUnknownExprs()) {
+      return op.emitError() << "layouts cannot contain `?` expressions";
+    }
+
     if (buffer.space() == sair_dialect->register_attr() &&
         !buffer.layout().mapping().empty()) {
       return op.emitError() << "only 0D buffers can be stored in registers";

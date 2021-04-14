@@ -129,8 +129,10 @@ mlir::ParseResult ParseStripeFactors(Parser &parser,
 template <typename Parser>
 MappingExpr ParseMappingExpr(Parser &parser, int num_dimensions = -1) {
   mlir::MLIRContext *context = parser.getBuilder().getContext();
-  if (mlir::succeeded(
-          parser.parseOptionalKeyword(MappingNoneExpr::kAttrName))) {
+  if (mlir::succeeded(parser.parseOptionalQuestion())) {
+    return MappingUnknownExpr::get(context);
+  } else if (mlir::succeeded(
+                 parser.parseOptionalKeyword(MappingNoneExpr::kAttrName))) {
     return MappingNoneExpr::get(context);
   } else if (mlir::succeeded(
                  parser.parseOptionalKeyword(MappingStripeExpr::kAttrName))) {

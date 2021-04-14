@@ -280,6 +280,10 @@ static mlir::LogicalResult VerifyLoopNestWellFormed(
                             << "is out of range of the domain";
     }
 
+    if (loop.iter().HasUnknownExprs()) {
+      return op.emitError() << "loop iterators cannot contain `?` expressions";
+    }
+
     iter_exprs.push_back(loop.iter());
   }
 

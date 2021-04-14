@@ -91,7 +91,7 @@ DomainShapeAttr ParseDomainShape(mlir::DialectAsmParser &parser) {
     llvm::SMLoc loc = parser.getCurrentLocation();
     MappingAttr mapping = ParseOptionalMapping(parser, dimensions.size());
     if (mapping == nullptr) return nullptr;
-    if (mapping.HasNoneExprs()) {
+    if (mapping.HasNoneExprs() || mapping.HasUnknownExprs()) {
       parser.emitError(loc) << "the mapping must map all dimensions";
       return nullptr;
     }
@@ -234,8 +234,10 @@ namespace {
 // Accepts a ray stream so that it can be used from different flavors of
 // printers.
 void PrintMappingExpr(MappingExpr expr, llvm::raw_ostream &os) {
-  if (auto none_expr = expr.dyn_cast<MappingNoneExpr>()) {
+  if (expr.isa<MappingNoneExpr>()) {
     os << MappingNoneExpr::kAttrName;
+  } else if (expr.isa<MappingUnknownExpr>()) {
+    os << MappingUnknownExpr::kAttrName;
   } else if (auto dim_expr = expr.dyn_cast<MappingDimExpr>()) {
     os << "d" << dim_expr.dimension();
   } else if (auto stripe_expr = expr.dyn_cast<MappingStripeExpr>()) {

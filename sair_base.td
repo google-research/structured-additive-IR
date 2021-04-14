@@ -141,8 +141,12 @@ def MappingExpr : AttrInterface<"MappingExpr"> {
     // Returns `true` if any subexpression is `none`.
     bool HasNoneExprs() const;
 
+    // Returns `true` if any subexpression is `?`.
+    bool HasUnknownExprs() const;
+
     // Returns the minimal domain size for the expression to be valid.
     int MinDomainSize() const;
+
   }];
 }
 

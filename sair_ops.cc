@@ -72,9 +72,9 @@ OptionalParseResult ParseOptionalValueAccess(
   if (!(mapping = ParseOptionalMapping(parser, num_dimensions))) {
     return mlir::failure();
   }
-  if (mapping.HasNoneExprs()) {
+  if (mapping.HasNoneExprs() || mapping.HasUnknownExprs()) {
     return parser.emitError(loc)
-           << "expected mapping to a concrete element, got 'none'";
+           << "expected mapping to a concrete element, got 'none' or '?'";
   }
   return mlir::success(mapping != nullptr);
 }

@@ -162,8 +162,9 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
              << "missing " << ::sair::SairDialect::kMappingAttrName
              << " attribute";
     }
-    for (mlir::Attribute mapping : sair_op.mapping_array()) {
-      if (mapping.cast<::sair::MappingAttr>().HasNoneExprs()) {
+    for (mlir::Attribute attr : sair_op.mapping_array()) {
+      MappingAttr mapping = attr.cast<MappingAttr>();
+      if (mapping.HasNoneExprs() || mapping.HasUnknownExprs()) {
         return mlir::emitError(op->getLoc())
                << "all dimensions of the accessed domain must be mapped";
       }

@@ -689,3 +689,10 @@ func @free_with_mapping() {
   }
   return
 }
+
+// CHECK-LABEL: @mapping_any_expr
+func @mapping_any_expr() {
+  // CHECK: "foo"() {bar = #sair.mapping_expr<?>} : () -> ()
+  "foo"() {bar = #sair.mapping_expr<?>} : () -> ()
+  return
+}
