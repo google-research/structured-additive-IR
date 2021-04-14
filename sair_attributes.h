@@ -108,12 +108,13 @@ class MappingAttr
   // fully specified.
   mlir::AffineMap AsAffineMap() const;
 
-  // Returns `true` if mapping expression does not contain `none`.
-  bool IsFullySpecified() const;
+  // HasNoneExprs indicates if any sub-expression is `none`.
+  bool HasNoneExprs() const;
+  bool IsSurjective() const { return !HasNoneExprs(); }
 
-  // Completes the mapping to make it fully specified by allocating new
-  // dimensions in the use domain.
-  MappingAttr MakeFullySpecified() const;
+  // Replaces `none` expressions by new dimensions to make the mapping
+  // surjective.
+  MappingAttr MakeSurjective() const;
 
   // Indicates whether the mapping is an identity, e.g. does not
   // transpose or otherwise modify any dimension.

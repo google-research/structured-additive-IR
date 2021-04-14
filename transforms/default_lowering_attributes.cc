@@ -170,7 +170,7 @@ mlir::ArrayAttr GetDefaultLoopNest(int num_dimensions,
   // allocating new loops. Then inverse again to obtain loop iterators.
   MappingAttr partial_inverse =
       MappingAttr::get(context, num_dimensions, iter_exprs).Inverse();
-  MappingAttr full_inverse = partial_inverse.MakeFullySpecified();
+  MappingAttr full_inverse = partial_inverse.MakeSurjective();
   MappingAttr new_iter_exprs = full_inverse.Inverse();
 
   llvm::SmallVector<mlir::Attribute, 8> loop_nest(prefix.begin(), prefix.end());

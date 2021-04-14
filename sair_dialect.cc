@@ -91,7 +91,7 @@ DomainShapeAttr ParseDomainShape(mlir::DialectAsmParser &parser) {
     llvm::SMLoc loc = parser.getCurrentLocation();
     MappingAttr mapping = ParseOptionalMapping(parser, dimensions.size());
     if (mapping == nullptr) return nullptr;
-    if (!mapping.IsFullySpecified()) {
+    if (mapping.HasNoneExprs()) {
       parser.emitError(loc) << "the mapping must map all dimensions";
       return nullptr;
     }

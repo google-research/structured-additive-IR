@@ -271,7 +271,7 @@ func @load_from_memref_rank_mismatch(%arg0 : memref<?xf32>) {
 func @load_from_memref_layout_partially_specified(%arg0 : memref<?xf32>) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), memref<?xf32>>
-    // expected-error @+1 {{layout must be fully specified}}
+    // expected-error @+1 {{layout must be surjective}}
     %1 = sair.load_from_memref %0 { layout = #sair.mapping<0 : none> }
       : memref<?xf32> -> !sair.value<(), f32>
     sair.exit

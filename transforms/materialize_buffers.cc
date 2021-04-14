@@ -225,8 +225,8 @@ void InsertLoad(ComputeOp op, int operand_pos, const Buffer &buffer,
 
   // Insert a sair.proj_any operation in case the load is rematerialized.
   ValueAccess new_operand;
-  if (!op_iter_space.mapping().IsFullySpecified()) {
-    MappingAttr proj_mapping = op_iter_space.mapping().MakeFullySpecified();
+  if (op_iter_space.mapping().HasNoneExprs()) {
+    MappingAttr proj_mapping = op_iter_space.mapping().MakeSurjective();
     DomainShapeAttr proj_shape =
         load_shape.AccessedShape(proj_mapping.Inverse());
     llvm::SmallVector<mlir::Value> proj_domain =
@@ -302,7 +302,7 @@ class MaterializeBuffers
         if (storage.layout() == nullptr) {
           return op.emitError() << "missing layout";
         }
-        if (!storage.layout().IsFullySpecified()) {
+        if (storage.layout().HasNoneExprs()) {
           return op.emitError() << "partial layouts are not yet supported";
         }
       }

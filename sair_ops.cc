@@ -72,7 +72,7 @@ OptionalParseResult ParseOptionalValueAccess(
   if (!(mapping = ParseOptionalMapping(parser, num_dimensions))) {
     return mlir::failure();
   }
-  if (!mapping.IsFullySpecified()) {
+  if (mapping.HasNoneExprs()) {
     return parser.emitError(loc)
            << "expected mapping to a concrete element, got 'none'";
   }
@@ -899,8 +899,8 @@ mlir::LogicalResult VerifyLoadFromStoreToMemRef(mlir::Operation *op,
   if (memref_type.getRank() != layout.size()) {
     return op->emitError() << "memref and layout must have the same rank";
   }
-  if (!layout.IsFullySpecified()) {
-    return op->emitError() << "layout must be fully specified";
+  if (layout.HasNoneExprs()) {
+    return op->emitError() << "layout must be surjective";
   }
   return mlir::success();
 }

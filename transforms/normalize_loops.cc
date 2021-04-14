@@ -253,7 +253,7 @@ void NormalizeLoops(SairOp op, const IterationSpace &iteration_space,
       mapping.Resize(new_op.results_rank()).ResizeUseDomain(op.results_rank());
 
   // Handle the case where there is no rematerialization.
-  if (result_mapping.IsFullySpecified()) {
+  if (result_mapping.IsSurjective()) {
     for (auto [old_value, new_value] :
          llvm::zip(op->getResults(), new_op->getResults())) {
       // We do not normalize range operations, so we know that results are
@@ -268,7 +268,7 @@ void NormalizeLoops(SairOp op, const IterationSpace &iteration_space,
 
   // Create proj_any operations with placeholder dimensions for the domain, as
   // we won't use them anyway.
-  result_mapping = result_mapping.MakeFullySpecified();
+  result_mapping = result_mapping.MakeSurjective();
   MappingAttr inverse_result_mapping = result_mapping.Inverse();
 
   DomainShapeAttr proj_any_shape =

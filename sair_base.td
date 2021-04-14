@@ -138,8 +138,8 @@ def MappingExpr : AttrInterface<"MappingExpr"> {
     // Sets the dimensions appearing in the expression in `mask`.
     void SetDependenciesInMask(llvm::SmallBitVector& mask) const;
 
-    // Returns `true` if no subexpression is equal to `none`.
-    bool IsFullySpecified() const;
+    // Returns `true` if any subexpression is `none`.
+    bool HasNoneExprs() const;
 
     // Returns the minimal domain size for the expression to be valid.
     int MinDomainSize() const;

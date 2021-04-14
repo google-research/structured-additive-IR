@@ -3,29 +3,29 @@
 
 module {
 
-// CHECK: "test.is_fully_specified"() {label = @none, result = false}
-"test.is_fully_specified"() {label = @none, expr = #sair.mapping_expr<none>} : () -> ()
+// CHECK: "test.has_none_exprs"() {label = @none, result = true}
+"test.has_none_exprs"() {label = @none, expr = #sair.mapping_expr<none>} : () -> ()
 
-// CHECK: "test.is_fully_specified"() {label = @dim, result = true}
-"test.is_fully_specified"() {label = @dim, expr = #sair.mapping_expr<d0>} : () -> ()
+// CHECK: "test.has_none_exprs"() {label = @dim, result = false}
+"test.has_none_exprs"() {label = @dim, expr = #sair.mapping_expr<d0>} : () -> ()
 
-// CHECK: "test.is_fully_specified"() {label = @stripe_false, result = false}
-"test.is_fully_specified"() {
+// CHECK: "test.has_none_exprs"() {label = @stripe_false, result = true}
+"test.has_none_exprs"() {
   label = @stripe_false, expr = #sair.mapping_expr<stripe(none, [2])>
 } : () -> ()
 
-// CHECK: "test.is_fully_specified"() {label = @stripe_true, result = true}
-"test.is_fully_specified"() {
+// CHECK: "test.has_none_exprs"() {label = @stripe_true, result = false}
+"test.has_none_exprs"() {
   label = @stripe_true, expr = #sair.mapping_expr<stripe(d0, [2])>
 } : () -> ()
 
-// CHECK: "test.is_fully_specified"() {label = @unstripe_false, result = false}
-"test.is_fully_specified"() {
+// CHECK: "test.has_none_exprs"() {label = @unstripe_false, result = true}
+"test.has_none_exprs"() {
   label = @unstripe_false, expr = #sair.mapping_expr<unstripe(none, [1])>
 } : () -> ()
 
-// CHECK: "test.is_fully_specified"() {label = @unstripe_true, result = true}
-"test.is_fully_specified"() {
+// CHECK: "test.has_none_exprs"() {label = @unstripe_true, result = false}
+"test.has_none_exprs"() {
   label = @unstripe_true, expr = #sair.mapping_expr<unstripe(d0, [1])>
 } : () -> ()
 

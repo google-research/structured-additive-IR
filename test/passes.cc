@@ -55,8 +55,8 @@ class TestMappingExprsPass
   mlir::Attribute DispatchTest(llvm::StringRef op_name, MappingExpr expr,
                                mlir::Operation *op) {
     mlir::Builder builder(&getContext());
-    if (op_name == "is_fully_specified") {
-      return builder.getBoolAttr(expr.IsFullySpecified());
+    if (op_name == "has_none_exprs") {
+      return builder.getBoolAttr(expr.HasNoneExprs());
     } else if (op_name == "substitute_dims") {
       return expr.SubstituteDims(
           GetAttrVector<MappingExpr>("substitutions", op));

@@ -24,7 +24,7 @@ IterationSpace::IterationSpace(llvm::SmallVector<mlir::StringAttr> loop_names,
                                MappingAttr domain_to_loops)
     : loop_names_(std::move(loop_names)) {
   assert(loop_names_.size() == domain_to_loops.size());
-  mapping_ = domain_to_loops.Inverse().MakeFullySpecified().Inverse();
+  mapping_ = domain_to_loops.Inverse().MakeSurjective().Inverse();
 }
 
 int IterationSpace::NumCommonLoops(const IterationSpace &other) const {
@@ -289,7 +289,7 @@ static mlir::LogicalResult VerifyLoopNestWellFormed(
     return op.emitError() << "incompatible loop iterators";
   }
 
-  if (!mapping.Inverse().IsFullySpecified()) {
+  if (mapping.Inverse().HasNoneExprs()) {
     return op.emitError() << "not all dimensions are covered by the loop nest";
   }
 
@@ -519,7 +519,7 @@ static mlir::LogicalResult VerifySubDomains(
     int sub_domain = 0;
     int min_dim_index = 0;
     int max_dim_index = sub_domains[0];
-    if (expr.IsFullySpecified()) {
+    if (!expr.HasNoneExprs()) {
       int first = dimensions.find_first();
       while (first >= max_dim_index) {
         min_dim_index = max_dim_index;
@@ -640,7 +640,7 @@ mlir::LogicalResult LoopFusionAnalysis::Init(SairProgramOp program_op) {
 
   // Ensure that all iterators are fully specified.
   for (auto &[name, fusion_class] : fusion_classes_) {
-    if (!fusion_class.iter_expr.IsFullySpecified()) {
+    if (fusion_class.iter_expr.HasNoneExprs()) {
       return fusion_class.occurence.emitError()
              << "loop " << name << " iterator is not fully specified";
     }
@@ -662,7 +662,7 @@ mlir::LogicalResult LoopFusionAnalysis::Init(SairProgramOp program_op) {
     auto hr_domain = DomainShapeAttr::HyperRectangular(context_, domain_size);
     DomainShapeDim loop_shape = fusion_class.iter_expr.AccessedShape(
         hr_domain.Dimensions(), inverse_loop_nest);
-    if (!loop_shape.dependency_mapping().IsFullySpecified()) {
+    if (loop_shape.dependency_mapping().HasNoneExprs()) {
       return fusion_class.occurence.emitError()
              << "loop " << name
              << " must be nested inside the loops it depends on";
@@ -746,7 +746,7 @@ mlir::LogicalResult LoopFusionAnalysis::RegisterLoop(
                                          .ResizeUseDomain(domain_size);
     MappingAttr new_access_mapping =
         loops_to_op_domain_mapping.Compose(old_access_mapping);
-    if (!new_access_mapping.IsFullySpecified()) {
+    if (new_access_mapping.HasNoneExprs()) {
       return op->emitError()
              << "dimension d" << dimension << " in " << loop_name.str()
              << " is used before its dependencies";

@@ -70,12 +70,12 @@ llvm::SmallBitVector MappingExpr::DependencyMask(int domain_size) const {
   return mask;
 }
 
-bool MappingExpr::IsFullySpecified() const {
-  bool is_fully_specified = true;
+bool MappingExpr::HasNoneExprs() const {
+  bool has_none_exprs = false;
   Walk([&](MappingExpr sub_expr) {
-    is_fully_specified &= !sub_expr.isa<MappingNoneExpr>();
+    has_none_exprs |= sub_expr.isa<MappingNoneExpr>();
   });
-  return is_fully_specified;
+  return has_none_exprs;
 }
 
 void MappingExpr::SetDependenciesInMask(llvm::SmallBitVector &mask) const {
@@ -194,7 +194,7 @@ RangeParameters MappingDimExpr::GetRangeParameters(
   auto range_op = mlir::cast<RangeOp>(dim_access.value.getDefiningOp());
   auto mapping =
       dim_access.mapping.ResizeUseDomain(map_arguments.Indices().size());
-  assert(mapping.IsFullySpecified());
+  assert(mapping.IsSurjective());
   return {
       .begin = map_arguments.AddArgument(range_op.LowerBound().Map(mapping)),
       .end = map_arguments.AddArgument(range_op.UpperBound().Map(mapping)),
@@ -863,12 +863,12 @@ mlir::AffineMap MappingAttr::AsAffineMap() const {
   return mlir::AffineMap::get(UseDomainSize(), 0, affine_exprs, getContext());
 }
 
-bool MappingAttr::IsFullySpecified() const {
-  return llvm::all_of(getImpl()->mapping(),
-                      [](MappingExpr expr) { return expr.IsFullySpecified(); });
+bool MappingAttr::HasNoneExprs() const {
+  return llvm::any_of(getImpl()->mapping(),
+                      [](MappingExpr expr) { return expr.HasNoneExprs(); });
 }
 
-MappingAttr MappingAttr::MakeFullySpecified() const {
+MappingAttr MappingAttr::MakeSurjective() const {
   int num_dimensions = UseDomainSize();
   llvm::SmallVector<MappingExpr, 4> new_exprs;
   new_exprs.reserve(size());
@@ -1159,7 +1159,7 @@ DomainShapeAttr DomainShapeAttr::get(mlir::MLIRContext *context,
   // has a fixed value.
   for (int i = 0, e = dims.size(); i < e; ++i) {
     assert(dims[i].dependency_mapping().UseDomainSize() == i);
-    assert(dims[i].dependency_mapping().IsFullySpecified());
+    assert(dims[i].dependency_mapping().IsSurjective());
     (void) i;
   }
 

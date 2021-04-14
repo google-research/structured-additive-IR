@@ -83,7 +83,7 @@ void Buffer::TrimLoopNest(int new_size) {
   if (layout_.has_value()) {
     auto renaming_mapping = MappingAttr::get(context, domain_.size(), renaming);
     layout_ = renaming_mapping.Compose(layout_.value());
-    assert(layout_->IsFullySpecified());
+    assert(layout_->IsSurjective());
   }
 }
 
@@ -332,7 +332,7 @@ static mlir::LogicalResult UnifyBufferShape(
     ValueAccess dim_access = loop_nest.domain[dimension];
     dim_access.mapping =
         dim_access.mapping.ResizeUseDomain(buffer.loop_nest().size());
-    if (!dim_access.mapping.IsFullySpecified()) {
+    if (dim_access.mapping.HasNoneExprs()) {
       return op.emitError()
              << "buffer " << buffer_attr.name()
              << " layout depends on loops it cannot be nested in";
@@ -422,7 +422,7 @@ static mlir::LogicalResult CheckLayoutMapping(
   int loop_nest_size = buffer.loop_nest().size();
 
   MappingAttr mapping = buffer.PrefixedLayout();
-  if (!mapping.IsFullySpecified()) {
+  if (mapping.HasNoneExprs()) {
     return mlir::emitError(buffer.getLoc())
            << "buffer " << buffer_name << " layout is not fully specified";
   }
@@ -441,7 +441,7 @@ static mlir::LogicalResult CheckLayoutMapping(
   for (MappingExpr layout_expr : buffer.layout()->Dimensions()) {
     DomainShapeDim shape_dim =
         layout_expr.AccessedShape(hr_shape.Dimensions(), inverse);
-    if (!shape_dim.dependency_mapping().IsFullySpecified()) {
+    if (shape_dim.dependency_mapping().HasNoneExprs()) {
       return mlir::emitError(buffer.getLoc())
              << "buffer " << buffer_name
              << " layout depends on loops it cannot be nested in";
