@@ -155,7 +155,7 @@ MappingAttr IterationSpaceAnalysis::TryTranslateMapping(
       mapping.getContext(), num_common_loops, from_space.mapping().size());
   MappingAttr loops_mapping =
       common_loops_mapping.Resize(to_space.mapping().size());
-  return space_mapping.Unify(loops_mapping);
+  return space_mapping.UnifyNoneExprs(loops_mapping);
 }
 
 // Analysis that keeps track of dependencies between loops.
@@ -729,8 +729,8 @@ mlir::LogicalResult LoopFusionAnalysis::RegisterLoop(
 
   // Generate unification constraints.
   auto &constraints = op_domain_mappings_[op.getOperation()];
-  if (mlir::failed(loop.iter().UnificationConstraints(fusion_class.iter_expr,
-                                                      constraints))) {
+  if (mlir::failed(UnificationConstraints(loop.iter(), fusion_class.iter_expr,
+                                          constraints))) {
     return op.emitError() << "cannot unify loop " << loop.name()
                           << " with previous occurences";
   }
@@ -764,8 +764,8 @@ mlir::LogicalResult LoopFusionAnalysis::RegisterLoop(
     }
   }
 
-  fusion_class.iter_expr =
-      loop.iter().SubstituteDims(constraints).Unify(fusion_class.iter_expr);
+  fusion_class.iter_expr = UnifyNoneExprs(
+      loop.iter().SubstituteDims(constraints), fusion_class.iter_expr);
   assert(fusion_class.iter_expr != nullptr);
 
   return mlir::success();

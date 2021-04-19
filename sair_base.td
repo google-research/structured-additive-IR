@@ -56,6 +56,14 @@ def MappingExpr : AttrInterface<"MappingExpr"> {
       (ins "llvm::function_ref<void(MappingExpr)>":$function)
     >,
     InterfaceMethod<
+      [{Merges two mapping expressions into a single one. Calls $on_leaves to
+        merge expressions that do not have a sub-expression. Returns nullptr on
+        failure.}],
+      "MappingExpr", "Unify",
+      (ins "MappingExpr":$other,
+           "llvm::function_ref<MappingExpr(MappingExpr, MappingExpr)>":$on_leaves)
+    >,
+    InterfaceMethod<
       [{Returns the shape of the dimension accessed by the given expression.
         `accessing_shape` must be the shape of the current domain and
         `inverted_mapping` the inverse of the full mapping.}],
@@ -86,23 +94,6 @@ def MappingExpr : AttrInterface<"MappingExpr"> {
         must be the inverse of the mapping using this sub-expression.}],
       "MappingExpr", "FindInInverse",
       (ins "llvm::ArrayRef<MappingExpr>":$inverse)
-    >,
-    InterfaceMethod<
-      [{Unifies two expressions by replacing the `none` of each expr by the
-        corresponding sub-expression of the other expr. Returns nullptr if
-        expressions cannot be unified.}],
-      "MappingExpr", "Unify", (ins "MappingExpr":$other_expr)
-    >,
-    InterfaceMethod<
-      [{Fills `constraints` with expression such that
-        `this.SubstituteDims(constraints).Unify(other_expr)` is valid. Expects
-        `contraints` to be initially filled with `none`. Leaves `constraints[i]`
-        untouched if dimension i generates no constraints. Returns a failure if
-        expressions cannot be unified.}],
-      "mlir::LogicalResult", "UnificationConstraints", (ins
-        "MappingExpr":$other_expr,
-        "llvm::MutableArrayRef<MappingExpr>":$constraints
-      )
     >,
     InterfaceMethod<
       [{Converts the expression into an affine expression. The expression must

@@ -104,6 +104,41 @@ int MappingExpr::MinDomainSize() const {
   return min_domain_size;
 }
 
+MappingExpr UnifyNoneExprs(MappingExpr lhs, MappingExpr rhs) {
+  return lhs.Unify(rhs, [](MappingExpr sub_lhs, MappingExpr sub_rhs) {
+    if (sub_lhs.isa<MappingNoneExpr>()) return sub_rhs;
+    if (sub_rhs.isa<MappingNoneExpr>()) return sub_lhs;
+    return MappingExpr();
+  });
+}
+
+mlir::LogicalResult UnificationConstraints(
+    MappingExpr lhs, MappingExpr rhs,
+    llvm::MutableArrayRef<MappingExpr> constraints) {
+  // Shift lhs so that all its dimensions are distinct from rhs.
+  int shift = rhs.MinDomainSize();
+  MappingExpr shifted_lhs = lhs.Map([&](MappingExpr sub_expr) -> MappingExpr {
+    auto dim_expr = sub_expr.dyn_cast<MappingDimExpr>();
+    if (dim_expr == nullptr) return sub_expr;
+    return MappingDimExpr::get(dim_expr.dimension() + shift,
+                               dim_expr.getContext());
+  });
+
+  MappingExpr result =
+      shifted_lhs.Unify(rhs, [&](MappingExpr sub_lhs, MappingExpr sub_rhs) {
+        if (sub_lhs.isa<MappingNoneExpr>()) return sub_rhs;
+        if (sub_rhs.isa<MappingNoneExpr>()) return sub_lhs;
+        auto dim_expr = sub_lhs.dyn_cast<MappingDimExpr>();
+        if (dim_expr == nullptr) return MappingExpr();
+
+        MappingExpr &constraint = constraints[dim_expr.dimension() - shift];
+        constraint = UnifyNoneExprs(constraint, sub_rhs);
+        if (constraint == nullptr) return MappingExpr();
+        return sub_lhs;
+      });
+  return mlir::failure(result == nullptr);
+}
+
 //===----------------------------------------------------------------------===//
 // MappingDimExpr
 //===----------------------------------------------------------------------===//
@@ -166,29 +201,18 @@ DomainShapeDim MappingDimExpr::AccessedShape(
 mlir::LogicalResult MappingDimExpr::SetInverse(
     MappingExpr context_inverse,
     llvm::MutableArrayRef<MappingExpr> inverses) const {
-  MappingExpr inverse = inverses[dimension()].Unify(context_inverse);
+  MappingExpr inverse = UnifyNoneExprs(inverses[dimension()], context_inverse);
   if (inverse == nullptr) return mlir::failure();
   inverses[dimension()] = inverse;
   return mlir::success();
 }
 
-MappingExpr MappingDimExpr::Unify(MappingExpr other_expr) const {
-  if (other_expr == *this) return *this;
-  if (other_expr.isa<MappingNoneExpr, MappingUnknownExpr>()) return *this;
-  return MappingExpr();
-}
-
-mlir::LogicalResult MappingDimExpr::UnificationConstraints(
+MappingExpr MappingDimExpr::Unify(
     MappingExpr other_expr,
-    llvm::MutableArrayRef<MappingExpr> constraints) const {
-  if (other_expr.isa<MappingNoneExpr, MappingUnknownExpr>()) {
-    return mlir::success();
-  }
-
-  MappingExpr new_constraint = constraints[dimension()].Unify(other_expr);
-  if (new_constraint == nullptr) return mlir::failure();
-  constraints[dimension()] = new_constraint;
-  return mlir::success();
+    llvm::function_ref<MappingExpr(MappingExpr, MappingExpr)> on_mismatch)
+    const {
+  if (other_expr == *this) return *this;
+  return on_mismatch(*this, other_expr);
 }
 
 mlir::AffineExpr MappingDimExpr::AsAffineExpr() const {
@@ -228,9 +252,12 @@ void MappingNoneExpr::Walk(
   function(*this);
 }
 
-MappingExpr MappingNoneExpr::Unify(MappingExpr other_expr) const {
-  if (other_expr.isa<MappingUnknownExpr>()) return *this;
-  return other_expr;
+MappingExpr MappingNoneExpr::Unify(
+    MappingExpr other_expr,
+    llvm::function_ref<MappingExpr(MappingExpr, MappingExpr)> on_mismatch)
+    const {
+  if (other_expr == *this) return *this;
+  return on_mismatch(*this, other_expr);
 }
 
 //===----------------------------------------------------------------------===//
@@ -242,12 +269,21 @@ MappingUnknownExpr MappingUnknownExpr::get(mlir::MLIRContext *context) {
 }
 
 MappingExpr MappingUnknownExpr::Map(
-    std::function<MappingExpr(MappingExpr)> function) const {
+    llvm::function_ref<MappingExpr(MappingExpr)> function) const {
   return function(*this);
 }
 
-void MappingUnknownExpr::Walk(std::function<void(MappingExpr)> function) const {
+void MappingUnknownExpr::Walk(
+    llvm::function_ref<void(MappingExpr)> function) const {
   function(*this);
+}
+
+MappingExpr MappingUnknownExpr::Unify(
+    MappingExpr other_expr,
+    llvm::function_ref<MappingExpr(MappingExpr, MappingExpr)> on_mismatch)
+    const {
+  if (other_expr == *this) return *this;
+  return on_mismatch(*this, other_expr);
 }
 
 //===----------------------------------------------------------------------===//
@@ -319,28 +355,18 @@ void MappingStripeExpr::Walk(
   function(*this);
 }
 
-MappingExpr MappingStripeExpr::Unify(MappingExpr other_expr) const {
-  if (other_expr.isa<MappingNoneExpr, MappingUnknownExpr>()) return *this;
+MappingExpr MappingStripeExpr::Unify(
+    MappingExpr other_expr,
+    llvm::function_ref<MappingExpr(MappingExpr, MappingExpr)> on_mismatch)
+    const {
   MappingStripeExpr other_stripe = other_expr.dyn_cast<MappingStripeExpr>();
   if (other_stripe == nullptr || factors() != other_stripe.factors()) {
-    return MappingExpr();
+    return on_mismatch(*this, other_expr);
   }
-  MappingExpr unified_operand = operand().Unify(other_stripe.operand());
+  MappingExpr unified_operand =
+      operand().Unify(other_stripe.operand(), on_mismatch);
   if (unified_operand == nullptr) return MappingExpr();
   return MappingStripeExpr::get(unified_operand, factors());
-}
-
-mlir::LogicalResult MappingStripeExpr::UnificationConstraints(
-    MappingExpr other_expr,
-    llvm::MutableArrayRef<MappingExpr> constraints) const {
-  if (other_expr.isa<MappingNoneExpr, MappingUnknownExpr>()) {
-    return mlir::success();
-  }
-  auto other_stripe = other_expr.dyn_cast<MappingStripeExpr>();
-  if (other_stripe == nullptr || factors() != other_stripe.factors()) {
-    return mlir::failure();
-  }
-  return operand().UnificationConstraints(other_stripe.operand(), constraints);
 }
 
 DomainShapeDim MappingStripeExpr::AccessedShape(
@@ -588,11 +614,13 @@ mlir::LogicalResult MappingUnStripeExpr::SetInverse(
   return mlir::success();
 }
 
-MappingExpr MappingUnStripeExpr::Unify(MappingExpr other_expr) const {
-  if (other_expr.isa<MappingNoneExpr, MappingUnknownExpr>()) return *this;
+MappingExpr MappingUnStripeExpr::Unify(
+    MappingExpr other_expr,
+    llvm::function_ref<MappingExpr(MappingExpr, MappingExpr)> on_mismatch)
+    const {
   MappingUnStripeExpr other_unstripe =
       other_expr.dyn_cast<MappingUnStripeExpr>();
-  if (other_unstripe == nullptr) return MappingExpr();
+  if (other_unstripe == nullptr) return on_mismatch(*this, other_expr);
 
   llvm::SmallVector<MappingExpr> new_operands;
   llvm::ArrayRef<int> new_factors;
@@ -622,57 +650,15 @@ MappingExpr MappingUnStripeExpr::Unify(MappingExpr other_expr) const {
 
   // Ensure that the factors of one are a prefix of the factors of the other.
   if (min_factors != new_factors.take_front(min_factors.size())) {
-    return MappingExpr();
+    return on_mismatch(*this, other_expr);
   }
 
   for (int i = 0, e = min_operands.size(); i < e; ++i) {
-    new_operands[i] = new_operands[i].Unify(min_operands[i]);
+    new_operands[i] = new_operands[i].Unify(min_operands[i], on_mismatch);
     if (new_operands[i] == nullptr) return MappingExpr();
   }
 
   return MappingUnStripeExpr::get(new_operands, new_factors);
-}
-
-mlir::LogicalResult MappingUnStripeExpr::UnificationConstraints(
-    MappingExpr other_expr,
-    llvm::MutableArrayRef<MappingExpr> constraints) const {
-  if (other_expr.isa<MappingNoneExpr, MappingUnknownExpr>()) {
-    return mlir::success();
-  }
-  MappingUnStripeExpr other_unstripe =
-      other_expr.dyn_cast<MappingUnStripeExpr>();
-  if (other_unstripe == nullptr) return mlir::failure();
-
-  int num_common;
-  llvm::ArrayRef<MappingExpr> min_operands;
-  if (factors().size() >= other_unstripe.factors().size()) {
-    num_common = other_unstripe.factors().size();
-    min_operands = other_unstripe.operands();
-  } else {
-    num_common = factors().size();
-    min_operands = operands();
-  }
-
-  // If the last operand is `none`, we can replace it by an arbitrary number of
-  // operands.
-  if (min_operands.back().isa<MappingNoneExpr, MappingUnknownExpr>()) {
-    --num_common;
-  }
-
-  // Ensure that the factors of one are a prefix of the factors of the other.
-  if (factors().take_front(num_common) !=
-      other_unstripe.factors().take_front(num_common)) {
-    return mlir::failure();
-  }
-
-  for (int i = 0; i < num_common; ++i) {
-    if (mlir::failed(operands()[i].UnificationConstraints(
-            other_unstripe.operands()[i], constraints))) {
-      return mlir::failure();
-    }
-  }
-
-  return mlir::success();
 }
 
 MappingExpr MappingUnStripeExpr::FindInInverse(
@@ -1034,13 +1020,13 @@ int MappingAttr::MinDomainSize() const {
   return min;
 }
 
-MappingAttr MappingAttr::Unify(MappingAttr other) const {
+MappingAttr MappingAttr::UnifyNoneExprs(MappingAttr other) const {
   assert(size() == other.size());
   assert(UseDomainSize() == other.UseDomainSize());
   llvm::SmallVector<MappingExpr> exprs;
   exprs.reserve(size());
   for (auto [x, y] : llvm::zip(Dimensions(), other.Dimensions())) {
-    exprs.push_back(x.Unify(y));
+    exprs.push_back(sair::UnifyNoneExprs(x, y));
     if (exprs.back() == nullptr) return nullptr;
   }
   return MappingAttr::get(getContext(), UseDomainSize(), exprs);

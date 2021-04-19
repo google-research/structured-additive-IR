@@ -159,15 +159,28 @@ class MappingAttr
   // Canonicalize dimension expressions.
   MappingAttr Canonicalize() const;
 
-  // Unifies this mapping with `other`. Returns `nullptr` if unification fails
-  // in one of the dimensions. Both expressions must have the same number of
-  // dimensions and domain size.
-  MappingAttr Unify(MappingAttr other) const;
+  // Unifies this mapping with `other` by substituting `none` expressions.
+  // Returns `nullptr` if unification fails in one of the dimensions. Both
+  // expressions must have the same number of dimensions and domain size.
+  MappingAttr UnifyNoneExprs(MappingAttr other) const;
 
   using iterator = llvm::ArrayRef<MappingExpr>::iterator;
   iterator begin() const { return Dimensions().begin(); }
   iterator end() const { return Dimensions().end(); }
 };
+
+// Unifies two mapping expressions by substituting `none` expressions. Returns
+// nullptr in case of failure.
+MappingExpr UnifyNoneExprs(MappingExpr lhs, MappingExpr rhs);
+
+// Fills `constraints` with expression such that
+// `lhs.SubstituteDims(constraints).Unify(rhs)` succeeds. Expects `contraints`
+// to be initially filled with `none`. Leaves `constraints[i]` untouched if
+// dimension i generates no constraints. Returns a failure if expressions cannot
+// be unified.
+mlir::LogicalResult UnificationConstraints(
+    MappingExpr lhs, MappingExpr rhs,
+    llvm::MutableArrayRef<MappingExpr> constraints);
 
 // A MappingAttr, with named dimensions in the use domain. Format is
 // ```
@@ -373,11 +386,9 @@ class MappingDimExpr
       MappingExpr context_inverse,
       llvm::MutableArrayRef<MappingExpr> inverses) const;
 
-  MappingExpr Unify(MappingExpr other_expr) const;
-
-  mlir::LogicalResult UnificationConstraints(
-      MappingExpr other_expr,
-      llvm::MutableArrayRef<MappingExpr> constraints) const;
+  MappingExpr Unify(MappingExpr other_expr,
+                    llvm::function_ref<MappingExpr(MappingExpr, MappingExpr)>
+                        on_mismatch) const;
 
   MappingExpr FindInInverse(llvm::ArrayRef<MappingExpr> inverse) const {
     return inverse[dimension()];
@@ -422,13 +433,9 @@ class MappingNoneExpr
     return mlir::success();
   }
 
-  MappingExpr Unify(MappingExpr other_expr) const;
-
-  mlir::LogicalResult UnificationConstraints(
-      MappingExpr other_expr,
-      llvm::MutableArrayRef<MappingExpr> constraints) const {
-    return mlir::success();
-  }
+  MappingExpr Unify(MappingExpr other_expr,
+                    llvm::function_ref<MappingExpr(MappingExpr, MappingExpr)>
+                        on_mismatch) const;
 
   MappingExpr FindInInverse(llvm::ArrayRef<MappingExpr> inverse) const {
     llvm_unreachable("cannot call `FindInInverse` on none expressions");
@@ -461,9 +468,9 @@ class MappingUnknownExpr
 
   static MappingUnknownExpr get(mlir::MLIRContext *context);
 
-  MappingExpr Map(std::function<MappingExpr(MappingExpr)> function) const;
+  MappingExpr Map(llvm::function_ref<MappingExpr(MappingExpr)> function) const;
 
-  void Walk(std::function<void(MappingExpr)> function) const;
+  void Walk(llvm::function_ref<void(MappingExpr)> function) const;
 
   DomainShapeDim AccessedShape(llvm::ArrayRef<DomainShapeDim> accessing_shape,
                                MappingAttr inversed_mapping) const {
@@ -476,13 +483,9 @@ class MappingUnknownExpr
     return mlir::success();
   }
 
-  MappingExpr Unify(MappingExpr other_expr) const { return other_expr; }
-
-  mlir::LogicalResult UnificationConstraints(
-      MappingExpr other_expr,
-      llvm::MutableArrayRef<MappingExpr> constraints) const {
-    return mlir::success();
-  }
+  MappingExpr Unify(MappingExpr other_expr,
+                    llvm::function_ref<MappingExpr(MappingExpr, MappingExpr)>
+                        on_mismatch) const;
 
   MappingExpr FindInInverse(llvm::ArrayRef<MappingExpr> inverse) const {
     llvm_unreachable("cannot call `FindInInverse` on unknown expressions");
@@ -536,11 +539,9 @@ class MappingStripeExpr
       MappingExpr context_inverse,
       llvm::MutableArrayRef<MappingExpr> inverses) const;
 
-  MappingExpr Unify(MappingExpr other_expr) const;
-
-  mlir::LogicalResult UnificationConstraints(
-      MappingExpr other_expr,
-      llvm::MutableArrayRef<MappingExpr> constraints) const;
+  MappingExpr Unify(MappingExpr other_expr,
+                    llvm::function_ref<MappingExpr(MappingExpr, MappingExpr)>
+                        on_mismatch) const;
 
   MappingExpr FindInInverse(llvm::ArrayRef<MappingExpr> inverse) const;
 
@@ -588,11 +589,9 @@ class MappingUnStripeExpr
       MappingExpr context_inverse,
       llvm::MutableArrayRef<MappingExpr> inverses) const;
 
-  MappingExpr Unify(MappingExpr other_expr) const;
-
-  mlir::LogicalResult UnificationConstraints(
-      MappingExpr other_expr,
-      llvm::MutableArrayRef<MappingExpr> constraints) const;
+  MappingExpr Unify(MappingExpr other_expr,
+                    llvm::function_ref<MappingExpr(MappingExpr, MappingExpr)>
+                        on_mismatch) const;
 
   MappingExpr FindInInverse(llvm::ArrayRef<MappingExpr> inverse) const;
 

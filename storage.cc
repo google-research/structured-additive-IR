@@ -91,7 +91,8 @@ void Buffer::UnifyLayout(MappingAttr layout) {
   if (!layout_.has_value()) {
     layout_ = layout;
   } else {
-    layout_ = layout_.value().ResizeUseDomain(domain_.size()).Unify(layout);
+    layout_ =
+        layout_.value().ResizeUseDomain(domain_.size()).UnifyNoneExprs(layout);
   }
 }
 
@@ -318,7 +319,7 @@ static mlir::LogicalResult UnifyBufferShape(
     for (auto [old_expr, new_expr] :
          llvm::zip(buffer.layout().value(), domain_to_layout)) {
       if (mlir::failed(
-              new_expr.UnificationConstraints(old_expr, constraints))) {
+              UnificationConstraints(new_expr, old_expr, constraints))) {
         return op.emitError()
                << "buffer " << buffer_attr.name()
                << " layout is incompatible with previous occurences";

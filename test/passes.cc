@@ -70,7 +70,7 @@ class TestMappingExprsPass
     } else if (op_name == "unify") {
       auto other = op->getAttrOfType<MappingExpr>("other");
       assert(other != nullptr);
-      return expr.Unify(other);
+      return UnifyNoneExprs(expr, other);
     } else if (op_name == "unification_constraints") {
       auto other = op->getAttrOfType<MappingExpr>("other");
       auto domain_size = op->getAttrOfType<mlir::IntegerAttr>("domain_size");
@@ -78,7 +78,7 @@ class TestMappingExprsPass
       assert(domain_size != nullptr);
       llvm::SmallVector<MappingExpr, 4> constraints(
           domain_size.getInt(), MappingNoneExpr::get(&getContext()));
-      if (mlir::failed(expr.UnificationConstraints(other, constraints))) {
+      if (mlir::failed(UnificationConstraints(expr, other, constraints))) {
         return nullptr;
       }
       return GetArrayAttr(constraints, builder);
