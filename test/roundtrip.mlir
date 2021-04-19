@@ -199,13 +199,22 @@ func @to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // CHECK: %[[V1:.*]] = sair.from_scalar %{{.*}} : !sair.value<(), memref<?x?xf32>>
     %2 = sair.from_scalar %arg1 : !sair.value<(), memref<?x?xf32>>
+    // CHECK: %[[V2:.*]] = sair.copy[d0:%{{.*}}] %[[V1]]
+    %3 = sair.copy[d0:%0] %2 {
+      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
+    } : !sair.value<d0:range, memref<?x?xf32>>
     // CHECK: %[[V0:.*]] = sair.copy
-    %3 = sair.copy[d0:%0, d1:%0, d2:%0] %1
-      : !sair.value<d0:range x d1:range x d2:range, f32>
-    // CHECK: sair.to_memref[d0:%[[D0]]] %[[V1]]
+    %4 = sair.copy[d0:%0, d1:%0, d2:%0] %1 {
+      loop_nest = [
+        {name = "A", iter = #sair.mapping_expr<d0>},
+        {name = "B", iter = #sair.mapping_expr<d1>},
+        {name = "C", iter = #sair.mapping_expr<d2>}
+      ]
+    } : !sair.value<d0:range x d1:range x d2:range, f32>
+    // CHECK: sair.to_memref[d0:%[[D0]]] %[[V2]]
     // CHECK:  memref[d1:%[[D0]], d2:%[[D0]]] %[[V0]](d0, d1, d2)
     // CHECK:  : #sair.shape<d0:range x d1:range x d2:range>, memref<?x?xf32>
-    sair.to_memref[d0:%0] %2 memref[d1:%0, d2:%0] %3(d0, d1, d2) {
+    sair.to_memref[d0:%0] %3(d0) memref[d1:%0, d2:%0] %4(d0, d1, d2) {
       buffer_name = "bufferA"
     } : #sair.shape<d0:range x d1:range x d2:range>, memref<?x?xf32>
     sair.exit

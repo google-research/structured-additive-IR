@@ -153,6 +153,9 @@ class MappingAttr
   //   (d0,d1,d2).ShiftRight(2,1) => (d0,d1,d4)
   MappingAttr ShiftRight(int offset, int start_from = 0) const;
 
+  // Drops expressions in front of the mapping.
+  MappingAttr DropFront(int num_drop) const;
+
   // Inverse the mapping.
   MappingAttr Inverse() const;
 

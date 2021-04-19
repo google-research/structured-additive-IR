@@ -21,8 +21,9 @@
 namespace sair {
 
 IterationSpace::IterationSpace(llvm::SmallVector<mlir::StringAttr> loop_names,
-                               MappingAttr domain_to_loops)
-    : loop_names_(std::move(loop_names)) {
+                               MappingAttr domain_to_loops,
+                               bool fully_specified)
+    : loop_names_(std::move(loop_names)), fully_specified_(fully_specified) {
   assert(loop_names_.size() == domain_to_loops.size());
   mapping_ = domain_to_loops.Inverse().MakeSurjective().Inverse();
 }
@@ -71,7 +72,8 @@ static IterationSpace InferIterationSpace(
     domain_to_loops = domain_to_loops.Resize(new_size);
   }
 
-  return IterationSpace(std::move(loop_names), domain_to_loops);
+  return IterationSpace(std::move(loop_names), domain_to_loops,
+                        operand_iteration_space.fully_specified());
 }
 
 IterationSpaceAnalysis::IterationSpaceAnalysis(SairProgramOp program_op) {
@@ -109,8 +111,11 @@ const IterationSpace &IterationSpaceAnalysis::ComputeIterationSpace(
       loop_names.push_back(loop.name());
       exprs.push_back(loop.iter());
     }
+
+    bool fully_specified = compute_op.loop_nest().hasValue();
     auto mapping = MappingAttr::get(context, domain_size, exprs);
-    return iteration_space_.try_emplace(operation, loop_names, mapping)
+    return iteration_space_
+        .try_emplace(operation, loop_names, mapping, fully_specified)
         .first->second;
   }
 
@@ -118,7 +123,8 @@ const IterationSpace &IterationSpaceAnalysis::ComputeIterationSpace(
   auto empty_mapping = MappingAttr::get(context, domain_size, {});
   llvm::SmallVector<mlir::StringAttr> empty_names;
   auto it =
-      iteration_space_.try_emplace(operation, empty_names, empty_mapping).first;
+      iteration_space_.try_emplace(operation, empty_names, empty_mapping, false)
+          .first;
 
   auto infer_iteration_space = dyn_cast<InferIterationSpaceOp>(operation);
   if (infer_iteration_space == nullptr) return it->second;

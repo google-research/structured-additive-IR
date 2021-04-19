@@ -75,6 +75,9 @@ class Buffer {
   // value operand.
   llvm::ArrayRef<std::pair<ComputeOp, int>> reads() const { return reads_; }
 
+  // List of values stored in the buffer.
+  llvm::ArrayRef<mlir::Value> values() const { return values_; }
+
   // Get the location of the first operation defining the buffer.
   mlir::Location getLoc() const { return loc_; }
 
@@ -91,6 +94,8 @@ class Buffer {
 
   // Trims the loop-nest to the given size.
   void TrimLoopNest(int new_size);
+  // Registers a value stored in the buffer.
+  void AddValue(mlir::Value value);
 
   // Unifies this buffer layout with another layout.
   void UnifyLayout(MappingAttr layout);
@@ -107,6 +112,7 @@ class Buffer {
   std::optional<MappingAttr> layout_;
   llvm::SmallVector<std::pair<ComputeOp, int>> writes_;
   llvm::SmallVector<std::pair<ComputeOp, int>> reads_;
+  llvm::SmallVector<mlir::Value> values_;
 };
 
 // Describes how a value is stored. Attributes may be null if the buffer is not
@@ -149,6 +155,13 @@ class ValueStorage {
 
 bool operator==(const ValueStorage &lhs, const ValueStorage &rhs);
 bool operator!=(const ValueStorage &lhs, const ValueStorage &rhs);
+
+// Returns a mapping from the domain of a value defined in `def_iter_space` to a
+// space that represents the sub-domain of the value that must be stored
+// so that it can be used from `use_iter_space`.
+MappingAttr CommunicationVolume(int value_rank,
+                                const IterationSpace &def_iter_space,
+                                const IterationSpace &use_iter_space);
 
 // Computes buffers metadata and storage information for each value.
 class StorageAnalysis {

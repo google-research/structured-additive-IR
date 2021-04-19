@@ -46,7 +46,7 @@ class IterationSpace {
   // Infers the iteration space of the operation given loop names and a mapping
   // from the operation domain to loops.
   IterationSpace(llvm::SmallVector<mlir::StringAttr> loop_names,
-                 MappingAttr domain_to_loops);
+                 MappingAttr domain_to_loops, bool fully_specified);
 
   // Names of the loops.
   llvm::ArrayRef<mlir::StringAttr> loop_names() const { return loop_names_; }
@@ -56,6 +56,9 @@ class IterationSpace {
 
   // Mapping from the operation domain to the iteration space.
   MappingAttr mapping() const { return mapping_; }
+
+  // Indicates if the loop nest is fully specified or not.
+  bool fully_specified() const { return fully_specified_; }
 
   // Mapping from operation domain to loops.
   MappingAttr MappingToLoops() const { return mapping_.Resize(num_loops()); }
@@ -67,6 +70,7 @@ class IterationSpace {
  private:
   llvm::SmallVector<mlir::StringAttr> loop_names_;
   MappingAttr mapping_;
+  bool fully_specified_;
 };
 
 // Compute iteration spaces for each operation and value.

@@ -104,6 +104,8 @@ void Buffer::AddRead(ComputeOp op, int operand) {
   reads_.emplace_back(op, operand);
 }
 
+void Buffer::AddValue(mlir::Value value) { values_.push_back(value); }
+
 MappingAttr Buffer::PrefixedLayout() const {
   assert(layout_.has_value());
 
@@ -716,6 +718,12 @@ mlir::LogicalResult StorageAnalysis::SetStorage(
                            ValueStorage new_storage) -> mlir::LogicalResult {
     ValueStorage &storage = value_storages_[value];
     if (new_storage == storage) return mlir::success();
+
+    if (storage.buffer_name() == nullptr &&
+        new_storage.buffer_name() != nullptr) {
+      buffers_.find(new_storage.buffer_name())->second.AddValue(value);
+    }
+
     if (mlir::failed(storage.MergeSpace(new_storage.space()))) {
       return value.getDefiningOp()->emitError()
              << "conflicting memory spaces: expected " << new_storage.space()
@@ -792,6 +800,84 @@ mlir::LogicalResult StorageAnalysis::SetStorage(
   return mlir::success();
 }
 
+// Ensures that communication between the producer and the user of operand only
+// occurs within the same loop iteration or along dimensions that are
+// materialized in memory.
+static mlir::LogicalResult VerifyCommunicationVolume(
+    mlir::Location loc, const IterationSpace &use_iter_space,
+    const ValueAccess &operand, const IterationSpaceAnalysis &iteration_spaces,
+    const StorageAnalysis &storage_analysis) {
+  const IterationSpace &def_iter_space =
+      iteration_spaces.Get(operand.value.getDefiningOp());
+  // Only check if loop nest are specified.
+  if (!use_iter_space.fully_specified() || !def_iter_space.fully_specified()) {
+    return mlir::success();
+  }
+
+  const ValueStorage &storage = storage_analysis.GetStorage(operand.value);
+  // Success if storage is not yet specified.
+  if (storage.layout() == nullptr) return mlir::success();
+
+  MappingAttr communication_volume = CommunicationVolume(
+      operand.mapping.size(), def_iter_space, use_iter_space);
+  MappingAttr layout_to_operand =
+      def_iter_space.mapping().Compose(storage.layout()).Inverse();
+  MappingAttr layout_to_communication_volume =
+      layout_to_operand.Compose(communication_volume).Canonicalize();
+
+  // Check that the layout covers the sub-domain of the operand that is not
+  // covered by common dimensions.
+  if (layout_to_communication_volume.HasNoneExprs()) {
+    mlir::InFlightDiagnostic diag =
+        mlir::emitError(loc)
+        << "operand storage must cover all operand dimensions "
+           "that are not covered by loops common to both operand and user";
+    diag.attachNote(operand.value.getDefiningOp()->getLoc())
+        << "operand defined here";
+    return mlir::failure();
+  }
+
+  return mlir::success();
+}
+
+// Ensures that communication between producers and users only occurs within the
+// same loop iteration or along dimensions that are materialized in memory.
+static mlir::LogicalResult VerifyCommunicationVolume(
+    SairProgramOp program, const IterationSpaceAnalysis &iteration_spaces,
+    const StorageAnalysis &storage_analysis) {
+  // Ensure that values storage have enough dimensions.
+  auto result = program.walk([&](SairOp op) -> mlir::WalkResult {
+    const IterationSpace iter_space = iteration_spaces.Get(op);
+    // Check dependencies for value operands.
+    for (ValueOperand operand : op.ValueOperands()) {
+      if (mlir::failed(
+              VerifyCommunicationVolume(op.getLoc(), iter_space, operand.Get(),
+                                        iteration_spaces, storage_analysis))) {
+        return mlir::failure();
+      }
+    }
+    // Check dependencies for domain dimensions.
+    int domain_size = op.domain().size();
+    for (int i = 0; i < domain_size; ++i) {
+      auto dim_op = cast<SairOp>(op.domain()[i].getDefiningOp());
+      const DomainShapeDim &shape_dim = op.shape().Dimension(i);
+      MappingAttr dim_mapping =
+          shape_dim.dependency_mapping().ResizeUseDomain(domain_size);
+      for (ValueOperand operand : dim_op.ValueOperands()) {
+        ValueAccess access = operand.Get();
+        access.mapping = dim_mapping.Compose(access.mapping);
+        if (mlir::failed(VerifyCommunicationVolume(
+                op.getLoc(), iter_space, operand.Get(), iteration_spaces,
+                storage_analysis))) {
+          return mlir::failure();
+        }
+      }
+    }
+    return mlir::success();
+  });
+  return mlir::failure(result.wasInterrupted());
+}
+
 mlir::LogicalResult VerifyStorages(
     SairProgramOp program, const IterationSpaceAnalysis &iteration_spaces) {
   // Check storage attributes are well-formed.
@@ -831,7 +917,10 @@ mlir::LogicalResult VerifyStorages(
     }
     return mlir::success();
   });
-  return mlir::failure(result.wasInterrupted());
+  if (result.wasInterrupted()) return mlir::failure();
+
+  // TODO(b/174127497): make sure that value is not ovewritten by another write.
+  return VerifyCommunicationVolume(program, iteration_spaces, analysis);
 }
 
 BufferAttr GetRegister0DBuffer(mlir::MLIRContext *context) {
@@ -891,6 +980,22 @@ ValueStorage ValueStorage::Map(
     layout = iter_space_mapping.Compose(layout_).Canonicalize();
   }
   return ValueStorage(space_, buffer_name_, layout);
+}
+
+MappingAttr CommunicationVolume(int value_rank,
+                                const IterationSpace &def_iter_space,
+                                const IterationSpace &use_iter_space) {
+  int num_common_loops = def_iter_space.NumCommonLoops(use_iter_space);
+
+  // Mapping from the domain of the operand to common loops.
+  MappingAttr domain_to_common_loops = def_iter_space.mapping()
+                                           .ResizeUseDomain(value_rank)
+                                           .Resize(num_common_loops);
+  // Extend `domain_to_common_loops` to cover the full operand domain then drop
+  // common loops. This gives a mapping that only covers the sub-domain of the
+  // operand that is not covered by common loops.
+  return domain_to_common_loops.Inverse().MakeSurjective().Inverse().DropFront(
+      num_common_loops);
 }
 
 }  // namespace sair

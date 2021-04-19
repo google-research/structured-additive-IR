@@ -1658,6 +1658,26 @@ func @two_results_same_buffer() {
 
 // -----
 
+func @storage_must_cover_dimensions(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.static_range 8 : !sair.range
+    // expected-note @+1 {{operand defined here}}
+    %2 = sair.copy[d0:%1] %0 {
+      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
+      storage = [{space = "register", layout = #sair.named_mapping<[] -> ()>}]
+    } : !sair.value<d0:range, f32>
+    // expected-error @+1 {{operand storage must cover all operand dimensions}}
+    %3 = sair.copy[d0:%1] %2(d0) {
+      loop_nest = [{name = "B", iter = #sair.mapping_expr<d0>}]
+    } : !sair.value<d0:range, f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
 func @inplace_update_different_layout(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>

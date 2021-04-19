@@ -287,6 +287,61 @@ void InsertStore(ComputeOp op, int result_pos, const Buffer &buffer,
 // Implements storage attributes by replacing Sair values with memrefs.
 class MaterializeBuffers
     : public MaterializeBuffersPassBase<MaterializeBuffers> {
+  void RunOnProgram(SairProgramOp program) {
+    mlir::MLIRContext *context = &getContext();
+    mlir::OpBuilder builder(context);
+    auto storage_analysis = getChildAnalysis<StorageAnalysis>(program);
+    auto fusion_analysis = getChildAnalysis<LoopFusionAnalysis>(program);
+    auto iteration_spaces = getChildAnalysis<IterationSpaceAnalysis>(program);
+
+    for (auto &[name, buffer] : storage_analysis.buffers()) {
+      ValueAccess memref;
+      // Allocate or retrieve the buffer.
+      if (buffer.is_external()) {
+        const IterationSpace &iter_space = iteration_spaces.Get(
+            cast<SairOp>(buffer.import_op().getOperation()));
+        ValueOperand memref_operand = buffer.import_op().MemRef();
+        memref.value = memref_operand.value();
+        memref.mapping =
+            iter_space.mapping().Inverse().Compose(memref_operand.Mapping());
+      } else {
+        memref.value = AllocateBuffer(buffer, fusion_analysis, builder);
+        memref.mapping =
+            MappingAttr::GetIdentity(context, buffer.loop_nest().size());
+      }
+
+      // Insert loads and stores.
+      for (auto [op, pos] : buffer.reads()) {
+        InsertLoad(op, pos, buffer, memref, fusion_analysis, iteration_spaces,
+                   storage_analysis, builder);
+      }
+      for (auto [op, pos] : buffer.writes()) {
+        InsertStore(op, pos, buffer, memref, fusion_analysis, iteration_spaces,
+                    storage_analysis, builder);
+      }
+
+      // Erase ToMemRefOp as it has side effects and wont be considered by
+      // DCE.
+      if (buffer.is_external() &&
+          isa<SairToMemRefOp>(buffer.import_op().getOperation())) {
+        buffer.import_op()->erase();
+      }
+
+      // Drop proj_* and fby operations as we changed the operation storage to
+      // register which might make verifier complain that storage volume is
+      // insufficient. These operations would be removed by DCE anyway.
+      for (mlir::Value value : buffer.values()) {
+        mlir::Operation *op = value.getDefiningOp();
+        if (!isa<SairProjAnyOp, SairProjLastOp, SairFbyOp>(op)) {
+          continue;
+        }
+
+        op->dropAllDefinedValueUses();
+        op->erase();
+      }
+    }
+  }
+
   void runOnFunction() override {
     markAnalysesPreserved<LoopFusionAnalysis, IterationSpaceAnalysis>();
 
@@ -313,46 +368,7 @@ class MaterializeBuffers
       return;
     }
 
-    mlir::MLIRContext *context = &getContext();
-    mlir::OpBuilder builder(context);
-    getFunction().walk([&](SairProgramOp program) {
-      auto storage_analysis = getChildAnalysis<StorageAnalysis>(program);
-      auto fusion_analysis = getChildAnalysis<LoopFusionAnalysis>(program);
-      auto iteration_spaces = getChildAnalysis<IterationSpaceAnalysis>(program);
-      for (auto &[name, buffer] : storage_analysis.buffers()) {
-        ValueAccess memref;
-        // Allocate or retrieve the buffer.
-        if (buffer.is_external()) {
-          const IterationSpace &iter_space = iteration_spaces.Get(
-              cast<SairOp>(buffer.import_op().getOperation()));
-          ValueOperand memref_operand = buffer.import_op().MemRef();
-          memref.value = memref_operand.value();
-          memref.mapping =
-              iter_space.mapping().Inverse().Compose(memref_operand.Mapping());
-        } else {
-          memref.value = AllocateBuffer(buffer, fusion_analysis, builder);
-          memref.mapping =
-              MappingAttr::GetIdentity(context, buffer.loop_nest().size());
-        }
-
-        // Insert loads and stores.
-        for (auto [op, pos] : buffer.reads()) {
-          InsertLoad(op, pos, buffer, memref, fusion_analysis, iteration_spaces,
-                     storage_analysis, builder);
-        }
-        for (auto [op, pos] : buffer.writes()) {
-          InsertStore(op, pos, buffer, memref, fusion_analysis,
-                      iteration_spaces, storage_analysis, builder);
-        }
-
-        // Erase ToMemRefOp as it has side effects and wont be considered by
-        // DCE.
-        if (buffer.is_external() &&
-            isa<SairToMemRefOp>(buffer.import_op().getOperation())) {
-          buffer.import_op()->erase();
-        }
-      }
-    });
+    getFunction().walk([&](SairProgramOp program) { RunOnProgram(program); });
   }
 };
 
