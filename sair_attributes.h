@@ -112,13 +112,14 @@ class MappingAttr
   bool HasNoneExprs() const;
   bool IsSurjective() const { return !HasNoneExprs(); }
 
+  // Replaces `none` expressions by new dimensions to make the mapping
+  // surjective.
+  MappingAttr MakeSurjective() const;
+
   // HasUnknownExprs indicates if any sub-expression is `?`.
   bool HasUnknownExprs() const;
   bool IsFullySpecified() const { return !HasUnknownExprs(); }
 
-  // Replaces `none` expressions by new dimensions to make the mapping
-  // surjective.
-  MappingAttr MakeSurjective() const;
 
   // Indicates whether the mapping is an identity, e.g. does not
   // transpose or otherwise modify any dimension.
@@ -152,6 +153,9 @@ class MappingAttr
   //   (d0,d1,d2).ShiftRight(2)  =>  (d2,d3,d4)
   //   (d0,d1,d2).ShiftRight(2,1) => (d0,d1,d4)
   MappingAttr ShiftRight(int offset, int start_from = 0) const;
+
+  // Adds mapping expressions in front of the mapping.
+  MappingAttr AddPrefix(llvm::ArrayRef<MappingExpr> exprs) const;
 
   // Drops expressions in front of the mapping.
   MappingAttr DropFront(int num_drop) const;

@@ -97,11 +97,11 @@ func @remove_cyclic_fby(%arg0: f32, %arg1: memref<?x?x?xf32>) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range 8 : !sair.range
+    %4 = sair.from_scalar %arg1 : !sair.value<(), memref<?x?x?xf32>>
     // CHECK: %[[INIT:.*]] = sair.copy
     %2 = sair.copy[d0:%1, d1:%1, d2:%1] %0 : !sair.value<d0:range x d1:range x d2:range, f32>
     // CHECK-NOT: sair.fby
     %3 = sair.fby[d0:%1, d1:%1, d2:%1] %2(d2, d1, d0) then[d3:%1] %3(d0, d1, d2, d3) : !sair.value<d0:range x d1:range x d2:range x d3:range, f32>
-    %4 = sair.from_scalar %arg1 : !sair.value<(), memref<?x?x?xf32>>
     // CHECK: sair.to_memref[{{.*}}] %{{.*}} memref[{{.*}}] %[[INIT]](d1, d3, d2)
     sair.to_memref[d0:%1] %4 memref[d1:%1, d2:%1, d3:%1] %3(d2, d3, d1, d0) {
       buffer_name = "bufferA"

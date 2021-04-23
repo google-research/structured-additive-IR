@@ -282,8 +282,8 @@ void EmitMemRefToValue(
 // Values are indexed with "mappings" and have the provided "ranges".
 // Expects equal number of Sair values, memrefs, mappings and ranges
 // to be passed.
-void EmitValueToMemRef(mlir::Location loc, mlir::ValueRange sair_values,
-                       mlir::ValueRange memrefs,
+void EmitValueToMemRef(mlir::Location loc, SairProgramOp program,
+                       mlir::ValueRange sair_values, mlir::ValueRange memrefs,
                        llvm::ArrayRef<mlir::Attribute> mappings,
                        llvm::ArrayRef<llvm::SmallVector<mlir::Value, 4>> ranges,
                        StorageAnalysis &storage_analysis,
@@ -301,8 +301,13 @@ void EmitValueToMemRef(mlir::Location loc, mlir::ValueRange sair_values,
     auto shape = DomainShapeAttr::HyperRectangular(context, ranges[i].size());
     auto memref_value_type =
         ValueType::get(DomainShapeAttr::get(context), memrefs[i].getType());
-    auto from_scalar =
-        rewriter.create<SairFromScalarOp>(loc, memref_value_type, memrefs[i]);
+    mlir::Value from_scalar;
+    {
+      mlir::OpBuilder::InsertionGuard guard(rewriter);
+      rewriter.setInsertionPointToStart(&program.body().front());
+      from_scalar =
+          rewriter.create<SairFromScalarOp>(loc, memref_value_type, memrefs[i]);
+    }
     rewriter.create<SairToMemRefOp>(
         loc, mlir::ValueRange(), ranges[i], mapping_array, from_scalar,
         sair_values[i], shape, storage_analysis.GetFreshBufferName());
@@ -634,8 +639,9 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
   MoveBodyBlock(linalg_to_sair_loops, rewriter, map_op->getRegion(0), op);
 
   // Convert output values to input/output MemRefs used by Linalg.
-  EmitValueToMemRef(loc, map_op->getResults(), op.getOutputBuffers(),
-                    result_mappings, result_ranges, storage_analysis, rewriter);
+  EmitValueToMemRef(loc, sair_program, map_op->getResults(),
+                    op.getOutputBuffers(), result_mappings, result_ranges,
+                    storage_analysis, rewriter);
 
   // Add the sair.program terminator.
   rewriter.create<SairExitOp>(loc);

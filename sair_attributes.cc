@@ -1032,6 +1032,14 @@ MappingAttr MappingAttr::UnifyNoneExprs(MappingAttr other) const {
   return MappingAttr::get(getContext(), UseDomainSize(), exprs);
 }
 
+MappingAttr MappingAttr::AddPrefix(llvm::ArrayRef<MappingExpr> exprs) const {
+  llvm::SmallVector<MappingExpr> new_exprs;
+  new_exprs.reserve(exprs.size() + size());
+  llvm::append_range(new_exprs, exprs);
+  llvm::append_range(new_exprs, Dimensions());
+  return MappingAttr::get(getContext(), UseDomainSize(), new_exprs);
+}
+
 MappingAttr MappingAttr::DropFront(int num_drop) const {
   assert(num_drop <= size());
   llvm::SmallVector<MappingExpr> new_exprs;

@@ -29,9 +29,13 @@ IterationSpace::IterationSpace(llvm::SmallVector<mlir::StringAttr> loop_names,
 }
 
 int IterationSpace::NumCommonLoops(const IterationSpace &other) const {
-  llvm::ArrayRef<mlir::StringAttr> other_loops = other.loop_names();
+  return NumCommonLoops(other.loop_names());
+}
+
+int IterationSpace::NumCommonLoops(
+    llvm::ArrayRef<mlir::StringAttr> other) const {
   auto it_pair = std::mismatch(loop_names().begin(), loop_names().end(),
-                               other_loops.begin(), other_loops.end());
+                               other.begin(), other.end());
   return std::distance(loop_names().begin(), it_pair.first);
 }
 

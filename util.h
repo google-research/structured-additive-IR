@@ -73,6 +73,11 @@ mlir::Value Materialize(mlir::Location loc, mlir::OpFoldResult value,
 llvm::SmallVector<mlir::Value> CreatePlaceholderDomain(
     mlir::Location loc, DomainShapeAttr shape, mlir::OpBuilder &builder);
 
+// Behaves like assert(mlir::succeeded(expr)) but always executes expr.
+inline void AssertSuccess(mlir::LogicalResult result) {
+  assert(mlir::succeeded(result));
+}
+
 }  // namespace sair
 
 #endif  // THIRD_PARTY_SAIR_TRANSFORMS_UTIL_H_

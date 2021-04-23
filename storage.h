@@ -34,14 +34,12 @@ BufferAttr GetRegister0DBuffer(mlir::MLIRContext *context);
 // A buffer declared by one or more storage attributes.
 class Buffer {
  public:
-  // Create a new buffer written to by the given operation. The operation must
-  // have a loop_nest attribute set. `result` is the position of `op` result
-  // stored in `buffer`.
-  Buffer(mlir::Type element_type, ComputeOp op, int result,
-         const LoopFusionAnalysis &fusion_analysis);
-  Buffer(FromToMemRefOp import_op,
-         const IterationSpaceAnalysis &iteration_spaces,
-         const LoopFusionAnalysis &fusion_analysis);
+  // Create a new buffer written to by the given operation.
+  Buffer(mlir::Location loc, mlir::Type element_type,
+         llvm::ArrayRef<mlir::StringAttr> loop_names,
+         const LoopNest &loop_nest);
+  Buffer(FromToMemRefOp import_op, llvm::ArrayRef<mlir::StringAttr> loop_names,
+         const LoopNest &loop_nest);
 
   // Number of dimensions in the buffer layout.
   std::optional<int> rank() const;
@@ -52,9 +50,9 @@ class Buffer {
   // Loop nest in which the buffer is defined.
   llvm::ArrayRef<mlir::StringAttr> loop_nest() const { return loop_nest_; }
 
-  // Domain from which the buffer size is derived.
+  // Domain from which the buffer size is derived. This is prefixed by the
+  // domain of the buffer loop nest.
   llvm::ArrayRef<ValueAccess> domain() const { return domain_; }
-  llvm::SmallVectorImpl<ValueAccess> &domain() { return domain_; }
 
   // Mapping from domain dimensions to buffer dimensions.
   std::optional<MappingAttr> layout() const { return layout_; }
@@ -81,24 +79,17 @@ class Buffer {
   // Get the location of the first operation defining the buffer.
   mlir::Location getLoc() const { return loc_; }
 
-  // Mapping of domain to layout prefixed by loop nest iterators. The prefix
-  // corresponds to the different instances of the buffer. Cannot be called if
-  // the layout is not yet specified.
-  MappingAttr PrefixedLayout() const;
-
-  // Registers an operation writting to the buffer.
-  void AddWrite(ComputeOp op, int result);
-
-  // Registers an operation reading the buffer.
-  void AddRead(ComputeOp op, int operand);
-
-  // Trims the loop-nest to the given size.
-  void TrimLoopNest(int new_size);
   // Registers a value stored in the buffer.
   void AddValue(mlir::Value value);
 
+  // Sets the loop_nest. The new loop nest must be a prefix of the former one.
+  void SetLoopNest(const LoopNest &new_loop_nest);
+
   // Unifies this buffer layout with another layout.
   void UnifyLayout(MappingAttr layout);
+
+  // Appends values to the buffer domain.
+  void AppendToDomain(llvm::ArrayRef<ValueAccess> new_values);
 
  private:
   mlir::Location loc_;
@@ -106,7 +97,6 @@ class Buffer {
   FromToMemRefOp import_op_ = nullptr;
 
   llvm::SmallVector<mlir::StringAttr> loop_nest_;
-  MappingAttr loop_nest_mapping_;
 
   llvm::SmallVector<ValueAccess> domain_;
   std::optional<MappingAttr> layout_;
@@ -114,6 +104,12 @@ class Buffer {
   llvm::SmallVector<std::pair<ComputeOp, int>> reads_;
   llvm::SmallVector<mlir::Value> values_;
 };
+
+// Mapping of domain to layout prefixed by loop nest iterators. The prefix
+// corresponds to the different instances of the buffer. Asserts if the layout
+// is not yet specified.
+MappingAttr BufferInstanceLayout(const Buffer &buffer,
+                                 const LoopFusionAnalysis &fusion_analysis);
 
 // Describes how a value is stored. Attributes may be null if the buffer is not
 // yet specified. Merge* methods replace null attributes by a new value or
@@ -135,6 +131,7 @@ class ValueStorage {
   mlir::LogicalResult MergeBufferName(mlir::StringAttr new_name);
 
   // Mapping from the iteration space of the value to buffer dimensions.
+  // MergeLayout unifies layout by substituting `?` expressions only.
   MappingAttr layout() const { return layout_; }
   mlir::LogicalResult MergeLayout(MappingAttr new_layout);
 
@@ -193,6 +190,14 @@ class StorageAnalysis {
   // invalidating the analysis.
   mlir::StringAttr GetFreshBufferName();
 
+  // Verifies that buffer loop nests are valid and minimizes their size if
+  // possible. This is automatically called when creating StorageAnalysis. It
+  // should only be manually called when the storage analysis is modified by
+  // passes.
+  mlir::LogicalResult VerifyAndMinimizeBufferLoopNests(
+      const LoopFusionAnalysis &fusion_analysis,
+      const IterationSpaceAnalysis &iteration_spaces);
+
  private:
   // Creates an empty analysis.
   StorageAnalysis(mlir::MLIRContext *context) : context_(context){};
@@ -202,12 +207,14 @@ class StorageAnalysis {
 
   // Fills value_storages_.
   mlir::LogicalResult ComputeValueStorages(
-      SairProgramOp program, const IterationSpaceAnalysis &iteration_spaces);
+      SairProgramOp program, const LoopFusionAnalysis &fusion_analysis,
+      const IterationSpaceAnalysis &iteration_spaces);
 
   // Sets the storage of a value and propagates the information to other values.
   // Emits an error if the new storage conflicts with existing storage.
   mlir::LogicalResult SetStorage(
       mlir::Value value, ValueStorage storage,
+      const LoopFusionAnalysis &fusion_analysis,
       const IterationSpaceAnalysis &iteration_spaces);
 
   mlir::MLIRContext *context_;

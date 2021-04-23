@@ -66,6 +66,7 @@ class IterationSpace {
   // Returns the number of common loops between this iteration space and
   // another.
   int NumCommonLoops(const IterationSpace &other) const;
+  int NumCommonLoops(llvm::ArrayRef<mlir::StringAttr> other) const;
 
  private:
   llvm::SmallVector<mlir::StringAttr> loop_names_;

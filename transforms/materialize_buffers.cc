@@ -79,7 +79,7 @@ std::pair<InsertionPoint, InsertionPoint> FindInsertionPoints(
 std::pair<mlir::SmallVector<int64_t>, ValueRange> GetMemRefShape(
     const Buffer &buffer, DomainShapeAttr shape,
     llvm::ArrayRef<mlir::Value> domain, mlir::ArrayAttr loop_nest,
-    mlir::OpBuilder &builder) {
+    const LoopFusionAnalysis &fusion_analysis, mlir::OpBuilder &builder) {
   mlir::MLIRContext *context = builder.getContext();
   mlir::OpBuilder::InsertPoint map_point = builder.saveInsertionPoint();
 
@@ -92,7 +92,7 @@ std::pair<mlir::SmallVector<int64_t>, ValueRange> GetMemRefShape(
 
   llvm::SmallVector<int64_t> memref_shape;
   llvm::SmallVector<mlir::Value> scalar_sizes;
-  auto inverse_layout = buffer.PrefixedLayout().Inverse();
+  auto inverse_layout = BufferInstanceLayout(buffer, fusion_analysis).Inverse();
 
   MappingAttr layout = buffer.layout().value();
   for (MappingExpr layout_dim : layout) {
@@ -161,8 +161,8 @@ mlir::Value AllocateBuffer(const Buffer &buffer,
       CreatePlaceholderDomain(buffer.getLoc(), shape, builder);
 
   // Compute memref sizes.
-  auto [memref_shape, sizes] =
-      GetMemRefShape(buffer, shape, domain, alloc_point.loop_nest, builder);
+  auto [memref_shape, sizes] = GetMemRefShape(
+      buffer, shape, domain, alloc_point.loop_nest, fusion_analysis, builder);
 
   // Introduce a malloc operation.
   auto memref_type = mlir::MemRefType::get(memref_shape, buffer.element_type());
