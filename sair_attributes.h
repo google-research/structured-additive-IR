@@ -120,6 +120,8 @@ class MappingAttr
   bool HasUnknownExprs() const;
   bool IsFullySpecified() const { return !HasUnknownExprs(); }
 
+  // Replaces `?` expressions by `none` expressions.
+  MappingAttr MakeFullySpecified() const;
 
   // Indicates whether the mapping is an identity, e.g. does not
   // transpose or otherwise modify any dimension.
@@ -154,8 +156,9 @@ class MappingAttr
   //   (d0,d1,d2).ShiftRight(2,1) => (d0,d1,d4)
   MappingAttr ShiftRight(int offset, int start_from = 0) const;
 
-  // Adds mapping expressions in front of the mapping.
+  // Adds mapping expressions in front or at the end of the mapping.
   MappingAttr AddPrefix(llvm::ArrayRef<MappingExpr> exprs) const;
+  MappingAttr AddSuffix(llvm::ArrayRef<MappingExpr> exprs) const;
 
   // Drops expressions in front of the mapping.
   MappingAttr DropFront(int num_drop) const;
@@ -166,19 +169,27 @@ class MappingAttr
   // Canonicalize dimension expressions.
   MappingAttr Canonicalize() const;
 
-  // Unifies this mapping with `other` by substituting `none` expressions.
-  // Returns `nullptr` if unification fails in one of the dimensions. Both
-  // expressions must have the same number of dimensions and domain size.
-  MappingAttr UnifyNoneExprs(MappingAttr other) const;
+  // Unifies this mapping with `other` by substituting `none` and `?`
+  // expressions. In case `none` conflicts with a `?`, keeps the `none`
+  // expression. Returns `nullptr` if unification fails in one of the
+  // dimensions. Both expressions must have the same number of dimensions and
+  // domain size.
+  MappingAttr Unify(MappingAttr other) const;
+
+  // Unifies this mapping with `other` by substituting ``?` expressions. Returns
+  // `nullptr` if unification fails in one of the dimensions. Both expressions
+  // must have the same number of dimensions and domain size.
+  MappingAttr UnifyUnknownExprs(MappingAttr other) const;
 
   using iterator = llvm::ArrayRef<MappingExpr>::iterator;
   iterator begin() const { return Dimensions().begin(); }
   iterator end() const { return Dimensions().end(); }
 };
 
-// Unifies two mapping expressions by substituting `none` expressions. Returns
-// nullptr in case of failure.
-MappingExpr UnifyNoneExprs(MappingExpr lhs, MappingExpr rhs);
+// Unifies two mapping expressions by substituting `none` and `?` expressions.
+// In the case where `none` conflicts with `?`, keeps `none`.  Returns nullptr
+// in case of failure.
+MappingExpr Unify(MappingExpr lhs, MappingExpr rhs);
 
 // Fills `constraints` with expression such that
 // `lhs.SubstituteDims(constraints).Unify(rhs)` succeeds. Expects `contraints`

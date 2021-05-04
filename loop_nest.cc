@@ -165,7 +165,7 @@ MappingAttr IterationSpaceAnalysis::TryTranslateMapping(
       mapping.getContext(), num_common_loops, from_space.mapping().size());
   MappingAttr loops_mapping =
       common_loops_mapping.Resize(to_space.mapping().size());
-  return space_mapping.UnifyNoneExprs(loops_mapping);
+  return space_mapping.Unify(loops_mapping);
 }
 
 // Analysis that keeps track of dependencies between loops.
@@ -774,8 +774,8 @@ mlir::LogicalResult LoopFusionAnalysis::RegisterLoop(
     }
   }
 
-  fusion_class.iter_expr = UnifyNoneExprs(
-      loop.iter().SubstituteDims(constraints), fusion_class.iter_expr);
+  fusion_class.iter_expr =
+      Unify(loop.iter().SubstituteDims(constraints), fusion_class.iter_expr);
   assert(fusion_class.iter_expr != nullptr);
 
   return mlir::success();

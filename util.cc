@@ -85,7 +85,7 @@ mlir::LogicalResult ResolveUnificationConstraint(
   mlir::Operation *defining_op = dimension.value.getDefiningOp();
   if (isa<SairPlaceholderOp>(defining_op)) return mlir::success();
 
-  if (constraint.isa<MappingNoneExpr>()) {
+  if (constraint.isa<MappingNoneExpr, MappingUnknownExpr>()) {
     constraint = MappingDimExpr::get(target_domain.size(), context);
     target_domain.push_back(dimension);
   } else if (auto dim_expr = constraint.dyn_cast<MappingDimExpr>()) {

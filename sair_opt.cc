@@ -23,6 +23,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "mlir/IR/AsmState.h"
 #include "mlir/IR/Dialect.h"
+#include "mlir/IR/MLIRContext.h"
 #include "mlir/InitAllDialects.h"
 #include "mlir/InitAllPasses.h"
 #include "mlir/Pass/PassManager.h"
@@ -59,6 +60,7 @@ int main(int argc, char **argv) {
       llvm::cl::init(false));
 
   llvm::InitLLVM init(argc, argv);
+  mlir::registerMLIRContextCLOptions();
 
   // Register dialects.
   mlir::DialectRegistry registry;

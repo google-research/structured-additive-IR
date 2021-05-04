@@ -54,7 +54,7 @@ class LowerProjAny : public LowerProjAnyPassBase<LowerProjAny> {
             operand.Mapping().Resize(domain_size).Compose(op.Value().Mapping());
         MappingAttr mapping = loops_mapping.Resize(value_mapping.size())
                                   .ResizeUseDomain(user.domain().size())
-                                  .UnifyNoneExprs(value_mapping);
+                                  .Unify(value_mapping);
 
         // Projection can be fully eliminated.
         if (num_common_loops == mapping.size()) {

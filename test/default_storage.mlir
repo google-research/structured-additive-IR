@@ -22,7 +22,7 @@ func @preserve_memory_space() {
     // CHECK: storage = [{layout = #sair.named_mapping<[] -> ()>, name = "A", space = "memory"}]
     %0 = sair.map attributes {
       loop_nest = [],
-      storage =[{space = "memory", name = "A", layout = #sair.named_mapping<[] -> ()>}]
+      storage =[{space = "memory", name = "A"}]
     } {
       ^bb0:
         %c1 = constant 1.0 : f32
@@ -111,7 +111,68 @@ func @propagate_storage(%arg0: f32) {
     %2 = sair.fby %0 then[d0:%1] %3(d0) : !sair.value<d0:range, f32>
     // CHECK: sair.copy
     // CHECK: storage = [{layout = #sair.named_mapping<[] -> ()>, space = "register"}]
-    %3 = sair.copy[d0:%1] %2(d0) : !sair.value<d0:range, f32>
+    %3 = sair.copy[d0:%1] %2(d0) {
+      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
+    } : !sair.value<d0:range, f32>
+    sair.exit
+  }
+  return
+}
+
+// CHECK-LABEL: @non_rectangular
+func @non_rectangular_shape(%arg0: f32, %arg1: index) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.from_scalar %arg1 : !sair.value<(), index>
+    %2 = sair.static_range 8 : !sair.range
+    %3 = sair.dyn_range[d0:%2] %1 : !sair.range<d0:range>
+    // CHECK: storage = [{
+    // CHECK:   layout = #sair.named_mapping<[d0:"loopB"] -> (d0)>,
+    // CHECK:   name = "[[BUFFER:.*]]", space = "memory"
+    // CHECK: }]
+    %4 = sair.copy[d0:%2, d1:%3] %0 {
+      loop_nest = [
+        {name = "loopA", iter = #sair.mapping_expr<d0>},
+        {name = "loopB", iter = #sair.mapping_expr<d1>}
+      ]
+    } : !sair.value<d0:range x d1:range(d0), f32>
+    %5 = sair.copy[d0:%2, d1:%3] %4(d0, d1) {
+      loop_nest = [
+        {name = "loopA", iter = #sair.mapping_expr<d0>},
+        {name = "loopC", iter = #sair.mapping_expr<d1>}
+      ]
+    } : !sair.value<d0:range x d1:range(d0), f32>
+    sair.exit
+  }
+  return
+}
+
+// CHECK-LABEL: @buffer_reuse
+func @buffer_reuse(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.static_range 4 : !sair.range
+    %2 = sair.static_range 8 : !sair.range
+
+    // First use.
+    // CHECK: layout = #sair.named_mapping<[d0:"loopA"] -> (none, d0)>
+    %3 = sair.copy[d0:%1] %0 {
+      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
+      storage = [{name = "buffer", space = "memory"}]
+    } : !sair.value<d0:range, f32>
+    %4 = sair.copy[d0:%1] %3(d0){
+      loop_nest = [{name = "loopB", iter = #sair.mapping_expr<d0>}]
+    } : !sair.value<d0:range, f32>
+
+    // Second use
+    // CHECK: layout = #sair.named_mapping<[d0:"loopC"] -> (d0, none)>
+    %5 = sair.copy[d0:%2] %0 {
+      loop_nest = [{name = "loopC", iter = #sair.mapping_expr<d0>}],
+      storage = [{name = "buffer", space = "memory"}]
+    } : !sair.value<d0:range, f32>
+    %6 = sair.copy[d0:%2] %5(d0){
+      loop_nest = [{name = "loopD", iter = #sair.mapping_expr<d0>}]
+    } : !sair.value<d0:range, f32>
     sair.exit
   }
   return

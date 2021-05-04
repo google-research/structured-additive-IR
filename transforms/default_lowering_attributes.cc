@@ -51,23 +51,22 @@ mlir::LogicalResult CommitStorage(
 
   for (int i = 0, e = op->getNumResults(); i < e; ++i) {
     const ValueStorage &storage = storage_analysis.GetStorage(op->getResult(i));
-    if (storage.space() == nullptr) continue;
-    llvm::SmallBitVector indexed_loops = storage.layout().DependencyMask();
-    if (indexed_loops.find_last() >=
-        static_cast<int>(iter_space.loop_names().size())) {
-      return op.emitError() << "incomplete loop nest";
-    }
 
-    auto none = MappingNoneExpr::get(context);
-    llvm::SmallVector<MappingExpr> renaming(iter_space.mapping().size(), none);
-    llvm::SmallVector<mlir::StringAttr> loop_names;
-    for (int loop : indexed_loops.set_bits()) {
-      renaming[loop] = MappingDimExpr::get(loop_names.size(), context);
-      loop_names.push_back(iter_space.loop_names()[loop]);
-    }
+    NamedMappingAttr layout;
+    if (storage.layout() != nullptr) {
+      llvm::SmallBitVector indexed_loops = storage.layout().DependencyMask();
+      auto none = MappingNoneExpr::get(context);
+      llvm::SmallVector<MappingExpr> renaming(iter_space.mapping().size(),
+                                              none);
+      llvm::SmallVector<mlir::StringAttr> loop_names;
+      for (int loop : indexed_loops.set_bits()) {
+        renaming[loop] = MappingDimExpr::get(loop_names.size(), context);
+        loop_names.push_back(iter_space.loop_names()[loop]);
+      }
 
-    auto layout = NamedMappingAttr::get(loop_names, renaming, context)
-                      .Compose(storage.layout());
+      layout = NamedMappingAttr::get(loop_names, renaming, context)
+                   .Compose(storage.layout());
+    }
     auto attr = BufferAttr::get(storage.space(), storage.buffer_name(), layout,
                                 context);
     op.SetStorage(i, attr);
@@ -75,49 +74,152 @@ mlir::LogicalResult CommitStorage(
   return mlir::success();
 }
 
-// Creates and sets a buffer attribute for result `result` of `op`.
-mlir::LogicalResult GenerateBufferAttr(ComputeOp op, int result,
-                                       StorageAnalysis &storage_analysis) {
-  mlir::MLIRContext *context = op->getContext();
+// Indicates if an operand can use the value from registers.
+bool FitsInRegisters(const ValueOperand &operand,
+                     const IterationSpaceAnalysis &iteration_spaces) {
+  SairOp defining_op = operand.value().getDefiningOp();
+  MappingAttr mapping = iteration_spaces.TranslateMapping(
+      operand.getOwner(), defining_op,
+      operand.Mapping().Resize(defining_op.domain().size()));
+  int common_loops = iteration_spaces.Get(operand.getOwner())
+                         .NumCommonLoops(iteration_spaces.Get(defining_op));
+  // Test if the operand is only accessed along common loops.
+  return mapping.MinDomainSize() <= common_loops;
+}
+
+// Initialize storage for value with default values if needed. Memory space is
+// initialized with `register` and layout is initialized with `?`
+// expressions.
+void InitializeStorage(mlir::Value value,
+                       const LoopFusionAnalysis &fusion_analysis,
+                       const IterationSpaceAnalysis &iteration_spaces,
+                       StorageAnalysis &storage_analysis) {
+  mlir::MLIRContext *context = value.getContext();
   auto *sair_dialect = context->getLoadedDialect<SairDialect>();
-  auto sair_op = cast<SairOp>(op.getOperation());
+  ValueStorage storage = storage_analysis.GetStorage(value);
 
-  BufferAttr buffer;
-  if (sair_op.shape().Is0d()) {
-    buffer = BufferAttr::get(
-        /*space=*/sair_dialect->register_attr(),
-        /*name=*/nullptr,
-        /*layout=*/NamedMappingAttr::GetIdentity(context, {}), context);
-  } else {
-    auto type = op->getResultTypes()[result].cast<ValueType>();
-    if (type.ElementType().isa<mlir::IndexType>()) {
-      return op.emitError() << "cannot generate default storage for "
-                               "multi-dimensional index values";
-    }
-    if (!sair_op.shape().IsHyperRectangular()) {
-      return op.emitError() << "cannot generate default storage for "
-                               "non-rectangular shapes";
-    }
-
-    llvm::SmallVector<mlir::StringAttr> loop_names;
-    llvm::SmallVector<MappingExpr> loop_iters;
-    for (auto attr : op.LoopNestLoops()) {
-      LoopAttr loop = attr.cast<LoopAttr>();
-      loop_names.push_back(loop.name());
-      loop_iters.push_back(loop.iter());
-    }
-
-    // Keep the original operation shape for the storage shape.
-    auto loops_mapping =
-        MappingAttr::get(context, sair_op.domain().size(), loop_iters);
-    auto layout = NamedMappingAttr::get(loop_names, loops_mapping.Inverse());
-
-    buffer = BufferAttr::get(
-        /*space=*/sair_dialect->memory_attr(),
-        /*name=*/storage_analysis.GetFreshBufferName(),
-        /*layout=*/layout, context);
+  // Set memory space to register.
+  if (storage.space() == nullptr) {
+    AssertSuccess(storage.MergeSpace(sair_dialect->register_attr()));
   }
-  op.SetStorage(result, buffer);
+
+  // Initialize layout.
+  if (storage.layout() == nullptr) {
+    int num_dimensions = 0;
+    if (storage.buffer_name() != nullptr) {
+      const Buffer &buffer = storage_analysis.GetBuffer(storage.buffer_name());
+      if (buffer.rank().has_value()) num_dimensions = buffer.rank().value();
+    }
+    const IterationSpace &iter_space =
+        iteration_spaces.Get(value.getDefiningOp());
+
+    auto unknown_expr = MappingUnknownExpr::get(context);
+    llvm::SmallVector<MappingExpr> exprs(num_dimensions, unknown_expr);
+    auto layout = MappingAttr::get(context, iter_space.mapping().size(), exprs);
+    AssertSuccess(storage.MergeLayout(layout));
+  }
+  storage_analysis.MergeStorage(value, storage, fusion_analysis,
+                                iteration_spaces);
+}
+
+// Adds new dimensions to the operand value layout so that the operand has
+// access to the data it needs.
+mlir::LogicalResult ExtendLayout(ValueOperand operand,
+                                 const IterationSpaceAnalysis &iteration_spaces,
+                                 const LoopFusionAnalysis &fusion_analysis,
+                                 StorageAnalysis &storage_analysis) {
+  mlir::MLIRContext *context = operand.value().getContext();
+  const ValueStorage &storage = storage_analysis.GetStorage(operand.value());
+  SairOp defining_op = operand.value().getDefiningOp();
+  const IterationSpace &def_iter_space = iteration_spaces.Get(defining_op);
+  const IterationSpace &use_iter_space =
+      iteration_spaces.Get(operand.getOwner());
+
+  // Check what dimensions of communication volume are covered by the layout.
+  int operand_rank = operand.Mapping().size();
+  MappingAttr communication_volume =
+      CommunicationVolume(operand_rank, def_iter_space, use_iter_space);
+
+  MappingAttr layout_to_operand =
+      def_iter_space.mapping().Compose(storage.layout()).Inverse();
+  MappingAttr layout_to_communication_volume =
+      layout_to_operand.Compose(communication_volume);
+
+  if (layout_to_communication_volume.IsSurjective()) return mlir::success();
+
+  assert(storage.buffer_name() != nullptr &&
+         "-default-storage-attribute pass should have added buffer names "
+         "before reaching this point.");
+  const Buffer &buffer = storage_analysis.GetBuffer(storage.buffer_name());
+  assert(buffer.rank().has_value());
+  if (buffer.is_external()) {
+    return operand.value().getDefiningOp()->emitError()
+           << "specifying value layout would require to increase the rank of "
+              "an external buffer";
+  }
+
+  // Extend layout to cover comunication volume and permute dimensions so that
+  // new dimensions are in front of the domain.
+  MappingAttr extended_layout = layout_to_communication_volume.MakeSurjective();
+  int num_new_dims = extended_layout.UseDomainSize() - *buffer.rank();
+  auto new_dims_identity = MappingAttr::GetIdentity(context, num_new_dims);
+  auto permutation = MappingAttr::GetIdentity(context, *buffer.rank())
+                         .ShiftRight(num_new_dims)
+                         .AddSuffix(new_dims_identity.Dimensions());
+  extended_layout = permutation.Compose(extended_layout);
+
+  // Unify extended_layout with the old layout as some mapping expressions of
+  // the old mapping will not appear in the extended one if they do not map to
+  // dimensions of communication_volume.
+  auto none = MappingNoneExpr::get(context);
+  llvm::SmallVector<MappingExpr> none_exprs(num_new_dims, none);
+  MappingAttr extended_old_layout = storage.layout().AddPrefix(none_exprs);
+  MappingAttr new_layout = def_iter_space.mapping()
+                               .Inverse()
+                               .Compose(communication_volume)
+                               .Compose(extended_layout.Inverse())
+                               .Unify(extended_old_layout);
+  storage_analysis.AddDimensionsToBuffer(storage.buffer_name(), defining_op,
+                                         def_iter_space, fusion_analysis,
+                                         new_layout);
+
+  // Set the value layout.
+  ValueStorage new_storage = storage;
+  AssertSuccess(new_storage.MergeLayout(new_layout));
+  storage_analysis.MergeStorage(operand.value(), new_storage, fusion_analysis,
+                                iteration_spaces);
+  return mlir::success();
+}
+
+// Converts unknown expressions from value layout to `none` expressions.
+void MakeLayoutFullySpecified(mlir::Value value,
+                              const LoopFusionAnalysis &fusion_analysis,
+                              const IterationSpaceAnalysis &iteration_spaces,
+                              StorageAnalysis &storage_analysis) {
+  ValueStorage storage = storage_analysis.GetStorage(value);
+  AssertSuccess(storage.MergeLayout(storage.layout().MakeFullySpecified()));
+  storage_analysis.MergeStorage(value, storage, fusion_analysis,
+                                iteration_spaces);
+}
+
+// Assings a buffer name to the operand if it cannot fit in registers.
+static mlir::LogicalResult CreateBufferIfNeeded(
+    const ValueOperand &operand, const LoopFusionAnalysis &fusion_analysis,
+    const IterationSpaceAnalysis &iteration_spaces,
+    StorageAnalysis &storage_analysis) {
+  const ValueStorage &storage = storage_analysis.GetStorage(operand.value());
+  if (storage.space() != nullptr) return mlir::success();
+  if (FitsInRegisters(operand, iteration_spaces)) return mlir::success();
+  mlir::Type element_type = operand.GetType().ElementType();
+  if (element_type.isa<mlir::IndexType>()) {
+    return operand.value().getDefiningOp()->emitError()
+           << "cannot generate default storage for multi-dimensional index "
+              "values";
+  }
+
+  const IterationSpace iter_space = iteration_spaces.Get(operand.getOwner());
+  storage_analysis.CreateBuffer(operand.value(), iter_space.loop_names(),
+                                fusion_analysis, iteration_spaces);
   return mlir::success();
 }
 
@@ -127,30 +229,92 @@ mlir::LogicalResult GenerateBufferAttr(ComputeOp op, int result,
 class DefaultStorage : public DefaultStoragePassBase<DefaultStorage> {
  public:
   void runOnFunction() override {
-    auto result = getFunction().walk([&](ComputeOp op) -> mlir::WalkResult {
-      auto &iteration_spaces =
-          getChildAnalysis<IterationSpaceAnalysis>(op->getParentOp());
-      auto &storage_analysis =
-          getChildAnalysis<StorageAnalysis>(op->getParentOp());
-      if (mlir::failed(CommitStorage(op, iteration_spaces, storage_analysis))) {
-        return mlir::failure();
+    auto result = getFunction().walk([](ComputeOp op) -> mlir::WalkResult {
+      if (!op.loop_nest().hasValue()) {
+        return op.emitError() << "expected a loop-nest attribute";
       }
+      return mlir::success();
+    });
+    if (result.wasInterrupted()) {
+      signalPassFailure();
+      return;
+    }
 
-      for (int i = 0, e = op->getNumResults(); i < e; ++i) {
-        if (op.Storage(i) != nullptr) continue;
-        if (!op.loop_nest().hasValue()) {
-          return op.emitError() << "expected a loop-nest attribute";
-        }
-        if (mlir::failed(GenerateBufferAttr(op, i, storage_analysis))) {
+    getFunction().walk([&](SairProgramOp program) -> mlir::WalkResult {
+      mlir::LogicalResult result = RunOnProgram(program);
+      if (mlir::failed(result)) signalPassFailure();
+      return result;
+    });
+  }
+
+ private:
+  mlir::LogicalResult RunOnProgram(SairProgramOp program) {
+    auto &iteration_spaces = getChildAnalysis<IterationSpaceAnalysis>(program);
+    auto &fusion_analysis = getChildAnalysis<LoopFusionAnalysis>(program);
+    auto &storage_analysis = getChildAnalysis<StorageAnalysis>(program);
+
+    // Assign memory space and buffer names to values that won't fit in
+    // register.
+    auto result = program.walk([&](SairOp op) -> mlir::WalkResult {
+      for (ValueOperand operand : op.ValueOperands()) {
+        if (mlir::failed(CreateBufferIfNeeded(operand, fusion_analysis,
+                                              iteration_spaces,
+                                              storage_analysis))) {
           return mlir::failure();
         }
       }
       return mlir::success();
     });
+    if (result.wasInterrupted()) return mlir::failure();
 
-    if (result.wasInterrupted()) {
-      signalPassFailure();
+    // Assign all remaining values to register and intialize layout fields.
+    program.walk([&](SairOp op) {
+      for (mlir::Value value : op->getResults()) {
+        if (!value.getType().isa<ValueType>()) continue;
+        InitializeStorage(value, fusion_analysis, iteration_spaces,
+                          storage_analysis);
+      }
+    });
+
+    // Add layout dimensions when necessary.
+    result = program.walk([&](SairOp op) -> mlir::WalkResult {
+      for (ValueOperand operand : op.ValueOperands()) {
+        if (mlir::failed(ExtendLayout(operand, iteration_spaces,
+                                      fusion_analysis, storage_analysis))) {
+          return mlir::failure();
+        }
+      }
+      return mlir::success();
+    });
+    if (result.wasInterrupted()) return mlir::failure();
+
+    // Convert unknown expressions to none expressions. Unknown expressions
+    // occure when adding dimensions to buffers. When the buffer is used in
+    // multiple places, only the place where the dimension is added will have
+    // the layout set for the new dimensions and other places will be unknown.
+    program.walk([&](SairOp op) {
+      for (mlir::Value value : op->getResults()) {
+        if (!value.getType().isa<ValueType>()) continue;
+        MakeLayoutFullySpecified(value, fusion_analysis, iteration_spaces,
+                                 storage_analysis);
+      }
+    });
+
+    if (mlir::failed(storage_analysis.VerifyAndMinimizeBufferLoopNests(
+            fusion_analysis, iteration_spaces))) {
+      return program.emitError()
+             << "unable to generate storage attributes, see other "
+                "errors for more information";
     }
+
+    // Commit storage decisions.
+    result = program.walk([&](ComputeOp op) -> mlir::WalkResult {
+      if (mlir::failed(CommitStorage(op, iteration_spaces, storage_analysis))) {
+        return mlir::failure();
+      }
+      return mlir::success();
+    });
+    return mlir::failure(result.wasInterrupted());
   }
 };
 

@@ -104,12 +104,19 @@ int MappingExpr::MinDomainSize() const {
   return min_domain_size;
 }
 
-MappingExpr UnifyNoneExprs(MappingExpr lhs, MappingExpr rhs) {
-  return lhs.Unify(rhs, [](MappingExpr sub_lhs, MappingExpr sub_rhs) {
-    if (sub_lhs.isa<MappingNoneExpr>()) return sub_rhs;
-    if (sub_rhs.isa<MappingNoneExpr>()) return sub_lhs;
-    return MappingExpr();
-  });
+// Resolves unification of `lhs` and `rhs` for the case where one of the
+// expression is `?` or `none`. Returns `nullptr` if unification fails.
+static MappingExpr ResolveNoneAndUnknownUnification(MappingExpr lhs,
+                                                    MappingExpr rhs) {
+  if (lhs.isa<MappingNoneExpr>()) return rhs;
+  if (rhs.isa<MappingNoneExpr>()) return lhs;
+  if (lhs.isa<MappingUnknownExpr>()) return rhs;
+  if (rhs.isa<MappingUnknownExpr>()) return lhs;
+  return MappingExpr();
+}
+
+MappingExpr Unify(MappingExpr lhs, MappingExpr rhs) {
+  return lhs.Unify(rhs, ResolveNoneAndUnknownUnification);
 }
 
 mlir::LogicalResult UnificationConstraints(
@@ -126,13 +133,15 @@ mlir::LogicalResult UnificationConstraints(
 
   MappingExpr result =
       shifted_lhs.Unify(rhs, [&](MappingExpr sub_lhs, MappingExpr sub_rhs) {
-        if (sub_lhs.isa<MappingNoneExpr>()) return sub_rhs;
-        if (sub_rhs.isa<MappingNoneExpr>()) return sub_lhs;
+        auto trivial_resolve =
+            ResolveNoneAndUnknownUnification(sub_lhs, sub_rhs);
+        if (trivial_resolve != nullptr) return trivial_resolve;
+
         auto dim_expr = sub_lhs.dyn_cast<MappingDimExpr>();
         if (dim_expr == nullptr) return MappingExpr();
 
         MappingExpr &constraint = constraints[dim_expr.dimension() - shift];
-        constraint = UnifyNoneExprs(constraint, sub_rhs);
+        constraint = Unify(constraint, sub_rhs);
         if (constraint == nullptr) return MappingExpr();
         return sub_lhs;
       });
@@ -201,7 +210,7 @@ DomainShapeDim MappingDimExpr::AccessedShape(
 mlir::LogicalResult MappingDimExpr::SetInverse(
     MappingExpr context_inverse,
     llvm::MutableArrayRef<MappingExpr> inverses) const {
-  MappingExpr inverse = UnifyNoneExprs(inverses[dimension()], context_inverse);
+  MappingExpr inverse = sair::Unify(inverses[dimension()], context_inverse);
   if (inverse == nullptr) return mlir::failure();
   inverses[dimension()] = inverse;
   return mlir::success();
@@ -910,6 +919,17 @@ MappingAttr MappingAttr::MakeSurjective() const {
   return MappingAttr::get(getContext(), num_dimensions, new_exprs);
 }
 
+MappingAttr MappingAttr::MakeFullySpecified() const {
+  auto none = MappingNoneExpr::get(getContext());
+  auto new_exprs =
+      llvm::to_vector<4>(llvm::map_range(Dimensions(), [&](auto expr) {
+        return expr.Map([&](MappingExpr sub_expr) -> MappingExpr {
+          return sub_expr.isa<MappingUnknownExpr>() ? none : sub_expr;
+        });
+      }));
+  return MappingAttr::get(getContext(), UseDomainSize(), new_exprs);
+}
+
 bool MappingAttr::IsIdentity() const {
   for (auto en : llvm::enumerate(getImpl()->mapping())) {
     auto dim_expr = en.value().dyn_cast<MappingDimExpr>();
@@ -1020,14 +1040,32 @@ int MappingAttr::MinDomainSize() const {
   return min;
 }
 
-MappingAttr MappingAttr::UnifyNoneExprs(MappingAttr other) const {
+MappingAttr MappingAttr::Unify(MappingAttr other) const {
   assert(size() == other.size());
   assert(UseDomainSize() == other.UseDomainSize());
   llvm::SmallVector<MappingExpr> exprs;
   exprs.reserve(size());
   for (auto [x, y] : llvm::zip(Dimensions(), other.Dimensions())) {
-    exprs.push_back(sair::UnifyNoneExprs(x, y));
+    exprs.push_back(sair::Unify(x, y));
     if (exprs.back() == nullptr) return nullptr;
+  }
+  return MappingAttr::get(getContext(), UseDomainSize(), exprs);
+}
+
+MappingAttr MappingAttr::UnifyUnknownExprs(MappingAttr other) const {
+  assert(size() == other.size());
+  assert(UseDomainSize() == other.UseDomainSize());
+  llvm::SmallVector<MappingExpr> exprs;
+  exprs.reserve(size());
+  for (auto [lhs, rhs] : llvm::zip(Dimensions(), other.Dimensions())) {
+    MappingExpr unified =
+        lhs.Unify(rhs, [](MappingExpr sub_lhs, MappingExpr sub_rhs) {
+          if (sub_lhs.isa<MappingUnknownExpr>()) return sub_rhs;
+          if (sub_rhs.isa<MappingUnknownExpr>()) return sub_lhs;
+          return MappingExpr();
+        });
+    if (unified == nullptr) return nullptr;
+    exprs.push_back(unified);
   }
   return MappingAttr::get(getContext(), UseDomainSize(), exprs);
 }
@@ -1037,6 +1075,14 @@ MappingAttr MappingAttr::AddPrefix(llvm::ArrayRef<MappingExpr> exprs) const {
   new_exprs.reserve(exprs.size() + size());
   llvm::append_range(new_exprs, exprs);
   llvm::append_range(new_exprs, Dimensions());
+  return MappingAttr::get(getContext(), UseDomainSize(), new_exprs);
+}
+
+MappingAttr MappingAttr::AddSuffix(llvm::ArrayRef<MappingExpr> exprs) const {
+  llvm::SmallVector<MappingExpr> new_exprs;
+  new_exprs.reserve(exprs.size() + size());
+  llvm::append_range(new_exprs, Dimensions());
+  llvm::append_range(new_exprs, exprs);
   return MappingAttr::get(getContext(), UseDomainSize(), new_exprs);
 }
 

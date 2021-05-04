@@ -70,7 +70,7 @@ class TestMappingExprsPass
     } else if (op_name == "unify") {
       auto other = op->getAttrOfType<MappingExpr>("other");
       assert(other != nullptr);
-      return UnifyNoneExprs(expr, other);
+      return Unify(expr, other);
     } else if (op_name == "unification_constraints") {
       auto other = op->getAttrOfType<MappingExpr>("other");
       auto domain_size = op->getAttrOfType<mlir::IntegerAttr>("domain_size");

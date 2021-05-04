@@ -91,6 +91,10 @@ class Buffer {
   // Appends values to the buffer domain.
   void AppendToDomain(llvm::ArrayRef<ValueAccess> new_values);
 
+  // Adds a dimension at the front of the layout. Fills the new dimension with
+  // `none`.
+  void AddNonePrefixToLayout(int num_new_dims);
+
  private:
   mlir::Location loc_;
   mlir::Type element_type_;
@@ -134,6 +138,10 @@ class ValueStorage {
   // MergeLayout unifies layout by substituting `?` expressions only.
   MappingAttr layout() const { return layout_; }
   mlir::LogicalResult MergeLayout(MappingAttr new_layout);
+
+  // Adds a dimension at the front of the layout. Fills the dimension with the
+  // `?` mapping expression.
+  void AddUnknownPrefixToLayout(int num_new_dims);
 
   // Converts a value storage from the domain of the value to the domain of the
   // operand.
@@ -186,6 +194,20 @@ class StorageAnalysis {
     return value_storages_.find(value)->second;
   }
 
+  // Creates a new memory buffer, assigns it to the value storage and propagates
+  // the information. This does not modify the IR, only the analysis.
+  void CreateBuffer(mlir::Value value,
+                    llvm::ArrayRef<mlir::StringAttr> loop_names,
+                    const LoopFusionAnalysis &fusion_analysis,
+                    const IterationSpaceAnalysis &iteration_spaces);
+
+  // Updates the storage of a value with new information and propagates to other
+  // values. The new information must be compatible with existing information.
+  // This does not modify the IR, only the analysis.
+  void MergeStorage(mlir::Value value, const ValueStorage &new_storage,
+                    const LoopFusionAnalysis &fusion_analysis,
+                    const IterationSpaceAnalysis &iteration_spaces);
+
   // Returns a fresh buffer name. May be called multiple times without
   // invalidating the analysis.
   mlir::StringAttr GetFreshBufferName();
@@ -197,6 +219,14 @@ class StorageAnalysis {
   mlir::LogicalResult VerifyAndMinimizeBufferLoopNests(
       const LoopFusionAnalysis &fusion_analysis,
       const IterationSpaceAnalysis &iteration_spaces);
+
+  // Extends the layout of a value by adding dimensions at the front of the
+  // buffer layout. The previous layout must be a suffix of the new one. The
+  // layout is given as a mapping from op_iter_space to buffer dimensions.
+  void AddDimensionsToBuffer(mlir::StringAttr buffer_name, SairOp op,
+                             const IterationSpace &op_iter_space,
+                             const LoopFusionAnalysis &fusion_analysis,
+                             MappingAttr new_layout);
 
  private:
   // Creates an empty analysis.

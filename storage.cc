@@ -91,7 +91,7 @@ void Buffer::UnifyLayout(MappingAttr layout) {
   if (!layout_.has_value()) {
     layout_ = layout;
   } else {
-    layout_ = layout_->UnifyNoneExprs(layout);
+    layout_ = layout_->Unify(layout);
   }
 }
 
@@ -108,6 +108,15 @@ void Buffer::AddValue(mlir::Value value) {
     ValueOperand sair_operand(&use);
     reads_.emplace_back(user, sair_operand.position());
   }
+}
+
+void Buffer::AddNonePrefixToLayout(int num_new_dims) {
+  assert(layout_.has_value());
+  assert(num_new_dims >= 0);
+  mlir::MLIRContext *context = layout_->getContext();
+  llvm::SmallVector<MappingExpr> prefix(num_new_dims,
+                                        MappingNoneExpr::get(context));
+  layout_ = layout_->AddPrefix(prefix);
 }
 
 void Buffer::AppendToDomain(llvm::ArrayRef<ValueAccess> new_values) {
@@ -392,8 +401,9 @@ static mlir::LogicalResult DeclareBuffer(
   }
 
   // Ensure that the number of dimension is coherent.
-  if (buffer.rank().has_value() &&
-      buffer.rank() != attr.layout().mapping().size()) {
+  MappingAttr layout = GetBufferLayout(op, attr, iteration_spaces);
+  if (buffer.rank().has_value() && layout != nullptr &&
+      buffer.rank() != layout.size()) {
     mlir::InFlightDiagnostic diag = op.emitError()
                                     << "buffer " << attr.name()
                                     << " rank differs from previous occurence";
@@ -401,7 +411,6 @@ static mlir::LogicalResult DeclareBuffer(
     return mlir::failure();
   }
 
-  MappingAttr layout = GetBufferLayout(op, attr, iteration_spaces);
   TrimBufferLoopNestForAccess(iter_space, layout, loop_analysis, buffer);
 
   // Unify layouts.
@@ -571,6 +580,27 @@ mlir::LogicalResult StorageAnalysis::Init(SairProgramOp program) {
   return mlir::success();
 }
 
+void StorageAnalysis::MergeStorage(
+    mlir::Value value, const ValueStorage &new_storage,
+    const LoopFusionAnalysis &fusion_analysis,
+    const IterationSpaceAnalysis &iteration_spaces) {
+  if (new_storage.buffer_name() != nullptr && new_storage.layout() != nullptr) {
+    Buffer &buffer = buffers_.find(new_storage.buffer_name())->second;
+    // Make sure that layout has the correct rank and initialize buffer layout
+    // if needed.
+    if (buffer.rank().has_value()) {
+      assert(buffer.rank() == new_storage.layout().size());
+    } else {
+      assert(new_storage.layout().empty());
+      auto empty_layout =
+          MappingAttr::get(context_, buffer.domain().size(), {});
+      buffer.UnifyLayout(empty_layout);
+    }
+  }
+  AssertSuccess(
+      SetStorage(value, new_storage, fusion_analysis, iteration_spaces));
+}
+
 mlir::StringAttr StorageAnalysis::GetFreshBufferName() {
   llvm::SmallString<10> name("buffer_");
   int original_size = name.size();
@@ -581,6 +611,31 @@ mlir::StringAttr StorageAnalysis::GetFreshBufferName() {
     attr = mlir::StringAttr::get(context_, name);
   } while (buffers_.count(attr) > 0);
   return attr;
+}
+
+void StorageAnalysis::AddDimensionsToBuffer(
+    mlir::StringAttr buffer_name, SairOp op,
+    const IterationSpace &op_iter_space,
+    const LoopFusionAnalysis &fusion_analysis, MappingAttr new_layout) {
+  Buffer &buffer = buffers_.find(buffer_name)->second;
+  assert(new_layout != nullptr);
+  assert(buffer.layout().has_value());
+  assert(new_layout.size() >= buffer.layout()->size());
+  assert(!buffer.is_external());
+
+  // Extend buffer domain.
+  TrimBufferLoopNestForAccess(op_iter_space, new_layout, fusion_analysis,
+                              buffer);
+  int old_size = *buffer.rank();
+  buffer.AddNonePrefixToLayout(new_layout.size() - old_size);
+  AssertSuccess(UnifyBufferShape(buffer_name, op, new_layout, op_iter_space,
+                                 fusion_analysis, buffer));
+
+  // Add a dimension to values layout.
+  for (mlir::Value value : buffer.values()) {
+    ValueStorage &storage = value_storages_.find(value)->second;
+    storage.AddUnknownPrefixToLayout(new_layout.size() - old_size);
+  }
 }
 
 // Update the storage information for value. Updates buffers to register new
@@ -814,6 +869,25 @@ mlir::LogicalResult StorageAnalysis::VerifyAndMinimizeBufferLoopNests(
   return mlir::success();
 }
 
+void StorageAnalysis::CreateBuffer(
+    mlir::Value value, llvm::ArrayRef<mlir::StringAttr> loop_names,
+    const LoopFusionAnalysis &fusion_analysis,
+    const IterationSpaceAnalysis &iteration_spaces) {
+  mlir::StringAttr buffer_name = GetFreshBufferName();
+  mlir::Type element_type = value.getType().cast<ValueType>().ElementType();
+  LoopNest loop_nest = fusion_analysis.GetLoopNest(loop_names);
+  buffers_.try_emplace(buffer_name, value.getLoc(), element_type, loop_names,
+                       loop_nest);
+
+  mlir::MLIRContext *context = value.getContext();
+  auto *sair_dialect = context->getLoadedDialect<SairDialect>();
+
+  ValueStorage storage = GetStorage(value);
+  AssertSuccess(storage.MergeBufferName(buffer_name));
+  AssertSuccess(storage.MergeSpace(sair_dialect->memory_attr()));
+  MergeStorage(value, storage, fusion_analysis, iteration_spaces);
+}
+
 // Ensures that communication between the producer and the user of operand only
 // occurs within the same loop iteration or along dimensions that are
 // materialized in memory.
@@ -968,8 +1042,15 @@ mlir::LogicalResult ValueStorage::MergeBufferName(mlir::StringAttr new_name) {
 
 mlir::LogicalResult ValueStorage::MergeLayout(MappingAttr new_layout) {
   if (new_layout == nullptr) return mlir::success();
-  if (layout_ == nullptr) layout_ = new_layout;
-  return mlir::success(layout_ == new_layout);
+  if (layout_ == nullptr) {
+    layout_ = new_layout;
+    return mlir::success();
+  }
+
+  new_layout = new_layout.UnifyUnknownExprs(layout_);
+  if (new_layout == nullptr) return mlir::failure();
+  layout_ = new_layout;
+  return mlir::success();
 }
 
 ValueStorage ValueStorage::Map(
@@ -994,6 +1075,15 @@ ValueStorage ValueStorage::Map(
     layout = iter_space_mapping.Compose(layout_).Canonicalize();
   }
   return ValueStorage(space_, buffer_name_, layout);
+}
+
+void ValueStorage::AddUnknownPrefixToLayout(int num_new_dims) {
+  assert(layout_ != nullptr);
+  assert(num_new_dims >= 0);
+  mlir::MLIRContext *context = layout_.getContext();
+  llvm::SmallVector<MappingExpr> prefix(num_new_dims,
+                                        MappingUnknownExpr::get(context));
+  layout_ = layout_.AddPrefix(prefix);
 }
 
 MappingAttr CommunicationVolume(int value_rank,
