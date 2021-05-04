@@ -77,7 +77,6 @@ class IterationSpace {
 // Compute iteration spaces for each operation and value.
 class IterationSpaceAnalysis {
  public:
-  IterationSpaceAnalysis() = default;
   explicit IterationSpaceAnalysis(SairProgramOp program_op);
   explicit IterationSpaceAnalysis(mlir::Operation *operation)
       : IterationSpaceAnalysis(dyn_cast<SairProgramOp>(operation)) {}
@@ -187,9 +186,14 @@ class LoopFusionAnalysis {
 
 // Verifies loop nest attributes of operations nested in the sair.program
 // operation. Assumes that Sair operands are defined in the same program.
-// Populates `iteration_spaces`.
-mlir::LogicalResult VerifyLoopNests(SairProgramOp program,
-                                    IterationSpaceAnalysis &iteration_spaces);
+mlir::LogicalResult VerifyLoopNests(
+    SairProgramOp program, const LoopFusionAnalysis &fusion_analysis,
+    const IterationSpaceAnalysis &iteration_spaces);
+
+// Verifies that the loop_nest attribute is correct with regard to the shape of
+// the operation it is attached to.
+mlir::LogicalResult VerifyLoopNestWellFormed(
+    ComputeOp op, llvm::ArrayRef<mlir::Attribute> loop_nest);
 
 }  // namespace sair
 

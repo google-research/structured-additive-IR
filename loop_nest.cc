@@ -264,17 +264,18 @@ class LoopNestConstraintsAnalysis {
   llvm::DenseMap<mlir::Operation *, Constraints> constraints_;
 };
 
-// Verifies that the loop_nest attribute is correct with regard to the shape of
-// the operation it is attached to.
-static mlir::LogicalResult VerifyLoopNestWellFormed(
-    SairOp op, llvm::ArrayRef<mlir::Attribute> loop_nest) {
+mlir::LogicalResult VerifyLoopNestWellFormed(
+    ComputeOp op, llvm::ArrayRef<mlir::Attribute> loop_nest) {
   llvm::SmallVector<MappingExpr> iter_exprs;
   iter_exprs.reserve(loop_nest.size());
+  auto sair_op = cast<SairOp>(op.getOperation());
 
-  int domain_size = op.domain().size();
+  int domain_size = sair_op.domain().size();
   // Bitfield that keeps track of which dimensions are implemented by loops.
   for (int i = 0, e = loop_nest.size(); i < e; ++i) {
     LoopAttr loop = loop_nest[i].dyn_cast<LoopAttr>();
+    // Delegate checking attributes type to other verifiers.
+    if (loop == nullptr) return mlir::success();
 
     // Ensure that symbols are unique in the loop nest.
     for (int j = 0; j < i; ++j) {
@@ -463,7 +464,7 @@ static mlir::LogicalResult VerifyDependency(
 // Verifies that the loop nest of `op` is compatible with the constraints
 // imposed by its dependencies.
 static mlir::LogicalResult VerifyDependencies(
-    SairOp op, IterationSpaceAnalysis &iteration_space_analysis,
+    SairOp op, const IterationSpaceAnalysis &iteration_space_analysis,
     LoopNestConstraintsAnalysis &loop_constaints_analysis) {
   const IterationSpace &loop_nest = iteration_space_analysis.Get(op);
 
@@ -552,27 +553,15 @@ static mlir::LogicalResult VerifySubDomains(
   return mlir::success();
 }
 
-mlir::LogicalResult VerifyLoopNests(SairProgramOp program,
-                                    IterationSpaceAnalysis &iteration_spaces) {
-  // Verify loop nests are correct with regard to their operation.
-  mlir::WalkResult result = program.walk([](ComputeOp op) -> mlir::WalkResult {
-    if (!op.loop_nest().hasValue()) return mlir::WalkResult::advance();
-    return VerifyLoopNestWellFormed(
-        cast<SairOp>(op.getOperation()), op.LoopNestLoops());
-  });
-  if (result.wasInterrupted()) return mlir::failure();
-
-  iteration_spaces = IterationSpaceAnalysis(program);
-  LoopNestConstraintsAnalysis loop_constraints_analysis(program,
-                                                        iteration_spaces);
-
+mlir::LogicalResult VerifyLoopNests(
+    SairProgramOp program, const LoopFusionAnalysis &fusion_analysis,
+    const IterationSpaceAnalysis &iteration_spaces) {
   // Verify that the loop structure forms a tree, loops are open when they need
   // to and loop ranges are well defined.
   LoopNestState loop_nest_state;
-  auto fusion_analysis_or_null = LoopFusionAnalysis::Create(program);
-  if (fusion_analysis_or_null == std::nullopt) return mlir::failure();
-  LoopFusionAnalysis fusion_analysis = fusion_analysis_or_null.value();
-  result = program.walk([&](ComputeOp op) -> mlir::WalkResult {
+  LoopNestConstraintsAnalysis loop_constraints_analysis(program,
+                                                        iteration_spaces);
+  auto result = program.walk([&](ComputeOp op) -> mlir::WalkResult {
     if (op.loop_nest().hasValue()) {
       if (mlir::failed(loop_nest_state.Update(cast<SairOp>(op.getOperation()),
                                               op.LoopNestLoops()))) {

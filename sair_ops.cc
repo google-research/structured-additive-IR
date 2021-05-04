@@ -1541,8 +1541,13 @@ mlir::LogicalResult Verify(SairProgramOp program) {
     return program.emitError() << "expected a sair.exit terminator";
   }
 
-  IterationSpaceAnalysis iteration_spaces;
-  if (mlir::failed(VerifyLoopNests(program, iteration_spaces))) {
+  IterationSpaceAnalysis iteration_spaces(program);
+  auto fusion_analysis_res = LoopFusionAnalysis::Create(program);
+  if (!fusion_analysis_res.has_value()) return mlir::failure();
+  LoopFusionAnalysis fusion_analysis = std::move(fusion_analysis_res).value();
+
+  if (mlir::failed(
+          VerifyLoopNests(program, fusion_analysis, iteration_spaces))) {
     return mlir::failure();
   }
   return VerifyStorages(program, iteration_spaces);

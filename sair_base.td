@@ -430,6 +430,8 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
     >
   ];
 
+  let verify = [{return sair::VerifyComputeOp(op);}];
+
   let extraClassDeclaration = [{
     static constexpr llvm::StringRef kLoopNestAttrName = "loop_nest";
     static constexpr llvm::StringRef kStorageAttrName = "storage";
