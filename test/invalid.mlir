@@ -705,7 +705,7 @@ func @loop_step_increasing(%arg0: f32) {
   sair.program {
     %0 = sair.static_range 8 : !sair.range
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    // expected-error @+1 {{loop "A" must be nested inside the loops it depends on}}
+    // expected-error @+1 {{in loop "A": loop must be nested inside the loops it depends on}}
     sair.copy[d0: %0] %1 {
       loop_nest = [
         {name = "A", iter = #sair.mapping_expr<stripe(d0, [4, 1])>},
@@ -763,7 +763,7 @@ func @loop_fusion_not_contiguous(%arg0: f32) {
 func @iter_field_missing(%arg0: f32) {
   sair.program {
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    // expected-error @+1 {{loop "A" iterator is not fully specified}}
+    // expected-error @+1 {{in loop "A": iterator is not fully specified}}
     sair.copy %1 { loop_nest = [{name = "A", iter=#sair.mapping_expr<none>}] }
       : !sair.value<(), f32>
     sair.exit
@@ -1529,7 +1529,7 @@ func @placeholder_loop_nest_unspecified(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.placeholder : !sair.range
-    // expected-error @+1 {{loop "loopA" iterator is not fully specified}}
+    // expected-error @+1 {{in loop "loopA": iterator is not fully specified}}
     %2 = sair.copy[d0:%1] %0 {
       loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
     } : !sair.value<d0:range, f32>

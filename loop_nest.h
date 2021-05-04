@@ -103,22 +103,50 @@ class IterationSpaceAnalysis {
 };
 
 // A class of fused loops.
-struct LoopFusionClass {
+class LoopFusionClass {
+ public:
+  LoopFusionClass(mlir::StringAttr name, mlir::Location location);
+
   // Loops this class depends on.
-  llvm::SmallVector<mlir::StringAttr> dependencies;
+  llvm::ArrayRef<mlir::StringAttr> dependencies() const {
+    return dependencies_;
+  }
+  llvm::SmallVector<mlir::StringAttr> &dependencies() { return dependencies_; }
 
   // Domain in which the loop size is defined. This is a list of dimensions,
   // with an access pattern from dependencies indicies to the domain of each
   // dimension.
   //
   // Domains of outer fusion classes must be a prefix of this one.
-  llvm::SmallVector<ValueAccess> domain;
+  llvm::ArrayRef<ValueAccess> domain() const { return domain_; }
+
+  // Allow mutable access to the domain. This is will be removed in a later
+  // commit and should be used carefully as to keep the domain in syn with the
+  // rest of the class members.
+  llvm::SmallVector<ValueAccess> &domain() { return domain_; }
 
   // Mapping from domain indices to the loop indices.
-  MappingExpr iter_expr;
+  MappingExpr iter_expr() const { return iter_expr_; }
 
-  // An occurence on the fusion class, for error reporting purposes.
-  ComputeOp occurence;
+  // Names of the loop.
+  mlir::StringAttr name() const { return name_; }
+
+  // Location of the first occurence of the loop.
+  mlir::Location GetLoc() const { return location_; }
+
+  // Emits an error at the loop definition. Error has format
+  // `error in loop <loop_name>: <msg>`.
+  mlir::InFlightDiagnostic EmitError() const;
+
+  // Unifies `iter_expr` with another expression.
+  void UnifyIterExpr(MappingExpr expr);
+
+ private:
+  mlir::StringAttr name_;
+  mlir::Location location_;
+  llvm::SmallVector<mlir::StringAttr> dependencies_;
+  llvm::SmallVector<ValueAccess> domain_;
+  MappingExpr iter_expr_;
 };
 
 // A loop nest of fused loops.
