@@ -19,6 +19,16 @@
 
 namespace sair {
 
+// Returns the layout of from_memref or to_memref operation value.
+static MappingAttr FromToMemRefLayout(FromToMemRefOp op,
+                                      const IterationSpace &iter_space) {
+  int rank = op.memref_domain().size();
+  int parallel_domain_size = op.parallel_domain().size();
+  auto domain_to_layout = MappingAttr::GetIdentity(op.getContext(), rank)
+                              .ShiftRight(parallel_domain_size);
+  return iter_space.mapping().Inverse().Compose(domain_to_layout);
+}
+
 Buffer::Buffer(mlir::Location loc, mlir::Type element_type,
                llvm::ArrayRef<mlir::StringAttr> loop_names,
                const LoopNest &loop_nest)
@@ -425,8 +435,6 @@ static mlir::LogicalResult DeclareBuffers(
     SairProgramOp program, const IterationSpaceAnalysis &iteration_spaces,
     const LoopFusionAnalysis &fusion_analysis,
     llvm::DenseMap<mlir::Attribute, Buffer> &buffers) {
-  mlir::MLIRContext *context = program.getContext();
-
   // Declare external buffers imported using from/to memref.
   mlir::WalkResult result =
       program.walk([&](FromToMemRefOp op) -> mlir::WalkResult {
@@ -439,14 +447,7 @@ static mlir::LogicalResult DeclareBuffers(
             buffers.try_emplace(name, op, iter_space.loop_names(), loop_nest);
         if (!was_inserted)
           return op.emitError() << "buffer name is already used";
-
-        int rank = op.memref_domain().size();
-        int parallel_domain_size = op.parallel_domain().size();
-        auto domain_to_layout = MappingAttr::GetIdentity(context, rank)
-                                    .ShiftRight(parallel_domain_size);
-        MappingAttr layout =
-            iter_space.mapping().Inverse().Compose(domain_to_layout);
-
+        MappingAttr layout = FromToMemRefLayout(op, iter_space);
         return UnifyBufferShape(name, sair_op, layout, iter_space,
                                 fusion_analysis, buffer_it->second);
       });
@@ -928,6 +929,198 @@ static mlir::LogicalResult VerifyCommunicationVolume(
   return mlir::success();
 }
 
+// Verifies that `buffer` is not written to by operations other that
+// `allowed_write` between `from` and `to`. `allowed_write` may be null in the
+// case were no write is allowed between `from` and `to`.
+//
+// If `from` is in loop nest [A, B] and `to` is in loop nest [A, C] where A, B
+// and C are lists of loops with loops of B and C distinct, we consider that
+// there is a write between `from` and `to` if any of the following condition is
+// statisfied:
+// * If there is a write operation between `from` and `to` operations.
+// * If there is a write operation before `from` that is nested in at least one
+//   loop of B and whose layout differs from `layout`. This corresponds to the
+//   case where the value is produced in a loop nest and is overwritten in the
+//   same loop nest.
+// * If there is a write operation after `to` that is nested in at least one
+//   loop of C. This corresponds to the case where the value is overwritten in
+//   the loop nest where it is used.
+static mlir::LogicalResult VerifyNoWriteBetween(
+    mlir::StringAttr buffer_name, const Buffer &buffer,
+    const ProgramPoint &from, const ProgramPoint &to, MappingAttr layout,
+    ComputeOp allowed_write, const IterationSpaceAnalysis &iteration_spaces,
+    const StorageAnalysis &storage_analysis) {
+  int num_common_loops = from.NumCommonLoops(to);
+  for (auto [write_op, write_pos] : buffer.writes()) {
+    const IterationSpace &iter_space =
+        iteration_spaces.Get(cast<SairOp>(write_op.getOperation()));
+    if (write_op == allowed_write) continue;
+
+    // Check if the write occurs before `from`.
+    if (from.IsAfter(write_op)) {
+      int write_common_loops = iter_space.NumCommonLoops(from.loop_nest());
+      if (write_common_loops <= num_common_loops) continue;
+      const ValueStorage &value_storage =
+          storage_analysis.GetStorage(write_op->getResult(write_pos));
+      // We consider that there is no overwrite if the write if before `from`
+      // and layouts are the same.
+      if (layout == nullptr || value_storage.layout() == nullptr ||
+          value_storage.layout().ResizeUseDomain(write_common_loops) ==
+              layout.ResizeUseDomain(write_common_loops)) {
+        continue;
+      }
+    } else if (to.IsBefore(write_op)) {
+      int write_common_loops = iter_space.NumCommonLoops(to.loop_nest());
+      if (write_common_loops <= num_common_loops) continue;
+    }
+
+    mlir::InFlightDiagnostic diag =
+        write_op->emitError()
+        << "operation overwrites a value stored in buffer " << buffer_name
+        << " before it is used";
+    if (from.operation() == nullptr) {
+      diag.attachNote(write_op->getParentOp()->getLoc())
+          << "value stored before entering sair program";
+    } else {
+      diag.attachNote(from.operation()->getLoc()) << "value stored here";
+    }
+
+    if (to.operation() == nullptr) {
+      diag.attachNote(write_op->getParentOp()->getLoc())
+          << "value used after exiting sair program";
+    } else {
+      diag.attachNote(to.operation()->getLoc()) << "value used here";
+    }
+    return mlir::failure();
+  }
+  return mlir::success();
+}
+
+// Verifies that `value` storage is not overwritten by an operation between the
+// operation that stores the value in `buffer` and `use`.
+static mlir::LogicalResult VerifyValueNotOverwritten(
+    mlir::StringAttr buffer_name, const Buffer &buffer, mlir::Value value,
+    ProgramPoint use, const LoopFusionAnalysis &fusion_analysis,
+    const IterationSpaceAnalysis &iteration_spaces,
+    const StorageAnalysis &storage_analysis) {
+  // Mark visited fby operations to avoid infinite loops.
+  llvm::DenseSet<mlir::Operation *> visited_fby;
+  // Allow the use to overwritte the buffer in order to support in-place
+  // updates.
+  ComputeOp allowed_write = use.operation();
+
+  // Walk producers of `value` to find program points where it is stored in its
+  // buffer. Maintain a work list of producers to process. For each, {value,
+  // use} in the work-list, we must verify that there is no write to `buffer`
+  // between `value` and `use`.
+  llvm::SmallVector<std::pair<mlir::Value, ProgramPoint>> work_list;
+  work_list.push_back({value, use});
+  while (!work_list.empty()) {
+    auto [value, use_point] = work_list.pop_back_val();
+    mlir::Operation *defining_op = value.getDefiningOp();
+    const IterationSpace &iter_space = iteration_spaces.Get(defining_op);
+
+    if (auto producer = dyn_cast<ComputeOp>(defining_op)) {
+      ProgramPoint def_point(producer, Direction::kAfter,
+                             iter_space.loop_names());
+      const ValueStorage &storage = storage_analysis.GetStorage(value);
+      if (mlir::failed(VerifyNoWriteBetween(
+              buffer_name, buffer, def_point, use_point, storage.layout(),
+              allowed_write, iteration_spaces, storage_analysis))) {
+        return mlir::failure();
+      }
+    } else if (auto proj = dyn_cast<SairProjLastOp>(defining_op)) {
+      work_list.emplace_back(proj.value(), use_point);
+    } else if (auto proj = dyn_cast<SairProjAnyOp>(defining_op)) {
+      work_list.emplace_back(proj.value(), use_point);
+    } else if (auto from_memref = dyn_cast<SairFromMemRefOp>(defining_op)) {
+      MappingAttr layout = FromToMemRefLayout(from_memref, iter_space);
+      ProgramPoint before_program(
+          cast<SairProgramOp>(defining_op->getParentOp()), Direction::kBefore);
+      if (mlir::failed(VerifyNoWriteBetween(
+              buffer_name, buffer, before_program, use_point, layout,
+              allowed_write, iteration_spaces, storage_analysis))) {
+        return mlir::failure();
+      }
+    } else if (auto fby = dyn_cast<SairFbyOp>(defining_op)) {
+      // Find outermost loop that iterate along fby dimensions.
+      MappingAttr mapping_to_loops = iter_space.MappingToLoops();
+      auto it = llvm::find_if(mapping_to_loops, [&](MappingExpr expr) {
+        return expr.MinDomainSize() >= fby.parallel_domain().size();
+      });
+      int first_carry_loop = std::distance(mapping_to_loops.begin(), it);
+
+      // Ensure that there is no write between init and the use. We trim
+      // use_loops to remove dependency-carrying dimensions as we are only going
+      // to use init at the first iteration.
+      ProgramPoint init_use_point = use_point;
+      if (init_use_point.loop_nest().size() > first_carry_loop &&
+          init_use_point.loop_nest()[first_carry_loop] ==
+              iter_space.loop_names()[first_carry_loop]) {
+        init_use_point.TrimLoopNest(first_carry_loop);
+      }
+      work_list.emplace_back(fby.init(), init_use_point);
+
+      // Ensure that there is no write between the value produced at the last
+      // iteration of the loop nest and the end of the loop nest.
+      if (!visited_fby.insert(defining_op).second) continue;
+
+      // Case where there are no dependency-carrying dimension.
+      if (first_carry_loop == iter_space.loop_names().size()) continue;
+
+      // Ensure that there is no write between the produce of fby value and the
+      // end of dependency-carrying dimensions.
+      mlir::StringAttr carry_loop_name =
+          iter_space.loop_names()[first_carry_loop];
+      const LoopFusionClass &carry_loop_class =
+          fusion_analysis.GetClass(carry_loop_name);
+      work_list.emplace_back(fby.value(), carry_loop_class.EndPoint());
+    } else {
+      llvm_unreachable("unexpected operation");
+    }
+  }
+  return mlir::success();
+}
+
+// Verifies that values are not overwritten by another operation before they are
+// used.
+mlir::LogicalResult VerifyValuesNotOverwritten(
+    const LoopFusionAnalysis &fusion_analysis,
+    const IterationSpaceAnalysis &iteration_spaces,
+    const StorageAnalysis &storage_analysis) {
+  // Ensure that no operation is writting in buffers between the moment
+  // where a value is written and the moment where a value is read.
+  for (const auto &[name_attr, buffer] : storage_analysis.buffers()) {
+    auto buffer_name = name_attr.cast<mlir::StringAttr>();
+    for (auto [op, operand_pos] : buffer.reads()) {
+      auto sair_op = cast<SairOp>(op.getOperation());
+      const IterationSpace &iter_space = iteration_spaces.Get(sair_op);
+      mlir::Value operand = sair_op.ValueOperands()[operand_pos].value();
+      ProgramPoint use_point(op, Direction::kBefore, iter_space.loop_names());
+      if (mlir::failed(VerifyValueNotOverwritten(
+              buffer_name, buffer, operand, use_point, fusion_analysis,
+              iteration_spaces, storage_analysis))) {
+        return mlir::failure();
+      }
+    }
+
+    // If the buffer is used in a to_memref operation, ensure that the output is
+    // not overwritten.
+    if (!buffer.is_external()) continue;
+    auto to_memref =
+        dyn_cast<SairToMemRefOp>(buffer.import_op().getOperation());
+    if (to_memref == nullptr) continue;
+    ProgramPoint after_program(cast<SairProgramOp>(to_memref->getParentOp()),
+                               Direction::kAfter);
+    if (mlir::failed(VerifyValueNotOverwritten(
+            buffer_name, buffer, to_memref.value(), after_program,
+            fusion_analysis, iteration_spaces, storage_analysis))) {
+      return mlir::failure();
+    }
+  }
+  return mlir::success();
+}
+
 // Ensures that communication between producers and users only occurs within the
 // same loop iteration or along dimensions that are materialized in memory.
 static mlir::LogicalResult VerifyCommunicationVolume(
@@ -967,7 +1160,8 @@ static mlir::LogicalResult VerifyCommunicationVolume(
 }
 
 mlir::LogicalResult VerifyStorages(
-    SairProgramOp program, const IterationSpaceAnalysis &iteration_spaces) {
+    SairProgramOp program, const LoopFusionAnalysis &fusion_analysis,
+    const IterationSpaceAnalysis &iteration_spaces) {
   // Check storage attributes are well-formed.
   mlir::WalkResult result = program.walk([](ComputeOp op) -> mlir::WalkResult {
     return VerifyStorageAttrWellFormed(op);
@@ -1007,8 +1201,12 @@ mlir::LogicalResult VerifyStorages(
   });
   if (result.wasInterrupted()) return mlir::failure();
 
-  // TODO(b/174127497): make sure that value is not ovewritten by another write.
-  return VerifyCommunicationVolume(program, iteration_spaces, analysis);
+  if (mlir::failed(
+          VerifyCommunicationVolume(program, iteration_spaces, analysis))) {
+    return mlir::failure();
+  }
+  return VerifyValuesNotOverwritten(fusion_analysis, iteration_spaces,
+                                    analysis);
 }
 
 BufferAttr GetRegister0DBuffer(mlir::MLIRContext *context) {

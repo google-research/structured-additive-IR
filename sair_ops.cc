@@ -1550,7 +1550,7 @@ mlir::LogicalResult Verify(SairProgramOp program) {
           VerifyLoopNests(program, fusion_analysis, iteration_spaces))) {
     return mlir::failure();
   }
-  return VerifyStorages(program, iteration_spaces);
+  return VerifyStorages(program, fusion_analysis, iteration_spaces);
 }
 
 void SairProgramOp::build(mlir::OpBuilder &builder,

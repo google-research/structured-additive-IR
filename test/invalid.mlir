@@ -1752,3 +1752,93 @@ func @unknown_layout(%arg0: f32) {
   }
   return
 }
+
+// -----
+
+func @from_memref_overwrite(%arg0 : memref<f32>) {
+  // expected-note @+1 {{value stored before entering sair program}}
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), memref<f32>>
+    %1 = sair.from_memref %0 memref {
+      buffer_name = "A"
+    } : #sair.shape<()>, memref<f32>
+    // expected-error @+1 {{operation overwrites a value stored in buffer "A" before it is used}}
+    %2 = sair.copy %1 {
+      loop_nest = [],
+      storage = [{name = "A", space = "memory",
+                  layout = #sair.named_mapping<[] -> ()>}]
+    } : !sair.value<(), f32>
+    // expected-note @+1 {{value used here}}
+    %3 = sair.copy %1 : !sair.value<(), f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @to_memref_overwrite(%arg0: memref<f32>, %arg1: f32) {
+  // expected-note @+1 {{value used after exiting sair program}}
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), memref<f32>>
+    %1 = sair.from_scalar %arg1 : !sair.value<(), f32>
+    // expected-note @+1 {{value stored here}}
+    %2 = sair.copy %1 : !sair.value<(), f32>
+    // expected-error @+1 {{operation overwrites a value stored in buffer "A" before it is used}}
+    %3 = sair.copy %1 { storage = [{name = "A", space = "memory"}] }
+      : !sair.value<(), f32>
+    sair.to_memref %0 memref %2 { buffer_name = "A" }
+      : #sair.shape<()>, memref<f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @fby_init_overwrite(%arg0 : f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %r = sair.static_range 8 : !sair.range
+    // expected-note @+1 {{value stored here}}
+    %1 = sair.copy %0 {
+      storage = [{name = "A", space = "memory"}]
+    } : !sair.value<(), f32>
+    // expected-error @+1 {{operation overwrites a value stored in buffer "A" before it is used}}
+    %2 = sair.copy %1 {
+      storage = [{name = "A", space = "memory"}]
+    } : !sair.value<(), f32>
+    %3 = sair.fby %1 then[d0:%r] %4(d0) : !sair.value<d0:range, f32>
+    // expected-note @+1 {{value used here}}
+    %4 = sair.copy[d0:%r] %3(d0) {
+      loop_nest = [{name = "B", iter = #sair.mapping_expr<d0>}]
+    } : !sair.value<d0:range, f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @fby_value_overwrite(%arg0 : f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %r = sair.static_range 8 : !sair.range
+    %1 = sair.copy %0 {
+      storage = [{name = "A", space = "memory"}]
+    } : !sair.value<(), f32>
+    %3 = sair.fby %1 then[d0:%r] %4(d0) : !sair.value<d0:range, f32>
+    // expected-note @+1 {{value stored here}}
+    %4 = sair.copy[d0:%r] %3(d0) {
+      loop_nest = [{name = "B", iter = #sair.mapping_expr<d0>}]
+    } : !sair.value<d0:range, f32>
+    // expected-error @below {{operation overwrites a value stored in buffer "A" before it is used}}
+    // expected-note @below {{value used here}}
+    %2 = sair.copy %0 {
+      loop_nest = [{name = "B", iter = #sair.mapping_expr<none>}],
+      storage = [{name = "A", space = "memory"}]
+    } : !sair.value<(), f32>
+    sair.exit
+  }
+  return
+}

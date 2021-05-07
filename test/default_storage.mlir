@@ -94,7 +94,7 @@ func @to_memref_proj_fby(%arg0: f32, %arg1: memref<f32>) {
     %5 = sair.copy[d0:%0] %4(d0) {
       loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
     } : !sair.value<d0:range, f32>
-    %6 = sair.proj_last of[d0:%0] %4(d0) : #sair.shape<d0:range>, f32
+    %6 = sair.proj_last of[d0:%0] %5(d0) : #sair.shape<d0:range>, f32
     sair.to_memref %2 memref %6 {
       buffer_name = "out"
     } : #sair.shape<()>, memref<f32>

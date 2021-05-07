@@ -26,7 +26,8 @@ namespace sair {
 // Verifies that storage attributes in the program are correct. Assumes that
 // Sair operands are defined in the same program.
 mlir::LogicalResult VerifyStorages(
-    SairProgramOp program, const IterationSpaceAnalysis &iteration_spaces);
+    SairProgramOp program, const LoopFusionAnalysis &fusion_analysis,
+    const IterationSpaceAnalysis &iteration_spaces);
 
 // Returns the buffer attribute representing a 0-dimensional register.
 BufferAttr GetRegister0DBuffer(mlir::MLIRContext *context);
@@ -252,6 +253,13 @@ class StorageAnalysis {
   llvm::DenseMap<mlir::Attribute, Buffer> buffers_;
   llvm::DenseMap<mlir::Value, ValueStorage> value_storages_;
 };
+
+// Verifies that values are not overwritten by another operation before they are
+// used.
+mlir::LogicalResult VerifyValuesNotOverwritten(
+    const LoopFusionAnalysis &fusion_analysis,
+    const IterationSpaceAnalysis &iteration_spaces,
+    const StorageAnalysis &storage_analysis);
 
 }  // namespace sair
 

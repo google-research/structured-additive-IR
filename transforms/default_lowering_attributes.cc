@@ -301,7 +301,9 @@ class DefaultStorage : public DefaultStoragePassBase<DefaultStorage> {
     });
 
     if (mlir::failed(storage_analysis.VerifyAndMinimizeBufferLoopNests(
-            fusion_analysis, iteration_spaces))) {
+            fusion_analysis, iteration_spaces)) ||
+        mlir::failed(VerifyValuesNotOverwritten(
+            fusion_analysis, iteration_spaces, storage_analysis))) {
       return program.emitError()
              << "unable to generate storage attributes, see other "
                 "errors for more information";

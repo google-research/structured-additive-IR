@@ -50,7 +50,7 @@ func @main(%arg0: memref<512x512xf32>, %arg1: memref<512x512xf32>, %arg2: memref
       %15 = addf %arg6, %14 : f32
       sair.return %15 : f32
     } : #sair.shape<d0:range x d1:range x d2:range>, (f32, f32, f32) -> f32
-    %13 = sair.proj_last[d0:%6, d1:%6] of[d2:%6] %11(d0, d1, d2)
+    %13 = sair.proj_last[d0:%6, d1:%6] of[d2:%6] %12(d0, d1, d2)
       : #sair.shape<d0:range x d1:range x d2:range>, f32
     sair.to_memref %5 memref[d0:%6, d1:%6] %13(d0, d1) {buffer_name = "C"}
       : #sair.shape<d0:range x d1:range>, memref<512x512xf32>

@@ -29,7 +29,7 @@ enum class Direction { kBefore, kAfter };
 // Specifies where to insert an operation in the generated code. The operation
 // is inserted before or after 'operation', depending on `direction` and
 // is nested in 'loop_nest'.
-// TODO(ulysse): use mlir::OpBuilder insertion point instead
+// TODO(ulysse): merge with program point.
 struct InsertionPoint {
   mlir::Operation *operation;
   Direction direction;

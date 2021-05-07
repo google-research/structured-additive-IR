@@ -102,16 +102,60 @@ class IterationSpaceAnalysis {
   llvm::DenseMap<mlir::Operation *, IterationSpace> iteration_space_;
 };
 
+// A point in the execution of the program. A point can be:
+// - Immediately before or after a Sair operation.
+// - Immediately before entering the Sair program.
+// - Immediately after exiting the Sair program.
+class ProgramPoint {
+ public:
+  // Constructs a program point that is before or after the whole program.
+  ProgramPoint(SairProgramOp program, Direction direction)
+      : program_(program), direction_(direction) {}
+
+  // Constructs a program point that is before or after `op`. Saves a reference
+  // to `loop_nest`.
+  ProgramPoint(ComputeOp op, Direction direction,
+               llvm::ArrayRef<mlir::StringAttr> loop_nest);
+
+  // If null, the point is outside of the sair program. If non-null the point is
+  // immediately before or after this operation.
+  ComputeOp operation() const { return op_; }
+
+  // Indicates if the point is before or after operation() or before or after
+  // the Sair program.
+  Direction direction() const { return direction_; }
+
+  // Loop nest the point is nested in.
+  llvm::ArrayRef<mlir::StringAttr> loop_nest() const { return loop_nest_; }
+
+  // Reduces the number of loops in loop_nest().
+  void TrimLoopNest(int num_loops);
+
+  // Indicates if `this` is before or after `op`.
+  bool IsBefore(ComputeOp op) const;
+  bool IsAfter(ComputeOp op) const;
+
+  // Number of common loops between two program points.
+  int NumCommonLoops(const ProgramPoint &other) const;
+
+ private:
+  SairProgramOp program_;
+  ComputeOp op_ = nullptr;
+  Direction direction_;
+  llvm::ArrayRef<mlir::StringAttr> loop_nest_;
+};
+
 // A class of fused loops.
 class LoopFusionClass {
  public:
-  LoopFusionClass(mlir::StringAttr name, mlir::Location location);
+  // Builds an empty loop fusion class for the inner-most loop of loop_nest.
+  LoopFusionClass(llvm::ArrayRef<mlir::StringAttr> loop_nest, ComputeOp op);
+
+  // Loop nest of this loop, including this one.
+  llvm::ArrayRef<mlir::StringAttr> loop_nest() const { return loop_nest_; }
 
   // Loops this class depends on.
-  llvm::ArrayRef<mlir::StringAttr> dependencies() const {
-    return dependencies_;
-  }
-  llvm::SmallVector<mlir::StringAttr> &dependencies() { return dependencies_; }
+  llvm::ArrayRef<mlir::StringAttr> dependencies() const;
 
   // Domain in which the loop size is defined. This is a list of dimensions,
   // with an access pattern from dependencies indicies to the domain of each
@@ -129,7 +173,7 @@ class LoopFusionClass {
   MappingExpr iter_expr() const { return iter_expr_; }
 
   // Names of the loop.
-  mlir::StringAttr name() const { return name_; }
+  mlir::StringAttr name() const { return loop_nest_.back(); }
 
   // Location of the first occurence of the loop.
   mlir::Location GetLoc() const { return location_; }
@@ -141,12 +185,26 @@ class LoopFusionClass {
   // Unifies `iter_expr` with another expression.
   void UnifyIterExpr(MappingExpr expr);
 
+  // Registers an operation nested in the loop.
+  void AddUse(ComputeOp op);
+
+  // Program point at which the loop ends.
+  ProgramPoint EndPoint() const;
+
+  // Reduces the number of dependencies.
+  void TrimDependencies(int num_dependencies);
+
  private:
-  mlir::StringAttr name_;
   mlir::Location location_;
-  llvm::SmallVector<mlir::StringAttr> dependencies_;
+
+  // Names of outer loops, including this one.
+  llvm::SmallVector<mlir::StringAttr> loop_nest_;
+  // Last loop of the loop nest this loop depends on.
+  int num_dependencies_;
   llvm::SmallVector<ValueAccess> domain_;
   MappingExpr iter_expr_;
+
+  ComputeOp last_op_;
 };
 
 // A loop nest of fused loops.
@@ -200,10 +258,10 @@ class LoopFusionAnalysis {
   // Populates the analysis with the operations appearing in `program_op`.
   mlir::LogicalResult Init(SairProgramOp program_op);
 
-  // Registers a loop of an operation. All occurences of outer loops must be
+  // Registers the last loop of loop_nest. All occurences of outer loops must be
   // registered first.
-  mlir::LogicalResult RegisterLoop(ComputeOp op, LoopAttr loop,
-                                   llvm::ArrayRef<mlir::Attribute> outer_loops);
+  mlir::LogicalResult RegisterLoop(ComputeOp op,
+                                   llvm::ArrayRef<mlir::Attribute> loop_nest);
 
   int next_loop_id_ = 0;
   mlir::MLIRContext *context_;
