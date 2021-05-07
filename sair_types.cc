@@ -16,6 +16,7 @@
 
 #include <tuple>
 
+#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/MathExtras.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/TypeSupport.h"
@@ -25,10 +26,14 @@
 
 namespace sair {
 
+//===----------------------------------------------------------------------===//
+// ShapedType
+//===----------------------------------------------------------------------===//
+
 // Private implementation/storage class for sair::SairShapedType. Instances of
 // this class are allocated by MLIR type system in a dedicated arena. Not
 // intended for direct use.
-class impl::SairShapedTypeStorage : public mlir::TypeStorage {
+class impl::ShapedTypeStorage : public mlir::TypeStorage {
  public:
   // Key type uniquely identifying RangeTypeStorage for MLIR type unique-ing.
   // This specific name is required by mlir::TypeUniquer.
@@ -36,11 +41,10 @@ class impl::SairShapedTypeStorage : public mlir::TypeStorage {
 
   // Creates a RangeTypeStorage using the provided allocator, hook for MLIR type
   // system support.
-  static impl::SairShapedTypeStorage *construct(
+  static impl::ShapedTypeStorage *construct(
       mlir::TypeStorageAllocator &allocator,  // NOLINT
       const KeyTy &key) {
-    return new (allocator.allocate<SairShapedTypeStorage>())
-        SairShapedTypeStorage(key);
+    return new (allocator.allocate<ShapedTypeStorage>()) ShapedTypeStorage(key);
   }
 
   // Compares the RangeTypeStorage identification key with this object.
@@ -58,7 +62,7 @@ class impl::SairShapedTypeStorage : public mlir::TypeStorage {
   //
   // Is protected so that users are forced to call the construct method, but
   // sub-classes can still call the base class constructor.
-  explicit SairShapedTypeStorage(const KeyTy &key) : shape_(key) {}
+  explicit ShapedTypeStorage(const KeyTy &key) : shape_(key) {}
 
  private:
   // The shape of the dimensions the range depends on.
@@ -66,23 +70,35 @@ class impl::SairShapedTypeStorage : public mlir::TypeStorage {
 };
 
 // Forwards the request to the implementation class.
-DomainShapeAttr SairShapedType::Shape() const {
-  return static_cast<ImplType *>(impl)->shape();
+DomainShapeAttr ShapedType::Shape() const {
+  return TypeSwitch<ShapedType, DomainShapeAttr>(*this)
+      .Case<RangeType>([](RangeType type) { return type.Shape(); })
+      .Case<ValueType>([](ValueType type) { return type.Shape(); });
 }
+
+//===----------------------------------------------------------------------===//
+// RangeType
+//===----------------------------------------------------------------------===//
 
 // Forwards the construction to the MLIR type system with SairTypes::Range tag.
 RangeType RangeType::get(DomainShapeAttr shape) {
   return Base::get(shape.getContext(), shape);
 }
 
+DomainShapeAttr RangeType::Shape() const { return getImpl()->shape(); }
+
+//===----------------------------------------------------------------------===//
+// ValueType
+//===----------------------------------------------------------------------===//
+
 // Private implementation/storage class for sair::ValueType. Instances of this
 // class are allocated by MLIR type system in a dedicated arena. Not intended
 // for direct use.
-class impl::ValueTypeStorage : public impl::SairShapedTypeStorage {
+class impl::ValueTypeStorage : public impl::ShapedTypeStorage {
  public:
   // Key type uniquely identifying ValueTypeStorage for MLIR unique-ing. This
   // specific name is required by mlir::TypeUniquer.
-  using KeyTy = std::tuple<impl::SairShapedTypeStorage::KeyTy, mlir::Type>;
+  using KeyTy = std::tuple<impl::ShapedTypeStorage::KeyTy, mlir::Type>;
 
   // Creates a ValueTypeStorage using the provided allocator, hook for MLIR type
   // system support.
@@ -95,13 +111,13 @@ class impl::ValueTypeStorage : public impl::SairShapedTypeStorage {
 
   // Compares the ValueTypeStorage identification key with this object.
   bool operator==(const KeyTy &key) const {
-    return impl::SairShapedTypeStorage::operator==(std::get<0>(key)) &&
+    return impl::ShapedTypeStorage::operator==(std::get<0>(key)) &&
            std::get<1>(key) == element_type_;
   }
 
   // Computes the hash of a key.
   static unsigned hashKey(const KeyTy &key) {
-    unsigned base = impl::SairShapedTypeStorage::hashKey(std::get<0>(key));
+    unsigned base = impl::ShapedTypeStorage::hashKey(std::get<0>(key));
     return llvm::hash_combine(base, std::get<1>(key));
   }
 
@@ -114,7 +130,7 @@ class impl::ValueTypeStorage : public impl::SairShapedTypeStorage {
   // created by MLIR's type system within an arena allocator by calling
   // ::construct.
   ValueTypeStorage(DomainShapeAttr domain, mlir::Type element_type)
-      : SairShapedTypeStorage(domain), element_type_(element_type) {}
+      : ShapedTypeStorage(domain), element_type_(element_type) {}
 
   // Type of the scalar elements in the value.
   mlir::Type element_type_;
@@ -132,6 +148,8 @@ ValueType ValueType::get(mlir::Type element_type) {
 
 // Forwards the request to the implementation class.
 mlir::Type ValueType::ElementType() const { return getImpl()->element_type(); }
+
+DomainShapeAttr ValueType::Shape() const { return getImpl()->shape(); }
 
 ValueType ValueType::AccessedType(MappingAttr mapping) const {
   return ValueType::get(Shape().AccessedShape(mapping), ElementType());

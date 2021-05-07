@@ -83,7 +83,7 @@ mlir::Value CreateSairRange(mlir::Location loc, const LoopBound &bound,
   int dimension = shaped_type.getDimSize(bound.dimension);
 
   // If the shape is statically known, create a simple static range.
-  if (!ShapedType::isDynamic(dimension)) {
+  if (!mlir::ShapedType::isDynamic(dimension)) {
     return rewriter.create<SairStaticRangeOp>(
         loc, range_type, /*size=*/rewriter.getIndexAttr(dimension),
         /*step=*/rewriter.getIndexAttr(1));

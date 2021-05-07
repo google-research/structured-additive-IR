@@ -205,9 +205,7 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
   ::sair::DomainShapeAttr results_shape =
       sair_op.shape().Prefix(sair_op.results_rank());
   for (mlir::Value result : op->getResults()) {
-    ::sair::SairShapedType type =
-        result.getType().dyn_cast<::sair::SairShapedType>();
-    if (type == nullptr) continue;
+    auto type = result.getType().cast<ShapedType>();
     if (type.Shape() != results_shape) {
       return op->emitError() << "unexpected shape: expected " << results_shape
                              << ", got " << type.Shape();

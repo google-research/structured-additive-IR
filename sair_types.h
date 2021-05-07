@@ -22,7 +22,7 @@ namespace sair {
 
 namespace impl {
 // Private implementation for sair::RangeType.
-class SairShapedTypeStorage;
+class ShapedTypeStorage;
 // Private implementation for sair::ValueType.
 class ValueTypeStorage;
 }  // end namespace impl
@@ -32,10 +32,9 @@ class DomainShapeAttr;
 // Base type for Sair objects (values or iteration dimensions) that are defined
 // for each point in an iteration domain. This type exposes the shape of the
 // domain. Unknown shapes are not supported.
-class SairShapedType : public mlir::Type {
+class ShapedType : public mlir::Type {
  public:
   // This a hook for the MLIR type system.
-  using ImplType = impl::SairShapedTypeStorage;
   using Type::Type;
 
   // Returns the shape of the type.
@@ -48,8 +47,8 @@ class SairShapedType : public mlir::Type {
 //
 //   sair-range-type ::= `!` dialect-namespace `.` `range` ('<' dom-shape '>')?
 //
-class RangeType : public mlir::Type::TypeBase<RangeType, SairShapedType,
-                                              impl::SairShapedTypeStorage> {
+class RangeType : public mlir::Type::TypeBase<RangeType, ShapedType,
+                                              impl::ShapedTypeStorage> {
  public:
   // Constructs RangeType from opaque types in MLIR TypeBase.
   using Base::Base;
@@ -61,6 +60,9 @@ class RangeType : public mlir::Type::TypeBase<RangeType, SairShapedType,
   // Returns the name of this type as it appears in the textual format without
   // the dialect prefix.
   static llvm::StringRef Name() { return "range"; }
+
+  // Range domain shape.
+  DomainShapeAttr Shape() const;
 };
 
 class MappingAttr;
@@ -71,7 +73,7 @@ class MappingAttr;
 //
 //   value-type ::= `!` dialect-namespace `.` `value` `<` dom-shape `,` type `>`
 //
-class ValueType : public mlir::Type::TypeBase<ValueType, SairShapedType,
+class ValueType : public mlir::Type::TypeBase<ValueType, ShapedType,
                                               impl::ValueTypeStorage> {
  public:
   // Construct ValueType from opaque types in MLIR TypeBase.
@@ -91,6 +93,9 @@ class ValueType : public mlir::Type::TypeBase<ValueType, SairShapedType,
 
   // Returns the type of the value elements.
   mlir::Type ElementType() const;
+
+  // Value domain shape.
+  DomainShapeAttr Shape() const;
 
   // Converts the type from the use domain to the def domain of the mapping.
   ValueType AccessedType(MappingAttr mapping) const;

@@ -177,7 +177,7 @@ def SairEmptyDomainShapeAttr :
 def SairResultDomainShapeAttr :
     DerivedAttr<"DomainShapeAttr", [{
       mlir::Type type = getOperation()->getResult(0).getType();
-      return type.cast<SairShapedType>().Shape();
+      return type.cast<ShapedType>().Shape();
     }]> {
   let convertFromStorage = [{$_self}];
 }
