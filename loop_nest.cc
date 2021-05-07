@@ -779,33 +779,11 @@ LoopNest LoopFusionAnalysis::GetLoopNest(ComputeOp op) const {
 
 LoopNest LoopFusionAnalysis::GetLoopNest(
     llvm::ArrayRef<mlir::StringAttr> loop_names) const {
-  LoopNest result;
-  if (!loop_names.empty()) {
-    result.domain = GetClass(loop_names.back()).domain();
-  }
-
-  llvm::SmallVector<MappingExpr> iters;
-  llvm::SmallVector<DomainShapeDim> shape_dims;
-  iters.reserve(loop_names.size());
-  shape_dims.reserve(loop_names.size());
+  llvm::SmallVector<const LoopFusionClass *> fusion_classes;
   for (mlir::StringAttr name : loop_names) {
-    const LoopFusionClass &fusion_class = GetClass(name);
-    iters.push_back(fusion_class.iter_expr());
-
-    // Resulting loop nest dependencies are pointwise dependencies to a prefix
-    // of the loop nest.
-    int num_dependencies = fusion_class.dependencies().size();
-    auto dim_type = RangeType::get(DomainShapeAttr::get(
-        context_, llvm::makeArrayRef(shape_dims).take_front(num_dependencies)));
-    auto dim_mapping =
-        MappingAttr::GetIdentity(context_, num_dependencies, shape_dims.size());
-    shape_dims.emplace_back(dim_type, dim_mapping);
+    fusion_classes.push_back(&GetClass(name));
   }
-  result.domain_to_loops =
-      MappingAttr::get(context_, result.domain.size(), iters);
-  result.normalized_shape = DomainShapeAttr::get(context_, shape_dims);
-
-  return result;
+  return LoopNest(fusion_classes, context_);
 }
 
 mlir::StringAttr LoopFusionAnalysis::GetFreshLoopName() {
@@ -887,21 +865,57 @@ mlir::InFlightDiagnostic LoopFusionClass::EmitError() const {
   return mlir::emitError(GetLoc()) << "in loop " << name() << ": ";
 }
 
-DomainShapeAttr LoopNest::DomainShape() const {
-  llvm::SmallVector<DomainShapeDim> shape_dims;
-  shape_dims.reserve(domain.size());
-  MappingAttr loops_to_domain = domain_to_loops.Inverse();
-  for (const ValueAccess &access : domain) {
-    MappingAttr mapping = loops_to_domain.Resize(shape_dims.size())
-                              .Inverse()
-                              .Compose(access.mapping);
-    shape_dims.emplace_back(access.value.getType().cast<RangeType>(), mapping);
+LoopNest::LoopNest(llvm::ArrayRef<const LoopFusionClass *> fusion_classes,
+                   mlir::MLIRContext *context) {
+  if (!fusion_classes.empty()) {
+    domain_ = fusion_classes.back()->domain();
   }
-  return DomainShapeAttr::get(normalized_shape.getContext(), shape_dims);
+
+  llvm::SmallVector<MappingExpr> iters;
+  iters.reserve(fusion_classes.size());
+  for (const LoopFusionClass *fusion_class : fusion_classes) {
+    iters.push_back(fusion_class->iter_expr());
+  }
+  domain_to_loops_ = MappingAttr::get(context, domain_.size(), iters);
 }
 
 DomainShapeAttr LoopNest::Shape() const {
-  return DomainShape().AccessedShape(domain_to_loops);
+  return DomainShape().AccessedShape(domain_to_loops_);
+}
+
+DomainShapeAttr LoopNest::DomainShape() const {
+  llvm::SmallVector<DomainShapeDim> shape_dims;
+  shape_dims.reserve(domain_.size());
+  MappingAttr loops_to_domain = domain_to_loops_.Inverse();
+  for (const ValueAccess &access : domain_) {
+    MappingAttr mapping = loops_to_domain.Resize(shape_dims.size())
+                              .Inverse()
+                              .Compose(access.mapping);
+    auto type = access.value.getType().cast<RangeType>();
+    shape_dims.emplace_back(type, mapping);
+  }
+  return DomainShapeAttr::get(domain_to_loops_.getContext(), shape_dims);
+}
+
+DomainShapeAttr LoopNest::NormalizedShape() const {
+  mlir::MLIRContext *context = domain_to_loops_.getContext();
+  llvm::SmallVector<DomainShapeDim> normalized_shape_dims;
+  DomainShapeAttr shape = Shape();
+  normalized_shape_dims.reserve(shape.NumDimensions());
+  for (const DomainShapeDim &dim : shape.Dimensions()) {
+    int num_dependencies = dim.dependency_mapping().MinDomainSize();
+    if (num_dependencies == 0) {
+      normalized_shape_dims.push_back(dim);
+      continue;
+    }
+    auto dependencies =
+        llvm::makeArrayRef(normalized_shape_dims).take_front(num_dependencies);
+    auto dim_type = RangeType::get(DomainShapeAttr::get(context, dependencies));
+    auto dim_mapping = MappingAttr::GetIdentity(context, num_dependencies,
+                                                normalized_shape_dims.size());
+    normalized_shape_dims.emplace_back(dim_type, dim_mapping);
+  }
+  return DomainShapeAttr::get(context, normalized_shape_dims);
 }
 
 }  // namespace sair

@@ -208,22 +208,30 @@ class LoopFusionClass {
 };
 
 // A loop nest of fused loops.
-struct LoopNest {
+class LoopNest {
+ public:
+  LoopNest(llvm::ArrayRef<const LoopFusionClass *> fusion_classes,
+           mlir::MLIRContext *context);
+
   // Domain used to define loop ranges.
-  llvm::ArrayRef<ValueAccess> domain;
+  llvm::ArrayRef<ValueAccess> domain() const { return domain_; }
 
-  // Mapping from `domain` to loops.
-  MappingAttr domain_to_loops;
+  // Mapping from domain to loops.
+  MappingAttr domain_to_loops() const { return domain_to_loops_; }
 
-  // Shape of the nest, normalized so that dependencies between dimensions are
-  // identity mappings.
-  DomainShapeAttr normalized_shape;
+  // Shape of the loop nest.
+  DomainShapeAttr Shape() const;
 
   // Shape of the domain the loop nest is defined from.
   DomainShapeAttr DomainShape() const;
 
-  // Shape of the loop nest.
-  DomainShapeAttr Shape() const;
+  // Shape of the nest, normalized so that dependencies between dimensions are
+  // identity mappings.
+  DomainShapeAttr NormalizedShape() const;
+
+ private:
+  llvm::ArrayRef<ValueAccess> domain_;
+  MappingAttr domain_to_loops_;
 };
 
 // Computes loop fusion classes in a sair program.

@@ -95,7 +95,7 @@ std::pair<mlir::SmallVector<int64_t>, ValueRange> GetMemRefShape(
   llvm::SmallVector<mlir::Value> scalar_sizes;
 
   auto loops_to_domain =
-      loop_nest.domain_to_loops.Inverse().Resize(buffer.domain().size());
+      loop_nest.domain_to_loops().Inverse().Resize(buffer.domain().size());
   llvm::SmallVector<RangeParameters> range_parameters = GetRangeParameters(
       buffer.getLoc(), buffer.layout().value(), buffer.domain(),
       loops_to_domain, map_arguments, *block, builder);

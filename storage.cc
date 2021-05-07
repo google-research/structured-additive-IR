@@ -38,9 +38,9 @@ Buffer::Buffer(mlir::Location loc, mlir::Type element_type,
   assert(element_type != nullptr);
 
   // Prefix domain with loop nest domain.
-  domain_.reserve(loop_nest.domain.size());
+  domain_.reserve(loop_nest.domain().size());
   int num_loops = loop_nest_.size();
-  for (const ValueAccess &access : loop_nest.domain) {
+  for (const ValueAccess &access : loop_nest.domain()) {
     domain_.push_back(
         {access.value, access.mapping.ResizeUseDomain(num_loops)});
   }
@@ -60,7 +60,7 @@ std::optional<int> Buffer::rank() const {
 }
 
 void Buffer::SetLoopNest(const LoopNest &loop_nest) {
-  int new_size = loop_nest.domain_to_loops.size();
+  int new_size = loop_nest.domain_to_loops().size();
   if (new_size == loop_nest_.size()) return;
 
   assert(new_size <= loop_nest_.size());
@@ -69,7 +69,7 @@ void Buffer::SetLoopNest(const LoopNest &loop_nest) {
 
   // Compute dimensions to remove from the domain.
   llvm::SmallBitVector preserved_dims(domain_.size());
-  preserved_dims.set(0, loop_nest.domain.size());
+  preserved_dims.set(0, loop_nest.domain().size());
   if (layout_.has_value()) {
     preserved_dims |= layout_.value().DependencyMask();
   }
@@ -141,7 +141,7 @@ MappingAttr BufferInstanceLayout(const Buffer &buffer,
   assert(buffer.layout().has_value());
   LoopNest loop_nest = fusion_analysis.GetLoopNest(buffer.loop_nest());
   return buffer.layout().value().AddPrefix(
-      loop_nest.domain_to_loops.Dimensions());
+      loop_nest.domain_to_loops().Dimensions());
 }
 
 StorageAnalysis::StorageAnalysis(mlir::Operation *operation)
@@ -282,15 +282,15 @@ static mlir::LogicalResult UnifyBufferShape(
 
   // Creates a mapping that maps iter_space dimensions to op_loop_nest domain if
   // possible and op domain otherwise.
-  int shift = op_loop_nest.domain.size();
+  int shift = op_loop_nest.domain().size();
   int concat_domain_size = shift + op.domain().size();
 
   llvm::SmallVector<MappingExpr> concat_exprs;
   concat_exprs.reserve(op_iter_space.mapping().size());
-  llvm::append_range(concat_exprs, op_loop_nest.domain_to_loops);
+  llvm::append_range(concat_exprs, op_loop_nest.domain_to_loops());
   auto op_dimensions =
       op_iter_space.mapping().ShiftRight(shift).Dimensions().drop_front(
-          op_loop_nest.domain_to_loops.size());
+          op_loop_nest.domain_to_loops().size());
   llvm::append_range(concat_exprs, op_dimensions);
   auto concat_domains =
       MappingAttr::get(context, concat_domain_size, concat_exprs);
@@ -300,7 +300,7 @@ static mlir::LogicalResult UnifyBufferShape(
   // Compute unification constraints. Dimensions used by the buffer loop nest
   // must be exactly the same for both uses.
   llvm::SmallVector<MappingExpr> constraints(concat_domain_size, none);
-  for (int i = 0, e = buffer_loop_nest.domain.size(); i < e; ++i) {
+  for (int i = 0, e = buffer_loop_nest.domain().size(); i < e; ++i) {
     constraints[i] = MappingDimExpr::get(i, context);
   }
   if (buffer.layout().has_value()) {
@@ -329,7 +329,7 @@ static mlir::LogicalResult UnifyBufferShape(
 
     // Pick dimension from op_loop_nest domain or op domain.
     if (dimension < shift) {
-      dim_access = op_loop_nest.domain[dimension];
+      dim_access = op_loop_nest.domain()[dimension];
     } else {
       dim_access.value = op.domain()[dimension - shift];
       MappingAttr dependency_mapping =
