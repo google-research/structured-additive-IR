@@ -30,6 +30,7 @@
 #include "sair_dialect.h"
 #include "sair_ops.h"
 #include "storage.h"
+#include "transforms/domain_utils.h"
 #include "transforms/lowering_pass_classes.h"
 #include "util.h"
 
@@ -88,14 +89,12 @@ void RewriteFreeToMap(SairFreeOp op, mlir::OpBuilder &builder) {
 
 // Given a source op, which is either a SairLoadFromMemRefOp or a
 // SairStoreToMemRefOp, populates `region` with a block that computes indices to
-// accesses the memref and add them to `indices`. Returns an object that defines
-// arguments to pass to the sair.map operation wrapping the region.
+// accesses the memref and add them to `indices`. Returns arguments to pass to
+// the sair.map operation wrapping the region.
 template <typename OpTy>
-MapArguments LoadStoreIndices(OpTy source_op,
-                              llvm::ArrayRef<ValueAccess> domain,
-                              mlir::Region &region,
-                              llvm::SmallVectorImpl<mlir::Value> &indices,
-                              mlir::OpBuilder &builder) {
+llvm::SmallVector<ValueAccess> LoadStoreIndices(
+    OpTy source_op, llvm::ArrayRef<ValueAccess> domain, mlir::Region &region,
+    llvm::SmallVectorImpl<mlir::Value> &indices, mlir::OpBuilder &builder) {
   static_assert(
       llvm::is_one_of<OpTy, SairLoadFromMemRefOp, SairStoreToMemRefOp>::value,
       "can extract memref indices only from memref-related Sair ops");
@@ -103,21 +102,19 @@ MapArguments LoadStoreIndices(OpTy source_op,
   mlir::OpBuilder::InsertionGuard insertion_guard(builder);
   int domain_size = domain.size();
 
-  // Allocate a block to add index computations.
+  // Allocate a block to add index computations and forward `source_op`
+  // arguments to the block.
+  llvm::SmallVector<ValueAccess> map_arguments;
   llvm::SmallVector<mlir::Type> block_arg_types(domain_size,
                                                 builder.getIndexType());
-  mlir::Block *block = builder.createBlock(&region, {}, block_arg_types);
-  MapArguments map_arguments(block, domain_size);
-
-  // Forward `source_op` arguments to the block.
   for (ValueOperand operand : source_op.ValueOperands()) {
-    map_arguments.AddArgument(operand.Get());
+    map_arguments.push_back(operand.Get());
+    block_arg_types.push_back(operand.GetType().ElementType());
   }
+  mlir::Block *block = builder.createBlock(&region, {}, block_arg_types);
 
   // Compute memref indices.
   indices.reserve(source_op.layout().size());
-  MappingAttr inverse_layout = source_op.layout().Inverse();
-
   llvm::SmallVector<mlir::Value> domain_indices;
   domain_indices.reserve(domain_size + 1);
   llvm::append_range(domain_indices,
@@ -125,11 +122,20 @@ MapArguments LoadStoreIndices(OpTy source_op,
   domain_indices.push_back(nullptr);
   auto s0 = mlir::getAffineSymbolExpr(0, source_op.getContext());
 
-  for (MappingExpr layout_dim : source_op.layout()) {
+  // The mapping to the operation domain to the layout domain is the identity,
+  // be we must make sure that GetRangePrameters can find subexpressions for the
+  // layout inverse so we re-write the identity as a mapping that extends the
+  // layout inverse with its inverse.
+  auto inverse_layout = source_op.layout().Inverse().MakeFullySpecified();
+  auto identity = inverse_layout.Inverse().Compose(inverse_layout);
+  llvm::SmallVector<RangeParameters> range_paramters =
+      GetRangeParameters(source_op.getLoc(), source_op.layout(), domain,
+                         identity, map_arguments, *block, builder);
+  builder.setInsertionPointToEnd(block);
+  for (const auto &[params, layout_dim] :
+       llvm::zip(range_paramters, source_op.layout())) {
     AffineExpr expr = layout_dim.AsAffineExpr();
     // Make sure expr starts at 0 and has step 1.
-    RangeParameters params = layout_dim.GetRangeParameters(
-        source_op.getLoc(), domain, inverse_layout, builder, map_arguments);
     domain_indices.back() =
         Materialize(source_op.getLoc(), params.begin, builder);
     auto affine_map =
@@ -168,14 +174,14 @@ SairMapOp LoadStoreMapAndIndices(OpTy source_op, mlir::OpBuilder &builder,
   }
 
   mlir::Region region;
-  MapArguments map_arguments =
+  llvm::SmallVector<ValueAccess> map_arguments =
       LoadStoreIndices(source_op, domain, region, indices, builder);
 
   // Allocate the map operation.
   SairMapOp map_op = builder.create<SairMapOp>(
       source_op.getLoc(), source_op->getResultTypes(), source_op.domain(),
-      builder.getArrayAttr(map_arguments.mappings()), map_arguments.values(),
-      source_op.shape(), source_op.loop_nestAttr(), /*storage=*/nullptr);
+      map_arguments, source_op.shape(), source_op.loop_nestAttr(),
+      /*storage=*/nullptr);
   map_op.body().takeBody(region);
   // Rely on ForwardAttributes to forward storage attribute as only
   // LoadFromMemRef has the attribute.

@@ -1140,6 +1140,23 @@ ParseResult ParseMapOp(mlir::OpAsmParser &parser,
 // Input values must have !sair.value types.
 void SairMapOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,
                       mlir::TypeRange result_types, mlir::ValueRange domain,
+                      llvm::ArrayRef<ValueAccess> inputs, DomainShapeAttr shape,
+                      ArrayAttr loop_nest, ArrayAttr storage) {
+  llvm::SmallVector<mlir::Value> values;
+  llvm::SmallVector<mlir::Attribute> mappings;
+  for (const auto &input : inputs) {
+    values.push_back(input.value);
+    mappings.push_back(input.mapping);
+  }
+  auto mappings_attr = builder.getArrayAttr(mappings);
+  return SairMapOp::build(builder, result, result_types, domain, mappings_attr,
+                          values, shape, loop_nest, storage);
+}
+
+// Builds a sair.map operation and setups its block with the right arguments.
+// Input values must have !sair.value types.
+void SairMapOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,
+                      mlir::TypeRange result_types, mlir::ValueRange domain,
                       mlir::ArrayAttr mappings_array, mlir::ValueRange inputs,
                       DomainShapeAttr shape, ArrayAttr loop_nest,
                       ArrayAttr storage) {

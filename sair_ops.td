@@ -482,6 +482,11 @@ def SairMapOp : SairOp<"map", [
       "mlir::ValueRange":$domain, "mlir::ArrayAttr":$mappings_array,
       "mlir::ValueRange":$inputs, "DomainShapeAttr":$shape,
       CArg<"/*optional*/ ArrayAttr", "nullptr">:$loop_nest,
+      CArg<"/*optional*/ ArrayAttr", "nullptr">:$storage)>,
+    OpBuilder<(ins "mlir::TypeRange":$result_types,
+      "mlir::ValueRange":$domain, "mlir::ArrayRef<ValueAccess>":$inputs,
+      "DomainShapeAttr":$shape,
+      CArg<"/*optional*/ ArrayAttr", "nullptr">:$loop_nest,
       CArg<"/*optional*/ ArrayAttr", "nullptr">:$storage)>
   ];
 

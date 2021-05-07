@@ -17,6 +17,7 @@
 #include "mlir/Pass/Pass.h"
 #include "loop_nest.h"
 #include "storage.h"
+#include "transforms/domain_utils.h"
 #include "transforms/lowering_pass_classes.h"
 
 namespace sair {
@@ -78,8 +79,8 @@ std::pair<InsertionPoint, InsertionPoint> FindInsertionPoints(
 // providing dynamic dimension sizes.
 std::pair<mlir::SmallVector<int64_t>, ValueRange> GetMemRefShape(
     const Buffer &buffer, DomainShapeAttr shape,
-    llvm::ArrayRef<mlir::Value> domain, mlir::ArrayAttr loop_nest,
-    const LoopFusionAnalysis &fusion_analysis, mlir::OpBuilder &builder) {
+    llvm::ArrayRef<mlir::Value> domain, const LoopNest &loop_nest,
+    mlir::ArrayAttr loop_nest_attr, mlir::OpBuilder &builder) {
   mlir::MLIRContext *context = builder.getContext();
   mlir::OpBuilder::InsertPoint map_point = builder.saveInsertionPoint();
 
@@ -88,17 +89,17 @@ std::pair<mlir::SmallVector<int64_t>, ValueRange> GetMemRefShape(
   llvm::SmallVector<mlir::Type> block_arg_types(domain.size(),
                                                 builder.getIndexType());
   mlir::Block *block = builder.createBlock(&region, {}, block_arg_types);
-  MapArguments map_arguments(block, domain.size());
+  llvm::SmallVector<ValueAccess> map_arguments;
 
   llvm::SmallVector<int64_t> memref_shape;
   llvm::SmallVector<mlir::Value> scalar_sizes;
-  auto inverse_layout = BufferInstanceLayout(buffer, fusion_analysis).Inverse();
 
-  MappingAttr layout = buffer.layout().value();
-  for (MappingExpr layout_dim : layout) {
-    RangeParameters params =
-        layout_dim.GetRangeParameters(buffer.getLoc(), buffer.domain(),
-                                      inverse_layout, builder, map_arguments);
+  auto loops_to_domain =
+      loop_nest.domain_to_loops.Inverse().Resize(buffer.domain().size());
+  llvm::SmallVector<RangeParameters> range_parameters = GetRangeParameters(
+      buffer.getLoc(), buffer.layout().value(), buffer.domain(),
+      loops_to_domain, map_arguments, *block, builder);
+  for (const auto &params : range_parameters) {
     int step = params.step;
     if (params.begin.is<mlir::Attribute>() &&
         params.end.is<mlir::Attribute>()) {
@@ -133,9 +134,8 @@ std::pair<mlir::SmallVector<int64_t>, ValueRange> GetMemRefShape(
         scalar_sizes.size(), GetRegister0DBuffer(context));
     auto map_op = builder.create<SairMapOp>(
         buffer.getLoc(), map_types, /*domain=*/domain,
-        /*mapping_array=*/builder.getArrayAttr(map_arguments.mappings()),
-        /*values=*/map_arguments.values(), /*shape=*/shape,
-        /*loop_nest=*/loop_nest,
+        /*inputs=*/map_arguments, /*shape=*/shape,
+        /*loop_nest=*/loop_nest_attr,
         /*storage=*/builder.getArrayAttr(map_buffers));
     map_op.body().takeBody(region);
     sizes = map_op.getResults();
@@ -161,8 +161,8 @@ mlir::Value AllocateBuffer(const Buffer &buffer,
       CreatePlaceholderDomain(buffer.getLoc(), shape, builder);
 
   // Compute memref sizes.
-  auto [memref_shape, sizes] = GetMemRefShape(
-      buffer, shape, domain, alloc_point.loop_nest, fusion_analysis, builder);
+  auto [memref_shape, sizes] = GetMemRefShape(buffer, shape, domain, loop_nest,
+                                              alloc_point.loop_nest, builder);
 
   // Introduce a malloc operation.
   auto memref_type = mlir::MemRefType::get(memref_shape, buffer.element_type());

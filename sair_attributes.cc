@@ -27,26 +27,10 @@
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Types.h"
 #include "sair_dialect.h"
-#include "sair_op_interfaces.h"
 
 namespace sair {
 
 #include "sair_attr_interfaces.cc.inc"
-
-mlir::Value MapArguments::AddArgument(ValueAccess value) {
-  values_.push_back(value.value);
-  mappings_.push_back(value.mapping);
-  return body_->addArgument(value.ElementType());
-}
-
-mlir::OpFoldResult MapArguments::AddArgument(ValueOrConstant value) {
-  if (value.is_constant()) return value.constant();
-  return AddArgument(value.value());
-}
-
-mlir::ValueRange MapArguments::Indices() const {
-  return body_->getArguments().take_front(domain_size_);
-}
 
 //===----------------------------------------------------------------------===//
 // MappingExpr
@@ -226,21 +210,6 @@ MappingExpr MappingDimExpr::Unify(
 
 mlir::AffineExpr MappingDimExpr::AsAffineExpr() const {
   return mlir::getAffineDimExpr(dimension(), getContext());
-}
-
-RangeParameters MappingDimExpr::GetRangeParameters(
-    mlir::Location loc, llvm::ArrayRef<ValueAccess> domain,
-    MappingAttr inverse_mapping, mlir::OpBuilder &builder,
-    MapArguments &map_arguments) const {
-  const ValueAccess &dim_access = domain[dimension()];
-  auto range_op = mlir::cast<RangeOp>(dim_access.value.getDefiningOp());
-  auto mapping =
-      dim_access.mapping.ResizeUseDomain(map_arguments.Indices().size());
-  assert(mapping.IsSurjective());
-  return {
-      .begin = map_arguments.AddArgument(range_op.LowerBound().Map(mapping)),
-      .end = map_arguments.AddArgument(range_op.UpperBound().Map(mapping)),
-      .step = static_cast<int>(range_op.step().getSExtValue())};
 }
 
 //===----------------------------------------------------------------------===//
@@ -471,55 +440,6 @@ static MappingExpr GetCanonicalStripe(MappingExpr canonical_operand,
 
 MappingExpr MappingStripeExpr::Canonicalize() const {
   return GetCanonicalStripe(operand().Canonicalize(), factors());
-}
-
-RangeParameters MappingStripeExpr::GetRangeParameters(
-    mlir::Location loc, llvm::ArrayRef<ValueAccess> domain,
-    MappingAttr inverse_mapping, mlir::OpBuilder &builder,
-    MapArguments &map_arguments) const {
-  // Compute range parameters for the operand.
-  RangeParameters operand_parameters = operand().GetRangeParameters(
-      loc, domain, inverse_mapping, builder, map_arguments);
-  int step = factors().back() * operand_parameters.step;
-
-  // If the stripe covers the entire operand range, no additional computation is
-  // needed.
-  if (factors().size() == 1) {
-    return {operand_parameters.begin, operand_parameters.end, step};
-  }
-  int size = factors()[factors().size() - 2];
-
-  // Compute the begin index. For this, look for the unstripe operation
-  // corresponding to `this` in the inverse mapping, and find the expression of
-  // the outer stripe dimension.
-  auto inverse_expr = operand()
-                          .FindInInverse(inverse_mapping.Dimensions())
-                          .cast<MappingUnStripeExpr>();
-  auto begin_map = mlir::AffineMap::get(
-      map_arguments.Indices().size(), 0,
-      inverse_expr.operands()[factors().size() - 2].AsAffineExpr());
-  mlir::Value begin = builder.create<mlir::AffineApplyOp>(
-      loc, begin_map, map_arguments.Indices());
-
-  // Compute the end index as `min(begin + size, operand_size)`.
-  mlir::Type index_type = builder.getIndexType();
-  auto size_op = builder.create<mlir::ConstantOp>(
-      loc, index_type, builder.getIndexAttr(size * operand_parameters.step));
-  auto uncapped_end =
-      builder.create<mlir::AddIOp>(loc, index_type, begin, size_op);
-  mlir::Value operand_end;
-  if (operand_parameters.end.is<mlir::Attribute>()) {
-    operand_end = builder.create<mlir::ConstantOp>(
-        loc, index_type, operand_parameters.end.get<mlir::Attribute>());
-  } else {
-    operand_end = operand_parameters.end.get<mlir::Value>();
-  }
-  auto is_capped = builder.create<mlir::CmpIOp>(loc, CmpIPredicate::ult,
-                                                operand_end, uncapped_end);
-  mlir::Value end = builder.create<mlir::SelectOp>(
-      loc, builder.getIndexType(), is_capped, operand_end, uncapped_end);
-
-  return {begin, end, step};
 }
 
 //===----------------------------------------------------------------------===//
@@ -758,16 +678,6 @@ MappingExpr MappingUnStripeExpr::Canonicalize() const {
   if (new_factors.size() == 1 && new_factors.back() == 1)
     return new_operands[0];
   return MappingUnStripeExpr::get(new_operands, new_factors);
-}
-
-RangeParameters MappingUnStripeExpr::GetRangeParameters(
-    mlir::Location loc, llvm::ArrayRef<ValueAccess> domain,
-    MappingAttr inverse_mapping, mlir::OpBuilder &builder,
-    MapArguments &map_arguments) const {
-  RangeParameters inner_parameters = operands()[0].GetRangeParameters(
-      loc, domain, inverse_mapping, builder, map_arguments);
-  inner_parameters.step = 1;
-  return inner_parameters;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1086,11 +996,17 @@ MappingAttr MappingAttr::AddSuffix(llvm::ArrayRef<MappingExpr> exprs) const {
   return MappingAttr::get(getContext(), UseDomainSize(), new_exprs);
 }
 
+MappingAttr MappingAttr::Slice(int begin, int new_size) const {
+  assert(begin >= 0);
+  assert(new_size >= 0);
+  assert(begin + new_size <= size());
+
+  return MappingAttr::get(getContext(), UseDomainSize(),
+                          Dimensions().slice(begin, new_size));
+}
+
 MappingAttr MappingAttr::DropFront(int num_drop) const {
-  assert(num_drop <= size());
-  llvm::SmallVector<MappingExpr> new_exprs;
-  llvm::append_range(new_exprs, Dimensions().drop_front(num_drop));
-  return MappingAttr::get(getContext(), UseDomainSize(), new_exprs);
+  return Slice(num_drop, size() - num_drop);
 }
 
 //===----------------------------------------------------------------------===//

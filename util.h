@@ -20,6 +20,7 @@
 
 namespace sair {
 
+class ValueAccess;
 class ComputeOp;
 class SairOp;
 
@@ -68,10 +69,6 @@ void SetInArrayAttr(mlir::Operation *operation, llvm::StringRef attr_name,
 // Materializes `value` as an mlir value.
 mlir::Value Materialize(mlir::Location loc, mlir::OpFoldResult value,
                         mlir::OpBuilder &builder);
-
-// Creates a domain with the given shape using placeholder dimensions.
-llvm::SmallVector<mlir::Value> CreatePlaceholderDomain(
-    mlir::Location loc, DomainShapeAttr shape, mlir::OpBuilder &builder);
 
 // Behaves like assert(mlir::succeeded(expr)) but always executes expr.
 inline void AssertSuccess(mlir::LogicalResult result) {

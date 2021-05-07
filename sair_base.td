@@ -103,20 +103,6 @@ def MappingExpr : AttrInterface<"MappingExpr"> {
     InterfaceMethod<
       [{Canonicalizes the expression.}], "MappingExpr", "Canonicalize"
     >,
-    InterfaceMethod<
-      [{Returns the parameters (start index, end index and step) of the range
-        represented by the expression. Adds operations to compute the parameters
-        to the body of a sair.map operation at the insertion point pointed to by
-        `builder` and adds arguments to the sair.map if necessary using
-        `map_arguments`.
-
-        After returning, builder insertion point is after newly added
-        instructions.}],
-      "RangeParameters", "GetRangeParameters",
-      (ins "mlir::Location":$loc, "llvm::ArrayRef<ValueAccess>":$domain,
-           "MappingAttr":$inverse_mapping, "mlir::OpBuilder&":$builder,
-           "MapArguments&":$map_arguments)
-    >
   ];
 
   let extraClassDeclaration = [{

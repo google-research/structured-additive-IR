@@ -16,6 +16,7 @@
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
 #include "storage.h"
+#include "transforms/domain_utils.h"
 #include "transforms/lowering_pass_classes.h"
 #include "util.h"
 
@@ -59,11 +60,11 @@ void CreateRange(SairOp op, const LoopNest &loop_nest, int loop,
   // Populate the block with the computations for the bounds of the new range.
   // Adds !sair.value arguments necessary to compute the bounds to `arguments`,
   // and `arguments_mappings` and corresponding scalars to block arguments.
-  MapArguments map_arguments(block, range_rank);
-  RangeParameters range_parameters =
-      loop_nest.domain_to_loops.Dimension(loop).GetRangeParameters(
-          op.getLoc(), loop_nest.domain, inverse_mapping, builder,
-          map_arguments);
+  llvm::SmallVector<ValueAccess> map_arguments;
+  RangeParameters range_parameters = GetRangeParameters(
+      op.getLoc(), loop_nest.domain_to_loops.Slice(loop, 1), loop_nest.domain,
+      inverse_mapping.ResizeUseDomain(range_rank), map_arguments, *block,
+      builder)[0];
 
   // Create a sair.map operation with `block` as body and add a sair.return
   // operation to `block`. Create a range operation that uses the bounds
@@ -115,8 +116,7 @@ void CreateRange(SairOp op, const LoopNest &loop_nest, int loop,
     auto map_op = builder.create<SairMapOp>(
         op.getLoc(), map_result_types,
         /*domain=*/range_domain,
-        /*mapping_array=*/builder.getArrayAttr(map_arguments.mappings()),
-        /*values=*/map_arguments.values(),
+        /*inputs=*/map_arguments,
         /*shape=*/range_shape,
         /*loop_nest=*/map_loop_nest,
         /*storage=*/builder.getArrayAttr(map_buffers));

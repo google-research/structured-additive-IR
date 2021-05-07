@@ -125,17 +125,4 @@ mlir::Value Materialize(mlir::Location loc, mlir::OpFoldResult value,
   return builder.create<mlir::ConstantOp>(loc, value.get<mlir::Attribute>());
 }
 
-llvm::SmallVector<mlir::Value> CreatePlaceholderDomain(
-    mlir::Location loc, DomainShapeAttr shape, mlir::OpBuilder &builder) {
-  llvm::SmallVector<mlir::Value> domain;
-  domain.reserve(shape.NumDimensions());
-  for (const DomainShapeDim &shape_dim : shape.Dimensions()) {
-    llvm::SmallVector<mlir::Value> range_domain =
-        CreatePlaceholderDomain(loc, shape_dim.type().Shape(), builder);
-    domain.push_back(
-        builder.create<SairPlaceholderOp>(loc, shape_dim.type(), range_domain));
-  }
-  return domain;
-}
-
 }  // namespace sair

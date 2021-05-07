@@ -75,6 +75,7 @@ class LowerToLLVMPass : public LowerToLLVMBase<LowerToLLVMPass> {
     }
   }
 };
+
 }  // namespace
 
 std::unique_ptr<mlir::Pass> CreateLowerToLLVMPass() {

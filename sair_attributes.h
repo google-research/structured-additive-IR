@@ -16,14 +16,10 @@
 #define SAIR_SAIR_ATTRIBUTES_H_
 
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SmallBitVector.h"
 #include "mlir/IR/AffineMap.h"
-#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/OperationSupport.h"
-#include "mlir/IR/Value.h"
 #include "sair_types.h"
 
 namespace sair {
@@ -162,6 +158,9 @@ class MappingAttr
 
   // Drops expressions in front of the mapping.
   MappingAttr DropFront(int num_drop) const;
+
+  // Take a slice of the expressions of the mapping.
+  MappingAttr Slice(int begin, int new_size) const;
 
   // Inverse the mapping.
   MappingAttr Inverse() const;
@@ -335,48 +334,6 @@ class DomainShapeAttr
   DomainShapeAttr ProductAt(int pos, DomainShapeAttr other) const;
 };
 
-// Parameters of a range. Begin and end of the range can be either values or
-// constants.
-struct RangeParameters {
-  // First index of the range.
-  mlir::OpFoldResult begin;
-  // End of the range.
-  mlir::OpFoldResult end;
-  // Step of the range.
-  int step;
-};
-
-class ValueAccess;
-class ValueOrConstant;
-
-// Helper class to hold the !sair.value arguments of a sair.map operation and
-// populate block arguments of the map body.
-class MapArguments {
- public:
-  MapArguments(mlir::Block *map_body, int domain_size)
-      : body_(map_body), domain_size_(domain_size) {}
-
-  // Registers a !sair.value argument and returns the corresponding scalar in
-  // the body of the sair.map operation.
-  mlir::Value AddArgument(ValueAccess value);
-  mlir::OpFoldResult AddArgument(ValueOrConstant value);
-
-  // Returns the !sair.value arguments of the map operation.
-  mlir::ValueRange values() const { return values_; }
-
-  // Returns the array of mappings for !sair.value arguments.
-  llvm::ArrayRef<mlir::Attribute> mappings() const { return mappings_; }
-
-  // Returns dimension indicies values in the map body.
-  mlir::ValueRange Indices() const;
-
- private:
-  mlir::Block *body_;
-  int domain_size_;
-  llvm::SmallVector<mlir::Value> values_;
-  llvm::SmallVector<mlir::Attribute> mappings_;
-};
-
 #include "sair_attr_interfaces.h.inc"
 
 // Mapping expression that maps to a dimension of the domain.
@@ -415,12 +372,6 @@ class MappingDimExpr
   mlir::AffineExpr AsAffineExpr() const;
 
   MappingExpr Canonicalize() const { return *this; }
-
-  RangeParameters GetRangeParameters(mlir::Location loc,
-                                     llvm::ArrayRef<ValueAccess> domain,
-                                     MappingAttr inverse_mapping,
-                                     mlir::OpBuilder &builder,
-                                     MapArguments &map_arguments) const;
 };
 
 // Mapping expression that maps to no dimensions.
@@ -464,14 +415,6 @@ class MappingNoneExpr
   }
 
   MappingExpr Canonicalize() const { return *this; }
-
-  RangeParameters GetRangeParameters(mlir::Location loc,
-                                     llvm::ArrayRef<ValueAccess> domain,
-                                     MappingAttr inverse_mapping,
-                                     mlir::OpBuilder &builder,
-                                     MapArguments &map_arguments) const {
-    llvm_unreachable("cannot call `GetRangeParameters` on none expressions");
-  }
 };
 
 // To be specified mapping expression.
@@ -514,14 +457,6 @@ class MappingUnknownExpr
   }
 
   MappingExpr Canonicalize() const { return *this; }
-
-  RangeParameters GetRangeParameters(mlir::Location loc,
-                                     llvm::ArrayRef<ValueAccess> domain,
-                                     MappingAttr inverse_mapping,
-                                     mlir::OpBuilder &builder,
-                                     MapArguments &map_arguments) const {
-    llvm_unreachable("cannot call `GetRangeParameters` on unknown expressions");
-  }
 };
 
 // Applies stripe-mining to an expression. Iterates on its operand with step
@@ -566,12 +501,6 @@ class MappingStripeExpr
   mlir::AffineExpr AsAffineExpr() const;
 
   MappingExpr Canonicalize() const;
-
-  RangeParameters GetRangeParameters(mlir::Location loc,
-                                     llvm::ArrayRef<ValueAccess> domain,
-                                     MappingAttr inverse_mapping,
-                                     mlir::OpBuilder &builder,
-                                     MapArguments &map_arguments) const;
 };
 
 // Stiches together stripe expressions to iterate on a full dimension. Specifies
@@ -616,12 +545,6 @@ class MappingUnStripeExpr
   mlir::AffineExpr AsAffineExpr() const;
 
   MappingExpr Canonicalize() const;
-
-  RangeParameters GetRangeParameters(mlir::Location loc,
-                                     llvm::ArrayRef<ValueAccess> domain,
-                                     MappingAttr inverse_mapping,
-                                     mlir::OpBuilder &builder,
-                                     MapArguments &map_arguments) const;
 };
 
 }  // namespace sair

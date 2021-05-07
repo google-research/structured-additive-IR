@@ -61,6 +61,7 @@ add_public_tablegen_target(sair_lowering_inc_gen)
 
 # Sair transformation library.
 add_mlir_library(sair_lowering
+  domain_utils.cc
   lowering.cc
   inline_trivial_ops.cc
   introduce_loops.cc
