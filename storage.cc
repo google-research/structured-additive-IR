@@ -842,8 +842,7 @@ mlir::LogicalResult StorageAnalysis::VerifyAndMinimizeBufferLoopNests(
         DomainShapeAttr::HyperRectangular(context_, buffer.domain().size());
     MappingAttr inverse = mapping.Inverse();
     for (MappingExpr layout_expr : buffer.layout()->Dimensions()) {
-      DomainShapeDim shape_dim =
-          layout_expr.AccessedShape(hr_shape.Dimensions(), inverse);
+      DomainShapeDim shape_dim = hr_shape.AccessedShape(layout_expr, inverse);
       int new_min = shape_dim.dependency_mapping().MinDomainSize();
       if (new_min > buffer.loop_nest().size()) {
         return mlir::emitError(buffer.getLoc())

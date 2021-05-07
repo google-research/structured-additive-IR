@@ -321,6 +321,8 @@ class DomainShapeAttr
 
   // Returns the expected shape of the sair value the mapping refers to.
   DomainShapeAttr AccessedShape(MappingAttr mapping) const;
+  DomainShapeDim AccessedShape(MappingExpr expr,
+                               MappingAttr inverted_mapping) const;
 
   // Returns a new domain that is a product of this and `other` domains, i.e.,
   // is a concatenation of the dimensions of both.
@@ -354,9 +356,6 @@ class MappingDimExpr
 
   void Walk(llvm::function_ref<void(MappingExpr)> function) const;
 
-  DomainShapeDim AccessedShape(llvm::ArrayRef<DomainShapeDim> accessing_shape,
-                               MappingAttr inverted_mapping) const;
-
   mlir::LogicalResult SetInverse(
       MappingExpr context_inverse,
       llvm::MutableArrayRef<MappingExpr> inverses) const;
@@ -389,12 +388,6 @@ class MappingNoneExpr
   MappingExpr Map(llvm::function_ref<MappingExpr(MappingExpr)> function) const;
 
   void Walk(llvm::function_ref<void(MappingExpr)> function) const;
-
-  DomainShapeDim AccessedShape(llvm::ArrayRef<DomainShapeDim> accessing_shape,
-                               MappingAttr inversed_mapping) const {
-    llvm_unreachable(
-        "'none' mapping expression cannot be used to access values");
-  }
 
   mlir::LogicalResult SetInverse(
       MappingExpr context_inverse,
@@ -432,11 +425,6 @@ class MappingUnknownExpr
   MappingExpr Map(llvm::function_ref<MappingExpr(MappingExpr)> function) const;
 
   void Walk(llvm::function_ref<void(MappingExpr)> function) const;
-
-  DomainShapeDim AccessedShape(llvm::ArrayRef<DomainShapeDim> accessing_shape,
-                               MappingAttr inversed_mapping) const {
-    llvm_unreachable("'?' mapping expression cannot be used to access values");
-  }
 
   mlir::LogicalResult SetInverse(
       MappingExpr context_inverse,
@@ -485,9 +473,6 @@ class MappingStripeExpr
 
   void Walk(llvm::function_ref<void(MappingExpr)> function) const;
 
-  DomainShapeDim AccessedShape(llvm::ArrayRef<DomainShapeDim> accessing_shape,
-                               MappingAttr inverted_mapping) const;
-
   mlir::LogicalResult SetInverse(
       MappingExpr context_inverse,
       llvm::MutableArrayRef<MappingExpr> inverses) const;
@@ -528,9 +513,6 @@ class MappingUnStripeExpr
   MappingExpr Map(llvm::function_ref<MappingExpr(MappingExpr)> function) const;
 
   void Walk(llvm::function_ref<void(MappingExpr)> function) const;
-
-  DomainShapeDim AccessedShape(llvm::ArrayRef<DomainShapeDim> accessing_shape,
-                               MappingAttr inverted_mapping) const;
 
   mlir::LogicalResult SetInverse(
       MappingExpr context_inverse,

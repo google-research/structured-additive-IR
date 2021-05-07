@@ -17,6 +17,7 @@
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/TypeSwitch.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/AffineExpr.h"
@@ -185,12 +186,6 @@ void MappingDimExpr::Walk(
   function(*this);
 }
 
-DomainShapeDim MappingDimExpr::AccessedShape(
-    llvm::ArrayRef<DomainShapeDim> accessing_shape,
-    MappingAttr inverted_mapping) const {
-  return accessing_shape[dimension()].Apply(inverted_mapping);
-}
-
 mlir::LogicalResult MappingDimExpr::SetInverse(
     MappingExpr context_inverse,
     llvm::MutableArrayRef<MappingExpr> inverses) const {
@@ -347,38 +342,6 @@ MappingExpr MappingStripeExpr::Unify(
   return MappingStripeExpr::get(unified_operand, factors());
 }
 
-DomainShapeDim MappingStripeExpr::AccessedShape(
-    llvm::ArrayRef<DomainShapeDim> accessing_shape,
-    MappingAttr inverted_mapping) const {
-  mlir::MLIRContext *context = getContext();
-
-  DomainShapeDim inner_shape =
-      operand().AccessedShape(accessing_shape, inverted_mapping);
-  auto inverse_subexpr = operand()
-                             .FindInInverse(inverted_mapping.Dimensions())
-                             .cast<MappingUnStripeExpr>();
-
-  // Append dependencies to larger stripes to the dependency mapping.
-  llvm::SmallVector<MappingExpr, 4> dependency_mapping_exprs;
-  llvm::append_range(dependency_mapping_exprs,
-                     inner_shape.dependency_mapping());
-
-  llvm::SmallVector<DomainShapeDim, 4> type_shape;
-  llvm::append_range(type_shape, inner_shape.type().Shape().Dimensions());
-  RangeType type = inner_shape.type();
-
-  for (int i = 0, e = factors().size() - 1; i < e; ++i) {
-    type_shape.emplace_back(
-        type, MappingAttr::GetIdentity(context, type_shape.size()));
-    type = RangeType::get(DomainShapeAttr::get(context, type_shape));
-    dependency_mapping_exprs.push_back(inverse_subexpr.operands()[i]);
-  }
-
-  auto dependency_mapping = MappingAttr::get(
-      context, inverted_mapping.UseDomainSize(), dependency_mapping_exprs);
-  return DomainShapeDim(type, dependency_mapping);
-}
-
 mlir::LogicalResult MappingStripeExpr::SetInverse(
     MappingExpr context_inverse,
     llvm::MutableArrayRef<MappingExpr> inverses) const {
@@ -519,15 +482,6 @@ void MappingUnStripeExpr::Walk(
     llvm::function_ref<void(MappingExpr)> function) const {
   for (MappingExpr operand : operands()) operand.Walk(function);
   function(*this);
-}
-
-DomainShapeDim MappingUnStripeExpr::AccessedShape(
-    llvm::ArrayRef<DomainShapeDim> accessing_shape,
-    MappingAttr inverted_mapping) const {
-  // The shape of the unstriped dimension is the shape of the outer-most striped
-  // dimensions. Other striped dimensions have similar shape, but with
-  // additional dependencies to outer striped dimensions.
-  return operands().front().AccessedShape(accessing_shape, inverted_mapping);
 }
 
 mlir::LogicalResult MappingUnStripeExpr::SetInverse(
@@ -1214,16 +1168,64 @@ bool DomainShapeAttr::IsPrefixOf(DomainShapeAttr other) {
 }
 
 DomainShapeAttr DomainShapeAttr::AccessedShape(MappingAttr mapping) const {
+  assert(mapping.IsFullySpecified());
+  assert(mapping.IsSurjective());
+
   llvm::SmallVector<DomainShapeDim, 4> shape;
   shape.reserve(mapping.size());
   MappingAttr inverted_mapping = mapping.Inverse();
   for (int i = 0, e = mapping.size(); i < e; ++i) {
-    DomainShapeDim shape_dim = mapping.Dimension(i).AccessedShape(
-        Dimensions(), inverted_mapping.ResizeUseDomain(i));
+    DomainShapeDim shape_dim = AccessedShape(
+        mapping.Dimension(i), inverted_mapping.ResizeUseDomain(i));
     assert(shape_dim.dependency_mapping().UseDomainSize() == i);
     shape.push_back(shape_dim);
   }
   return DomainShapeAttr::get(getContext(), shape);
+}
+
+// Compute the shape of a dimension mapped by a stripe expression.
+static DomainShapeDim StripeAccessedShape(MappingStripeExpr expr,
+                                          DomainShapeDim inner_shape,
+                                          MappingAttr inverted_mapping) {
+  mlir::MLIRContext *context = expr.getContext();
+  auto inverse_subexpr = expr.operand()
+                             .FindInInverse(inverted_mapping.Dimensions())
+                             .cast<MappingUnStripeExpr>();
+
+  // Append dependencies to larger stripes to the dependency mapping.
+  llvm::SmallVector<MappingExpr, 4> dependency_mapping_exprs;
+  llvm::append_range(dependency_mapping_exprs,
+                     inner_shape.dependency_mapping());
+
+  llvm::SmallVector<DomainShapeDim, 4> type_shape;
+  llvm::append_range(type_shape, inner_shape.type().Shape().Dimensions());
+  RangeType type = inner_shape.type();
+
+  for (int i = 0, e = expr.factors().size() - 1; i < e; ++i) {
+    type_shape.emplace_back(
+        type, MappingAttr::GetIdentity(context, type_shape.size()));
+    type = RangeType::get(DomainShapeAttr::get(context, type_shape));
+    dependency_mapping_exprs.push_back(inverse_subexpr.operands()[i]);
+  }
+
+  auto dependency_mapping = MappingAttr::get(
+      context, inverted_mapping.UseDomainSize(), dependency_mapping_exprs);
+  return DomainShapeDim(type, dependency_mapping);
+}
+
+DomainShapeDim DomainShapeAttr::AccessedShape(
+    MappingExpr expr, MappingAttr inverted_mapping) const {
+  return mlir::TypeSwitch<MappingExpr, DomainShapeDim>(expr)
+      .Case<MappingDimExpr>([&](MappingDimExpr expr) {
+        return Dimension(expr.dimension()).Apply(inverted_mapping);
+      })
+      .Case<MappingStripeExpr>([&](MappingStripeExpr expr) {
+        DomainShapeDim inner = AccessedShape(expr.operand(), inverted_mapping);
+        return StripeAccessedShape(expr, inner, inverted_mapping);
+      })
+      .Case<MappingUnStripeExpr>([&](MappingUnStripeExpr expr) {
+        return AccessedShape(expr.operands().front(), inverted_mapping);
+      });
 }
 
 DomainShapeAttr DomainShapeAttr::Product(DomainShapeAttr other) const {

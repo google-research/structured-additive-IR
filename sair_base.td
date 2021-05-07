@@ -64,15 +64,6 @@ def MappingExpr : AttrInterface<"MappingExpr"> {
            "llvm::function_ref<MappingExpr(MappingExpr, MappingExpr)>":$on_leaves)
     >,
     InterfaceMethod<
-      [{Returns the shape of the dimension accessed by the given expression.
-        `accessing_shape` must be the shape of the current domain and
-        `inverted_mapping` the inverse of the full mapping.}],
-      "DomainShapeDim", "AccessedShape", (ins
-        "llvm::ArrayRef<DomainShapeDim>":$accessing_shape,
-        "MappingAttr":$inversed_mapping
-      )
-    >,
-    InterfaceMethod<
       [{Sets `inverses[i]` to the inverse of the current expression (and its
       context) with regard to the i-th dimension of the domain. `inverses` size
       must be equal to the size of the domain.

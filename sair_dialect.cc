@@ -113,8 +113,9 @@ DomainShapeAttr ParseDomainShape(mlir::DialectAsmParser &parser) {
         return nullptr;
       }
       seen_dimensions |= expr_dependencies;
-      arg_shape_dims.push_back(expr.AccessedShape(
-          dimensions, inversed_mapping.ResizeUseDomain(arg_shape_dims.size())));
+      auto shape = DomainShapeAttr::get(context, dimensions);
+      arg_shape_dims.push_back(shape.AccessedShape(
+          expr, inversed_mapping.ResizeUseDomain(arg_shape_dims.size())));
     }
     RangeType arg_type =
         RangeType::get(DomainShapeAttr::get(context, arg_shape_dims));

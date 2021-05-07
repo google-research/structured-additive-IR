@@ -661,8 +661,8 @@ mlir::LogicalResult LoopFusionAnalysis::Init(SairProgramOp program_op) {
         MappingAttr::get(context_, domain_size, loop_nest).Inverse();
 
     auto hr_domain = DomainShapeAttr::HyperRectangular(context_, domain_size);
-    DomainShapeDim loop_shape = fusion_class.iter_expr().AccessedShape(
-        hr_domain.Dimensions(), inverse_loop_nest);
+    DomainShapeDim loop_shape =
+        hr_domain.AccessedShape(fusion_class.iter_expr(), inverse_loop_nest);
     if (loop_shape.dependency_mapping().HasNoneExprs()) {
       return fusion_class.EmitError()
              << "loop must be nested inside the loops it depends on";
