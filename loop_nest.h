@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_SAIR_LOOP_NEST_H_
-#define THIRD_PARTY_SAIR_LOOP_NEST_H_
+#ifndef SAIR_LOOP_NEST_H_
+#define SAIR_LOOP_NEST_H_
 
 #include "llvm/ADT/DenseMap.h"
 #include "mlir/IR/Attributes.h"
@@ -291,4 +291,4 @@ mlir::LogicalResult VerifyLoopNestWellFormed(
 
 }  // namespace sair
 
-#endif  // THIRD_PARTY_SAIR_LOOP_NEST_H_
+#endif  // SAIR_LOOP_NEST_H_
