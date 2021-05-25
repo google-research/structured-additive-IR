@@ -404,7 +404,27 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
         SetInArrayAttr(
           $_op, kStorageAttrName, $_op->getNumResults(), result, buffer);
       }]
-    >
+    >,
+    InterfaceMethod<
+      "Returns the sequence number of this operation as signed integer.",
+      "::llvm::Optional<int64_t>", "Sequence", (ins), [{}], [{
+        ::llvm::Optional<uint64_t> raw_attr_value = $_op.sequence();
+        if (!raw_attr_value) return ::llvm::None;
+        return static_cast<int64_t>(*raw_attr_value);
+      }]
+    >,
+    InterfaceMethod<
+      "Sets the sequence number of the operation to the given value. If the "
+      "value is None, removes the sequence number entirely.",
+      "void", "SetSequence", (ins "::llvm::Optional<int64_t>":$seq), [{}], [{
+        if (!seq) {
+          $_op->removeAttr(kSequenceAttrName);
+          return;
+        }
+        ::mlir::Builder builder($_op->getContext());
+        $_op.sequenceAttr(builder.getI64IntegerAttr(*seq));
+      }]
+    >,
   ];
 
   let verify = [{return sair::VerifyComputeOp(op);}];
@@ -412,6 +432,7 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
   let extraClassDeclaration = [{
     static constexpr llvm::StringRef kLoopNestAttrName = "loop_nest";
     static constexpr llvm::StringRef kStorageAttrName = "storage";
+    static constexpr llvm::StringRef kSequenceAttrName = "sequence";
   }];
 }
 

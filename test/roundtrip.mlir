@@ -705,3 +705,38 @@ func @mapping_any_expr() {
   "foo"() {bar = #sair.mapping_expr<?>} : () -> ()
   return
 }
+
+// CHECK-LABEL: @sequence_attr
+func @sequence_attr() {
+  sair.program {
+    %0 = sair.static_range 42 : !sair.range
+    // CHECK: sair.alloc
+    // CHECK-SAME: sequence = 1
+    %1 = sair.alloc[d0:%0] { sequence = 1 } : !sair.value<d0:range, memref<f32>>
+    // CHECK: sair.free
+    // CHECK-SAME: sequence = 3
+    sair.free[d0:%0] %1(d0) { sequence = 3 } : !sair.value<d0:range, memref<f32>>
+    sair.exit
+  }
+  return
+}
+
+// Should not error on fby's "then" operand having the same sequence number
+// as the user of "fby" result in case of use-def loop.
+// CHECK-LABEL: @sequence_same_fby_then
+func @sequence_same_fby_then(%arg0: f32) {
+  sair.program {
+    %0 = sair.static_range 42 : !sair.range
+    %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %2 = sair.copy %1 { sequence = 1 } : !sair.value<(), f32>
+    %3 = sair.fby %2 then[d0:%0] %4(d0) : !sair.value<d0:range, f32>
+    // CHECK: sair.map
+    // CHECK-SAME: sequence = 2
+    %4 = sair.map[d0:%0] %3(d0) attributes { sequence = 2 } {
+    ^bb0(%arg1: index, %arg2: f32):
+      sair.return %arg2 : f32
+    } : #sair.shape<d0:range>, (f32) -> (f32)
+    sair.exit
+  }
+  return
+}

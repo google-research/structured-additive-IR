@@ -265,9 +265,10 @@ void EmitMemRefToValue(
     // TODO(b/181850491): introduce a sair.maybe_copy operation instead.
     auto copy_mapping = rewriter.getArrayAttr(
         {MappingAttr::GetIdentity(context, ranges.size())});
+    // TODO(zinenko): we probably want to specify the sequence number.
     Value copied_operand = rewriter.create<SairCopyOp>(
         loc, value_type, ranges, copy_mapping, new_operand,
-        /*loop_nest=*/nullptr, /*storage=*/nullptr);
+        /*loop_nest=*/nullptr, /*storage=*/nullptr, /*sequence=*/nullptr);
     map_operands.push_back(copied_operand);
 
     // For in/out operands, store the ranges.
@@ -531,10 +532,11 @@ mlir::Operation *CreateMapReduceOp(
   llvm::append_range(mappings, operand_mappings.take_front(num_outputs));
   mlir::ArrayAttr mappings_attr = rewriter.getArrayAttr(mappings);
 
+  // TODO(zinenko): we probably want to specify the sequence number.
   return rewriter.create<SairMapReduceOp>(
       loc, result_types, parallel_domain, reduction_domain, mappings_attr,
       init_operands, input_operands, domain_shape,
-      /*loop_nest=*/nullptr, /*memory_space=*/nullptr);
+      /*loop_nest=*/nullptr, /*memory_space=*/nullptr, /*sequence=*/nullptr);
 }
 
 // Rewrites Linalg generic operation into a semantically equivalent sequence of

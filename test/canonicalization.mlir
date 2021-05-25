@@ -193,3 +193,28 @@ func @mappings(%arg0: f32) {
   } : f32
   return
 }
+
+// CHECK-LABEL: @sequence
+func @sequence(%arg0 : f32, %arg1 : index) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.from_scalar %arg1 : !sair.value<(), index>
+    %2 = sair.dyn_range %1 : !sair.range
+    // CHECK: sair.copy
+    // CHECK-SAME: sequence = 0
+    %3 = sair.copy[d0:%2] %1 { sequence = -42 } : !sair.value<d0:range, index>
+    %4 = sair.dyn_range[d0:%2] %3(d0) : !sair.range<d0:range>
+    // CHECK: sair.copy
+    // CHECK-SAME: sequence = 1
+    %5 = sair.copy[d0:%2, d1:%4] %0 { sequence = -1 }: !sair.value<d0:range x d1:range(d0), f32>
+    // CHECK: sair.map
+    // CHECK-SAME: sequence = 2
+    %6 = sair.map[d0:%2, d1:%4] %5(d0, d1) attributes { sequence = 10 } {
+    ^bb0(%arg2: index, %arg3: index, %arg4: f32):
+      sair.return %arg4 : f32
+    } : #sair.shape<d0:range x d1:range(d0)>, (f32) -> (f32)
+    %7 = sair.proj_last of[d0:%2, d1:%4] %6(d0, d1) : #sair.shape<d0:range x d1:range(d0)>, f32
+    sair.exit %7 : f32
+  } : f32
+  return
+}

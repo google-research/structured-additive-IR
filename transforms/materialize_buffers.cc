@@ -172,17 +172,21 @@ mlir::Value AllocateBuffer(const Buffer &buffer,
   llvm::SmallVector<mlir::Attribute> size_mappings(sizes.size(),
                                                    identity_mapping);
 
+  // TODO(b/175664160): use sequence attribute here and improve/remove
+  // FindInsertionPoint.
   mlir::Value alloc = builder.create<SairAllocOp>(
       buffer.getLoc(), type, domain,
       /*mapping_array=*/builder.getArrayAttr(size_mappings), sizes,
       /*loop_nest=*/alloc_point.loop_nest,
-      /*storage=*/builder.getArrayAttr(GetRegister0DBuffer(context)));
+      /*storage=*/builder.getArrayAttr(GetRegister0DBuffer(context)),
+      /*sequence=*/IntegerAttr());
 
   free_point.Set(builder);
   builder.create<SairFreeOp>(
       buffer.getLoc(), domain,
       /*mapping_array=*/builder.getArrayAttr(identity_mapping), alloc,
-      /*loop_nest=*/free_point.loop_nest);
+      /*loop_nest=*/free_point.loop_nest,
+      /*sequence=*/IntegerAttr());
   return alloc;
 }
 
@@ -217,11 +221,12 @@ void InsertLoad(ComputeOp op, int operand_pos, const Buffer &buffer,
   mlir::ArrayAttr loop_nest =
       PointwiseLoopNest(op_iter_space.loop_names(), builder);
   BufferAttr loaded_storage = GetRegister0DBuffer(context);
+  // TODO(zinenko): we probably want to specify the sequence number.
   mlir::Value loaded = builder.create<SairLoadFromMemRefOp>(
       op.getLoc(), loaded_type, load_domain,
       builder.getArrayAttr({memref_mapping}), memref.value,
       operand_storage.layout(), loop_nest,
-      builder.getArrayAttr({loaded_storage}));
+      builder.getArrayAttr({loaded_storage}), IntegerAttr());
 
   // Insert a sair.proj_any operation in case the load is rematerialized.
   ValueAccess new_operand;
@@ -275,10 +280,11 @@ void InsertStore(ComputeOp op, int result_pos, const Buffer &buffer,
   auto result_mapping = op_iter_space.mapping().Inverse();
   mlir::ArrayAttr loop_nest =
       PointwiseLoopNest(op_iter_space.loop_names(), builder);
+  // TODO(zinenko): we probably want to specify the sequence number.
   builder.create<SairStoreToMemRefOp>(
       op.getLoc(), store_domain,
       builder.getArrayAttr({memref_mapping, result_mapping}), memref.value,
-      result, result_storage.layout(), store_shape, loop_nest);
+      result, result_storage.layout(), store_shape, loop_nest, IntegerAttr());
 
   // Change result storage to register.
   op.SetStorage(result_pos, GetRegister0DBuffer(op.getContext()));

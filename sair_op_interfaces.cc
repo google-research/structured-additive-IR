@@ -212,19 +212,183 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
     }
   }
 
-  if (!isa<ComputeOp>(sair_op.getOperation()) &&
-      sair_op->hasAttr(ComputeOp::kLoopNestAttrName)) {
-    return op->emitError() << "only compute Sair ops can have the '"
-                           << ComputeOp::kLoopNestAttrName << "' attribute";
+  if (!isa<ComputeOp>(sair_op.getOperation())) {
+    if (sair_op->hasAttr(ComputeOp::kLoopNestAttrName)) {
+      return op->emitError() << "only compute Sair ops can have the '"
+                             << ComputeOp::kLoopNestAttrName << "' attribute";
+    }
+    if (sair_op->hasAttr(ComputeOp::kSequenceAttrName)) {
+      return op->emitOpError() << "unexpected '" << ComputeOp::kSequenceAttrName
+                               << "' attribute on a non-compute op";
+    }
   }
 
   return ::mlir::success();
 }
 
+namespace {
+// Simple RAII object that maintains a stack of MLIR Locations.
+class ExtraLocationSaver {
+ public:
+  ExtraLocationSaver(llvm::SmallVectorImpl<mlir::Location> &vector,
+                     mlir::Location location)
+      : vector_(vector) {
+    vector_.push_back(location);
+  }
+
+  ~ExtraLocationSaver() { vector_.pop_back(); }
+
+ private:
+  llvm::SmallVectorImpl<mlir::Location> &vector_;
+};
+}  // namespace
+
+static mlir::LogicalResult VerifyDomainOperandSequenced(
+    Value operand, int64_t owner_sequence_number,
+    llvm::SmallVectorImpl<mlir::Location> &locations);
+
+// Verifies that the operations producing the domain operands of `sair_op` are
+// sequenced before `owner_sequence_number`. Reports errors using the
+// `locations` stack otherwise.
+static mlir::LogicalResult VerifyDomainOperandsSequenced(
+    SairOp sair_op, int64_t owner_sequence_number,
+    llvm::SmallVectorImpl<mlir::Location> &locations) {
+  for (mlir::Value domain_operand : sair_op.domain()) {
+    if (mlir::failed(VerifyDomainOperandSequenced(
+            domain_operand, owner_sequence_number, locations))) {
+      return mlir::failure();
+    }
+  }
+  return mlir::success();
+}
+
+// Verifies that the operation producing Sair value `operand` is sequenced
+// before `owner_sequence_number`. Reports errors using the `locations` stack
+// otherwise.
+static mlir::LogicalResult VerifyOperandSequenced(
+    mlir::Value operand, int64_t owner_sequence_number,
+    llvm::SmallVectorImpl<mlir::Location> &locations,
+    mlir::Operation *allow_same_with, bool seen_fby_then = false) {
+  mlir::Operation *defining_op = operand.getDefiningOp();
+  assert(defining_op && "expected Sair values to have a defining op");
+
+  // If the operand is defined by a compute op, that op may have the sequence
+  // attribute. Use that for verification.
+  if (auto defining_compute_op = dyn_cast<ComputeOp>(defining_op)) {
+    llvm::Optional<int64_t> operand_sequence_number =
+        defining_compute_op.Sequence();
+    if (!operand_sequence_number ||
+        *operand_sequence_number < owner_sequence_number ||
+        (*operand_sequence_number == owner_sequence_number && seen_fby_then &&
+         allow_same_with == defining_compute_op)) {
+      return mlir::success();
+    }
+
+    mlir::InFlightDiagnostic diag =
+        mlir::emitError(locations.front())
+        << "value use sequenced before its definition";
+    for (mlir::Location loc : llvm::drop_begin(locations)) {
+      diag.attachNote(loc)
+          << "transitive through this implicitly sequenced operation";
+    }
+    diag.attachNote(defining_op->getLoc()) << "sequenced value definition";
+    return diag;
+  }
+
+  // Otherwise, we need to walk up the use-def chains until we find a compute
+  // operation. Keep track of operations we are traversing for eventual error
+  // reporting.
+  ExtraLocationSaver raii(locations, defining_op->getLoc());
+
+  // First, check the domain in case it has any dependent ranges. This wasn't
+  // necessary for compute operations as they have their domain checked
+  // separately (for better error reporting).
+  auto defining_sair_op = cast<SairOp>(defining_op);
+  if (mlir::failed(VerifyDomainOperandsSequenced(
+          defining_sair_op, owner_sequence_number, locations))) {
+    return mlir::failure();
+  }
+
+  // Recursively check Sair value operands of the operations that produce the
+  // current operand.
+  for (ValueOperand operand : defining_sair_op.ValueOperands()) {
+    // "fby" can be used to create definition loops that must be sequenced at
+    // the same point, and is the only operation that has AllowUseBeforeDef.
+    if (mlir::failed(VerifyOperandSequenced(
+            operand.value(), owner_sequence_number, locations, allow_same_with,
+            operand.AllowUseBeforeDef()))) {
+      return mlir::failure();
+    }
+  }
+
+  return mlir::success();
+}
+
+// Verifies that the value that appears in the domain of a Sair operation is
+// produced by an operation sequenced before `owner_sequence_number`. Reports
+// errors using the `locations` stack otherwise.
+static mlir::LogicalResult VerifyDomainOperandSequenced(
+    Value operand, int64_t owner_sequence_number,
+    llvm::SmallVectorImpl<mlir::Location> &locations) {
+  mlir::Operation *defining_op = operand.getDefiningOp();
+  assert(defining_op && "expected Sair range values to have a defining op");
+
+  // Static ranges are sequenced relative to their users and don't have operands
+  // that are explicitly sequenced.
+  if (auto defining_range_op = dyn_cast<SairStaticRangeOp>(defining_op)) {
+    return mlir::success();
+  }
+
+  ExtraLocationSaver raii(locations, defining_op->getLoc());
+
+  // Dynamic ranges may be using values, which must be sequenced before the user
+  // of dynamic range.
+  if (auto defining_dyn_range_op = dyn_cast<SairDynRangeOp>(defining_op)) {
+    if (defining_dyn_range_op.LowerBound().is_value() &&
+        mlir::failed(VerifyOperandSequenced(defining_dyn_range_op.lower_bound(),
+                                            owner_sequence_number, locations,
+                                            nullptr))) {
+      return mlir::failure();
+    }
+    if (mlir::failed(VerifyOperandSequenced(defining_dyn_range_op.upper_bound(),
+                                            owner_sequence_number, locations,
+                                            nullptr))) {
+      return mlir::failure();
+    }
+  }
+
+  // Sair ops may have dynamic domain dimensions that need further verification.
+  return VerifyDomainOperandsSequenced(cast<SairOp>(defining_op),
+                                       owner_sequence_number, locations);
+}
+
+// Verifies that the operands of the given compute operation are defined by
+// operations sequenced before (or at the same time as, in case of fby) this
+// operation.
+static mlir::LogicalResult VerifyOperandsSequenced(ComputeOp op) {
+  llvm::Optional<int64_t> sequence_number = op.Sequence();
+  if (!sequence_number) return mlir::success();
+
+  llvm::SmallVector<mlir::Location> locations;
+  locations.push_back(op.getLoc());
+  auto sair_op = cast<SairOp>(op.getOperation());
+  for (ValueOperand operand : sair_op.ValueOperands()) {
+    if (mlir::failed(VerifyOperandSequenced(operand.value(), *sequence_number,
+                                            locations, op))) {
+      return mlir::failure();
+    }
+  }
+  assert(locations.size() == 1);
+  return VerifyDomainOperandsSequenced(sair_op, *sequence_number, locations);
+}
+
 mlir::LogicalResult VerifyComputeOp(mlir::Operation *operation) {
   ComputeOp op(operation);
-  if (!op.loop_nest().hasValue()) return mlir::success();
-  return VerifyLoopNestWellFormed(op, op.LoopNestLoops());
+  if (op.loop_nest().hasValue() &&
+      mlir::failed(VerifyLoopNestWellFormed(op, op.LoopNestLoops()))) {
+    return mlir::failure();
+  }
+  return VerifyOperandsSequenced(op);
 }
 
 mlir::LogicalResult VerifyRangeOp(mlir::Operation *op) {

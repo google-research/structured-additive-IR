@@ -210,7 +210,8 @@ mlir::LogicalResult DeduplicateMapInputsOutputs(
   SairMapOp new_op = rewriter.create<SairMapOp>(
       op.getLoc(), new_result_types, op.domain(),
       rewriter.getArrayAttr(new_mappings), new_operands, op.shape(),
-      op.loop_nestAttr(), rewriter.getArrayAttr(new_storages));
+      op.loop_nestAttr(), rewriter.getArrayAttr(new_storages),
+      op.sequenceAttr());
   new_op.body().takeBody(op.body());
 
   for (auto [old_res, new_res] :
@@ -366,6 +367,43 @@ class RemoveUnreferencedDims<SairFbyOp> : public OpRewritePattern<SairFbyOp> {
   }
 };
 
+// Canonicalization patternt that updates the sequence numbers of compute
+// operations in the program operation to be contiguous zero-based values.
+class NormalizeSequenceNumbers : public mlir::OpRewritePattern<SairProgramOp> {
+ public:
+  using mlir::OpRewritePattern<SairProgramOp>::OpRewritePattern;
+
+  mlir::LogicalResult matchAndRewrite(
+      SairProgramOp op, mlir::PatternRewriter &rewriter) const override {
+    std::multimap<int64_t, ComputeOp> sequenced_ops;
+    op.walk([&](ComputeOp op) {
+      if (llvm::Optional<int64_t> sequence_number = op.Sequence()) {
+        sequenced_ops.emplace(*sequence_number, op);
+      }
+    });
+
+    bool changed = false;
+    rewriter.updateRootInPlace(op, [&] {
+      llvm::Optional<int64_t> previous_sequence_number = llvm::None;
+      int64_t current_sequence_number = 0;
+      for (auto [existing_sequence_number, nested_op] : sequenced_ops) {
+        if (!previous_sequence_number) {
+          previous_sequence_number = existing_sequence_number;
+        }
+        if (*previous_sequence_number != existing_sequence_number) {
+          ++current_sequence_number;
+        }
+        if (current_sequence_number != existing_sequence_number) {
+          nested_op.SetSequence(current_sequence_number);
+          changed = true;
+        }
+      }
+    });
+
+    return success(changed);
+  }
+};
+
 }  // end namespace
 
 void SairCopyOp::getCanonicalizationPatterns(
@@ -455,6 +493,11 @@ void SairAllocOp::getCanonicalizationPatterns(
 void SairFreeOp::getCanonicalizationPatterns(
     mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>(context);
+}
+
+void SairProgramOp::getCanonicalizationPatterns(
+    mlir::RewritePatternSet &patterns, mlir::MLIRContext *context) {
+  patterns.insert<NormalizeSequenceNumbers>(context);
 }
 
 }  // namespace sair
