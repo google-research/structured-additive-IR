@@ -25,6 +25,7 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallBitVector.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -51,6 +52,7 @@
 #include "sair_dialect.h"
 #include "sair_op_interfaces.h"
 #include "sair_types.h"
+#include "sequence.h"
 #include "storage.h"
 #include "util.h"
 
@@ -1538,8 +1540,77 @@ void Print(SairProgramOp op, mlir::OpAsmPrinter &printer) {
                         [&](mlir::Type type) { printer.printType(type); });
 }
 
+// Finds the use-def chain between `from` and `to` and populates `stack` with
+// it. Internally, this is implemented as a simplified iterative DFS on a graph
+// with operations as nodes and use-def relations as edges, restricted to SairOp
+// instances. This will return the first path found if multiple paths exist.
+static void FindUseDefChain(ComputeOp from, ComputeOp to,
+                            llvm::SmallVectorImpl<Operation *> &stack) {
+  llvm::SmallPtrSet<Operation *, 16> visited;
+  stack.push_back(from);
+  do {
+    auto current = cast<SairOp>(stack.back());
+    if (current == to) return;
+
+    // Visit all children of the operation to see if one of them or their
+    // descendants are `to`.
+    bool all_users_visited = true;
+    for (mlir::Operation *user : current->getUsers()) {
+      if (!isa<SairOp>(user)) continue;
+      if (!visited.insert(user).second) continue;
+      stack.push_back(user);
+      all_users_visited = false;
+      break;
+    }
+
+    // If we couldn't find `to` in descendants of the current operation, the
+    // current operation is not on the chain between `from` and `to`.
+    if (all_users_visited) stack.pop_back();
+  } while (!stack.empty());
+}
+
+// Checks that the operands of `op` are (transitively) computed by operations
+// sequenced before `op`, or at the same time as `op` in case of fby-carried
+// dependency. Uses slice analysis to find all Sair compute ops that can affect
+// the operands of `op`. Instead of carrying use-def chains all the time,
+// computes them on-demand on failure path, making the optimistic success path
+// fast.
+static mlir::LogicalResult VerifyOperandsSequenced(
+    ComputeOp op, const ComputeOpBackwardSliceAnalysis &slice_analysis) {
+  llvm::Optional<int64_t> sequence_number = op.Sequence();
+  if (!sequence_number) return mlir::success();
+
+  const ComputeOpSet &slice = slice_analysis.BackwardSlice(op);
+  for (ComputeOp predecessor : slice.Ops()) {
+    llvm::Optional<int64_t> predecessor_sequence_number =
+        predecessor.Sequence();
+    if (!predecessor_sequence_number) continue;
+
+    if (*predecessor_sequence_number > *sequence_number ||
+        (*predecessor_sequence_number == *sequence_number &&
+         predecessor != op)) {
+      SmallVector<Operation *> chain;
+      FindUseDefChain(predecessor, op, chain);
+      assert(!chain.empty() && "expected a use-def chain");
+      mlir::InFlightDiagnostic diag =
+          op->emitError() << "value use sequenced before its definition";
+      for (Operation *transitive :
+           llvm::reverse(llvm::makeArrayRef(chain).drop_front().drop_back())) {
+        diag.attachNote(transitive->getLoc())
+            << (isa<ComputeOp>(transitive)
+                    ? "transitive through this sequenceable operation"
+                    : "transitive through this implicitly sequenced operation");
+      }
+      diag.attachNote(chain.front()->getLoc()) << "sequenced value definition";
+      return diag;
+    }
+  }
+  return mlir::success();
+}
+
 // Verifies the well-formedness of the given SairProgramOp, in particular that
-// all its non-terminator ops are Sair ops.
+// all its non-terminator ops are Sair ops, and the correctness of lowering
+// attributes that operate across operations: buffer, sequence and loop_nest.
 mlir::LogicalResult Verify(SairProgramOp program) {
   mlir::Block *body = &program.body().front();
   for (mlir::Operation &nested_operation : *body) {
@@ -1553,6 +1624,15 @@ mlir::LogicalResult Verify(SairProgramOp program) {
     // Run operation verifier here so we can safely access their fields.
     if (mlir::failed(abstract_op.verifyInvariants(&nested_operation))) {
       return mlir::failure();
+    }
+  }
+
+  ComputeOpBackwardSliceAnalysis slice_analysis(program);
+  for (mlir::Operation &nested_operation : *body) {
+    if (auto compute_op = dyn_cast<ComputeOp>(nested_operation)) {
+      if (mlir::failed(VerifyOperandsSequenced(compute_op, slice_analysis))) {
+        return failure();
+      }
     }
   }
 

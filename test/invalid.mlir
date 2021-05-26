@@ -2119,3 +2119,20 @@ func @invalid_operand_shape(%arg0: f32) {
   }
   return
 }
+
+// -----
+
+func @use_def_partial_invalid(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.copy %0 : !sair.value<(), f32>
+    // expected-note @below {{sequenced value definition}}
+    %2 = sair.copy %1 { sequence = 2 } : !sair.value<(), f32>
+    // expected-note @below {{transitive through this sequenceable operation}}
+    %3 = sair.copy %2 : !sair.value<(), f32>
+    // expected-error @below {{value use sequenced before its definition}}
+    %4 = sair.copy %3 { sequence = 1 } : !sair.value<(), f32>
+    sair.exit
+  }
+  return
+}

@@ -47,6 +47,9 @@ class ConcreteOpSet {
     contents_.insert(other.contents_.begin(), other.contents_.end());
   }
 
+  // Returns the number of ops in this set.
+  size_t size() const { return contents_.size(); }
+
   // Returns `true` if the set contains the given element.
   bool contains(OpTy op) const { return contents_.contains(op.getOperation()); }
 
@@ -82,12 +85,24 @@ class ComputeOpBackwardSliceAnalysis {
     return frontiers_.find(op.getOperation())->getSecond();
   }
 
+  // Returns a set of compute operations the results of which are transitively
+  // use in `op`, that is the backward slice of `op` restricted to compute ops.
+  const ComputeOpSet &BackwardSlice(ComputeOp op) const;
+
  private:
-  void ComputeSlice(SairOp op);
+  // Compute the frontier of op and store in in `frontiers_`.
+  void ComputeFrontier(SairOp op);
+
+  // If the backward slice of `op` has been computed, merge it into `slice`.
+  bool MergeSliceIfAvailable(ComputeOp op, ComputeOpSet &slice) const;
 
   // Compute ops the results of which are used in `op`, potentially via some
   // non-compute ops.
   llvm::DenseMap<mlir::Operation *, ComputeOpSet> frontiers_;
+
+  // A cache for computed backward slices. These are computed on-demand as both
+  // computation and storage are relatively expensive.
+  mutable llvm::DenseMap<mlir::Operation *, ComputeOpSet> slice_cache_;
 };
 
 // An analysis of the relative positions of Sair operations indicated by their
