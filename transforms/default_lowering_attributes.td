@@ -14,6 +14,16 @@
 
 include "mlir/Pass/PassBase.td"
 
+def DefaultLoopNestPass : FunctionPass<"sair-assign-default-loop-nest"> {
+  let summary = "Assigns the default loop nest to Sair operations";
+  let constructor = [{ ::sair::CreateDefaultLoopNestPass(); }];
+}
+
+def DefaultSequencePass : FunctionPass<"sair-assign-default-sequence"> {
+  let summary = "Assigns the default sequence to Sair compute operations";
+  let constructor = [{ ::sair::CreateDefaultSequencePass(); }];
+}
+
 def DefaultStoragePass : FunctionPass<"sair-assign-default-storage"> {
   let summary = "Assigns the default storage to Sair values.";
 
@@ -23,11 +33,4 @@ def DefaultStoragePass : FunctionPass<"sair-assign-default-storage"> {
   }];
 
   let constructor = [{ ::sair::CreateDefaultStoragePass(); }];
-  let dependentDialects = ["::sair::SairDialect"];
-}
-
-def DefaultLoopNestPass : FunctionPass<"sair-assign-default-loop-nest"> {
-  let summary = "Assigns the default loop nest to Sair operations";
-  let constructor = [{ ::sair::CreateDefaultLoopNestPass(); }];
-  let dependentDialects = ["::sair::SairDialect"];
 }

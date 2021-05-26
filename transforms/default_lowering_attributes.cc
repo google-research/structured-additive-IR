@@ -14,10 +14,15 @@
 
 #include "transforms/default_lowering_attributes.h"
 
+#include <iterator>
 #include <memory>
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SetVector.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -27,6 +32,7 @@
 #include "sair_attributes.h"
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
+#include "sequence.h"
 #include "storage.h"
 
 namespace sair {
@@ -366,17 +372,256 @@ class DefaultLoopNest : public DefaultLoopNestPassBase<DefaultLoopNest> {
   }
 };
 
-}  // namespace
+// A graph with as nodes operations of OpTy. Maintains the order in which the
+// nodes were added to enable deterministic traversal order.
+template <typename OpTy>
+class ConcreteOpGraph {
+ public:
+  ConcreteOpGraph() {}
 
-std::unique_ptr<mlir::Pass> CreateDefaultStoragePass() {
-  return std::make_unique<DefaultStorage>();
+  // Insert a new node into the graph.
+  bool insert(OpTy key) {
+    if (adjacency_.count(key.getOperation())) return false;
+    keys_.push_back(key);
+    adjacency_.try_emplace(key.getOperation());
+    return true;
+  }
+
+  // Returns a mutable reference to the adjacency list of the given node.
+  ConcreteOpSet<OpTy> &operator[](OpTy key) {
+    (void)insert(key);
+    return adjacency_[key.getOperation()];
+  }
+
+  // Returns the adjacency list of the given node.
+  ConcreteOpSet<OpTy> lookup(OpTy key) const {
+    return adjacency_.lookup(key.getOperation());
+  }
+
+  // Returns `true` if the graph has no nodes.
+  bool empty() const { return keys_.empty(); }
+
+  // Returns a list of nodes in the graph.
+  llvm::ArrayRef<ComputeOp> keys() const { return llvm::makeArrayRef(keys_); }
+
+ private:
+  llvm::SmallVector<OpTy> keys_;
+  llvm::SmallDenseMap<Operation *, ConcreteOpSet<OpTy>> adjacency_;
+};
+
+using ComputeOpGraph = ConcreteOpGraph<ComputeOp>;
+
+// A pseudo-container class implementing a DFS postorder iterator of a graph of
+// compute ops. Provides traversal iterators through the customary begin/end.
+class DFSPostorderTraversal {
+ private:
+  // DFS traversal state. Maintains an explicit stack to avoid recursive
+  // functions on a potentially large number of IR elements.
+  struct DFSState {
+    llvm::SmallPtrSet<Operation *, 8> visited;
+    llvm::SmallVector<ComputeOp> stack;
+  };
+
+ public:
+  // Constructs the traversal container for the given graph.
+  explicit DFSPostorderTraversal(const ComputeOpGraph &graph) : graph_(graph) {}
+
+  // Postorder DFS iterator over the operation graph.
+  class iterator {
+    friend class DFSPostorderTraversal;
+
+   public:
+    using iterator_category = std::input_iterator_tag;
+    using value_type = ComputeOp;
+    using pointer = ComputeOp;
+    using reference = ComputeOp;
+    using difference_type = ptrdiff_t;
+
+    // Constructs a null (end) iterator.
+    iterator() { SetEmpty(); }
+
+    // Dereferences the iterator.
+    ComputeOp operator*() { return current_; }
+
+    // Increments the iterator to point to the next DFS postorder element.
+    iterator &operator++() {
+      // Null iterator does not need to be incremented.
+      if (!container_ || !current_) return *this;
+
+      // If we haven't circled back to the root operation, continue the DFS.
+      if (current_ != root_) {
+        current_ = VisitDFSPostorder(root_, container_->graph_, state_);
+        return *this;
+      }
+
+      // Otherwise, go through graph nodes to check for another traversal root,
+      // i.e. the op that hasn't been visited yet.
+      for (ComputeOp op : container_->graph_.keys()) {
+        if (!state_.visited.contains(op)) {
+          root_ = op;
+          current_ = VisitDFSPostorder(root_, container_->graph_, state_);
+          return *this;
+        }
+      }
+
+      // If there is no unvisited op in the graph, the traversal is complete.
+      SetEmpty();
+      return *this;
+    }
+
+    // Returns `true` if `other` points to the same element of the same
+    // container, or if both `this` and `other` are null iterators.
+    bool operator==(const iterator &other) const {
+      return (current_ == other.current_ && container_ == other.container_) ||
+             (IsEmpty() && other.IsEmpty());
+    }
+
+    // Returns `false` if `other` points to the same element of the same
+    // container, or if both `this` and `other` are null iterators.
+    bool operator!=(const iterator &other) const { return !(*this == other); }
+
+   private:
+    // Constructs the iterator pointing to the first element of the DFS
+    // postorder traversal in the given graph.
+    explicit iterator(const DFSPostorderTraversal *container)
+        : container_(container) {
+      if (!container || container_->graph_.empty()) {
+        SetEmpty();
+        return;
+      }
+      root_ = container_->graph_.keys().front();
+      current_ = VisitDFSPostorder(root_, container_->graph_, state_);
+    }
+
+    // Continues the DFS postorder visitation of `graph` started at `root` with
+    // the given `state`. The latter contains the virtual "call" stack of DFS,
+    // more specifically the list of operations the visitation of which was
+    // postponed until their children are visited. Returns the next operation in
+    // DFS postorder and updates `state` for subsequent calls. If `root` is
+    // returned, no further ops can be visited.
+    ComputeOp VisitDFSPostorder(ComputeOp root, const ComputeOpGraph &graph,
+                                DFSState &state) {
+      state.stack.push_back(root);
+      do {
+        // Fetch the op to visit from the top of the stack. If it has unvisited
+        // children, put it back on stack, followed by the first child to visit.
+        // Next iterations will visit the child and get back to this op.
+        ComputeOp current = state.stack.pop_back_val();
+        bool all_children_visited = true;
+        ComputeOpSet predecessors = graph.lookup(current);
+        for (ComputeOp child : predecessors.Ops()) {
+          if (state.visited.contains(child)) continue;
+          state.stack.push_back(current);
+          state.stack.push_back(child);
+          all_children_visited = false;
+          break;
+        }
+        // If all children are visited, it's time for the current op to be
+        // visited.
+        if (all_children_visited) {
+          state.visited.insert(current);
+          return current;
+        }
+      } while (!state.stack.empty());
+      llvm_unreachable("must have returned root instead");
+    }
+
+    // Sets the iterator to empty (end) state.
+    void SetEmpty() {
+      current_ = nullptr;
+      container_ = nullptr;
+    }
+
+    // Checks if the iterator is in the empty (end) state.
+    bool IsEmpty() const {
+      return current_ == nullptr && container_ == nullptr;
+    }
+
+    const DFSPostorderTraversal *container_;
+    DFSState state_;
+    ComputeOp current_;
+    ComputeOp root_;
+  };
+
+  iterator begin() const { return iterator(this); }
+
+  iterator end() const { return iterator(); }
+
+ private:
+  const ComputeOpGraph &graph_;
+};
+
+// Updates `graph` to remove self-dependencies.
+void RemoveSelfDependencies(ComputeOpGraph &graph) {
+  llvm::ArrayRef<ComputeOp> all_ops = graph.keys();
+
+  // Since we are working with predecessor graphs, drop self-links because the
+  // op is not expected to be its own predecessor.
+  for (ComputeOp op : all_ops) {
+    graph[op].erase(op);
+  }
 }
+
+// Modifies the "sequence" attribute of all compute ops in the given program to
+// be the canonical sequence value inferred from use-def dependencies of Sair
+// values and available sequence attributes. The relative order is preserved but
+// not the absolute sequence numbers. The traversal order is deterministic but
+// otherwise unspecified for operations that do not have "sequence" attribute
+// and belong to different connected components of the use-def dependency graph.
+void UpdateSequence(SairProgramOp program) {
+  ComputeOpGraph predecessors;
+  SequenceAnalysis sequence_analysis(program);
+  ComputeOpBackwardSliceAnalysis slice_analysis(program);
+
+  program.walk([&](ComputeOp op) {
+    // Put the op in the adjacency list even if it has no predecessors.
+    predecessors.insert(op);
+
+    // Add all predecessor compute ops due to use-def chains. Note that we add
+    // only the frontier since we will traverse the entire graph in DFS manner,
+    // so there's no need to compute the entire slice here.
+    predecessors[op] = slice_analysis.BackwardFrontier(op);
+
+    // Add all ops with smaller sequence numbers as known predecessors.
+    auto range = llvm::make_second_range(sequence_analysis.OpsBefore(op));
+    predecessors[op].insert(range.begin(), range.end());
+  });
+
+  RemoveSelfDependencies(predecessors);
+
+  // Walk the predecessor graph in DFS post-order, meaning that we will visit a
+  // compute op after visiting all of its predecessors, and assign new sequence
+  // numbers.
+  for (auto en : llvm::enumerate(DFSPostorderTraversal(predecessors))) {
+    en.value().SetSequence(static_cast<int64_t>(en.index()));
+  }
+}
+
+class DefaultSequencePass
+    : public DefaultSequencePassBase<DefaultSequencePass> {
+ public:
+  void runOnFunction() override {
+    getFunction().walk(
+        [](SairProgramOp program_op) { UpdateSequence(program_op); });
+  }
+};
+
+}  // namespace
 
 std::unique_ptr<mlir::Pass> CreateDefaultLoopNestPass() {
   return std::make_unique<DefaultLoopNest>();
 }
 
+std::unique_ptr<mlir::Pass> CreateDefaultSequencePass() {
+  return std::make_unique<DefaultSequencePass>();
+}
+
+std::unique_ptr<mlir::Pass> CreateDefaultStoragePass() {
+  return std::make_unique<DefaultStorage>();
+}
+
 void CreateDefaultLoweringAttributesPipeline(mlir::OpPassManager *pm) {
+  pm->addPass(CreateDefaultSequencePass());
   pm->addPass(CreateDefaultLoopNestPass());
   pm->addPass(CreateDefaultStoragePass());
 }

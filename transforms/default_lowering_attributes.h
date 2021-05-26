@@ -29,13 +29,18 @@ namespace sair {
 // manager.
 void CreateDefaultLoweringAttributesPipeline(mlir::OpPassManager *pm);
 
-// Returns a pass that sets the memory space of Sair values to its default
-// value. Leaves existing memory space attributes intact.
-std::unique_ptr<mlir::Pass> CreateDefaultStoragePass();
-
 // Returns a pass that sets the `loop_nest` attribute of Sair operations to its
 // default value. Leaves the attribute untouched if already present.
 std::unique_ptr<mlir::Pass> CreateDefaultLoopNestPass();
+
+// Returns a pass that sets the `sequence` attribute of Sair compute operations
+// to default values. This pass respects the relative order of the existing
+// sequence numbers but may change their exact values.
+std::unique_ptr<mlir::Pass> CreateDefaultSequencePass();
+
+// Returns a pass that sets the memory space of Sair values to its default
+// value. Leaves existing memory space attributes intact.
+std::unique_ptr<mlir::Pass> CreateDefaultStoragePass();
 
 }  // namespace sair
 

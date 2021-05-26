@@ -13,6 +13,7 @@
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
 #include "sair_types.h"
+#include "sequence.h"
 
 namespace sair {
 
@@ -375,18 +376,14 @@ class NormalizeSequenceNumbers : public mlir::OpRewritePattern<SairProgramOp> {
 
   mlir::LogicalResult matchAndRewrite(
       SairProgramOp op, mlir::PatternRewriter &rewriter) const override {
-    std::multimap<int64_t, ComputeOp> sequenced_ops;
-    op.walk([&](ComputeOp op) {
-      if (llvm::Optional<int64_t> sequence_number = op.Sequence()) {
-        sequenced_ops.emplace(*sequence_number, op);
-      }
-    });
+    SequenceAnalysis sequence_analysis(op);
 
     bool changed = false;
     rewriter.updateRootInPlace(op, [&] {
       llvm::Optional<int64_t> previous_sequence_number = llvm::None;
       int64_t current_sequence_number = 0;
-      for (auto [existing_sequence_number, nested_op] : sequenced_ops) {
+      for (auto [existing_sequence_number, nested_op] :
+           sequence_analysis.Ops()) {
         if (!previous_sequence_number) {
           previous_sequence_number = existing_sequence_number;
         }
