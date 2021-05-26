@@ -56,11 +56,11 @@ class ConcreteOpSet {
   // Returns an iterator range over the elements.
   auto Ops() const {
     return llvm::map_range(contents_,
-                           [](Operation *op) { return cast<ComputeOp>(op); });
+                           [](Operation *op) { return cast<OpTy>(op); });
   }
 
   // Erases the given element from the set.
-  void erase(ComputeOp op) { contents_.remove(op.getOperation()); }
+  void erase(OpTy op) { contents_.remove(op.getOperation()); }
 
  private:
   llvm::SetVector<Operation *> contents_;
@@ -119,15 +119,29 @@ class SequenceAnalysis {
   explicit SequenceAnalysis(SairProgramOp program_op);
 
   // Returns an iterator range for traversing operations in their relative
-  // order. Only visits operations that have the sequence attribute set.
+  // order. All operations are given a relative order even if they don't have a
+  // sequence attribute attached. The sequence number returned in this iteration
+  // may differ from that of the sequence attribute if the Sair program hasn't
+  // been canonicalized.
   ConstRangeType Ops() const;
 
   // Returns an iterator range of all operations sequenced before the given one,
-  // in their relative order. Operations not having the sequence attribute are
-  // not visited since they are not known to be before the given one.
+  // in their relative order. All operations are given a relative order even if
+  // they don't have a sequence attribute attached. The sequence number returned
+  // in this iteration may differ from that of the sequence attribute if the
+  // Sair program hasn't been canonicalized.
   ConstRangeType OpsBefore(ComputeOp op) const;
 
  private:
+  // Updates `sequenced_ops_` to have sequence numbers for all compute
+  // operations in the program, inferring their relative order from the
+  // available sequence attribtues and use-def chains. The relative order is
+  // preserved but not the absolute sequence numbers. The traversal order is
+  // deterministic but otherwise unspecified for operations that do not have
+  // "sequence" attribute and belong to different connected components of the
+  // use-def dependency graph.
+  void ComputeDefaultSequence(SairProgramOp program);
+
   MapType sequenced_ops_;
 };
 

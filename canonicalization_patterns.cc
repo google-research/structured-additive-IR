@@ -380,18 +380,12 @@ class NormalizeSequenceNumbers : public mlir::OpRewritePattern<SairProgramOp> {
 
     bool changed = false;
     rewriter.updateRootInPlace(op, [&] {
-      llvm::Optional<int64_t> previous_sequence_number = llvm::None;
-      int64_t current_sequence_number = 0;
-      for (auto [existing_sequence_number, nested_op] :
+      for (auto [inferred_sequence_number, nested_op] :
            sequence_analysis.Ops()) {
-        if (!previous_sequence_number) {
-          previous_sequence_number = existing_sequence_number;
-        }
-        if (*previous_sequence_number != existing_sequence_number) {
-          ++current_sequence_number;
-        }
-        if (current_sequence_number != existing_sequence_number) {
-          nested_op.SetSequence(current_sequence_number);
+        llvm::Optional<int64_t> current_sequence_number = nested_op.Sequence();
+        if (!current_sequence_number) continue;
+        if (current_sequence_number != inferred_sequence_number) {
+          nested_op.SetSequence(inferred_sequence_number);
           changed = true;
         }
       }
