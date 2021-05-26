@@ -81,8 +81,9 @@ def MappingExpr : AttrInterface<"MappingExpr"> {
     >,
     InterfaceMethod<
       [{Finds the subexpression corresponding to the inverse of this expression
-        in `inverse`. Expects the expression to be fully specified. `inverse`
-        must be the inverse of the mapping using this sub-expression.}],
+        in `inverse`. May return `none` or `unknown` if the expression is not
+        surjective and fully specified. `inverse` must be the inverse of the
+        mapping using this sub-expression.}],
       "MappingExpr", "FindInInverse",
       (ins "llvm::ArrayRef<MappingExpr>":$inverse)
     >,

@@ -185,8 +185,19 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
       return mlir::emitError(op->getLoc()) << "invalid use domain size";
     }
 
-    assert(sair_op.shape().AccessedShape(v.Mapping()) ==
-           v.value().getType().template cast<::sair::ValueType>().Shape());
+    AttrLocation mapping_loc(op->getLoc(), "operand mapping");
+    if (mlir::failed(
+            VerifyMappingShape(mapping_loc, v.Mapping(), sair_op.shape()))) {
+      return mlir::failure();
+    }
+
+    auto expected_shape = sair_op.shape().AccessedShape(v.Mapping());
+    auto given_shape =
+        v.value().getType().template cast<::sair::ValueType>().Shape();
+    if (expected_shape != given_shape) {
+      return op->emitError() << "invalid operand shape: expected "
+                             << expected_shape << ", got " << given_shape;
+    }
 
     if (!defining_op->isBeforeInBlock(op) && !v.AllowUseBeforeDef()) {
       return (op->emitError() << "operand used before its definition")

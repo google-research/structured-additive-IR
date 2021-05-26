@@ -2056,3 +2056,66 @@ func @sequence_inversion_placeholder(%arg0: index) {
   }
   return
 }
+
+// -----
+
+func @invalid_mapping_shape_in_shape() {
+  "foo"() {
+    // expected-error @+1 {{in operation shape: operand 1 of unstripe in #sair.mapping_expr<unstripe(d0, d1, [4, 1])> has an invalid shape}}
+    bar = #sair.shape<d0:range x d1:range x d2:range(unstripe(d0, d1, [4, 1]))>
+  }: () -> ()
+}
+
+// -----
+
+func @invalid_mapping_shape_in_operand(%arg0: f32, %arg1: index) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.from_scalar %arg1 : !sair.value<(), index>
+
+    %2 = sair.static_range 4 step 2 : !sair.range
+    %3 = sair.dyn_range[d0:%2] %1 : !sair.range<d0:range>
+
+    %4 = sair.copy[d0:%2, d1:%3] %0 : !sair.value<d0:range x d1:range(d0), f32>
+    // expected-error @+1 {{in operand mapping: dimension 0 of the mapping depends on dimension 1 of the mapping}}
+    %5 = sair.copy[d0:%2, d1:%3] %4(d1, d0) : !sair.value<d0:range x d1:range(d0), f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @invalid_mapping_shape_in_operand_raw(%arg0: f32, %arg1: index) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.from_scalar %arg1 : !sair.value<(), index>
+
+    %2 = sair.static_range 4 step 2 : !sair.range
+    %3 = sair.dyn_range[d0:%2] %1 : !sair.range<d0:range>
+
+    %4 = sair.copy[d0:%2, d1:%3] %0 : !sair.value<d0:range x d1:range(d0), f32>
+    // expected-error @+1 {{in operand mapping: dimension 0 of the mapping depends on dimension 1 of the mapping}}
+    %5 = "sair.copy"(%2, %3, %4) {
+      mapping_array = [#sair.mapping<2 : d1, d0>]
+    } : (!sair.range, !sair.range<d0:range>, !sair.value<d0:range x d1:range(d0), f32>)
+      -> !sair.value<d0:range x d1:range(d0), f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @invalid_operand_shape(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.static_range 8 : !sair.range
+    // expected-error @+1 {{invalid operand shape: expected #sair.shape<d0:range>, got #sair.shape<()>}}
+    %2 = "sair.copy"(%1, %0) {
+      mapping_array = [#sair.mapping<1 : d0>]
+    } : (!sair.range, !sair.value<(), f32>) -> !sair.value<d0:range, f32>
+    sair.exit
+  }
+  return
+}

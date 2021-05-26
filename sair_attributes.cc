@@ -33,6 +33,13 @@ namespace sair {
 
 #include "sair_attr_interfaces.cc.inc"
 
+mlir::InFlightDiagnostic AttrLocation::EmitError() const {
+  if (name_ == nullptr) {
+    return mlir::emitError(loc_) << "in " << kind_ << ": ";
+  }
+  return mlir::emitError(location()) << "in " << kind_ << " " << name() << ": ";
+}
+
 //===----------------------------------------------------------------------===//
 // MappingExpr
 //===----------------------------------------------------------------------===//
@@ -366,8 +373,11 @@ mlir::LogicalResult MappingStripeExpr::SetInverse(
 
 MappingExpr MappingStripeExpr::FindInInverse(
     llvm::ArrayRef<MappingExpr> inverse) const {
-  auto unstripe_expr =
-      operand().FindInInverse(inverse).cast<MappingUnStripeExpr>();
+  auto operand_inverse = operand().FindInInverse(inverse);
+  if (operand_inverse.isa<MappingUnknownExpr, MappingNoneExpr>()) {
+    return operand_inverse;
+  }
+  auto unstripe_expr = operand_inverse.cast<MappingUnStripeExpr>();
   return unstripe_expr.operands()[factors().size() - 1];
 }
 
@@ -546,10 +556,14 @@ MappingExpr MappingUnStripeExpr::Unify(
 
 MappingExpr MappingUnStripeExpr::FindInInverse(
     llvm::ArrayRef<MappingExpr> inverse) const {
-  return operands()[0]
-      .FindInInverse(inverse)
-      .cast<MappingStripeExpr>()
-      .operand();
+  MappingExpr operand_inverse;
+  for (int i = 0, e = operands().size(); i < e; ++i) {
+    operand_inverse = operands()[i].FindInInverse(inverse);
+    if (operand_inverse.isa<MappingUnknownExpr, MappingNoneExpr>()) continue;
+    return operand_inverse.cast<MappingStripeExpr>().operand();
+  }
+  // Unstripe has at least one operand.
+  return operand_inverse;
 }
 
 mlir::AffineExpr MappingUnStripeExpr::AsAffineExpr() const {
@@ -1188,9 +1202,9 @@ static DomainShapeDim StripeAccessedShape(MappingStripeExpr expr,
                                           DomainShapeDim inner_shape,
                                           MappingAttr inverted_mapping) {
   mlir::MLIRContext *context = expr.getContext();
-  auto inverse_subexpr = expr.operand()
-                             .FindInInverse(inverted_mapping.Dimensions())
-                             .cast<MappingUnStripeExpr>();
+  auto inverse_subexpr =
+      expr.operand().FindInInverse(inverted_mapping.Dimensions());
+  auto unstripe_expr = inverse_subexpr.dyn_cast<MappingUnStripeExpr>();
 
   // Append dependencies to larger stripes to the dependency mapping.
   llvm::SmallVector<MappingExpr, 4> dependency_mapping_exprs;
@@ -1205,7 +1219,11 @@ static DomainShapeDim StripeAccessedShape(MappingStripeExpr expr,
     type_shape.emplace_back(
         type, MappingAttr::GetIdentity(context, type_shape.size()));
     type = RangeType::get(DomainShapeAttr::get(context, type_shape));
-    dependency_mapping_exprs.push_back(inverse_subexpr.operands()[i]);
+    if (unstripe_expr == nullptr) {
+      dependency_mapping_exprs.push_back(inverse_subexpr);
+    } else {
+      dependency_mapping_exprs.push_back(unstripe_expr.operands()[i]);
+    }
   }
 
   auto dependency_mapping = MappingAttr::get(
@@ -1253,6 +1271,84 @@ DomainShapeAttr DomainShapeAttr::ProductAt(int pos,
   }
 
   return DomainShapeAttr::get(getContext(), shape);
+}
+
+// Ensure that expr and its sub-expressions have a valid shape. Inverse must be
+// the inverse of the full mapping and shape the shape of the source domain.
+// Stores the shape of the expression in `expr_shape` if it is known.
+static mlir::LogicalResult VerifyMappingExprShape(
+    AttrLocation loc, MappingExpr expr, MappingAttr inverse,
+    DomainShapeAttr shape, std::optional<DomainShapeDim> &expr_shape);
+
+static mlir::LogicalResult VerifyMappingExprShape(
+    AttrLocation loc, MappingStripeExpr expr, MappingAttr inverse,
+    DomainShapeAttr shape, std::optional<DomainShapeDim> &expr_shape) {
+  std::optional<DomainShapeDim> inner_shape;
+  if (mlir::failed(VerifyMappingExprShape(loc, expr.operand(), inverse, shape,
+                                          inner_shape))) {
+    return mlir::failure();
+  }
+  if (!inner_shape.has_value()) return mlir::success();
+  expr_shape = StripeAccessedShape(expr, inner_shape.value(), inverse);
+  return mlir::success();
+}
+
+static mlir::LogicalResult VerifyMappingExprShape(
+    AttrLocation loc, MappingUnStripeExpr expr, MappingAttr inverse,
+    DomainShapeAttr shape, std::optional<DomainShapeDim> &expr_shape) {
+  for (auto index_operand : llvm::enumerate(expr.operands())) {
+    int i = index_operand.index();
+    std::optional<DomainShapeDim> inner_shape;
+    if (mlir::failed(VerifyMappingExprShape(loc, index_operand.value(), inverse,
+                                            shape, inner_shape))) {
+      return mlir::failure();
+    }
+    if (!inner_shape.has_value()) continue;
+    if (inner_shape->dependency_mapping().size() < i) {
+      return loc.EmitError() << "operand " << i << " of unstripe in " << expr
+                             << " has an invalid shape";
+    }
+    if (i == 0) expr_shape = inner_shape;
+  }
+  return mlir::success();
+}
+
+static mlir::LogicalResult VerifyMappingExprShape(
+    AttrLocation loc, MappingExpr expr, MappingAttr inverse,
+    DomainShapeAttr shape, std::optional<DomainShapeDim> &expr_shape) {
+  return mlir::TypeSwitch<MappingExpr, mlir::LogicalResult>(expr)
+      .Case<MappingDimExpr>([&](MappingDimExpr expr) {
+        expr_shape = shape.Dimension(expr.dimension()).Apply(inverse);
+        return mlir::success();
+      })
+      .Case<MappingStripeExpr>([&](MappingStripeExpr expr) {
+        return VerifyMappingExprShape(loc, expr, inverse, shape, expr_shape);
+      })
+      .Case<MappingUnStripeExpr>([&](MappingUnStripeExpr expr) {
+        return VerifyMappingExprShape(loc, expr, inverse, shape, expr_shape);
+      })
+      .Default([](auto) { return mlir::success(); });
+}
+
+mlir::LogicalResult VerifyMappingShape(const AttrLocation &loc,
+                                       MappingAttr mapping,
+                                       DomainShapeAttr shape) {
+  MappingAttr inverse = mapping.Inverse();
+  for (int i = 0, e = mapping.size(); i < e; ++i) {
+    std::optional<DomainShapeDim> expr_shape;
+    if (mlir::failed(VerifyMappingExprShape(loc, mapping.Dimension(i), inverse,
+                                            shape, expr_shape))) {
+      return mlir::failure();
+    }
+    if (!expr_shape.has_value()) continue;
+    int min_domain_size = expr_shape->dependency_mapping().MinDomainSize();
+    if (min_domain_size > i) {
+      return loc.EmitError()
+             << "dimension " << i << " of the mapping depends on dimension "
+             << min_domain_size - 1 << " of the mapping";
+    }
+  }
+  return mlir::success();
 }
 
 }  // namespace sair

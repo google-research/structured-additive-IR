@@ -19,6 +19,8 @@
 #include "llvm/ADT/SmallBitVector.h"
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/Location.h"
 #include "mlir/IR/MLIRContext.h"
 #include "sair_types.h"
 
@@ -336,6 +338,44 @@ class DomainShapeAttr
   DomainShapeAttr ProductAt(int pos, DomainShapeAttr other) const;
 };
 
+// Location in a Sair attribute.
+//
+// The location is defined by an MLIR location, an attribute kind and an
+// attribute name. The attribute name may be null.
+class AttrLocation {
+ public:
+  AttrLocation(mlir::Location loc, llvm::StringRef kind,
+               mlir::StringAttr name = nullptr)
+      : loc_(loc), kind_(kind), name_(name) {}
+
+  // MLIR location.
+  mlir::Location location() const { return loc_; }
+
+  // Attribute name.
+  mlir::StringAttr name() const { return name_; }
+
+  // Context in which the attribute is defined.
+  mlir::MLIRContext *context() const { return name_.getContext(); }
+
+  // Emits an error at the attribute location. Error has format
+  // `error in <kind> <name>: <msg>`
+  mlir::InFlightDiagnostic EmitError() const;
+
+ private:
+  friend mlir::Diagnostic &operator<<(mlir::Diagnostic &diag,
+                                      const AttrLocation &loc);
+
+  mlir::Location loc_;
+  llvm::StringRef kind_;
+  mlir::StringAttr name_;
+};
+
+// Verifies that the mapping can be applied to a domain with the given shape.
+// Does not emits errors.
+mlir::LogicalResult VerifyMappingShape(const AttrLocation &loc,
+                                       MappingAttr mapping,
+                                       DomainShapeAttr shape);
+
 #include "sair_attr_interfaces.h.inc"
 
 // Mapping expression that maps to a dimension of the domain.
@@ -400,7 +440,7 @@ class MappingNoneExpr
                         on_mismatch) const;
 
   MappingExpr FindInInverse(llvm::ArrayRef<MappingExpr> inverse) const {
-    llvm_unreachable("cannot call `FindInInverse` on none expressions");
+    return *this;
   }
 
   mlir::AffineExpr AsAffineExpr() const {
@@ -437,7 +477,7 @@ class MappingUnknownExpr
                         on_mismatch) const;
 
   MappingExpr FindInInverse(llvm::ArrayRef<MappingExpr> inverse) const {
-    llvm_unreachable("cannot call `FindInInverse` on unknown expressions");
+    return *this;
   }
 
   mlir::AffineExpr AsAffineExpr() const {

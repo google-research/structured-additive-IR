@@ -62,6 +62,44 @@ SairDialect::SairDialect(mlir::MLIRContext *context)
 
 namespace {
 
+// Parses a range of shape dimension and appends it to `dimensions`.
+ParseResult ParseRangeShapeDim(mlir::DialectAsmParser &parser,
+                               llvm::SmallVector<DomainShapeDim> &dimensions) {
+  mlir::MLIRContext *context = parser.getBuilder().getContext();
+  llvm::SMLoc loc = parser.getCurrentLocation();
+  MappingAttr mapping = ParseOptionalMapping(parser, dimensions.size());
+  if (mapping == nullptr) return failure();
+  if (mapping.HasNoneExprs() || mapping.HasUnknownExprs()) {
+    return parser.emitError(loc) << "the mapping must map all dimensions";
+  }
+
+  auto shape = DomainShapeAttr::get(context, dimensions);
+  AttrLocation attr_loc(parser.getEncodedSourceLoc(loc), "operation shape");
+  if (mlir::failed(VerifyMappingShape(attr_loc, mapping, shape))) {
+    return mlir::failure();
+  }
+
+  llvm::SmallBitVector seen_dimensions(dimensions.size());
+  for (MappingExpr expr : mapping) {
+    llvm::SmallBitVector expr_dependencies =
+        expr.DependencyMask(dimensions.size());
+
+    llvm::SmallBitVector transitive_dependencies(dimensions.size());
+    for (int dimension : expr_dependencies.set_bits()) {
+      transitive_dependencies |= dimensions[dimension].DependencyMask();
+    }
+
+    if ((~seen_dimensions).anyCommon(transitive_dependencies)) {
+      return parser.emitError(loc) << "non-transitive dependency";
+    }
+    seen_dimensions |= expr_dependencies;
+  }
+
+  DomainShapeAttr range_shape = shape.AccessedShape(mapping);
+  dimensions.emplace_back(RangeType::get(range_shape), mapping);
+  return success();
+}
+
 // Parses the shape of a Sair domain, as expressed in Sair types. Returns
 // nullptr in case of failure. Domains shapes are composed of a list of
 // dimension types separated by 'x', with an optional dependency mapping for
@@ -78,48 +116,15 @@ DomainShapeAttr ParseDomainShape(mlir::DialectAsmParser &parser) {
     return DomainShapeAttr::get(context);
   }
 
-  std::vector<DomainShapeDim> dimensions;
+  llvm::SmallVector<DomainShapeDim> dimensions;
   do {
     // Parse the dimension name.
     std::string expected_name = "d" + std::to_string(dimensions.size());
-    if (failed(parser.parseKeyword(expected_name))) return nullptr;
-
-    if (failed(parser.parseColon()) ||
-        failed(parser.parseKeyword(RangeType::Name()))) {
+    if (parser.parseKeyword(expected_name) || parser.parseColon() ||
+        parser.parseKeyword(RangeType::Name()) ||
+        ParseRangeShapeDim(parser, dimensions)) {
       return nullptr;
     }
-    llvm::SMLoc loc = parser.getCurrentLocation();
-    MappingAttr mapping = ParseOptionalMapping(parser, dimensions.size());
-    if (mapping == nullptr) return nullptr;
-    if (mapping.HasNoneExprs() || mapping.HasUnknownExprs()) {
-      parser.emitError(loc) << "the mapping must map all dimensions";
-      return nullptr;
-    }
-
-    std::vector<DomainShapeDim> arg_shape_dims;
-    llvm::SmallBitVector seen_dimensions(dimensions.size());
-    MappingAttr inversed_mapping = mapping.Inverse();
-    for (MappingExpr expr : mapping) {
-      llvm::SmallBitVector expr_dependencies =
-          expr.DependencyMask(dimensions.size());
-
-      llvm::SmallBitVector transitive_dependencies(dimensions.size());
-      for (int dimension : expr_dependencies.set_bits()) {
-        transitive_dependencies |= dimensions[dimension].DependencyMask();
-      }
-
-      if ((~seen_dimensions).anyCommon(transitive_dependencies)) {
-        parser.emitError(loc) << "non-transitive dependency";
-        return nullptr;
-      }
-      seen_dimensions |= expr_dependencies;
-      auto shape = DomainShapeAttr::get(context, dimensions);
-      arg_shape_dims.push_back(shape.AccessedShape(
-          expr, inversed_mapping.ResizeUseDomain(arg_shape_dims.size())));
-    }
-    RangeType arg_type =
-        RangeType::get(DomainShapeAttr::get(context, arg_shape_dims));
-    dimensions.emplace_back(arg_type, mapping);
   } while (succeeded(parser.parseOptionalKeyword("x")));
   return DomainShapeAttr::get(context, dimensions);
 }
@@ -261,6 +266,16 @@ void PrintMappingExpr(MappingExpr expr, llvm::raw_ostream &os) {
   }
 }
 
+void PrintDomainShapeDim(const DomainShapeDim &dimension,
+                         mlir::DialectAsmPrinter &os) {
+  os << RangeType::Name();
+
+  if (dimension.dependency_mapping().empty()) return;
+  os << "(";
+  PrintMapping(dimension.dependency_mapping(), os.getStream());
+  os << ")";
+}
+
 // Prints the shape of an iteration domain. An iteration domain is a product of
 // zero or more iteration dimensions separated by `x`. The 0-dimensional
 // iteration domain is denoted `()`.
@@ -273,11 +288,8 @@ mlir::DialectAsmPrinter &operator<<(mlir::DialectAsmPrinter &os,
     llvm::interleave(
         shape.Dimensions(), os,
         [&](const DomainShapeDim &dim) {
-          os << "d" << i++ << ":" << RangeType::Name();
-          if (dim.dependency_mapping().empty()) return;
-          os << "(";
-          PrintMapping(dim.dependency_mapping(), os.getStream());
-          os << ")";
+          os << "d" << i++ << ":";
+          PrintDomainShapeDim(dim, os);
         },
         " x ");
   }
@@ -285,10 +297,10 @@ mlir::DialectAsmPrinter &operator<<(mlir::DialectAsmPrinter &os,
 }
 
 // Prints the range type.
-void Print(RangeType type, mlir::DialectAsmPrinter *os) {
-  *os << RangeType::Name();
+void Print(RangeType type, mlir::DialectAsmPrinter &os) {
+  os << RangeType::Name();
   if (!type.Shape().Is0d()) {
-    *os << "<" << type.Shape() << ">";
+    os << "<" << type.Shape() << ">";
   }
 }
 
@@ -327,8 +339,9 @@ void PrintMapping(MappingAttr mapping, llvm::raw_ostream &os) {
 // Prints the Sair type using MLIR printing facilities.
 void sair::SairDialect::printType(mlir::Type type,
                                   mlir::DialectAsmPrinter &os) const {
-  if (auto range_type = type.dyn_cast<RangeType>())
-    return Print(range_type, &os);
+  if (auto range_type = type.dyn_cast<RangeType>()) {
+    return Print(range_type, os);
+  }
 
   Print(type.cast<ValueType>(), &os);
 }

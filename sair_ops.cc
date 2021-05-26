@@ -118,6 +118,21 @@ ParseResult ParseOperandList(
   return mlir::success();
 }
 
+// Checks the type of an operand and the shape of its mapping. Registers the
+// operand in result.
+ParseResult ResolveOperand(const mlir::OpAsmParser::OperandType &operand,
+                           MappingAttr mapping, DomainShapeAttr shape,
+                           mlir::Type element_type, mlir::OpAsmParser &parser,
+                           mlir::OperationState &result) {
+  AttrLocation loc(parser.getEncodedSourceLoc(operand.location),
+                   "operand mapping");
+  if (mlir::failed(VerifyMappingShape(loc, mapping, shape))) {
+    return mlir::failure();
+  }
+  auto type = ValueType::get(shape, element_type).AccessedType(mapping);
+  return parser.resolveOperand(operand, type, result.operands);
+}
+
 // Parses the range operator. This operation has an iteration domain and
 // accesses a single Sair value with index elements. The syntax for the range
 // operator is the following.
@@ -162,12 +177,9 @@ ParseResult ParseDynRangeOp(mlir::OpAsmParser &parser,
       builder.getI32VectorAttr({static_cast<int32_t>(domain.size()),
                                 static_cast<int32_t>(operands.size() - 1), 1}));
 
-  ValueType index_value_type =
-      ValueType::get(type.Shape(), builder.getIndexType());
   for (auto [operand, mapping] : llvm::zip(operands, mappings)) {
-    if (mlir::failed(parser.resolveOperand(
-            operand, index_value_type.AccessedType(mapping),
-            result.operands))) {
+    if (mlir::failed(ResolveOperand(operand, mapping, type.Shape(),
+                                    builder.getIndexType(), parser, result))) {
       return mlir::failure();
     }
   }
@@ -241,9 +253,8 @@ ParseResult ParseCopyOp(mlir::OpAsmParser &parser,
 
   result.addAttribute(SairDialect::kMappingAttrName,
                       parser.getBuilder().getArrayAttr({mapping}));
-
-  return parser.resolveOperand(value, type.AccessedType(mapping),
-                               result.operands);
+  return ResolveOperand(value, mapping, type.Shape(), type.ElementType(),
+                        parser, result);
 }
 
 // Parses the sair.from_scalar operation, that takes a single argument and
@@ -307,11 +318,9 @@ ParseResult ParseFromMemRef(mlir::OpAsmParser &parser,
   result.addAttribute(SairDialect::kMappingAttrName,
                       parser.getBuilder().getArrayAttr({mapping}));
 
-  auto memref_value_type =
-      ValueType::get(shape.AccessedShape(mapping), memref_type);
   auto result_type = ValueType::get(shape, memref_type.getElementType());
   return mlir::failure(
-      parser.resolveOperand(memref, memref_value_type, result.operands) ||
+      ResolveOperand(memref, mapping, shape, memref_type, parser, result) ||
       parser.addTypeToList(result_type, result.types));
 }
 
@@ -342,10 +351,8 @@ ParseResult ParseLoadFromMemRef(mlir::OpAsmParser &parser,
 
   result.addAttribute(SairDialect::kMappingAttrName,
                       parser.getBuilder().getArrayAttr({mapping}));
-
-  auto operand_type = ValueType::get(value_type.Shape(), memref_type);
-  return parser.resolveOperand(memref, operand_type.AccessedType(mapping),
-                               result.operands);
+  return ResolveOperand(memref, mapping, value_type.Shape(), memref_type,
+                        parser, result);
 }
 
 // Parses the ToMemRef operation. This operation takes an iteration domain, a
@@ -390,13 +397,10 @@ ParseResult ParseToMemRef(mlir::OpAsmParser &parser,
            static_cast<int32_t>(domain.size() - parallel_domain_size),
            static_cast<int32_t>(1), static_cast<int32_t>(1)}));
 
-  auto value_type = ValueType::get(shape.AccessedShape(value_mapping),
-                                   memref_type.getElementType());
-  auto memref_value_type =
-      ValueType::get(shape.AccessedShape(memref_mapping), memref_type);
-  return failure(
-      parser.resolveOperand(memref, memref_value_type, result.operands) ||
-      parser.resolveOperand(value, value_type, result.operands));
+  return failure(ResolveOperand(memref, memref_mapping, shape, memref_type,
+                                parser, result) ||
+                 ResolveOperand(value, value_mapping, shape,
+                                memref_type.getElementType(), parser, result));
 }
 
 // Parses the StoreToMemRef operation. The syntax is the following.
@@ -428,13 +432,10 @@ ParseResult ParseStoreToMemRef(mlir::OpAsmParser &parser,
       SairDialect::kMappingAttrName,
       parser.getBuilder().getArrayAttr({memref_mapping, value_mapping}));
 
-  auto value_type = ValueType::get(shape.AccessedShape(value_mapping),
-                                   memref_type.getElementType());
-  auto memref_value_type =
-      ValueType::get(shape.AccessedShape(memref_mapping), memref_type);
-  return failure(
-      parser.resolveOperand(memref, memref_value_type, result.operands) ||
-      parser.resolveOperand(value, value_type, result.operands));
+  return failure(ResolveOperand(memref, memref_mapping, shape, memref_type,
+                                parser, result) ||
+                 ResolveOperand(value, value_mapping, shape,
+                                memref_type.getElementType(), parser, result));
 }
 
 constexpr llvm::StringRef kOfKeyword = "of";
@@ -480,8 +481,7 @@ ParseResult ParseProjection(mlir::OpAsmParser &parser,
                            static_cast<int32_t>(num_projection_dimensions),
                            static_cast<int32_t>(1)}));
 
-  ValueType type = ValueType::get(shape, element_type).AccessedType(mapping);
-  return parser.resolveOperand(value, type, result.operands);
+  return ResolveOperand(value, mapping, shape, element_type, parser, result);
 }
 
 // Parses the sair.return operation, with the following syntax.
@@ -532,10 +532,8 @@ ParseResult ParseExitOp(mlir::OpAsmParser &parser,
   auto domain_shape = DomainShapeAttr::get(builder.getContext());
   for (auto [operand, element_type, mapping] :
        llvm::zip(operands, element_types, mappings)) {
-    mlir::Type expected_type =
-        ValueType::get(domain_shape.AccessedShape(mapping), element_type);
-    if (failed(
-            parser.resolveOperand(operand, expected_type, result.operands))) {
+    if (failed(ResolveOperand(operand, mapping, domain_shape, element_type,
+                              parser, result))) {
       return mlir::failure();
     }
   }
@@ -588,12 +586,13 @@ static mlir::ParseResult ParseAllocOp(mlir::OpAsmParser &parser,
     return mlir::failure();
   }
 
-  for (auto [value, pat] : llvm::zip(values, access_patterns)) {
-    auto type = ValueType::get(
-        resultType.Shape().AccessedShape(pat.cast<MappingAttr>()),
-        parser.getBuilder().getIndexType());
-    if (mlir::failed(parser.resolveOperand(value, type, result.operands)))
+  auto index_type = parser.getBuilder().getIndexType();
+  for (auto [value, mapping_attr] : llvm::zip(values, access_patterns)) {
+    auto mapping = mapping_attr.cast<MappingAttr>();
+    if (mlir::failed(ResolveOperand(value, mapping, resultType.Shape(),
+                                    index_type, parser, result))) {
       return failure();
+    }
   }
   return success();
 }
@@ -615,9 +614,10 @@ static mlir::ParseResult ParseFreeOp(mlir::OpAsmParser &parser,
       parser.parseOptionalAttrDict(result.attributes) || parser.parseColon() ||
       parser.parseType(value_type) ||
       ResolveDomain(parser, value_type.Shape(), domain, result) ||
-      parser.resolveOperand(value, value_type.AccessedType(mapping),
-                            result.operands))
+      ResolveOperand(value, mapping, value_type.Shape(),
+                     value_type.ElementType(), parser, result)) {
     return mlir::failure();
+  }
 
   result.addAttribute(SairDialect::kMappingAttrName,
                       parser.getBuilder().getArrayAttr(mapping));
@@ -663,10 +663,10 @@ static mlir::ParseResult ParseFbyOp(mlir::OpAsmParser &parser,
            static_cast<int32_t>(domain.size() - num_parallel_dimensions), 1,
            1}));
 
-  ValueType init_type = type.AccessedType(init_mapping);
-  ValueType value_type = type.AccessedType(value_mapping);
-  return failure(parser.resolveOperand(init, init_type, result.operands) ||
-                 parser.resolveOperand(value, value_type, result.operands));
+  return failure(ResolveOperand(init, init_mapping, type.Shape(),
+                                type.ElementType(), parser, result) ||
+                 ResolveOperand(value, value_mapping, type.Shape(),
+                                type.ElementType(), parser, result));
 }
 
 // Prints a Sair value access list. Takes the list of values and respective
@@ -1111,10 +1111,9 @@ ParseResult ParseMapOp(mlir::OpAsmParser &parser,
   // region arguments.
   mlir::Builder &builder = parser.getBuilder();
   for (int i = 0, e = function_type.getNumInputs(); i < e; ++i) {
-    mlir::Type type = ValueType::get(domain_shape.AccessedShape(mappings[i]),
-                                     function_type.getInput(i));
-    if (mlir::failed(
-            parser.resolveOperand(operands[i], type, result.operands))) {
+    if (mlir::failed(ResolveOperand(operands[i], mappings[i], domain_shape,
+                                    function_type.getInput(i), parser,
+                                    result))) {
       return mlir::failure();
     }
   }
@@ -1411,10 +1410,9 @@ ParseResult ParseMapReduceOp(mlir::OpAsmParser &parser,
   // Resolve operand types.
   mlir::Builder &builder = parser.getBuilder();
   for (int i = 0, e = operand_element_types.size(); i < e; ++i) {
-    mlir::Type type = ValueType::get(domain_shape.AccessedShape(mappings[i]),
-                                     operand_element_types[i]);
-    if (mlir::failed(
-            parser.resolveOperand(operands[i], type, result.operands))) {
+    if (mlir::failed(ResolveOperand(operands[i], mappings[i], domain_shape,
+                                    operand_element_types[i], parser,
+                                    result))) {
       return mlir::failure();
     }
   }
