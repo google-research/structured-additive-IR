@@ -36,7 +36,7 @@ class ConcreteOpSet {
   ConcreteOpSet() {}
 
   // Inserts into the set.
-  void insert(OpTy op) { contents_.insert(op.getOperation()); }
+  bool insert(OpTy op) { return contents_.insert(op.getOperation()); }
   template <typename Iterator>
   void insert(Iterator first, Iterator last) {
     contents_.insert(first, last);
@@ -47,11 +47,20 @@ class ConcreteOpSet {
     contents_.insert(other.contents_.begin(), other.contents_.end());
   }
 
+  // Returns `true` if the set has no elements.
+  bool empty() const { return contents_.empty(); }
+
   // Returns the number of ops in this set.
   size_t size() const { return contents_.size(); }
 
   // Returns `true` if the set contains the given element.
   bool contains(OpTy op) const { return contents_.contains(op.getOperation()); }
+
+  // Removes the most recently added unique element from the set and returns it.
+  OpTy pop_back_val() { return cast<OpTy>(contents_.pop_back_val()); }
+
+  // Returns the most recently added unique element of the set.
+  OpTy back() const { return cast<OpTy>(contents_.back()); };
 
   // Returns an iterator range over the elements.
   auto Ops() const {
@@ -68,43 +77,6 @@ class ConcreteOpSet {
 
 using ComputeOpSet = ConcreteOpSet<ComputeOp>;
 
-// An analysis keeping track of Sair compute ops the results of which are used
-// as operands in other Sair ops.
-class ComputeOpBackwardSliceAnalysis {
- public:
-  // Performs the analysis in the given Sair program.
-  explicit ComputeOpBackwardSliceAnalysis(SairProgramOp program_op);
-
-  // Returns a set of compute operations the results of which are used in `op`,
-  // potentially transformed by non-compute ops only.
-  template <typename OpTy>
-  const ComputeOpSet &BackwardFrontier(OpTy op) const {
-    static_assert(llvm::is_one_of<OpTy, SairOp, ComputeOp>::value,
-                  "expected a SairOp or a ComputeOp in BackwardFrontier");
-    assert(frontiers_.count(op.getOperation()));
-    return frontiers_.find(op.getOperation())->getSecond();
-  }
-
-  // Returns a set of compute operations the results of which are transitively
-  // use in `op`, that is the backward slice of `op` restricted to compute ops.
-  const ComputeOpSet &BackwardSlice(ComputeOp op) const;
-
- private:
-  // Compute the frontier of op and store in in `frontiers_`.
-  void ComputeFrontier(SairOp op);
-
-  // If the backward slice of `op` has been computed, merge it into `slice`.
-  bool MergeSliceIfAvailable(ComputeOp op, ComputeOpSet &slice) const;
-
-  // Compute ops the results of which are used in `op`, potentially via some
-  // non-compute ops.
-  llvm::DenseMap<mlir::Operation *, ComputeOpSet> frontiers_;
-
-  // A cache for computed backward slices. These are computed on-demand as both
-  // computation and storage are relatively expensive.
-  mutable llvm::DenseMap<mlir::Operation *, ComputeOpSet> slice_cache_;
-};
-
 // An analysis of the relative positions of Sair operations indicated by their
 // sequence attributes.
 class SequenceAnalysis {
@@ -117,6 +89,12 @@ class SequenceAnalysis {
 
   // Performs the analysis in the given Sair program.
   explicit SequenceAnalysis(SairProgramOp program_op);
+
+  // Creates and returns the analysis for the given Sair program, or `nullopt`
+  // if the analysis cannot be performed, e.g., if the program has use-def
+  // cycles between compute ops.
+  static std::optional<SequenceAnalysis> Create(SairProgramOp program_op,
+                                                bool report_errors = false);
 
   // Returns an iterator range for traversing operations in their relative
   // order. All operations are given a relative order even if they don't have a
@@ -133,6 +111,14 @@ class SequenceAnalysis {
   ConstRangeType OpsBefore(ComputeOp op) const;
 
  private:
+  // Default noop constructor. Init must be called separately.
+  SequenceAnalysis() = default;
+
+  // Initializes the analysis for the given program op. This may fail if the
+  // program contains use-def loops between compute operations (loops are
+  // allowed only through the non-compute by operation).
+  mlir::LogicalResult Init(SairProgramOp program_op, bool report_errors);
+
   // Updates `sequenced_ops_` to have sequence numbers for all compute
   // operations in the program, inferring their relative order from the
   // available sequence attribtues and use-def chains. The relative order is
@@ -140,9 +126,11 @@ class SequenceAnalysis {
   // deterministic but otherwise unspecified for operations that do not have
   // "sequence" attribute and belong to different connected components of the
   // use-def dependency graph.
-  void ComputeDefaultSequence(SairProgramOp program);
+  mlir::LogicalResult ComputeDefaultSequence(SairProgramOp program,
+                                             bool report_errors);
 
   MapType sequenced_ops_;
+  llvm::SmallVector<SairFbyOp> fby_ops_to_cut_;
 };
 
 }  // namespace sair

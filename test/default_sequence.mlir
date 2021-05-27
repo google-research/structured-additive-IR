@@ -131,6 +131,59 @@ func @fby(%arg0: f32) {
   return
 }
 
+// CHECK-LABEL: @fby_many_compute
+func @fby_many_compute(%arg0: f32) -> f32 {
+  %out = sair.program {
+    %0 = sair.static_range 42 : !sair.range
+    %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    // CHECK: sair.copy
+    // CHECK-SAME: sequence = 0
+    %2 = sair.copy %1 : !sair.value<(), f32>
+    %3 = sair.fby %2 then[d0:%0] %7(d0) : !sair.value<d0:range, f32>
+    // CHECK: sair.copy
+    // CHECK-SAME: sequence = 1
+    %4 = sair.copy[d0:%0] %3(d0) : !sair.value<d0:range, f32>
+    // CHECK: sair.copy
+    // CHECK-SAME: sequence = 2
+    %5 = sair.copy[d0:%0] %4(d0) : !sair.value<d0:range, f32>
+    // CHECK: sair.copy
+    // CHECK-SAME: sequence = 3
+    %6 = sair.copy[d0:%0] %4(d0) : !sair.value<d0:range, f32>
+    // CHECK: sair.copy
+    // CHECK-SAME: sequence = 4
+    %7 = sair.copy[d0:%0] %5(d0) : !sair.value<d0:range, f32>
+    %8 = sair.proj_last of[d0:%0] %3(d0) : #sair.shape<d0:range>, f32
+    sair.exit %8 : f32
+  } : f32
+  return %out : f32
+}
+
+// CHECK-LABEL: @fby_two_cycles
+func @fby_two_cycles(%arg0: f32) -> f32 {
+  %out = sair.program {
+    %0 = sair.static_range 42 : !sair.range
+    %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    // CHECK: sair.copy
+    // CHECK-SAME: sequence = 0
+    %2 = sair.copy %1 : !sair.value<(), f32>
+    %3 = sair.fby %2 then[d0:%0] %8(d0) : !sair.value<d0:range, f32>
+    // CHECK: sair.copy
+    // CHECK-SAME: sequence = 1
+    %4 = sair.copy[d0:%0] %3(d0) : !sair.value<d0:range, f32>
+    %5 = sair.fby[d0:%0] %4(d0) then[d1:%0] %6(d0, d1) : !sair.value<d0:range x d1:range, f32>
+    // CHECK: sair.copy
+    // CHECK-SAME: sequence = 2
+    %6 = sair.copy[d0:%0, d1:%0] %5(d0, d1) : !sair.value<d0:range x d1:range, f32>
+    // CHECK: sair.copy
+    // CHECK-SAME: sequence = 3
+    %7 = sair.copy[d0:%0, d1:%0] %6(d0, d1) : !sair.value<d0:range x d1:range, f32>
+    %8 = sair.proj_any[d0:%0] of[d1:%0] %7(d0, d1) : #sair.shape<d0:range x d1:range>, f32
+    %9 = sair.proj_last of[d0:%0, d1:%0] %5(d0, d1) : #sair.shape<d0:range x d1:range>, f32
+    sair.exit %9 : f32
+  } : f32
+  return %out : f32
+}
+
 // CHECK-LABEL: @fby_then_different_source
 func @fby_then_different_source(%arg0: f32) {
   sair.program {

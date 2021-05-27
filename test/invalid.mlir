@@ -1858,9 +1858,10 @@ func @sequence_non_compute(%arg0 : f32) {
 
 func @sequence_inversion_two_compute() {
   sair.program {
+    // expected-error @below {{operation sequencing contradicts use-def chains}}
+    // expected-note @below {{sequenceable operation}}
     %0 = sair.alloc { sequence = 42 } : !sair.value<(), memref<f32>>
-    // expected-error @below {{value use sequenced before its definition}}
-    // expected-note @above {{sequenced value definition}}
+    // expected-note @below {{sequenceable operation sequenced by use-def}}
     sair.free %0 { sequence = 1 } : !sair.value<(), memref<f32>>
     sair.exit
   }
@@ -1873,9 +1874,10 @@ func @sequence_inversion_two_compute() {
 // Make sure we use signed everywhere to avoid confusion.
 func @sequence_inversion_negative_value() {
   sair.program {
+    // expected-error @below {{operation sequencing contradicts use-def chains}}
+    // expected-note @below {{sequenceable operation}}
     %0 = sair.alloc { sequence = 1 } : !sair.value<(), memref<f32>>
-    // expected-error @below {{value use sequenced before its definition}}
-    // expected-note @above {{sequenced value definition}}
+    // expected-note @below {{sequenceable operation sequenced by use-def}}
     sair.free %0 { sequence = -1 } : !sair.value<(), memref<f32>>
     sair.exit
   }
@@ -1888,11 +1890,12 @@ func @sequence_inversion_proj_any(%arg0: f32) {
   sair.program {
     %0 = sair.static_range 42 : !sair.range
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    // expected-note @below {{sequenced value definition}}
+    // expected-error @below {{operation sequencing contradicts use-def chains}}
+    // expected-note @below {{sequenceable operation}}
     %2 = sair.copy[d0:%0] %1 { sequence = 2 } : !sair.value<d0:range, f32>
-    // expected-note @below {{transitive through this implicitly sequenced operation}}
+    // expected-note @below {{implicitly sequenced operation}}
     %3 = sair.proj_any of[d0:%0] %2(d0) : #sair.shape<d0:range>, f32
-    // expected-error @below {{value use sequenced before its definition}}
+    // expected-note @below {{sequenceable operation sequenced by use-def}}
     sair.copy[d0:%0] %3 { sequence = 1 } : !sair.value<d0:range, f32>
     sair.exit
   }
@@ -1905,11 +1908,12 @@ func @sequence_inversion_proj_last(%arg0: f32) {
   sair.program {
     %0 = sair.static_range 42 : !sair.range
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    // expected-note @below {{sequenced value definition}}
+    // expected-error @below {{operation sequencing contradicts use-def chains}}
+    // expected-note @below {{sequenceable operation}}
     %2 = sair.copy[d0:%0] %1 { sequence = 2 } : !sair.value<d0:range, f32>
-    // expected-note @below {{transitive through this implicitly sequenced operation}}
+    // expected-note @below {{implicitly sequenced operation}}
     %3 = sair.proj_last of[d0:%0] %2(d0) : #sair.shape<d0:range>, f32
-    // expected-error @below {{value use sequenced before its definition}}
+    // expected-note @below {{sequenceable operation sequenced by use-def}}
     sair.copy[d0:%0] %3 { sequence = 1 } : !sair.value<d0:range, f32>
     sair.exit
   }
@@ -1922,11 +1926,12 @@ func @sequence_inversion_fby(%arg0: f32) {
   sair.program {
     %0 = sair.static_range 42 : !sair.range
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    // expected-note @below {{sequenced value definition}}
+    // expected-error @below {{operation sequencing contradicts use-def chains}}
+    // expected-note @below {{sequenceable operation}}
     %2 = sair.copy %1 { sequence = 2 } : !sair.value<(), f32>
-    // expected-note @below {{transitive through this implicitly sequenced operation}}
+    // expected-note @below {{implicitly sequenced operation}}
     %3 = sair.fby %2 then[d0:%0] %4(d0) : !sair.value<d0:range, f32>
-    // expected-error @below {{value use sequenced before its definition}}
+    // expected-note @below {{sequenceable operation sequenced by use-def}}
     %4 = sair.map[d0:%0] %3(d0) attributes { sequence = 1 } {
     ^bb0(%arg1: index, %arg2: f32):
       sair.return %arg2 : f32
@@ -1943,11 +1948,12 @@ func @sequence_inversion_fby_then(%arg0: f32) {
     %0 = sair.static_range 42 : !sair.range
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %2 = sair.copy %1 { sequence = 1 } : !sair.value<(), f32>
-    // expected-note @below {{sequenced value definition}}
+    // expected-error @below {{operation sequencing contradicts use-def chains}}
+    // expected-note @below {{sequenceable operation}}
     %3 = sair.copy[d0:%0] %1 { sequence = 3 } : !sair.value<d0:range, f32>
-    // expected-note @below {{transitive through this implicitly sequenced operation}}
+    // expected-note @below {{implicitly sequenced operation}}
     %4 = sair.fby %2 then[d0:%0] %3(d0) : !sair.value<d0:range, f32>
-    // expected-error @below {{value use sequenced before its definition}}
+    // expected-note @below {{sequenceable operation sequenced by use-def}}
     sair.map[d0:%0] %4(d0) attributes { sequence = 2 } {
     ^bb0(%arg1: index, %arg2: f32):
       sair.return %arg2 : f32
@@ -1966,11 +1972,12 @@ func @sequence_same_fby_then_different_source(%arg0: f32) {
     %0 = sair.static_range 42 : !sair.range
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %2 = sair.copy %1 { sequence = 1 } : !sair.value<(), f32>
-    // expected-note @below {{sequenced value definition}}
-    %3 = sair.copy[d0:%0] %1 { sequence = 2 } : !sair.value<d0:range, f32>
-    // expected-note @below {{transitive through this implicitly sequenced operation}}
+    // expected-error @below {{operation sequencing contradicts use-def chains}}
+    // expected-note @below {{sequenceable operation}}
+    %3 = sair.copy[d0:%0] %1 { sequence = 3 } : !sair.value<d0:range, f32>
+    // expected-note @below {{implicitly sequenced operation}}
     %4 = sair.fby %2 then[d0:%0] %3(d0) : !sair.value<d0:range, f32>
-    // expected-error @below {{value use sequenced before its definition}}
+    // expected-note @below {{sequenceable operation sequenced by use-def}}
     sair.map[d0:%0] %4(d0) attributes { sequence = 2 } {
     ^bb0(%arg1: index, %arg2: f32):
       sair.return %arg2 : f32
@@ -1984,11 +1991,12 @@ func @sequence_same_fby_then_different_source(%arg0: f32) {
 
 func @sequence_inversion_from_memref(%arg0: f32) {
   sair.program {
-    // expected-note @below {{sequenced value definition}}
+    // expected-error @below {{operation sequencing contradicts use-def chains}}
+    // expected-note @below {{sequenceable operation}}
     %0 = sair.alloc { sequence = 2 } : !sair.value<(), memref<f32>>
-    // expected-note @below {{transitive through this implicitly sequenced operation}}
+    // expected-note @below {{implicitly sequenced operation}}
     %1 = sair.from_memref %0 memref { buffer_name = "A" } : #sair.shape<()>, memref<f32>
-    // expected-error @below {{value use sequenced before its definition}}
+    // expected-note @below {{sequenceable operation sequenced by use-def}}
     %2 = sair.copy %1 { sequence = 1 } : !sair.value<(), f32>
     sair.exit
   }
@@ -2001,12 +2009,13 @@ func @sequence_inversion_domain(%arg0: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
     %1 = sair.dyn_range %0 : !sair.range
-    // expected-note @below {{sequenced value definition}}
+    // expected-error @below {{operation sequencing contradicts use-def chains}}
+    // expected-note @below {{sequenceable operation}}
     %2 = sair.copy[d0:%1] %0 { sequence = 2 }: !sair.value<d0:range, index>
 
-    // expected-note @below {{transitive through this implicitly sequenced operation}}
+    // expected-note @below {{implicitly sequenced operation}}
     %3 = sair.dyn_range[d0:%1] %2(d0) : !sair.range<d0:range>
-    // expected-error @below {{value use sequenced before its definition}}
+    // expected-note @below {{sequenceable operation sequenced by use-def}}
     sair.copy[d0:%1, d1:%3] %0 { sequence = 1 } : !sair.value<d0:range x d1:range(d0), index>
 
     sair.exit
@@ -2020,16 +2029,18 @@ func @sequence_inversion_implicit_sequence_domain(%arg0: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
     %1 = sair.dyn_range %0 : !sair.range
-    // expected-note @below {{sequenced value definition}}
+    // expected-error @below {{operation sequencing contradicts use-def chains}}
+    // expected-note @below {{sequenceable operation}}
     %2 = sair.copy[d0:%1] %0 { sequence = 2 }: !sair.value<d0:range, index>
 
-    // expected-note @below {{transitive through this implicitly sequenced operation}}
+    // expected-note @below {{implicitly sequenced operation}}
     %3 = sair.dyn_range[d0:%1] %2(d0) : !sair.range<d0:range>
+    // expected-note @below {{sequenceable operation sequenced by use-def}}
     %4 = sair.copy[d0:%1, d1:%3] %0 : !sair.value<d0:range x d1:range(d0), index>
 
-    // expected-note @below {{transitive through this implicitly sequenced operation}}
+    // expected-note @below {{implicitly sequenced operation}}
     %5 = sair.proj_any[d0:%1] of[d1:%3] %4(d0, d1) : #sair.shape<d0:range x d1:range(d0)>, index
-    // expected-error @below {{value use sequenced before its definition}}
+    // expected-note @below {{sequenceable operation sequenced by use-def}}
     sair.copy[d0:%1] %5(d0) { sequence = 1 } : !sair.value<d0:range, index>
 
     sair.exit
@@ -2045,12 +2056,13 @@ func @sequence_inversion_placeholder(%arg0: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
     %1 = sair.dyn_range %0 : !sair.range
-    // expected-note @below {{sequenced value definition}}
+    // expected-error @below {{operation sequencing contradicts use-def chains}}
+    // expected-note @below {{sequenceable operation}}
     %2 = sair.copy[d0:%1] %0 { sequence = 2 }: !sair.value<d0:range, index>
-    // expected-note @below {{transitive through this implicitly sequenced operation}}
+    // expected-note @below {{implicitly sequenced operation}}
     %3 = sair.dyn_range[d0:%1] %2(d0) : !sair.range<d0:range>
     %4 = sair.placeholder[d0:%1, d1:%3] : !sair.range<d0:range x d1:range(d0)>
-    // expected-error @below {{value use sequenced before its definition}}
+    // expected-note @below {{sequenceable operation sequenced by use-def}}
     sair.copy[d0:%1, d1:%3, d2:%4] %0 { sequence = 1 } : !sair.value<d0:range x d1:range(d0) x d2:range(d0, d1), index>
     sair.exit
   }
@@ -2126,11 +2138,12 @@ func @use_def_partial_invalid(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.copy %0 : !sair.value<(), f32>
-    // expected-note @below {{sequenced value definition}}
+    // expected-error @below {{operation sequencing contradicts use-def chains}}
+    // expected-note @below {{sequenceable operation}}
     %2 = sair.copy %1 { sequence = 2 } : !sair.value<(), f32>
-    // expected-note @below {{transitive through this sequenceable operation}}
+    // expected-note @below {{sequenceable operation sequenced by use-def}}
     %3 = sair.copy %2 : !sair.value<(), f32>
-    // expected-error @below {{value use sequenced before its definition}}
+    // expected-note @below {{sequenceable operation sequenced by use-def}}
     %4 = sair.copy %3 { sequence = 1 } : !sair.value<(), f32>
     sair.exit
   }
