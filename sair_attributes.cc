@@ -1074,7 +1074,8 @@ NamedMappingAttr NamedMappingAttr::Compose(MappingAttr other) const {
 // DomainShapeDim
 //===----------------------------------------------------------------------===//
 
-DomainShapeDim::DomainShapeDim(RangeType type, MappingAttr dependency_mapping)
+DomainShapeDim::DomainShapeDim(DimensionType type,
+                               MappingAttr dependency_mapping)
     : type_(type), dependency_mapping_(dependency_mapping) {
   assert(type != nullptr);
   assert(dependency_mapping != nullptr);
@@ -1200,7 +1201,16 @@ static DomainShapeDim StripeAccessedShape(MappingStripeExpr expr,
 
   llvm::SmallVector<DomainShapeDim, 4> type_shape;
   llvm::append_range(type_shape, inner_shape.type().Shape().Dimensions());
-  RangeType type = inner_shape.type();
+  DimensionType type = inner_shape.type();
+
+  // Handle the case where we are striping a static range and the result is also
+  // a static range.
+  if (expr.factors().size() == 1) {
+    if (auto static_range = type.dyn_cast<StaticRangeType>()) {
+      int new_step = static_range.step() * expr.factors().front();
+      type = StaticRangeType::get(static_range.size(), new_step, context);
+    }
+  }
 
   for (int i = 0, e = expr.factors().size() - 1; i < e; ++i) {
     type_shape.emplace_back(
@@ -1218,6 +1228,18 @@ static DomainShapeDim StripeAccessedShape(MappingStripeExpr expr,
   return DomainShapeDim(type, dependency_mapping);
 }
 
+// Compute the shape of a dimension mapped by an ustripe expression.
+static DomainShapeDim UnStripeAccessedShape(MappingUnStripeExpr expr,
+                                            DomainShapeDim inner_shape,
+                                            MappingAttr inverted_mapping) {
+  if (inner_shape.type().isa<RangeType>()) return inner_shape;
+  auto type = inner_shape.type().cast<StaticRangeType>();
+  int new_step = type.step() / expr.factors().front();
+  return DomainShapeDim(
+      StaticRangeType::get(type.size(), new_step, expr.getContext()),
+      inner_shape.dependency_mapping());
+}
+
 static DomainShapeDim AccessedShape(MappingExpr expr,
                                     MappingAttr inverted_mapping,
                                     DomainShapeAttr shape) {
@@ -1231,7 +1253,9 @@ static DomainShapeDim AccessedShape(MappingExpr expr,
         return StripeAccessedShape(expr, inner, inverted_mapping);
       })
       .Case<MappingUnStripeExpr>([&](MappingUnStripeExpr expr) {
-        return AccessedShape(expr.operands().front(), inverted_mapping, shape);
+        DomainShapeDim inner =
+            AccessedShape(expr.operands().front(), inverted_mapping, shape);
+        return UnStripeAccessedShape(expr, inner, inverted_mapping);
       });
 }
 

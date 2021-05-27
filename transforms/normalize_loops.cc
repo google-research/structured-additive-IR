@@ -78,11 +78,8 @@ void CreateRange(SairOp op, const LoopNest &loop_nest, int loop,
       mlir::IntegerAttr::get(builder.getIndexType(), range_parameters.step);
   if (range_parameters.end.is<mlir::Attribute>() && is_beg_zero) {
     assert(range_rank == 0);
-    auto size =
-        range_parameters.end.get<mlir::Attribute>().cast<mlir::IntegerAttr>();
     insertion_point.Set(builder);
-    range = builder.create<SairStaticRangeOp>(op.getLoc(), loop_shape.type(),
-                                              size, step);
+    range = builder.create<SairStaticRangeOp>(op.getLoc(), loop_shape.type());
   } else {
     llvm::SmallVector<mlir::Value> scalar_results;
     if (!is_beg_zero) {

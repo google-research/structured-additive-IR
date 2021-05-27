@@ -236,10 +236,10 @@ class NamedMappingAttr
 // The shape of an iteration dimension of a Sair domain.
 class DomainShapeDim {
  public:
-  DomainShapeDim(RangeType type, MappingAttr dependency_mapping);
+  DomainShapeDim(DimensionType type, MappingAttr dependency_mapping);
 
   // Expected type for the dimension.
-  const RangeType &type() const { return type_; }
+  const DimensionType &type() const { return type_; }
 
   // Mapping for the dimension, with regard to previous dimensions in the
   // domain.
@@ -255,7 +255,7 @@ class DomainShapeDim {
   }
 
  private:
-  RangeType type_;
+  DimensionType type_;
   MappingAttr dependency_mapping_;
 };
 

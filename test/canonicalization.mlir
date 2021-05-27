@@ -44,9 +44,11 @@ func @deduplicate_map_output() {
 
 // CHECK-LABEL: @fold_empty_proj
 func @fold_empty_proj(%arg0: f32) {
+  %n = constant 8 : index
   %0 = sair.program {
+    %sn = sair.from_scalar %n : !sair.value<(), index>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %2 = sair.static_range 8 : !sair.range
+    %2 = sair.dyn_range %sn : !sair.range
     // CHECK: %[[V0:.*]] = sair.copy
     %3 = sair.copy[d0:%2] %1 : !sair.value<d0:range, f32>
     %4 = sair.proj_last[d0:%2] of %3(d0) : #sair.shape<d0:range>, f32
@@ -60,9 +62,11 @@ func @fold_empty_proj(%arg0: f32) {
 
 // CHECK-LABEL: @fold_empty_fby
 func @fold_empty_fby(%arg0: f32) {
+  %n = constant 8 : index
   %0 = sair.program {
+    %sn = sair.from_scalar %n : !sair.value<(), index>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %2 = sair.static_range 8 : !sair.range
+    %2 = sair.dyn_range %sn : !sair.range
     // CHECK: %[[V0:.*]] = sair.copy
     %3 = sair.copy[d0:%2] %1 : !sair.value<d0:range, f32>
     %4 = sair.fby[d0:%2] %3(d0) then %3(d0) : !sair.value<d0:range, f32>
@@ -76,9 +80,11 @@ func @fold_empty_fby(%arg0: f32) {
 
 // CHECK-LABEL: @merge_proj
 func @merge_proj(%arg0: f32) {
+  %n = constant 8 : index
   %0 = sair.program {
+    %sn = sair.from_scalar %n : !sair.value<(), index>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %2 = sair.static_range 8 : !sair.range
+    %2 = sair.dyn_range %sn : !sair.range
     // CHECK: %[[V0:.*]] = sair.copy
     %3 = sair.copy[d0:%2, d1: %2] %1 : !sair.value<d0:range x d1:range, f32>
     // CHECK: %[[V1:.*]] = sair.proj_last of[d0:%{{.*}}, d1:%{{.*}}] %[[V0]](d0, d1)
@@ -94,9 +100,11 @@ func @merge_proj(%arg0: f32) {
 
 // CHECK-LABEL: @remove_cyclic_fby
 func @remove_cyclic_fby(%arg0: f32, %arg1: memref<?x?x?xf32>) {
+  %n = constant 8 : index
   sair.program {
+    %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %1 = sair.static_range 8 : !sair.range
+    %1 = sair.dyn_range %sn : !sair.range
     %4 = sair.from_scalar %arg1 : !sair.value<(), memref<?x?x?xf32>>
     // CHECK: %[[INIT:.*]] = sair.copy
     %2 = sair.copy[d0:%1, d1:%1, d2:%1] %0 : !sair.value<d0:range x d1:range x d2:range, f32>
@@ -113,10 +121,12 @@ func @remove_cyclic_fby(%arg0: f32, %arg1: memref<?x?x?xf32>) {
 
 // CHECK-LABEL: @remove_useless_dims_fby
 func @remove_useless_dims_fby(%arg0: f32) {
-  sair.program {
+  %n = constant 8 : index
+  %0 = sair.program {
+    %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    // CHECK: %[[R:.*]] = sair.static_range
-    %1 = sair.static_range 8 : !sair.range
+    // CHECK: %[[R:.*]] = sair.dyn_range
+    %1 = sair.dyn_range %sn : !sair.range
     %2 = sair.copy[d0:%1] %0 : !sair.value<d0:range, f32>
     %3 = sair.copy[d0:%1, d1:%1] %0 : !sair.value<d0:range x d1:range, f32>
     // CHECK: %[[FBY:.*]] = sair.fby[d0:%[[R]], d1:%[[R]]] %{{.*}}(d1)
@@ -134,10 +144,12 @@ func @remove_useless_dims_fby(%arg0: f32) {
 
 // CHECK-LABEL: @remove_useless_dims_proj
 func @remove_useless_dims_proj(%arg0: f32) {
-  sair.program {
+  %n = constant 8 : index
+  %0 = sair.program {
+    %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    // CHECK: %[[R:.*]] = sair.static_range
-    %1 = sair.static_range 8 : !sair.range
+    // CHECK: %[[R:.*]] = sair.dyn_range
+    %1 = sair.dyn_range %sn : !sair.range
     %2 = sair.copy[d0:%1, d1:%1, d2:%1] %0 : !sair.value<d0:range x d1:range x d2:range, f32>
     // CHECK: %[[PROJ:.*]] = sair.proj_any[d0:%[[R]], d1:%[[R]]]
     // CHECK:                           of[d2:%[[R]]] %{{.*}}(d0, d2, d1)
@@ -154,10 +166,12 @@ func @remove_useless_dims_proj(%arg0: f32) {
 
 // CHECK-LABEL: @remove_useless_dims_proj_dependent
 func @remove_useless_dims_proj_dependent(%arg0: f32, %arg1: index) {
-  sair.program {
+  %n = constant 8 : index
+  %0 = sair.program {
+    %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    // CHECK: %[[R:.*]] = sair.static_range
-    %1 = sair.static_range 8 : !sair.range
+    // CHECK: %[[R:.*]] = sair.dyn_range
+    %1 = sair.dyn_range %sn : !sair.range
     %4 = sair.from_scalar %arg1 : !sair.value<(), index>
     // CHECK: %[[DR:.*]] = sair.dyn_range
     %5 = sair.dyn_range %4 : !sair.range
@@ -180,9 +194,11 @@ func @remove_useless_dims_proj_dependent(%arg0: f32, %arg1: index) {
 
 // CHECK-LABEL: @mappings
 func @mappings(%arg0: f32) {
-  sair.program {
+  %n = constant 8 : index
+  %0 = sair.program {
+    %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %1 = sair.static_range 8 : !sair.range
+    %1 = sair.dyn_range %sn : !sair.range
     // CHECK: %[[V0:.*]] = sair.copy
     %2 = sair.copy[d0:%1] %0 : !sair.value<d0:range, f32>
     // CHECK: sair.copy[d0:%{{.*}}] %[[V0]](d0)

@@ -131,11 +131,12 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
 
   // Assert that the domain has the right shape.
   assert(llvm::size(sair_op.domain()) == sair_op.shape().NumDimensions());
+#ifndef NDEBUG
   for (auto pair :
        llvm::zip(sair_op.domain(), sair_op.shape().Dimensions())) {
     assert(std::get<0>(pair).getType() == std::get<1>(pair).type());
-    (void)pair;
   }
+#endif
 
   // Assert that operands start with the domain.
   assert(sair_op.domain().empty() ||
@@ -241,14 +242,6 @@ mlir::LogicalResult VerifyComputeOp(mlir::Operation *operation) {
   ComputeOp op(operation);
   if (!op.loop_nest().hasValue()) return mlir::success();
   return VerifyLoopNestWellFormed(op, op.LoopNestLoops());
-}
-
-mlir::LogicalResult VerifyRangeOp(mlir::Operation *op) {
-  RangeOp range_op = cast<RangeOp>(op);
-  if (!range_op.step().isStrictlyPositive()) {
-    return range_op.emitError() << "step must be strictly positive";
-  }
-  return mlir::success();
 }
 
 #include "sair_op_interfaces.cc.inc"

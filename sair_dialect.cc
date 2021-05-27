@@ -62,6 +62,33 @@ SairDialect::SairDialect(mlir::MLIRContext *context)
 
 namespace {
 
+// Parses the size and step of a static range type and returns the corresponding
+// type.
+StaticRangeType ParseStaticRangeType(mlir::DialectAsmParser &parser) {
+  int size;
+  int step = 1;
+  if (parser.parseLess() || parser.parseInteger(size)) return nullptr;
+  if (succeeded(parser.parseOptionalComma())) {
+    if (mlir::failed(parser.parseInteger(step))) return nullptr;
+  }
+  if (failed(parser.parseGreater())) return nullptr;
+  return StaticRangeType::getChecked(
+      [&]() { return parser.emitError(parser.getNameLoc()); }, size, step,
+      parser.getBuilder().getContext());
+}
+
+// Parse a static range shape dimension and appends it to `dimensions`.
+ParseResult ParseStaticRangeShapeDim(
+    mlir::DialectAsmParser &parser,
+    llvm::SmallVector<DomainShapeDim> &dimensions) {
+  mlir::MLIRContext *context = parser.getBuilder().getContext();
+  StaticRangeType type = ParseStaticRangeType(parser);
+  if (type == nullptr) return failure();
+  auto mapping = MappingAttr::get(context, dimensions.size(), {});
+  dimensions.emplace_back(type, mapping);
+  return success();
+}
+
 // Parses a range of shape dimension and appends it to `dimensions`.
 ParseResult ParseRangeShapeDim(mlir::DialectAsmParser &parser,
                                llvm::SmallVector<DomainShapeDim> &dimensions) {
@@ -120,9 +147,14 @@ DomainShapeAttr ParseDomainShape(mlir::DialectAsmParser &parser) {
   do {
     // Parse the dimension name.
     std::string expected_name = "d" + std::to_string(dimensions.size());
-    if (parser.parseKeyword(expected_name) || parser.parseColon() ||
-        parser.parseKeyword(RangeType::Name()) ||
-        ParseRangeShapeDim(parser, dimensions)) {
+    if (parser.parseKeyword(expected_name) || parser.parseColon()) {
+      return nullptr;
+    }
+
+    if (succeeded(parser.parseOptionalKeyword(StaticRangeType::Name()))) {
+      if (failed(ParseStaticRangeShapeDim(parser, dimensions))) return nullptr;
+    } else if (parser.parseKeyword(RangeType::Name()) ||
+               ParseRangeShapeDim(parser, dimensions)) {
       return nullptr;
     }
   } while (succeeded(parser.parseOptionalKeyword("x")));
@@ -180,6 +212,10 @@ mlir::Type sair::SairDialect::parseType(mlir::DialectAsmParser &parser) const {
       domain = DomainShapeAttr::get(getContext());
     }
     return RangeType::get(domain);
+  }
+
+  if (keyword == sair::StaticRangeType::Name()) {
+    return ParseStaticRangeType(parser);
   }
 
   if (keyword == sair::ValueType::Name()) {
@@ -266,9 +302,24 @@ void PrintMappingExpr(MappingExpr expr, llvm::raw_ostream &os) {
   }
 }
 
+// Prints the static range type.
+void Print(StaticRangeType type, mlir::DialectAsmPrinter &os) {
+  os << StaticRangeType::Name() << "<" << type.size();
+  if (type.step() != 1) {
+    os << ", " << type.step();
+  }
+  os << ">";
+}
+
 void PrintDomainShapeDim(const DomainShapeDim &dimension,
                          mlir::DialectAsmPrinter &os) {
-  os << RangeType::Name();
+  if (auto static_range = dimension.type().dyn_cast<StaticRangeType>()) {
+    Print(static_range, os);
+  } else if (dimension.type().isa<RangeType>()) {
+    os << RangeType::Name();
+  } else {
+    llvm_unreachable("unsupported dimension type");
+  }
 
   if (dimension.dependency_mapping().empty()) return;
   os << "(";
@@ -341,6 +392,8 @@ void sair::SairDialect::printType(mlir::Type type,
                                   mlir::DialectAsmPrinter &os) const {
   if (auto range_type = type.dyn_cast<RangeType>()) {
     return Print(range_type, os);
+  } else if (auto static_range_type = type.dyn_cast<StaticRangeType>()) {
+    return Print(static_range_type, os);
   }
 
   Print(type.cast<ValueType>(), &os);

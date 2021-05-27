@@ -160,9 +160,6 @@ mlir::LogicalResult VerifySairOp(mlir::Operation *op);
 // Verifies a `ComputeOp`.
 mlir::LogicalResult VerifyComputeOp(mlir::Operation *op);
 
-// Verifies a `RangeOp`.
-mlir::LogicalResult VerifyRangeOp(mlir::Operation *op);
-
 // Returns the Sair value accessed by the operation, along with the
 // corresponding mappings.
 template<typename ConcreteType>

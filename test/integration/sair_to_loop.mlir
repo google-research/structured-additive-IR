@@ -20,18 +20,18 @@ func @copy_to_memref(%arg0: memref<8xf32>, %arg1: memref<8xf32>) {
     // CHECK-DAG: %[[C1:.*]] = constant 1 : index
     // CHECK-DAG: %[[C8:.*]] = constant 8 : index
     // CHECK: scf.for %[[V0:.*]] = %[[C0]] to %[[C8]] step %[[C1]] {
-    %0 = sair.static_range 8 : !sair.range
+    %0 = sair.static_range : !sair.static_range<8>
     %1 = sair.from_scalar %arg0 : !sair.value<(), memref<8xf32>>
     %4 = sair.from_scalar %arg1 : !sair.value<(), memref<8xf32>>
     // CHECK:   %[[V1:.*]] = memref.load %[[ARG0]][%[[V0]]] : memref<8xf32>
     %2 = sair.from_memref %1 memref[d0:%0] {
       buffer_name = "bufferA"
-    } : #sair.shape<d0:range>, memref<8xf32>
-    %3 = sair.copy[d0:%0] %2(d0) : !sair.value<d0:range, f32>
+    } : #sair.shape<d0:static_range<8>>, memref<8xf32>
+    %3 = sair.copy[d0:%0] %2(d0) : !sair.value<d0:static_range<8>, f32>
     // CHECK:   memref.store %[[V1]], %[[ARG1]][%[[V0]]] : memref<8xf32>
     sair.to_memref %4 memref[d0:%0] %3(d0) {
       buffer_name = "bufferB"
-    }  : #sair.shape<d0:range>, memref<8xf32>
+    }  : #sair.shape<d0:static_range<8>>, memref<8xf32>
     // CHECK: }
     // CHECK-NOT: sair.exit
     sair.exit
@@ -54,12 +54,12 @@ func @matmul(%arg0: memref<8x8xf32>,
     %0 = sair.from_scalar %arg0 : !sair.value<(), memref<8x8xf32>>
     %1 = sair.from_scalar %arg1 : !sair.value<(), memref<8x8xf32>>
     %2 = sair.from_scalar %arg2 : !sair.value<(), memref<8x8xf32>>
-    %3 = sair.static_range 8 : !sair.range
+    %3 = sair.static_range : !sair.static_range<8>
 
     %4 = sair.from_memref %0 memref[d0:%3, d1: %3] {buffer_name = "A"}
-      : #sair.shape<d0:range x d1:range>, memref<8x8xf32>
+      : #sair.shape<d0:static_range<8> x d1:static_range<8>>, memref<8x8xf32>
     %5 = sair.from_memref %1 memref[d0:%3, d1: %3] {buffer_name = "B"}
-      : #sair.shape<d0:range x d1:range>, memref<8x8xf32>
+      : #sair.shape<d0:static_range<8> x d1:static_range<8>>, memref<8x8xf32>
 
     %6 = sair.from_scalar %C0 : !sair.value<(), f32>
     // CHECK: scf.for %[[I:.*]] = %[[C0]] to %[[C8]] step %[[C1]] {
@@ -74,10 +74,10 @@ func @matmul(%arg0: memref<8x8xf32>,
         space = "memory", name = "C",
         layout = #sair.named_mapping<[d0:"loopI", d1:"loopJ"] -> (d0, d1)>
       }]
-    } : !sair.value<d0:range x d1:range, f32>
+    } : !sair.value<d0:static_range<8> x d1:static_range<8>, f32>
 
     %8 = sair.fby[d0:%3, d1:%3] %7(d0, d1) then[d2:%3] %9(d0, d1, d2)
-      : !sair.value<d0:range x d1:range x d2:range, f32>
+      : !sair.value<d0:static_range<8> x d1:static_range<8> x d2:static_range<8>, f32>
     // CHECK:     scf.for %[[K:.*]] = %[[C0]] to %[[C8]] step %[[C1]] {
     // CHECK-DAG:   %[[V0:.*]] = memref.load %[[C]][%[[I]], %[[J]]] : memref<8x8xf32>
     // CHECK-DAG:   %[[V1:.*]] = memref.load %[[A]][%[[I]], %[[K]]] : memref<8x8xf32>
@@ -100,16 +100,17 @@ func @matmul(%arg0: memref<8x8xf32>,
         %c1 = mulf %a, %b : f32
         %c2 = addf %c0, %c1 : f32
         sair.return %c2 : f32
-    } : #sair.shape<d0:range x d1:range x d2:range>, (f32, f32, f32) -> (f32)
+    } : #sair.shape<d0:static_range<8> x d1:static_range<8> x d2:static_range<8>>,
+        (f32, f32, f32) -> (f32)
     // CHECK:     }
     // CHECK:   }
     // CHECK: }
 
     %10 = sair.proj_last[d0:%3, d1:%3] of[d2:%3] %9(d0, d1, d2)
-      : #sair.shape<d0:range x d1:range x d2:range>, f32
+      : #sair.shape<d0:static_range<8> x d1:static_range<8> x d2:static_range<8>>, f32
 
     sair.to_memref %2 memref[d0:%3, d1: %3] %10(d0, d1) {buffer_name = "C"}
-      : #sair.shape<d0:range x d1:range>, memref<8x8xf32>
+      : #sair.shape<d0:static_range<8> x d1:static_range<8>>, memref<8x8xf32>
     sair.exit
   }
   // CHECK: return

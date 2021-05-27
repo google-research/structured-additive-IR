@@ -2,14 +2,14 @@
 
 func @must_lower_to_map() {
   sair.program {
-    %0 = sair.static_range 8 : !sair.range
+    %0 = sair.static_range : !sair.static_range<8>
     // expected-error @+1 {{operation must be lowered to sair.map}}
     sair.map_reduce reduce[d0: %0] attributes {
       loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
     } {
       ^bb0(%arg0: index):
         sair.return
-    } : #sair.shape<d0:range>, () -> ()
+    } : #sair.shape<d0:static_range<8>>, () -> ()
     sair.exit
   }
   return
@@ -19,12 +19,12 @@ func @must_lower_to_map() {
 
 func @missing_loop_nest_attribute() {
   sair.program {
-    %0 = sair.static_range 8 : !sair.range
+    %0 = sair.static_range : !sair.static_range<8>
     // expected-error @+1 {{missing loop_nest attribute}}
     sair.map[d0: %0] {
       ^bb0(%arg0: index):
         sair.return
-    } : #sair.shape<d0:range>, () -> ()
+    } : #sair.shape<d0:static_range<8>>, () -> ()
     sair.exit
   }
   return
@@ -34,16 +34,16 @@ func @missing_loop_nest_attribute() {
 
 func @proj_any_must_be_eliminated() {
   sair.program {
-    %0 = sair.static_range 8 : !sair.range
+    %0 = sair.static_range : !sair.static_range<8>
     %1 = sair.map[d0:%0] attributes {
       loop_nest=[{name = "A", iter = #sair.mapping_expr<d0>}]
     } {
       ^bb0(%arg0: index):
         %2 = constant 1.0 : f32
         sair.return %2 : f32
-    } : #sair.shape<d0:range>, () -> f32
+    } : #sair.shape<d0:static_range<8>>, () -> f32
     // expected-error @+1 {{sair.proj_any operations must be eliminated before introducing loops}}
-    %3 = sair.proj_any of[d0:%0] %1(d0) : #sair.shape<d0:range>, f32
+    %3 = sair.proj_any of[d0:%0] %1(d0) : #sair.shape<d0:static_range<8>>, f32
     sair.exit %3 : f32
   } : f32
   return
@@ -53,7 +53,7 @@ func @proj_any_must_be_eliminated() {
 
 func @strip_mined_loop() {
   sair.program {
-    %0 = sair.static_range 8 : !sair.range
+    %0 = sair.static_range : !sair.static_range<8>
     // expected-error @+1 {{loop must not rematerialize or be strip-mined}}
     sair.map[d0:%0] attributes {
       loop_nest = [
@@ -63,7 +63,7 @@ func @strip_mined_loop() {
     } {
       ^bb0(%arg0: index):
         sair.return
-    } : #sair.shape<d0:range>, () -> ()
+    } : #sair.shape<d0:static_range<8>>, () -> ()
     sair.exit
   }
   return
@@ -73,7 +73,7 @@ func @strip_mined_loop() {
 
 func @unable_to_create_default_value() {
   %0 = sair.program {
-    %1 = sair.static_range 8 : !sair.range
+    %1 = sair.static_range : !sair.static_range<8>
     // expected-error @+1 {{unable to create a default value of type 'memref<f32>'}}
     %2 = sair.map[d0:%1] attributes {
       loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
@@ -81,8 +81,8 @@ func @unable_to_create_default_value() {
       ^bbo(%arg0: index):
         %3 = memref.alloc() : memref<f32>
         sair.return %3 : memref<f32>
-    } : #sair.shape<d0:range>, () -> memref<f32>
-    %4 = sair.proj_last of[d0:%1] %2(d0) : #sair.shape<d0:range>, memref<f32>
+    } : #sair.shape<d0:static_range<8>>, () -> memref<f32>
+    %4 = sair.proj_last of[d0:%1] %2(d0) : #sair.shape<d0:static_range<8>>, memref<f32>
     sair.exit %4 : memref<f32>
   } : memref<f32>
   return
@@ -93,17 +93,17 @@ func @unable_to_create_default_value() {
 func @proj_of_fby(%arg0: f32) {
   %0 = sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %1 = sair.static_range 8 : !sair.range
-    %2 = sair.fby %0 then[d0:%1] %3(d0) : !sair.value<d0:range, f32>
+    %1 = sair.static_range : !sair.static_range<8>
+    %2 = sair.fby %0 then[d0:%1] %3(d0) : !sair.value<d0:static_range<8>, f32>
     %3 = sair.map[d0:%1] %2(d0) attributes {
       loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
       storage = [{space = "register", layout = #sair.named_mapping<[] -> ()>}]
     } {
       ^bb0(%arg1: index, %arg2: f32):
         sair.return %arg2 : f32
-    } : #sair.shape<d0:range>, (f32) -> f32
+    } : #sair.shape<d0:static_range<8>>, (f32) -> f32
     // expected-error @+1 {{insert copies between sair.fby and users located after producing loops before calling loop introduction}}
-    %4 = sair.proj_last of[d0:%1] %2(d0) : #sair.shape<d0:range>, f32
+    %4 = sair.proj_last of[d0:%1] %2(d0) : #sair.shape<d0:static_range<8>>, f32
     sair.exit %4 : f32
   } : f32
   return
@@ -140,21 +140,21 @@ func @size_not_in_register(%arg0: index) {
 
 func @placeholder() {
   sair.program {
-    %0 = sair.static_range 8 : !sair.range
+    %0 = sair.static_range : !sair.static_range<8>
     // expected-error @+1 {{placeholders must be replaced by actual dimensions before introducing loops}}
-    %1 = sair.placeholder : !sair.range
+    %1 = sair.placeholder : !sair.static_range<8>
     sair.map[d0:%1] attributes {
       loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
     } {
       ^bb0(%arg1: index):
         sair.return
-    } : #sair.shape<d0:range>, () -> ()
+    } : #sair.shape<d0:static_range<8>>, () -> ()
     sair.map[d0:%0] attributes {
       loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
     } {
       ^bb0(%arg1: index):
         sair.return
-    } : #sair.shape<d0:range>, () -> ()
+    } : #sair.shape<d0:static_range<8>>, () -> ()
     sair.exit
   }
   return

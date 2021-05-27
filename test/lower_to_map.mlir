@@ -2,9 +2,11 @@
 
 // CHECK-LABEL: @copy
 func @copy(%arg0 : memref<?x?xf32>) {
+  %n = constant 8 : index
   sair.program {
-    // CHECK: %[[V0:.*]] = sair.static_range
-    %0 = sair.static_range 8 : !sair.range
+    %sn = sair.from_scalar %n : !sair.value<(), index>
+    // CHECK: %[[V0:.*]] = sair.dyn_range
+    %0 = sair.dyn_range %sn : !sair.range
     %1 = sair.from_scalar %arg0 : !sair.value<(), memref<?x?xf32>>
     // CHECK: %[[V1:.*]] = sair.from_memref
     %2 = sair.from_memref %1 memref[d0:%0, d1:%0] {
@@ -23,11 +25,13 @@ func @copy(%arg0 : memref<?x?xf32>) {
 
 // CHECK-LABEL: @alloc
 func @alloc(%arg0: index) {
+  %n = constant 8 : index
   sair.program {
-    // CHECK: %[[D0:.*]] = sair.static_range
-    %0 = sair.static_range 2 : !sair.range
-    // CHECK: %[[D1:.*]] = sair.static_range
-    %1 = sair.static_range 3 : !sair.range
+    %sn = sair.from_scalar %n : !sair.value<(), index>
+    // CHECK: %[[D0:.*]] = sair.dyn_range
+    %0 = sair.dyn_range %sn : !sair.range
+    // CHECK: %[[D1:.*]] = sair.dyn_range
+    %1 = sair.dyn_range %sn : !sair.range
     %idx = sair.from_scalar %arg0 : !sair.value<(), index>
     // CHECK: %[[SZ0:.*]] = sair.map
     %2 = sair.copy[d0:%0] %idx : !sair.value<d0:range, index>
@@ -47,11 +51,11 @@ func @alloc(%arg0: index) {
 // CHECK-LABEL: @sair_free
 func @sair_free(%arg0: index) {
   sair.program {
-    // CHECK: %[[D0:.*]] = sair.static_range
-    %0 = sair.static_range 2 : !sair.range
-    // CHECK: %[[D1:.*]] = sair.static_range
-    %1 = sair.static_range 3 : !sair.range
     %idx = sair.from_scalar %arg0 : !sair.value<(), index>
+    // CHECK: %[[D0:.*]] = sair.dyn_range
+    %0 = sair.dyn_range %idx : !sair.range
+    // CHECK: %[[D1:.*]] = sair.dyn_range
+    %1 = sair.dyn_range %idx : !sair.range
     // CHECK: sair.map
     %2 = sair.copy[d0:%0] %idx : !sair.value<d0:range, index>
     // CHECK: sair.map
@@ -72,14 +76,14 @@ func @sair_free(%arg0: index) {
 // CHECK-LABEL: @load_from_memref
 func @load_from_memref(%arg0 : memref<?x?xf32>) {
   sair.program {
-    %0 = sair.static_range 8 step 2 : !sair.range
+    %0 = sair.static_range : !sair.static_range<8, 2>
     %1, %2 = sair.map[d0:%0] {
       ^bb0(%arg1: index):
         %c4 = constant 4 : index
         %3 = addi %arg1, %c4 : index
         sair.return %arg1, %3 : index, index
-    } : #sair.shape<d0:range>, () -> (index, index)
-    %3 = sair.dyn_range[d0:%0] %1(d0), %2(d0) : !sair.range<d0:range>
+    } : #sair.shape<d0:static_range<8, 2>>, () -> (index, index)
+    %3 = sair.dyn_range[d0:%0] %1(d0), %2(d0) : !sair.range<d0:static_range<8,2>>
     %4 = sair.from_scalar %arg0 : !sair.value<(), memref<?x?xf32>>
     // CHECK: = sair.map[d0:%{{.*}}, d1:%{{.*}}, d2:%{{.*}}] %{{.*}}, %{{.*}}#0(d0), %{{.*}}#1(d0) {
     // CHECK: ^{{.*}}(%[[ARG1:.*]]: index, %[[ARG2:.*]]: index, %[[ARG3:.*]]: index, %[[MEMREF:.*]]: memref<?x?xf32>, %[[ARG4:.*]]: index, %[[ARG5:.*]]: index):
@@ -88,10 +92,10 @@ func @load_from_memref(%arg0 : memref<?x?xf32>) {
     // CHECK:   %[[I1:.*]] = affine.apply affine_map<(d0, d1, d2)[s0] -> ((d1 - s0) floordiv 2)>(%[[ARG1]], %[[ARG2]], %[[ARG3]])[%[[C0]]]
     // CHECK:   %[[VALUE:.*]] = memref.load %[[MEMREF]][%[[I0]], %[[I1]]] : memref<?x?xf32>
     // CHECK:   sair.return %[[VALUE]] : f32
-    // CHECK: } : #sair.shape<d0:range x d1:range x d2:range(d0)>, (memref<?x?xf32>, index, index) -> f32
+    // CHECK: } : #sair.shape<d0:static_range<8, 2> x d1:static_range<8, 2> x d2:range(d0)>, (memref<?x?xf32>, index, index) -> f32
     %5 = sair.load_from_memref[d0:%0, d1:%0, d2:%3] %4 {
       layout = #sair.mapping<3 : d2, d1>
-    } : memref<?x?xf32> -> !sair.value<d0:range x d1:range x d2:range(d0), f32>
+    } : memref<?x?xf32> -> !sair.value<d0:static_range<8, 2> x d1:static_range<8, 2> x d2:range(d0), f32>
     sair.exit
   }
   return
@@ -100,12 +104,12 @@ func @load_from_memref(%arg0 : memref<?x?xf32>) {
 // CHECK-LABEL: @store_to_memref
 func @store_to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
   sair.program {
-    %0 = sair.static_range 8 : !sair.range
+    %0 = sair.static_range : !sair.static_range<8>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %2 = sair.from_scalar %arg1 : !sair.value<(), memref<?x?xf32>>
     // CHECK: sair.map
     %3 = sair.copy[d0:%0, d1:%0, d2:%0] %1
-      : !sair.value<d0:range x d1:range x d2:range, f32>
+      : !sair.value<d0:static_range<8> x d1:static_range<8> x d2:static_range<8>, f32>
 
     // CHECK: sair.map[d0:%{{.*}}, d1:%{{.*}}, d2:%{{.*}}] %{{.*}}, %{{.*}}(d0, d1, d2) {
     // CHECK: ^{{.*}}(%[[ARG1:.*]]: index, %[[ARG2:.*]]: index, %[[ARG3:.*]]: index, %[[MEMREF:.*]]: memref<?x?xf32>, %[[VALUE:.*]]: f32):
@@ -115,10 +119,10 @@ func @store_to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
     // CHECK:   %[[I1:.*]] = affine.apply affine_map<(d0, d1, d2)[s0] -> (d1 - s0)>(%[[ARG1]], %[[ARG2]], %[[ARG3]])[%[[C0_1]]]
     // CHECK:   memref.store %[[VALUE]], %[[MEMREF]][%[[I0]], %[[I1]]]
     // CHECK:   sair.return
-    // CHECK: } : #sair.shape<d0:range x d1:range x d2:range>, (memref<?x?xf32>, f32) -> ()
+    // CHECK: } : #sair.shape<d0:static_range<8> x d1:static_range<8> x d2:static_range<8>>, (memref<?x?xf32>, f32) -> ()
     sair.store_to_memref[d0:%0, d1:%0, d2:%0] %2, %3(d0, d1, d2) {
       layout = #sair.mapping<3 : d2, d1>
-    } : #sair.shape<d0:range x d1:range x d2:range>, memref<?x?xf32>
+    } : #sair.shape<d0:static_range<8> x d1:static_range<8> x d2:static_range<8>>, memref<?x?xf32>
     sair.exit
   }
   return

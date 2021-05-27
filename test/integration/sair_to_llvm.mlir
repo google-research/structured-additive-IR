@@ -57,19 +57,19 @@ func @from_to_memref() -> f32 {
 
   // Multiply the elements of %1 by two.
   sair.program {
-    %2 = sair.static_range 8 : !sair.range
+    %2 = sair.static_range : !sair.static_range<8>
     %6 = sair.from_scalar %0 : !sair.value<(), memref<8xi32>>
     %3 = sair.from_memref %6 memref[d0:%2] {
       buffer_name = "bufferA"
-    }  : #sair.shape<d0:range>, memref<8xi32>
+    }  : #sair.shape<d0:static_range<8>>, memref<8xi32>
     %4 = sair.map[d0:%2] %3(d0) {
       ^bb0(%arg0: index, %arg1: i32):
         %5 = addi %arg1, %arg1 : i32
         sair.return %5 : i32
-    } : #sair.shape<d0:range>, (i32) -> i32
+    } : #sair.shape<d0:static_range<8>>, (i32) -> i32
     sair.to_memref %6 memref[d0:%2] %4(d0) {
       buffer_name = "bufferB"
-    }  : #sair.shape<d0:range>, memref<8xi32>
+    }  : #sair.shape<d0:static_range<8>>, memref<8xi32>
     sair.exit
   }
 

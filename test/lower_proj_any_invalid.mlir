@@ -1,9 +1,11 @@
 // RUN: sair-opt -sair-lower-proj-any -split-input-file -verify-diagnostics %s
 
 func @source_not_normalized(%arg0: f32) {
+  %n = constant 8 : index
   sair.program {
+    %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %1 = sair.static_range 8 : !sair.range
+    %1 = sair.dyn_range %sn : !sair.range
     // expected-error @+1 {{operation iteration space not normalized}}
     %2 = sair.copy %0 {
       loop_nest = [{name = "loopA", iter = #sair.mapping_expr<none>}]
@@ -20,9 +22,11 @@ func @source_not_normalized(%arg0: f32) {
 // -----
 
 func @result_not_normalized(%arg0: f32) {
+  %n = constant 8 : index
   sair.program {
+    %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %1 = sair.static_range 8 : !sair.range
+    %1 = sair.dyn_range %sn : !sair.range
     %2 = sair.copy[d0:%1] %0 {
       loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
     } : !sair.value<d0:range, f32>
@@ -39,9 +43,11 @@ func @result_not_normalized(%arg0: f32) {
 // -----
 
 func @cannot_lower(%arg0: f32) {
+  %n = constant 8 : index
   sair.program {
+    %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %1 = sair.static_range 8 : !sair.range
+    %1 = sair.dyn_range %sn : !sair.range
     %2 = sair.copy[d0:%1] %0 {
       loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
     } : !sair.value<d0:range, f32>

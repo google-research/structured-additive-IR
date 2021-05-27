@@ -35,8 +35,10 @@ func @preserve_memory_space() {
 
 // CHECK-LABEL: @multi_dim
 func @multi_dim(%arg0: f32, %arg1: memref<8x8xf32>) {
+  %n = constant 8 : index
   sair.program {
-    %0 = sair.static_range 8 : !sair.range
+    %sn = sair.from_scalar %n : !sair.value<(), index>
+    %0 = sair.dyn_range %sn : !sair.range
     // CHECK: %[[V0:.*]] = sair.from_scalar %{{.*}} : !sair.value<(), f32>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %memref = sair.from_scalar %arg1 : !sair.value<(), memref<8x8xf32>>
@@ -72,8 +74,10 @@ func @multi_dim(%arg0: f32, %arg1: memref<8x8xf32>) {
 
 // CHECK-LABEL: @to_memref_proj_fby
 func @to_memref_proj_fby(%arg0: f32, %arg1: memref<f32>) {
+  %n = constant 8 : index
   sair.program {
-    %0 = sair.static_range 8 : !sair.range
+    %sn = sair.from_scalar %n : !sair.value<(), index>
+    %0 = sair.dyn_range %sn : !sair.range
     // CHECK: %[[V0:.*]] = sair.from_scalar %{{.*}} : !sair.value<(), f32>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %2 = sair.from_scalar %arg1 : !sair.value<(), memref<f32>>
@@ -105,9 +109,11 @@ func @to_memref_proj_fby(%arg0: f32, %arg1: memref<f32>) {
 
 // CHECK-LABEL: @propagate_storage
 func @propagate_storage(%arg0: f32) {
+  %n = constant 8 : index
   sair.program {
+    %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %1 = sair.static_range 8 : !sair.range
+    %1 = sair.dyn_range %sn : !sair.range
     %2 = sair.fby %0 then[d0:%1] %3(d0) : !sair.value<d0:range, f32>
     // CHECK: sair.copy
     // CHECK: storage = [{layout = #sair.named_mapping<[] -> ()>, space = "register"}]
@@ -121,10 +127,12 @@ func @propagate_storage(%arg0: f32) {
 
 // CHECK-LABEL: @non_rectangular
 func @non_rectangular_shape(%arg0: f32, %arg1: index) {
+  %n = constant 8 : index
   sair.program {
+    %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.from_scalar %arg1 : !sair.value<(), index>
-    %2 = sair.static_range 8 : !sair.range
+    %2 = sair.dyn_range %sn : !sair.range
     %3 = sair.dyn_range[d0:%2] %1 : !sair.range<d0:range>
     // CHECK: storage = [{
     // CHECK:   layout = #sair.named_mapping<[d0:"loopB"] -> (d0)>,
@@ -149,10 +157,12 @@ func @non_rectangular_shape(%arg0: f32, %arg1: index) {
 
 // CHECK-LABEL: @buffer_reuse
 func @buffer_reuse(%arg0: f32) {
+  %n = constant 8 : index
   sair.program {
+    %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %1 = sair.static_range 4 : !sair.range
-    %2 = sair.static_range 8 : !sair.range
+    %1 = sair.dyn_range %sn : !sair.range
+    %2 = sair.dyn_range %sn : !sair.range
 
     // First use.
     // CHECK: layout = #sair.named_mapping<[d0:"loopA"] -> (none, d0)>

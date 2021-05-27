@@ -5,9 +5,11 @@
 // map_reduce.
 // CHECK-LABEL: @from_memref_in_memory
 func @from_memref_in_memory(%arg0: memref<?xf32>, %arg1: f32) {
+  %n = constant 8 : index
   sair.program {
+    %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 : !sair.value<(), memref<?xf32>>
-    %1 = sair.static_range 42 : !sair.range
+    %1 = sair.dyn_range %sn : !sair.range
     %2 = sair.from_memref %0 memref[d0:%1] { buffer_name = "buffer" } : #sair.shape<d0:range>, memref<?xf32>
     %3 = sair.from_scalar %arg1 : !sair.value<(), f32>
     sair.map_reduce[d0:%1] %2(d0) reduce %3 attributes {

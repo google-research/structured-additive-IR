@@ -15,7 +15,7 @@ func @expected_loop_nest(%arg0: f32) {
 func @index_to_memory(%arg0: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
-    %1 = sair.static_range 8 : !sair.range
+    %1 = sair.dyn_range %0 : !sair.range
     // expected-error @+1 {{cannot generate default storage for multi-dimensional index values}}
     %2 = sair.copy[d0:%1] %0 {
       loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
@@ -35,7 +35,7 @@ func @non_rectangular_shape(%arg0: f32, %arg1: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.from_scalar %arg1 : !sair.value<(), index>
-    %2 = sair.static_range 8 : !sair.range
+    %2 = sair.dyn_range %1 : !sair.range
     %3 = sair.dyn_range[d0:%2] %1 : !sair.range<d0:range>
     // expected-error @+1 {{in buffer "buffer_0": layout depends on loops it cannot be nested in}}
     %4 = sair.copy[d0:%2, d1:%3] %0 {
@@ -57,10 +57,11 @@ func @non_rectangular_shape(%arg0: f32, %arg1: index) {
 
 // -----
 
-func @incomplete_loop_nest(%arg0: memref<4xf32>) {
+func @incomplete_loop_nest(%arg0: memref<4xf32>, %arg1: index) {
   %c = constant 42.0 : f32
   sair.program {
-    %r = sair.static_range 4 : !sair.range
+    %n = sair.from_scalar %arg1 : !sair.value<(), index>
+    %r = sair.dyn_range %n : !sair.range
     %mem = sair.from_scalar %arg0 : !sair.value<(), memref<4xf32>>
     %0 = sair.from_scalar %c : !sair.value<(), f32>
     // expected-error@below {{expected a loop-nest attribute}}
@@ -74,9 +75,10 @@ func @incomplete_loop_nest(%arg0: memref<4xf32>) {
 
 // -----
 
-func @increase_external_buffer_rank(%arg0: memref<f32>) {
+func @increase_external_buffer_rank(%arg0: memref<f32>, %arg1: index) {
   sair.program {
-    %r = sair.static_range 4 : !sair.range
+    %n = sair.from_scalar %arg1 : !sair.value<(), index>
+    %r = sair.dyn_range %n : !sair.range
     %mem = sair.from_scalar %arg0 : !sair.value<(), memref<f32>>
     %0 = sair.from_memref %mem memref { buffer_name = "buffer" }
       : #sair.shape<()>, memref<f32>

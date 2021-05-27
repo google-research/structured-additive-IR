@@ -31,7 +31,7 @@ DomainShapeAttr MappedDomain::DomainShape() const {
   llvm::SmallVector<DomainShapeDim> shape_dims;
   shape_dims.reserve(domain_.size());
   for (const ValueAccess &access : domain_) {
-    auto type = access.value.getType().cast<RangeType>();
+    auto type = access.value.getType().cast<DimensionType>();
     shape_dims.emplace_back(type, access.mapping);
   }
   return DomainShapeAttr::get(context(), shape_dims);

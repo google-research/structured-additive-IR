@@ -73,7 +73,10 @@ class impl::ShapedTypeStorage : public mlir::TypeStorage {
 DomainShapeAttr ShapedType::Shape() const {
   return TypeSwitch<ShapedType, DomainShapeAttr>(*this)
       .Case<RangeType>([](RangeType type) { return type.Shape(); })
-      .Case<ValueType>([](ValueType type) { return type.Shape(); });
+      .Case<ValueType>([](ValueType type) { return type.Shape(); })
+      .Case<StaticRangeType>([this](StaticRangeType type) {
+        return DomainShapeAttr::get(getContext(), {});
+      });
 }
 
 //===----------------------------------------------------------------------===//
@@ -86,6 +89,62 @@ RangeType RangeType::get(DomainShapeAttr shape) {
 }
 
 DomainShapeAttr RangeType::Shape() const { return getImpl()->shape(); }
+
+//===----------------------------------------------------------------------===//
+// StaticRangeType
+//===----------------------------------------------------------------------===//
+
+class impl::StaticRangeTypeStorage : public mlir::TypeStorage {
+ public:
+  // (size, step) identification key for MLIR type uniquer.
+  using KeyTy = std::pair<int, int>;
+
+  static StaticRangeTypeStorage *construct(
+      mlir::TypeStorageAllocator &allocator, const KeyTy &key) {
+    return new (allocator.allocate<StaticRangeTypeStorage>())
+        StaticRangeTypeStorage(key.first, key.second);
+  }
+
+  bool operator==(const KeyTy &key) const {
+    return key.first == size_ && key.second == step_;
+  }
+
+  // Range size.
+  int size() const { return size_; }
+
+  // Range step.
+  int step() const { return step_; }
+
+ private:
+  StaticRangeTypeStorage(int size, int step) : size_(size), step_(step) {}
+
+  int size_;
+  int step_;
+};
+
+StaticRangeType StaticRangeType::get(int size, int step,
+                                     mlir::MLIRContext *context) {
+  return Base::get(context, size, step);
+}
+
+StaticRangeType StaticRangeType::getChecked(
+    llvm::function_ref<mlir::InFlightDiagnostic()> emit_error, int size,
+    int step, mlir::MLIRContext *context) {
+  return Base::getChecked(emit_error, context, size, step);
+}
+
+int StaticRangeType::size() const { return getImpl()->size(); }
+
+int StaticRangeType::step() const { return getImpl()->step(); }
+
+mlir::LogicalResult StaticRangeType::verify(
+    llvm::function_ref<mlir::InFlightDiagnostic()> emit_error, int size,
+    int step) {
+  if (size < 1 || step < 1) {
+    return emit_error() << "expected positive step and size";
+  }
+  return mlir::success();
+}
 
 //===----------------------------------------------------------------------===//
 // ValueType
@@ -159,6 +218,8 @@ ValueType ValueType::AccessedType(MappingAttr mapping) const {
 // SairDialect
 //===----------------------------------------------------------------------===//
 
-void SairDialect::registerTypes() { addTypes<RangeType, ValueType>(); }
+void SairDialect::registerTypes() {
+  addTypes<RangeType, StaticRangeType, ValueType>();
+}
 
 }  // namespace sair

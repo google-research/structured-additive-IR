@@ -2,10 +2,12 @@
 
 // CHECK-LABEL: @eliminate
 func @eliminate(%arg0: f32) {
+  %n = constant 8 : index
   sair.program {
-    // CHECK: %[[V0:.*]] = sair.from_scalar
+    %sn = sair.from_scalar %n : !sair.value<(), index>
+    // CHECK: %[[V0:.*]] = sair.from_scalar %{{.*}} : !sair.value<(), f32>
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %1 = sair.static_range 8 : !sair.range
+    %1 = sair.dyn_range %sn : !sair.range
     // CHECK: %[[V1:.*]] = sair.copy[d0:%{{.*}}] %[[V0]]
     %2 = sair.copy[d0:%1] %0 {
       loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
@@ -22,10 +24,12 @@ func @eliminate(%arg0: f32) {
 
 // CHECK-LABEL: @convert_to_proj_last
 func @convert_to_proj_last(%arg0: f32) {
+  %n = constant 8 : index
   sair.program {
-    // CHECK: %[[V0:.*]] = sair.from_scalar
+    %sn = sair.from_scalar %n : !sair.value<(), index>
+    // CHECK: %[[V0:.*]] = sair.from_scalar %{{.*}} : !sair.value<(), f32>
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %1 = sair.static_range 8 : !sair.range
+    %1 = sair.dyn_range %sn : !sair.range
     // CHECK: %[[V1:.*]] = sair.copy[d0:%{{.*}}] %[[V0]]
     %2 = sair.copy[d0:%1] %0 {
       loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]

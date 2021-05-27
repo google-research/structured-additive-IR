@@ -541,7 +541,7 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
   mlir::Value upper_bound = materialize_bound(range.UpperBound());
   mlir::Value lower_bound = materialize_bound(range.LowerBound());
   if (upper_bound == nullptr || lower_bound == nullptr) return mlir::failure();
-  llvm::APInt step = range.step();
+  llvm::APInt step(64, range.Step());
   mlir::Block::iterator for_insertion_point = driver.getInsertionPoint();
 
   // Create the new sair.map operation.

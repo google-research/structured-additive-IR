@@ -207,8 +207,15 @@ def SairStorageAttr : OptionalAttr<ArrayAttr>;
 // Sair Types
 //===----------------------------------------------------------------------===//
 
+// Type constraint for dimensions.
+def SairDimension : Type<CPred<"$_self.isa<DimensionType>()">, "dimension">;
+
 // Type constraint for ranges.
 def SairRange : Type<CPred<"$_self.isa<RangeType>()">, "range">;
+
+// Type constraint for static ranges.
+def SairStaticRange
+  : Type<CPred<"$_self.isa<StaticRangeType>()">, "static_range">;
 
 // Type constraint for Sair values.
 def SairValue : Type<CPred<"$_self.isa<ValueType>()">, "value">;
@@ -468,7 +475,7 @@ def SairRangeOp : OpInterface<"RangeOp"> {
   let description = [{A Sair operation that defines a !sair.range}];
 
   let methods = [
-    InterfaceMethod<"Returns the range step", "llvm::APInt", "step">,
+    InterfaceMethod<"Returns the range step", "int", "Step">,
     InterfaceMethod<
       "Returns the upper bound of the range", "ValueOrConstant", "LowerBound"
     >,
@@ -480,8 +487,6 @@ def SairRangeOp : OpInterface<"RangeOp"> {
   let extraClassDeclaration = [{
     static constexpr llvm::StringRef kStepAttrName = "step";
   }];
-
-  let verify = [{return sair::VerifyRangeOp(op);}];
 }
 
 def SairFromToMemRefOp : OpInterface<"FromToMemRefOp"> {

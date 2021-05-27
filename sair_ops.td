@@ -48,11 +48,11 @@ def SairDynRangeOp : SairOp<"dyn_range",
   }];
 
   let arguments = (ins
-    Variadic<SairRange>:$domain,
+    Variadic<SairDimension>:$domain,
     SairMappingArrayAttr:$mapping_array,
     Optional<SairValueOf<Index>>:$lower_bound,
     SairValueOf<Index>:$upper_bound,
-    DefaultValuedAttr<IndexAttr, "1">:$step
+    DefaultValuedAttr<Confined<IndexAttr, [IntPositive]>, "1">:$step
   );
 
   let results = (outs SairRange:$range);
@@ -63,6 +63,8 @@ def SairDynRangeOp : SairOp<"dyn_range",
   DerivedAttr shape = SairResultDomainShapeAttr;
 
   let extraClassDeclaration = [{
+    int Step() { return step().getSExtValue(); }
+
     ValueOrConstant LowerBound() {
       if (lower_bound() != nullptr) return ValueOperands()[0].Get();
       return mlir::IntegerAttr::get(mlir::IndexType::get(getContext()), 0);
@@ -82,15 +84,10 @@ def SairStaticRangeOp : SairOp<"static_range", [NoSideEffect, SairRangeOp]> {
     $size is a constant. The general syntax is:
 
     ```
-    <var-name> = sair.static_range <size> : !sair.range
+    <var-name> = sair.static_range : !sair.static_range< <size>, <step> >
     ```
   }];
-
-  let arguments = (ins
-    IndexAttr:$size,
-    DefaultValuedAttr<IndexAttr, "1">:$step
-  );
-  let results = (outs SairRange:$range);
+  let results = (outs SairStaticRange:$range);
 
   let parser = [{return ParseStaticRangeOp(parser, result);}];
   let printer = [{return Print(*this, p);}];
@@ -98,11 +95,19 @@ def SairStaticRangeOp : SairOp<"static_range", [NoSideEffect, SairRangeOp]> {
   DerivedAttr shape = SairEmptyDomainShapeAttr;
 
   let extraClassDeclaration = [{
+    int Step() { return getType().cast<StaticRangeType>().step(); }
+
+    int Size() { return getType().cast<StaticRangeType>().size(); }
+
     ValueOrConstant LowerBound() {
-      return mlir::IntegerAttr::get(sizeAttr().getType(), 0);
+      auto type = mlir::IndexType::get(getContext());
+      return mlir::IntegerAttr::get(type, 0);
     }
 
-    ValueOrConstant UpperBound() { return sizeAttr(); }
+    ValueOrConstant UpperBound() {
+      auto type = mlir::IndexType::get(getContext());
+      return mlir::IntegerAttr::get(type, Size());
+    }
   }];
 }
 
@@ -121,8 +126,8 @@ def SairPlaceholderOp : SairOp<"placeholder", [NoSideEffect]> {
     loop-nest description.
   }];
 
-  let arguments = (ins Variadic<SairRange>:$domain);
-  let results = (outs SairRange:$range);
+  let arguments = (ins Variadic<SairDimension>:$domain);
+  let results = (outs SairDimension:$range);
 
   let parser = [{return ParsePlaceholderOp(parser, result);}];
   let printer = [{return Print(*this, p);}];
@@ -152,7 +157,7 @@ def SairCopyOp : SairOp<"copy", [
   }];
 
   let arguments = (ins
-    Variadic<SairRange>:$domain,
+    Variadic<SairDimension>:$domain,
     SairMappingArrayAttr:$mapping_array,
     SairValue:$value,
     SairLoopNestAttr:$loop_nest,
@@ -227,8 +232,8 @@ def SairFromMemRefOp : SairOp<"from_memref", [
   }];
 
   let arguments = (ins
-    Variadic<SairRange>:$parallel_domain,
-    Variadic<SairRange>:$memref_domain,
+    Variadic<SairDimension>:$parallel_domain,
+    Variadic<SairDimension>:$memref_domain,
     SairMappingArrayAttr:$mapping_array,
     SairValueOf<AnyMemRef>:$memref,
     StrAttr:$buffer_name
@@ -279,7 +284,7 @@ def SairLoadFromMemRefOp : SairOp<"load_from_memref", [SairComputeOp]> {
   }];
 
   let arguments = (ins
-    Variadic<SairRange>:$domain,
+    Variadic<SairDimension>:$domain,
     SairMappingArrayAttr:$mapping_array,
     SairValueOf<AnyMemRef>:$memref,
     SairMappingAttr:$layout,
@@ -335,8 +340,8 @@ def SairToMemRefOp : SairOp<"to_memref", [
   }];
 
   let arguments = (ins
-    Variadic<SairRange>:$parallel_domain,
-    Variadic<SairRange>:$memref_domain,
+    Variadic<SairDimension>:$parallel_domain,
+    Variadic<SairDimension>:$memref_domain,
     SairMappingArrayAttr:$mapping_array,
     SairValueOf<AnyMemRef>:$memref,
     SairValue:$value,
@@ -386,7 +391,7 @@ def SairStoreToMemRefOp : SairOp<"store_to_memref", [SairComputeOp]> {
   }];
 
   let arguments = (ins
-    Variadic<SairRange>:$domain,
+    Variadic<SairDimension>:$domain,
     SairMappingArrayAttr:$mapping_array,
     SairValueOf<AnyMemRef>:$memref,
     SairValue:$value,
@@ -466,7 +471,7 @@ def SairMapOp : SairOp<"map", [
   }];
 
   let arguments = (ins
-    Variadic<SairRange>:$domain,
+    Variadic<SairDimension>:$domain,
     SairMappingArrayAttr:$mapping_array,
     Variadic<SairValue>:$inputs,
     SairDomainShapeAttr:$shape,
@@ -547,8 +552,8 @@ def SairMapReduceOp : SairOp<"map_reduce", [
   }];
 
   let arguments = (ins
-    Variadic<SairRange>:$parallel_domain,
-    Variadic<SairRange>:$reduction_domain,
+    Variadic<SairDimension>:$parallel_domain,
+    Variadic<SairDimension>:$reduction_domain,
     SairMappingArrayAttr:$mapping_array,
     Variadic<SairValue>:$inits,
     Variadic<SairValue>:$inputs,
@@ -590,8 +595,8 @@ class SairProjectionOp<string name> : SairOp<name, [
     SairInferIterationSpaceOp,
     SairSameElementType<"value", "result">]> {
   let arguments = (ins
-    Variadic<SairRange>:$parallel_domain,
-    Variadic<SairRange>:$projection_domain,
+    Variadic<SairDimension>:$parallel_domain,
+    Variadic<SairDimension>:$projection_domain,
     SairMappingArrayAttr:$mapping_array,
     SairValue:$value,
     SairDomainShapeAttr:$shape
@@ -674,8 +679,8 @@ def SairFbyOp : SairOp<"fby", [
   }];
 
   let arguments = (ins
-    Variadic<SairRange>:$parallel_domain,
-    Variadic<SairRange>:$sequential_domain,
+    Variadic<SairDimension>:$parallel_domain,
+    Variadic<SairDimension>:$sequential_domain,
     SairMappingArrayAttr:$mapping_array,
     SairValue:$init,
     SairValue:$value
@@ -835,7 +840,7 @@ def SairAllocOp : SairOp<"alloc", [
   }];
 
   let arguments = (ins
-    Variadic<SairRange>:$domain,
+    Variadic<SairDimension>:$domain,
     SairMappingArrayAttr:$mapping_array,
     Variadic<SairValueOf<Index>>:$dynamic_sizes,
     SairLoopNestAttr:$loop_nest,
@@ -873,7 +878,7 @@ def SairFreeOp : SairOp<"free", [
   }];
 
   let arguments = (ins
-    Variadic<SairRange>:$domain,
+    Variadic<SairDimension>:$domain,
     SairMappingArrayAttr:$mapping_array,
     SairValueOf<AnyMemRef>:$value,
     SairLoopNestAttr:$loop_nest,

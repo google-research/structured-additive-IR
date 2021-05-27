@@ -50,7 +50,7 @@ func @sequence() -> f32 {
 func @do_nothing() {
   %0 = constant 1.0 : f32
   sair.program {
-    %1 = sair.static_range 8 : !sair.range
+    %1 = sair.static_range : !sair.static_range<8>
     %2 = sair.from_scalar %0 : !sair.value<(), f32>
     %3 = sair.copy %2 : !sair.value<(), f32>
     // The "map" should not be removed unless we can find the scalar value used

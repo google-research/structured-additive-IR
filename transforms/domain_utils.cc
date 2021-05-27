@@ -100,7 +100,7 @@ RangeParameters RangeParameterBuilder::Get(MappingDimExpr expr) {
 
   return {.begin = AddArgument(range_op.LowerBound().Map(mapping)),
           .end = AddArgument(range_op.UpperBound().Map(mapping)),
-          .step = static_cast<int>(range_op.step().getSExtValue())};
+          .step = range_op.Step()};
 }
 
 RangeParameters RangeParameterBuilder::Get(MappingStripeExpr expr) {

@@ -80,17 +80,16 @@ mlir::Value CreateSairRange(mlir::Location loc, const LoopBound &bound,
   auto domain_0d = DomainShapeAttr::get(context);
   auto shaped_type = bound.referenced_value.getType().cast<mlir::ShapedType>();
   int dimension = shaped_type.getDimSize(bound.dimension);
-  auto range_type = RangeType::get(domain_0d);
 
   // If the shape is statically known, create a simple static range.
   if (!mlir::ShapedType::isDynamic(dimension)) {
-    return rewriter.create<SairStaticRangeOp>(
-        loc, range_type, /*size=*/rewriter.getIndexAttr(dimension),
-        /*step=*/rewriter.getIndexAttr(1));
+    auto range_type = StaticRangeType::get(dimension, 1, context);
+    return rewriter.create<SairStaticRangeOp>(loc, range_type);
   }
 
   // Otherwise, extract the dynamic dimension of the shaped type, construct a 0d
   // Sair value, and use this value to create a dependent range.
+  auto range_type = RangeType::get(domain_0d);
   auto mapping = MappingAttr::GetIdentity(context, /*num_dimensions=*/0);
   auto mapping_array = rewriter.getArrayAttr(mapping);
   auto value_type = ValueType::get(rewriter.getIndexType());
@@ -162,7 +161,7 @@ void CreateSairDomain(mlir::Location loc, llvm::ArrayRef<LoopBound> dimensions,
     sair_dimensions.push_back(
         CreateSairRange(loc, bound, sair_program, rewriter));
     auto mapping = MappingAttr::get(context, sair_dimension_shapes.size(), {});
-    auto type = sair_dimensions.back().getType().cast<RangeType>();
+    auto type = sair_dimensions.back().getType().cast<DimensionType>();
     sair_dimension_shapes.emplace_back(type, mapping);
   }
 }

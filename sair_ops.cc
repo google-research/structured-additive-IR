@@ -192,27 +192,12 @@ ParseResult ParseDynRangeOp(mlir::OpAsmParser &parser,
 // Parses the static_range operation. This operation takes a single integer
 // attribute as argument and returns a Sair range. The syntax is the following.
 //
-// static-range-op ::= `sair.static_range` int : !sair.range
+// static-range-op ::= `sair.static_range` : !sair.static_range< size, step >
 //
 ParseResult ParseStaticRangeOp(mlir::OpAsmParser &parser,
                                mlir::OperationState &result) {
-  mlir::Attribute size;
-  mlir::Type index_type = parser.getBuilder().getIndexType();
-  RangeType type;
-  if (failed(
-          parser.parseAttribute(size, index_type, "size", result.attributes))) {
-    return failure();
-  }
-
-  if (succeeded(parser.parseOptionalKeyword(RangeOp::kStepAttrName))) {
-    mlir::Attribute step;
-    if (mlir::failed(parser.parseAttribute(
-            step, index_type, RangeOp::kStepAttrName, result.attributes))) {
-      return failure();
-    }
-  }
-
-  return failure(parser.parseColonType<RangeType>(type) ||
+  StaticRangeType type;
+  return failure(parser.parseColonType<StaticRangeType>(type) ||
                  parser.addTypeToList(type, result.types));
 }
 
@@ -224,10 +209,10 @@ ParseResult ParseStaticRangeOp(mlir::OpAsmParser &parser,
 ParseResult ParsePlaceholderOp(mlir::OpAsmParser &parser,
                                mlir::OperationState &result) {
   llvm::SmallVector<mlir::OpAsmParser::OperandType> domain;
-  RangeType type;
+  DimensionType type;
 
   return mlir::failure(ParseDomain(parser, domain) ||
-                       parser.parseColonType<RangeType>(type) ||
+                       parser.parseColonType<DimensionType>(type) ||
                        parser.addTypeToList(type, result.types) ||
                        ResolveDomain(parser, type.Shape(), domain, result));
 }
@@ -699,11 +684,7 @@ void Print(SairDynRangeOp op, OpAsmPrinter &printer) {
 
 // Prints the sair.static_range operation.
 void Print(SairStaticRangeOp op, OpAsmPrinter &printer) {
-  printer << SairStaticRangeOp::getOperationName() << " " << op.size();
-  if (op.step() != 1) {
-    printer << " " << RangeOp::kStepAttrName << " " << op.step();
-  }
-  printer << " : " << op.getType();
+  printer << SairStaticRangeOp::getOperationName() << " : " << op.getType();
 }
 
 static void Print(SairPlaceholderOp op, mlir::OpAsmPrinter &printer) {

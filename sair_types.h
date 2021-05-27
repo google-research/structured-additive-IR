@@ -23,6 +23,8 @@ namespace sair {
 namespace impl {
 // Private implementation for sair::RangeType.
 class ShapedTypeStorage;
+// Private implementation for sair::StaticRange.
+class StaticRangeTypeStorage;
 // Private implementation for sair::ValueType.
 class ValueTypeStorage;
 }  // end namespace impl
@@ -41,13 +43,20 @@ class ShapedType : public mlir::Type {
   DomainShapeAttr Shape() const;
 };
 
+// Base type for sair dimensions.
+class DimensionType : public ShapedType {
+ public:
+  // Hook for MLIR type system.
+  using ShapedType::ShapedType;
+};
+
 // Range type is used for values that define a dimension in a Sair iteration
 // domain. A range type may dependent on some number of other iteration
 // dimensions. The syntax for the range type is as follows:
 //
 //   sair-range-type ::= `!` dialect-namespace `.` `range` ('<' dom-shape '>')?
 //
-class RangeType : public mlir::Type::TypeBase<RangeType, ShapedType,
+class RangeType : public mlir::Type::TypeBase<RangeType, DimensionType,
                                               impl::ShapedTypeStorage> {
  public:
   // Constructs RangeType from opaque types in MLIR TypeBase.
@@ -63,6 +72,37 @@ class RangeType : public mlir::Type::TypeBase<RangeType, ShapedType,
 
   // Range domain shape.
   DomainShapeAttr Shape() const;
+};
+
+// Type for ranges with a static size. The syntax for the range is the
+// following.
+//
+//   `!sair.static_range` `<` size (`,` step)? `>`
+//
+class StaticRangeType
+    : public mlir::Type::TypeBase<StaticRangeType, DimensionType,
+                                  impl::StaticRangeTypeStorage> {
+ public:
+  using Base::Base;
+
+  static StaticRangeType get(int size, int step, mlir::MLIRContext *context);
+  static StaticRangeType getChecked(
+      llvm::function_ref<mlir::InFlightDiagnostic()> emit_error, int size,
+      int step, mlir::MLIRContext *context);
+
+  // Returns the name of this type as it appears in the textual format without
+  // the dialect prefix.
+  static llvm::StringRef Name() { return "static_range"; }
+
+  // Range size.
+  int size() const;
+
+  // Range step.
+  int step() const;
+
+  static mlir::LogicalResult verify(
+      llvm::function_ref<mlir::InFlightDiagnostic()> emit_error, int size,
+      int step);
 };
 
 class MappingAttr;
