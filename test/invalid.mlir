@@ -6,41 +6,41 @@ func @invalid_type() -> !sair.foo
 // -----
 
 // expected-error @+1 {{unexpected nul or EOF}}
-func @unfinished_range_dep() -> !sair.range<d0:range, d1:range
+func @unfinished_range_dep() -> !sair.dyn_range<d0:dyn_range, d1:dyn_range
 
 // -----
 
 // expected-error @+1 {{expected 'x' or '>'}}
-func @garbage_in_range_dep() -> !sair.range<d0:range? d1:range>
+func @garbage_in_range_dep() -> !sair.dyn_range<d0:dyn_range? d1:dyn_range>
 
 // -----
 
 // expected-error @+1 {{dimension 'd1' is out of range (0 dimensions)}}
-func @invalid_dep() -> !sair.range<d0:range(d1)>
+func @invalid_dep() -> !sair.dyn_range<d0:dyn_range(d1)>
 // -----
 
 // expected-error @+1 {{invalid dimension name}}
-func @invalid_dep() -> !sair.range<d0:range(x)>
+func @invalid_dep() -> !sair.dyn_range<d0:dyn_range(x)>
 
 // -----
 
 // expected-error @+1 {{non-transitive dependency}}
-func @non_transitive_dependency() -> !sair.range<d0:range x d1:range(d0) x d2:range(d1)>
+func @non_transitive_dependency() -> !sair.dyn_range<d0:dyn_range x d1:dyn_range(d0) x d2:dyn_range(d1)>
 
 // -----
 
 // expected-error @+1 {{invalid mapping}}
-func @duplicate_dependency() -> !sair.range<d0:range x d1:range(d0, d0)>
+func @duplicate_dependency() -> !sair.dyn_range<d0:dyn_range x d1:dyn_range(d0, d0)>
 
 // -----
 
 // expected-error @+1 {{expected 'd1'}}
-func @shape_dim_redefinition() -> !sair.range<d0:range x d0:range>
+func @shape_dim_redefinition() -> !sair.dyn_range<d0:dyn_range x d0:dyn_range>
 
 // -----
 
 // expected-error @+1 {{the mapping must map all dimensions}}
-func @shape_none_dim() -> !sair.range<d0:range x d1:range(none)>
+func @shape_none_dim() -> !sair.dyn_range<d0:dyn_range x d1:dyn_range(none)>
 
 // -----
 
@@ -82,10 +82,10 @@ func @dimension_out_of_range() {
 // -----
 
 // expected-note @+1 {{prior use here}}
-func @range_op_invalid_type(%arg0 : !sair.value<(), index>) {
+func @dyn_range_op_invalid_type(%arg0 : !sair.value<(), index>) {
   sair.program {
     // expected-error @+1 {{expects different type}}
-    %1 = sair.dyn_range[d0:%arg0] %arg0 : !sair.range<d0:range>
+    %1 = sair.dyn_range[d0:%arg0] %arg0 : !sair.dyn_range<d0:dyn_range>
     sair.exit
   }
   return
@@ -95,9 +95,9 @@ func @range_op_invalid_type(%arg0 : !sair.value<(), index>) {
 
 func @domain_unexpected_num_dims(%arg0 : !sair.value<(), index>) {
   sair.program {
-    %0 = sair.dyn_range %arg0 : !sair.range
+    %0 = sair.dyn_range %arg0 : !sair.dyn_range
     // expected-error @+1 {{2 operands present, but expected 1}}
-    %1 = sair.dyn_range[d0:%0, d1:%0] %arg0 : !sair.range<d0:range>
+    %1 = sair.dyn_range[d0:%0, d1:%0] %arg0 : !sair.dyn_range<d0:dyn_range>
     sair.exit
   }
   return
@@ -108,9 +108,9 @@ func @domain_unexpected_num_dims(%arg0 : !sair.value<(), index>) {
 func @domain_unexpected_dimension_type(%arg0 : !sair.value<(), index>) {
   sair.program {
     // expected-note @+1 {{prior use here}}
-    %0 = sair.dyn_range %arg0 : !sair.range
+    %0 = sair.dyn_range %arg0 : !sair.dyn_range
     // expected-error @+1 {{expects different type}}
-    %1 = sair.dyn_range[d0:%0, d1:%0] %arg0 : !sair.range<d0:range x d1:range(d0)>
+    %1 = sair.dyn_range[d0:%0, d1:%0] %arg0 : !sair.dyn_range<d0:dyn_range x d1:dyn_range(d0)>
     sair.exit
   }
   return
@@ -120,9 +120,9 @@ func @domain_unexpected_dimension_type(%arg0 : !sair.value<(), index>) {
 
 func @domain_dim_redefinition(%arg0 : !sair.value<(), index>) {
   sair.program {
-    %0 = sair.dyn_range %arg0 : !sair.range
+    %0 = sair.dyn_range %arg0 : !sair.dyn_range
     // expected-error @+1 {{expected 'd1'}}
-    %1 = sair.dyn_range[d0:%0, d0:%0] %arg0 : !sair.range<range x range>
+    %1 = sair.dyn_range[d0:%0, d0:%0] %arg0 : !sair.dyn_range<dyn_range x dyn_range>
     sair.exit
   }
   return
@@ -157,12 +157,12 @@ func @operand_use_before_def(%arg0 : f32) {
 
 // -----
 
-func @invalid_mapping(%arg0 : !sair.range,
+func @invalid_mapping(%arg0 : !sair.dyn_range,
                              // expected-note @+1 {{prior use here}}
-                             %arg1 : !sair.value<d0:range x d1:range(d0), index>) {
+                             %arg1 : !sair.value<d0:dyn_range x d1:dyn_range(d0), index>) {
   sair.program {
     // expected-error @+1 {{expects different type}}
-    %0 = sair.dyn_range[d0: %arg0, d1:%arg0] %arg1(d0, d1) : !sair.range<d0:range x d1:range>
+    %0 = sair.dyn_range[d0: %arg0, d1:%arg0] %arg1(d0, d1) : !sair.dyn_range<d0:dyn_range x d1:dyn_range>
     sair.exit
   }
   return
@@ -274,13 +274,13 @@ func @hyper_rectangular_domain(%arg0: index, %arg1 : memref<?x?xf32>) {
   sair.program {
     %0 = sair.static_range :!sair.static_range<8>
     %1 = sair.from_scalar %arg0 : !sair.value<(), index>
-    %2 = sair.dyn_range[d0:%0] %1 :!sair.range<d0:static_range<8>>
+    %2 = sair.dyn_range[d0:%0] %1 :!sair.dyn_range<d0:static_range<8>>
     %3 = sair.from_scalar %arg1 : !sair.value<(), memref<?x?xf32>>
 
     // expected-error @+1 {{memref domain dimensions cannot depend on each other}}
     %4 = sair.from_memref %3 memref[d0:%0, d1:%2] {
       buffer_name = "bufferA"
-    } : #sair.shape<d0:static_range<8> x d1:range(d0)>, memref<?x?xf32>
+    } : #sair.shape<d0:static_range<8> x d1:dyn_range(d0)>, memref<?x?xf32>
     sair.exit
   }
   return
@@ -495,7 +495,7 @@ func @map_reduce_unexpected_shape() {
       mapping_array = [],
       operand_segment_sizes = dense<0> : vector<4xi32>,
       shape = #sair.shape<()>
-    } : () -> !sair.value<d0:range, f32>
+    } : () -> !sair.value<d0:dyn_range, f32>
     sair.exit
   }
   return
@@ -559,12 +559,12 @@ func @sair_value_defined_outside_sair_program(%arg0: !sair.value<(), f32>) {
 
 // -----
 
-func @sair_dimension_defined_outside_sair_program(%arg0: !sair.range) {
+func @sair_dimension_defined_outside_sair_program(%arg0: !sair.dyn_range) {
   %0 = constant 1.0 : f32
   sair.program {
     %1 = sair.from_scalar %0 : !sair.value<(), f32>
     // expected-error @+1 {{sair dimensions must be defined in the region they are used}}
-    %2 = sair.copy[d0:%arg0] %1 : !sair.value<d0:range, f32>
+    %2 = sair.copy[d0:%arg0] %1 : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
   return
@@ -661,7 +661,7 @@ func @loop_dependencies_not_covered(%arg0: index, %arg1: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<8>
     %1 = sair.from_scalar %arg0 : !sair.value<(), index>
-    %2 = sair.dyn_range[d0:%0] %1 : !sair.range<d0:static_range<8>>
+    %2 = sair.dyn_range[d0:%0] %1 : !sair.dyn_range<d0:static_range<8>>
     %3 = sair.from_scalar %arg1 : !sair.value<(), f32>
 
     // expected-error @+1 {{in loop_nest: dimension 0 of the mapping depends on dimension 1 of the mapping}}
@@ -670,7 +670,7 @@ func @loop_dependencies_not_covered(%arg0: index, %arg1: f32) {
         {name = "A", iter = #sair.mapping_expr<d1>},
         {name = "B", iter = #sair.mapping_expr<d0>}
       ]
-    } : !sair.value<d0:static_range<8> x d1:range(d0), f32>
+    } : !sair.value<d0:static_range<8> x d1:dyn_range(d0), f32>
     sair.exit
   }
   sair.return
@@ -815,11 +815,11 @@ func @dimension_defined_in_loop_nest(%arg0: index, %arg1: f32) {
       loop_nest = [{name = "A", iter = #sair.mapping_expr<none>}]
     } : !sair.value<(), index>
     // expected-note @+1 {{range defined here}}
-    %3 = sair.dyn_range %2 : !sair.range
+    %3 = sair.dyn_range %2 : !sair.dyn_range
     %4 = sair.copy[d0:%3] %1 {
       loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
       memory_space = [1]
-    } : !sair.value<d0:range, f32>
+    } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
   return
@@ -881,7 +881,7 @@ func @dimension_size_loop_nest(%arg0: index, %arg1: f32) {
       loop_nest = [{name = "A", iter = #sair.mapping_expr<none>}]
     } : !sair.value<(), index>
     // expected-note @+1 {{dimension defined here}}
-    %4 = sair.dyn_range %3 : !sair.range
+    %4 = sair.dyn_range %3 : !sair.dyn_range
 
     // expected-error @+1 {{buffer "bufferA" depends on a dimension that is defined after the buffer is allocated}}
     %5 = sair.copy[d0:%2, d1:%4] %1 {
@@ -894,7 +894,7 @@ func @dimension_size_loop_nest(%arg0: index, %arg1: f32) {
         space = "memory",
         layout = #sair.named_mapping<[d0:"A", d1:"B"] -> (d0, d1)>
       }]
-    } : !sair.value<d0:static_range<8> x d1:range, f32>
+    } : !sair.value<d0:static_range<8> x d1:dyn_range, f32>
     sair.exit
   }
   return
@@ -1134,16 +1134,16 @@ func @loop_crosses_subdomain_boundaries(%arg0: f32) {
   sair.program {
     %sc4 = sair.from_scalar %c4 : !sair.value<(), index>
     %0 = sair.static_range : !sair.static_range<4, 4>
-    %1 = sair.dyn_range[d0:%0] %sc4 : !sair.range<d0:static_range<4, 4>>
+    %1 = sair.dyn_range[d0:%0] %sc4 : !sair.dyn_range<d0:static_range<4, 4>>
     %2 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %3 = sair.copy[d0:%0, d1:%1] %2 {
       loop_nest = [
         {name = "loopA", iter = #sair.mapping_expr<unstripe(d0, d1, [4, 1])>}
       ]
-    } : !sair.value<d0:static_range<4, 4> x d1:range(d0), f32>
+    } : !sair.value<d0:static_range<4, 4> x d1:dyn_range(d0), f32>
     // expected-error @+1 {{loop "loopA" crosses sub-domains boundaries}}
     %4 = sair.proj_last[d0:%0] of[d1:%1] %3(d0, d1)
-      : #sair.shape<d0:static_range<4, 4> x d1:range(d0)>, f32
+      : #sair.shape<d0:static_range<4, 4> x d1:dyn_range(d0)>, f32
     sair.exit
   }
   return
@@ -1402,7 +1402,7 @@ func @layout_depends_on_loops(%arg0: f32, %arg1: index) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.from_scalar %arg1 : !sair.value<(), index>
     %2 = sair.static_range : !sair.static_range<8>
-    %3 = sair.dyn_range[d0:%2] %1 : !sair.range<d0:static_range<8>>
+    %3 = sair.dyn_range[d0:%2] %1 : !sair.dyn_range<d0:static_range<8>>
 
     %4 = sair.copy[d0:%2] %0 {
       loop_nest = [
@@ -1424,7 +1424,7 @@ func @layout_depends_on_loops(%arg0: f32, %arg1: index) {
         space = "memory", name = "bufferA",
         layout = #sair.named_mapping<[d0:"loopB"] -> (none, d0)>
       }]
-    } : !sair.value<d0:static_range<8> x d1:range(d0), f32>
+    } : !sair.value<d0:static_range<8> x d1:dyn_range(d0), f32>
 
     sair.exit
   }
@@ -1496,7 +1496,7 @@ func @buffer_used_before_dimension_def(%arg0: f32, %arg1: index) {
       loop_nest = [{name = "loopA", iter = #sair.mapping_expr<none>}]
     } : !sair.value<(), index>
     // expected-note @+1 {{dimension defined here}}
-    %4 = sair.dyn_range %3 : !sair.range
+    %4 = sair.dyn_range %3 : !sair.dyn_range
 
     // expected-error @+1 {{buffer "bufferA" depends on a dimension that is defined after the buffer is allocated}}
     %5 = sair.copy[d0:%2] %0 {
@@ -1515,7 +1515,7 @@ func @buffer_used_before_dimension_def(%arg0: f32, %arg1: index) {
         space = "memory", name = "bufferA",
         layout = #sair.named_mapping<[d0:"loopB"] -> (none, d0)>
       }]
-    } : !sair.value<d0:range, f32>
+    } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
   return
@@ -1526,11 +1526,11 @@ func @buffer_used_before_dimension_def(%arg0: f32, %arg1: index) {
 func @placeholder_loop_nest_unspecified(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %1 = sair.placeholder : !sair.range
+    %1 = sair.placeholder : !sair.dyn_range
     // expected-error @+1 {{in loop "loopA": iterator is not fully specified}}
     %2 = sair.copy[d0:%1] %0 {
       loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
-    } : !sair.value<d0:range, f32>
+    } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
   return
@@ -2006,15 +2006,15 @@ func @sequence_inversion_from_memref(%arg0: f32) {
 func @sequence_inversion_domain(%arg0: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
-    %1 = sair.dyn_range %0 : !sair.range
+    %1 = sair.dyn_range %0 : !sair.dyn_range
     // expected-error @below {{operation sequencing contradicts use-def chains}}
     // expected-note @below {{sequenceable operation}}
-    %2 = sair.copy[d0:%1] %0 { sequence = 2 }: !sair.value<d0:range, index>
+    %2 = sair.copy[d0:%1] %0 { sequence = 2 }: !sair.value<d0:dyn_range, index>
 
     // expected-note @below {{implicitly sequenced operation}}
-    %3 = sair.dyn_range[d0:%1] %2(d0) : !sair.range<d0:range>
+    %3 = sair.dyn_range[d0:%1] %2(d0) : !sair.dyn_range<d0:dyn_range>
     // expected-note @below {{sequenceable operation sequenced by use-def}}
-    sair.copy[d0:%1, d1:%3] %0 { sequence = 1 } : !sair.value<d0:range x d1:range(d0), index>
+    sair.copy[d0:%1, d1:%3] %0 { sequence = 1 } : !sair.value<d0:dyn_range x d1:dyn_range(d0), index>
 
     sair.exit
   }
@@ -2026,20 +2026,20 @@ func @sequence_inversion_domain(%arg0: index) {
 func @sequence_inversion_implicit_sequence_domain(%arg0: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
-    %1 = sair.dyn_range %0 : !sair.range
+    %1 = sair.dyn_range %0 : !sair.dyn_range
     // expected-error @below {{operation sequencing contradicts use-def chains}}
     // expected-note @below {{sequenceable operation}}
-    %2 = sair.copy[d0:%1] %0 { sequence = 2 }: !sair.value<d0:range, index>
+    %2 = sair.copy[d0:%1] %0 { sequence = 2 }: !sair.value<d0:dyn_range, index>
 
     // expected-note @below {{implicitly sequenced operation}}
-    %3 = sair.dyn_range[d0:%1] %2(d0) : !sair.range<d0:range>
+    %3 = sair.dyn_range[d0:%1] %2(d0) : !sair.dyn_range<d0:dyn_range>
     // expected-note @below {{sequenceable operation sequenced by use-def}}
-    %4 = sair.copy[d0:%1, d1:%3] %0 : !sair.value<d0:range x d1:range(d0), index>
+    %4 = sair.copy[d0:%1, d1:%3] %0 : !sair.value<d0:dyn_range x d1:dyn_range(d0), index>
 
     // expected-note @below {{implicitly sequenced operation}}
-    %5 = sair.proj_any[d0:%1] of[d1:%3] %4(d0, d1) : #sair.shape<d0:range x d1:range(d0)>, index
+    %5 = sair.proj_any[d0:%1] of[d1:%3] %4(d0, d1) : #sair.shape<d0:dyn_range x d1:dyn_range(d0)>, index
     // expected-note @below {{sequenceable operation sequenced by use-def}}
-    sair.copy[d0:%1] %5(d0) { sequence = 1 } : !sair.value<d0:range, index>
+    sair.copy[d0:%1] %5(d0) { sequence = 1 } : !sair.value<d0:dyn_range, index>
 
     sair.exit
   }
@@ -2053,15 +2053,15 @@ func @sequence_inversion_implicit_sequence_domain(%arg0: index) {
 func @sequence_inversion_placeholder(%arg0: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
-    %1 = sair.dyn_range %0 : !sair.range
+    %1 = sair.dyn_range %0 : !sair.dyn_range
     // expected-error @below {{operation sequencing contradicts use-def chains}}
     // expected-note @below {{sequenceable operation}}
-    %2 = sair.copy[d0:%1] %0 { sequence = 2 }: !sair.value<d0:range, index>
+    %2 = sair.copy[d0:%1] %0 { sequence = 2 }: !sair.value<d0:dyn_range, index>
     // expected-note @below {{implicitly sequenced operation}}
-    %3 = sair.dyn_range[d0:%1] %2(d0) : !sair.range<d0:range>
-    %4 = sair.placeholder[d0:%1, d1:%3] : !sair.range<d0:range x d1:range(d0)>
+    %3 = sair.dyn_range[d0:%1] %2(d0) : !sair.dyn_range<d0:dyn_range>
+    %4 = sair.placeholder[d0:%1, d1:%3] : !sair.dyn_range<d0:dyn_range x d1:dyn_range(d0)>
     // expected-note @below {{sequenceable operation sequenced by use-def}}
-    sair.copy[d0:%1, d1:%3, d2:%4] %0 { sequence = 1 } : !sair.value<d0:range x d1:range(d0) x d2:range(d0, d1), index>
+    sair.copy[d0:%1, d1:%3, d2:%4] %0 { sequence = 1 } : !sair.value<d0:dyn_range x d1:dyn_range(d0) x d2:dyn_range(d0, d1), index>
     sair.exit
   }
   return
@@ -2072,7 +2072,7 @@ func @sequence_inversion_placeholder(%arg0: index) {
 func @invalid_mapping_shape_in_shape() {
   "foo"() {
     // expected-error @+1 {{in operation shape: operand 1 of unstripe in #sair.mapping_expr<unstripe(d0, d1, [4, 1])> has an invalid shape}}
-    bar = #sair.shape<d0:range x d1:range x d2:range(unstripe(d0, d1, [4, 1]))>
+    bar = #sair.shape<d0:dyn_range x d1:dyn_range x d2:dyn_range(unstripe(d0, d1, [4, 1]))>
   }: () -> ()
 }
 
@@ -2084,13 +2084,13 @@ func @invalid_mapping_shape_in_operand(%arg0: f32, %arg1: index) {
     %1 = sair.from_scalar %arg1 : !sair.value<(), index>
 
     %2 = sair.static_range : !sair.static_range<4, 2>
-    %3 = sair.dyn_range[d0:%2] %1 : !sair.range<d0:static_range<4, 2>>
+    %3 = sair.dyn_range[d0:%2] %1 : !sair.dyn_range<d0:static_range<4, 2>>
 
     %4 = sair.copy[d0:%2, d1:%3] %0
-      : !sair.value<d0:static_range<4, 2> x d1:range(d0), f32>
+      : !sair.value<d0:static_range<4, 2> x d1:dyn_range(d0), f32>
     // expected-error @+1 {{in operand mapping: dimension 0 of the mapping depends on dimension 1 of the mapping}}
     %5 = sair.copy[d0:%2, d1:%3] %4(d1, d0)
-      : !sair.value<d0:static_range<4, 2> x d1:range(d0), f32>
+      : !sair.value<d0:static_range<4, 2> x d1:dyn_range(d0), f32>
     sair.exit
   }
   return
@@ -2104,17 +2104,17 @@ func @invalid_mapping_shape_in_operand_raw(%arg0: f32, %arg1: index) {
     %1 = sair.from_scalar %arg1 : !sair.value<(), index>
 
     %2 = sair.static_range : !sair.static_range<4, 2>
-    %3 = sair.dyn_range[d0:%2] %1 : !sair.range<d0:static_range<4, 2>>
+    %3 = sair.dyn_range[d0:%2] %1 : !sair.dyn_range<d0:static_range<4, 2>>
 
     %4 = sair.copy[d0:%2, d1:%3] %0
-      : !sair.value<d0:static_range<4, 2> x d1:range(d0), f32>
+      : !sair.value<d0:static_range<4, 2> x d1:dyn_range(d0), f32>
     // expected-error @+1 {{in operand mapping: dimension 0 of the mapping depends on dimension 1 of the mapping}}
     %5 = "sair.copy"(%2, %3, %4) {
       mapping_array = [#sair.mapping<2 : d1, d0>]
     } : (!sair.static_range<4, 2>,
-         !sair.range<d0:static_range<4, 2>>,
-         !sair.value<d0:static_range<4, 2> x d1:range(d0), f32>)
-      -> !sair.value<d0:static_range<4, 2> x d1:range(d0), f32>
+         !sair.dyn_range<d0:static_range<4, 2>>,
+         !sair.value<d0:static_range<4, 2> x d1:dyn_range(d0), f32>)
+      -> !sair.value<d0:static_range<4, 2> x d1:dyn_range(d0), f32>
     sair.exit
   }
   return

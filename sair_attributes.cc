@@ -1215,7 +1215,7 @@ static DomainShapeDim StripeAccessedShape(MappingStripeExpr expr,
   for (int i = 0, e = expr.factors().size() - 1; i < e; ++i) {
     type_shape.emplace_back(
         type, MappingAttr::GetIdentity(context, type_shape.size()));
-    type = RangeType::get(DomainShapeAttr::get(context, type_shape));
+    type = DynRangeType::get(DomainShapeAttr::get(context, type_shape));
     if (unstripe_expr == nullptr) {
       dependency_mapping_exprs.push_back(inverse_subexpr);
     } else {
@@ -1232,7 +1232,7 @@ static DomainShapeDim StripeAccessedShape(MappingStripeExpr expr,
 static DomainShapeDim UnStripeAccessedShape(MappingUnStripeExpr expr,
                                             DomainShapeDim inner_shape,
                                             MappingAttr inverted_mapping) {
-  if (inner_shape.type().isa<RangeType>()) return inner_shape;
+  if (inner_shape.type().isa<DynRangeType>()) return inner_shape;
   auto type = inner_shape.type().cast<StaticRangeType>();
   int new_step = type.step() / expr.factors().front();
   return DomainShapeDim(

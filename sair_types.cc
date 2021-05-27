@@ -35,19 +35,19 @@ namespace sair {
 // intended for direct use.
 class impl::ShapedTypeStorage : public mlir::TypeStorage {
  public:
-  // Key type uniquely identifying RangeTypeStorage for MLIR type unique-ing.
+  // Key type uniquely identifying ShapedTypeStorage for MLIR type unique-ing.
   // This specific name is required by mlir::TypeUniquer.
   using KeyTy = DomainShapeAttr;
 
-  // Creates a RangeTypeStorage using the provided allocator, hook for MLIR type
-  // system support.
+  // Creates a ShapedTypeStorage using the provided allocator, hook for MLIR
+  // type system support.
   static impl::ShapedTypeStorage *construct(
       mlir::TypeStorageAllocator &allocator,  // NOLINT
       const KeyTy &key) {
     return new (allocator.allocate<ShapedTypeStorage>()) ShapedTypeStorage(key);
   }
 
-  // Compares the RangeTypeStorage identification key with this object.
+  // Compares the ShapedTypeStorage identification key with this object.
   bool operator==(const KeyTy &key) const { return key == shape_; }
   // Returns the hash key for MLIR type unique-ing.
   static unsigned hashKey(const KeyTy &key) { return hash_value(key); }
@@ -72,7 +72,7 @@ class impl::ShapedTypeStorage : public mlir::TypeStorage {
 // Forwards the request to the implementation class.
 DomainShapeAttr ShapedType::Shape() const {
   return TypeSwitch<ShapedType, DomainShapeAttr>(*this)
-      .Case<RangeType>([](RangeType type) { return type.Shape(); })
+      .Case<DynRangeType>([](DynRangeType type) { return type.Shape(); })
       .Case<ValueType>([](ValueType type) { return type.Shape(); })
       .Case<StaticRangeType>([this](StaticRangeType type) {
         return DomainShapeAttr::get(getContext(), {});
@@ -80,15 +80,15 @@ DomainShapeAttr ShapedType::Shape() const {
 }
 
 //===----------------------------------------------------------------------===//
-// RangeType
+// DynRangeType
 //===----------------------------------------------------------------------===//
 
 // Forwards the construction to the MLIR type system with SairTypes::Range tag.
-RangeType RangeType::get(DomainShapeAttr shape) {
+DynRangeType DynRangeType::get(DomainShapeAttr shape) {
   return Base::get(shape.getContext(), shape);
 }
 
-DomainShapeAttr RangeType::Shape() const { return getImpl()->shape(); }
+DomainShapeAttr DynRangeType::Shape() const { return getImpl()->shape(); }
 
 //===----------------------------------------------------------------------===//
 // StaticRangeType
@@ -219,7 +219,7 @@ ValueType ValueType::AccessedType(MappingAttr mapping) const {
 //===----------------------------------------------------------------------===//
 
 void SairDialect::registerTypes() {
-  addTypes<RangeType, StaticRangeType, ValueType>();
+  addTypes<DynRangeType, StaticRangeType, ValueType>();
 }
 
 }  // namespace sair

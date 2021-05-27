@@ -54,21 +54,22 @@ class DimensionType : public ShapedType {
 // domain. A range type may dependent on some number of other iteration
 // dimensions. The syntax for the range type is as follows:
 //
-//   sair-range-type ::= `!` dialect-namespace `.` `range` ('<' dom-shape '>')?
+//   sair-range-type ::= `!` dialect-namespace `.` `dyn_range` ('<' dom-shape
+//   '>')?
 //
-class RangeType : public mlir::Type::TypeBase<RangeType, DimensionType,
-                                              impl::ShapedTypeStorage> {
+class DynRangeType : public mlir::Type::TypeBase<DynRangeType, DimensionType,
+                                                 impl::ShapedTypeStorage> {
  public:
   // Constructs RangeType from opaque types in MLIR TypeBase.
   using Base::Base;
 
   // Constructs an instance of RangeType in the provided context. This is a hook
   // for MLIR Builders.
-  static RangeType get(DomainShapeAttr shape);
+  static DynRangeType get(DomainShapeAttr shape);
 
   // Returns the name of this type as it appears in the textual format without
   // the dialect prefix.
-  static llvm::StringRef Name() { return "range"; }
+  static llvm::StringRef Name() { return "dyn_range"; }
 
   // Range domain shape.
   DomainShapeAttr Shape() const;

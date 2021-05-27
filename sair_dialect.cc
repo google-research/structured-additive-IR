@@ -123,7 +123,7 @@ ParseResult ParseRangeShapeDim(mlir::DialectAsmParser &parser,
   }
 
   DomainShapeAttr range_shape = shape.AccessedShape(mapping);
-  dimensions.emplace_back(RangeType::get(range_shape), mapping);
+  dimensions.emplace_back(DynRangeType::get(range_shape), mapping);
   return success();
 }
 
@@ -153,7 +153,7 @@ DomainShapeAttr ParseDomainShape(mlir::DialectAsmParser &parser) {
 
     if (succeeded(parser.parseOptionalKeyword(StaticRangeType::Name()))) {
       if (failed(ParseStaticRangeShapeDim(parser, dimensions))) return nullptr;
-    } else if (parser.parseKeyword(RangeType::Name()) ||
+    } else if (parser.parseKeyword(DynRangeType::Name()) ||
                ParseRangeShapeDim(parser, dimensions)) {
       return nullptr;
     }
@@ -198,7 +198,7 @@ mlir::Type sair::SairDialect::parseType(mlir::DialectAsmParser &parser) const {
   llvm::StringRef keyword;
   if (failed(parser.parseKeyword(&keyword))) return nullptr;
 
-  if (keyword == sair::RangeType::Name()) {
+  if (keyword == sair::DynRangeType::Name()) {
     // Parse a type of the form '!sair.range<d0:range x d1:range>'.
     DomainShapeAttr domain;
     if (succeeded(parser.parseOptionalLess())) {
@@ -211,7 +211,7 @@ mlir::Type sair::SairDialect::parseType(mlir::DialectAsmParser &parser) const {
     } else {
       domain = DomainShapeAttr::get(getContext());
     }
-    return RangeType::get(domain);
+    return DynRangeType::get(domain);
   }
 
   if (keyword == sair::StaticRangeType::Name()) {
@@ -315,8 +315,8 @@ void PrintDomainShapeDim(const DomainShapeDim &dimension,
                          mlir::DialectAsmPrinter &os) {
   if (auto static_range = dimension.type().dyn_cast<StaticRangeType>()) {
     Print(static_range, os);
-  } else if (dimension.type().isa<RangeType>()) {
-    os << RangeType::Name();
+  } else if (dimension.type().isa<DynRangeType>()) {
+    os << DynRangeType::Name();
   } else {
     llvm_unreachable("unsupported dimension type");
   }
@@ -348,8 +348,8 @@ mlir::DialectAsmPrinter &operator<<(mlir::DialectAsmPrinter &os,
 }
 
 // Prints the range type.
-void Print(RangeType type, mlir::DialectAsmPrinter &os) {
-  os << RangeType::Name();
+void Print(DynRangeType type, mlir::DialectAsmPrinter &os) {
+  os << DynRangeType::Name();
   if (!type.Shape().Is0d()) {
     os << "<" << type.Shape() << ">";
   }
@@ -390,7 +390,7 @@ void PrintMapping(MappingAttr mapping, llvm::raw_ostream &os) {
 // Prints the Sair type using MLIR printing facilities.
 void sair::SairDialect::printType(mlir::Type type,
                                   mlir::DialectAsmPrinter &os) const {
-  if (auto range_type = type.dyn_cast<RangeType>()) {
+  if (auto range_type = type.dyn_cast<DynRangeType>()) {
     return Print(range_type, os);
   } else if (auto static_range_type = type.dyn_cast<StaticRangeType>()) {
     return Print(static_range_type, os);

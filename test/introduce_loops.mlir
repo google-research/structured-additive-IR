@@ -8,7 +8,7 @@ func @map(%arg0: index) {
   sair.program {
     // CHECK: %[[V0:.*]] = sair.from_scalar %[[ARG0]]
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
-    %1 = sair.dyn_range %0 : !sair.range
+    %1 = sair.dyn_range %0 : !sair.dyn_range
     %2 = sair.static_range : !sair.static_range<8>
     // CHECK: sair.map %[[V0]] attributes {loop_nest = []} {
     sair.map[d0: %1, d1: %2] attributes {
@@ -33,7 +33,7 @@ func @map(%arg0: index) {
         // CHECK: sair.return
         sair.return
     // CHECK: } : #sair.shape<()>, (index) -> ()
-    } : #sair.shape<d0:range x d1:static_range<8>>, () -> ()
+    } : #sair.shape<d0:dyn_range x d1:static_range<8>>, () -> ()
     sair.exit
   }
   return
@@ -154,7 +154,7 @@ func @dependent_dims() {
         sair.return %arg0, %5 : index, index
     } : #sair.shape<d0:static_range<64, 8>>, () -> (index, index)
         // CHECK: %[[V6:.*]] = constant 1
-    %3 = sair.dyn_range[d0:%0] %1(d0), %2(d0) : !sair.range<d0:static_range<64, 8>>
+    %3 = sair.dyn_range[d0:%0] %1(d0), %2(d0) : !sair.dyn_range<d0:static_range<64, 8>>
         // CHECK: scf.for %[[V7:.*]] = %[[V3]] to %[[V5]] step %[[V6]] {
     sair.map[d0:%0, d1:%3] attributes {
       loop_nest = [
@@ -166,7 +166,7 @@ func @dependent_dims() {
           // CHECK: call @foo(%[[V3]], %[[V7]])
         call @foo(%arg0, %arg1) : (index, index) -> ()
         sair.return
-    } : #sair.shape<d0:static_range<64, 8> x d1:range(d0)>, () -> ()
+    } : #sair.shape<d0:static_range<64, 8> x d1:dyn_range(d0)>, () -> ()
         // CHECK: }
       // CHECK: }
       // CHECK: sair.return

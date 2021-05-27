@@ -123,14 +123,14 @@ func @size_not_in_register(%arg0: index) {
         sair.return %arg1 : index
     } : #sair.shape<()>, (index) -> (index)
     // expected-error @+1 {{range bounds must be stored in registers}}
-    %2 = sair.dyn_range %1 : !sair.range
+    %2 = sair.dyn_range %1 : !sair.dyn_range
     sair.map[d0:%2] attributes {
       loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
     } {
       ^bb0(%arg1: index):
         call @foo() : () -> ()
         sair.return
-    } : #sair.shape<d0:range>, () -> ()
+    } : #sair.shape<d0:dyn_range>, () -> ()
     sair.exit
   }
   return

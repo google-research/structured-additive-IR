@@ -216,15 +216,15 @@ func @fby_then_different_source(%arg0: f32) {
 func @sequence_domain(%arg0: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
-    %1 = sair.dyn_range %0 : !sair.range
+    %1 = sair.dyn_range %0 : !sair.dyn_range
     // CHECK: sair.copy
     // CHECK-SAME: sequence = 0
-    %2 = sair.copy[d0:%1] %0 : !sair.value<d0:range, index>
+    %2 = sair.copy[d0:%1] %0 : !sair.value<d0:dyn_range, index>
 
-    %3 = sair.dyn_range[d0:%1] %2(d0) : !sair.range<d0:range>
+    %3 = sair.dyn_range[d0:%1] %2(d0) : !sair.dyn_range<d0:dyn_range>
     // CHECK: sair.copy
     // CHECK-SAME: sequence = 1
-    sair.copy[d0:%1, d1:%3] %0 : !sair.value<d0:range x d1:range(d0), index>
+    sair.copy[d0:%1, d1:%3] %0 : !sair.value<d0:dyn_range x d1:dyn_range(d0), index>
 
     sair.exit
   }
@@ -235,20 +235,20 @@ func @sequence_domain(%arg0: index) {
 func @sequence_implicit_domain(%arg0: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
-    %1 = sair.dyn_range %0 : !sair.range
+    %1 = sair.dyn_range %0 : !sair.dyn_range
     // CHECK: sair.copy
     // CHECK-SAME: sequence = 0
-    %2 = sair.copy[d0:%1] %0 : !sair.value<d0:range, index>
+    %2 = sair.copy[d0:%1] %0 : !sair.value<d0:dyn_range, index>
 
-    %3 = sair.dyn_range[d0:%1] %2(d0) : !sair.range<d0:range>
+    %3 = sair.dyn_range[d0:%1] %2(d0) : !sair.dyn_range<d0:dyn_range>
     // CHECK: sair.copy
     // CHECK-SAME: sequence = 1
-    %4 = sair.copy[d0:%1, d1:%3] %0 : !sair.value<d0:range x d1:range(d0), index>
+    %4 = sair.copy[d0:%1, d1:%3] %0 : !sair.value<d0:dyn_range x d1:dyn_range(d0), index>
 
-    %5 = sair.proj_any[d0:%1] of[d1:%3] %4(d0, d1) : #sair.shape<d0:range x d1:range(d0)>, index
+    %5 = sair.proj_any[d0:%1] of[d1:%3] %4(d0, d1) : #sair.shape<d0:dyn_range x d1:dyn_range(d0)>, index
     // CHECK: sair.copy
     // CHECK-SAME: sequence = 2
-    sair.copy[d0:%1] %5(d0) : !sair.value<d0:range, index>
+    sair.copy[d0:%1] %5(d0) : !sair.value<d0:dyn_range, index>
 
     sair.exit
   }
@@ -259,20 +259,20 @@ func @sequence_implicit_domain(%arg0: index) {
 func @sequence_implicit_domain_partial(%arg0: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
-    %1 = sair.dyn_range %0 : !sair.range
+    %1 = sair.dyn_range %0 : !sair.dyn_range
     // CHECK: sair.copy
     // CHECK-SAME: sequence = 1
-    %2 = sair.copy[d0:%1] %0 { sequence = 2 } : !sair.value<d0:range, index>
+    %2 = sair.copy[d0:%1] %0 { sequence = 2 } : !sair.value<d0:dyn_range, index>
     // CHECK: sair.copy
     // CHECK-SAME: sequence = 0
-    %3 = sair.copy[d0:%1] %0 { sequence = 1 }: !sair.value<d0:range, index>
-    %4 = sair.dyn_range[d0:%1] %2(d0) : !sair.range<d0:range>
-    %5 = sair.dyn_range[d0:%1] %3(d0) : !sair.range<d0:range>
+    %3 = sair.copy[d0:%1] %0 { sequence = 1 }: !sair.value<d0:dyn_range, index>
+    %4 = sair.dyn_range[d0:%1] %2(d0) : !sair.dyn_range<d0:dyn_range>
+    %5 = sair.dyn_range[d0:%1] %3(d0) : !sair.dyn_range<d0:dyn_range>
     // CHECK: sair.copy
     // CHECK-SAME: sequence = 2
-    %6 = sair.copy[d0:%1, d1:%4, d2:%5] %0 : !sair.value<d0:range x d1:range(d0) x d2:range(d0), index>
-    %7 = sair.proj_any[d0:%1] of[d1:%4, d2:%5] %6(d0, d1, d2) : #sair.shape<d0:range x d1:range(d0) x d2:range(d0)>, index
-    sair.copy[d0:%1] %7(d0) : !sair.value<d0:range, index>
+    %6 = sair.copy[d0:%1, d1:%4, d2:%5] %0 : !sair.value<d0:dyn_range x d1:dyn_range(d0) x d2:dyn_range(d0), index>
+    %7 = sair.proj_any[d0:%1] of[d1:%4, d2:%5] %6(d0, d1, d2) : #sair.shape<d0:dyn_range x d1:dyn_range(d0) x d2:dyn_range(d0)>, index
+    sair.copy[d0:%1] %7(d0) : !sair.value<d0:dyn_range, index>
 
     sair.exit
   }

@@ -89,7 +89,7 @@ mlir::Value CreateSairRange(mlir::Location loc, const LoopBound &bound,
 
   // Otherwise, extract the dynamic dimension of the shaped type, construct a 0d
   // Sair value, and use this value to create a dependent range.
-  auto range_type = RangeType::get(domain_0d);
+  auto range_type = DynRangeType::get(domain_0d);
   auto mapping = MappingAttr::GetIdentity(context, /*num_dimensions=*/0);
   auto mapping_array = rewriter.getArrayAttr(mapping);
   auto value_type = ValueType::get(rewriter.getIndexType());

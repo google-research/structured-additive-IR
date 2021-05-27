@@ -7,14 +7,14 @@ func @map_reduce(%r1: index, %r2: index, %in1: f32) {
     %0 = sair.from_scalar %r1 : !sair.value<(), index>
     %1 = sair.from_scalar %r2 : !sair.value<(), index>
     // CHECK: %[[RANGE1:.*]] = sair.dyn_range
-    %2 = sair.dyn_range %0 : !sair.range
+    %2 = sair.dyn_range %0 : !sair.dyn_range
     // CHECK: %[[RANGE2:.*]] = sair.dyn_range
-    %3 = sair.dyn_range %1 : !sair.range
+    %3 = sair.dyn_range %1 : !sair.dyn_range
 
     %4 = sair.from_scalar %in1 : !sair.value<(), f32>
-    %5 = sair.copy[d0:%2, d1:%3] %4 : !sair.value<d0:range x d1:range, f32>
-    %6 = sair.copy[d0:%2] %4 : !sair.value<d0:range, f32>
-    %7 = sair.copy[d0:%2] %4 : !sair.value<d0:range, f32>
+    %5 = sair.copy[d0:%2, d1:%3] %4 : !sair.value<d0:dyn_range x d1:dyn_range, f32>
+    %6 = sair.copy[d0:%2] %4 : !sair.value<d0:dyn_range, f32>
+    %7 = sair.copy[d0:%2] %4 : !sair.value<d0:dyn_range, f32>
 
     // CHECK: %[[FBY1:.*]] = sair.fby[d0:%[[RANGE1]]] %[[INIT1:.*]] then[d1:%[[RANGE2]]] %[[OUTPUT:.*]]#0(d0, d1)
     // CHECK: %[[FBY2:.*]] = sair.fby[d0:%[[RANGE1]]] %[[INIT2:.*]] then[d1:%[[RANGE2]]] %[[OUTPUT]]#1(d0, d1)
@@ -27,13 +27,13 @@ func @map_reduce(%r1: index, %r2: index, %in1: f32) {
       // CHECK: mulf
       %10 = mulf %arg2, %arg3 : f32
       sair.return %9, %10 : f32, f32
-    // CHECK: #sair.shape<d0:range x d1:range>, (f32, f32, f32) -> (f32, f32)
-    } : #sair.shape<d0:range x d1:range>, (f32) -> (f32, f32)
+    // CHECK: #sair.shape<d0:dyn_range x d1:dyn_range>, (f32, f32, f32) -> (f32, f32)
+    } : #sair.shape<d0:dyn_range x d1:dyn_range>, (f32) -> (f32, f32)
     // Verify the result types have correct shapes.
     // GENERIC: "sair.map"
-    // GENERIC:      (!sair.range, !sair.range, !sair.value<d0:range x d1:range, f32>,
-    // GENERIC-SAME:  !sair.value<d0:range x d1:range, f32>, !sair.value<d0:range x d1:range, f32>) ->
-    // GENERIC-SAME: (!sair.value<d0:range x d1:range, f32>, !sair.value<d0:range x d1:range, f32>)
+    // GENERIC:      (!sair.dyn_range, !sair.dyn_range, !sair.value<d0:dyn_range x d1:dyn_range, f32>,
+    // GENERIC-SAME:  !sair.value<d0:dyn_range x d1:dyn_range, f32>, !sair.value<d0:dyn_range x d1:dyn_range, f32>) ->
+    // GENERIC-SAME: (!sair.value<d0:dyn_range x d1:dyn_range, f32>, !sair.value<d0:dyn_range x d1:dyn_range, f32>)
 
     // CHECK: sair.proj_last[d0:%[[RANGE1]]] of[d1:%[[RANGE2]]] %[[OUTPUT]]#0(d0, d1)
     // CHECK: sair.proj_last[d0:%[[RANGE1]]] of[d1:%[[RANGE2]]] %[[OUTPUT]]#1(d0, d1)

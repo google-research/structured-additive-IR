@@ -9,10 +9,10 @@ func @from_to_memref(%arg0: memref<?xf32>, %arg1: memref<?xf32>) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), memref<?xf32>>
     // CHECK: %[[M1:.*]] = sair.from_scalar %{{.*}} : !sair.value<(), memref<?xf32>>
     %1 = sair.from_scalar %arg1 : !sair.value<(), memref<?xf32>>
-    %2 = sair.dyn_range %sn : !sair.range
+    %2 = sair.dyn_range %sn : !sair.dyn_range
     %3 = sair.from_memref %0 memref[d0:%2] {
       buffer_name = "ARG0"
-    } : #sair.shape<d0:range>, memref<?xf32>
+    } : #sair.shape<d0:dyn_range>, memref<?xf32>
     // CHECK: %[[V0:.*]] = sair.load_from_memref[d0:%{{.*}}] %[[M0]]
     // CHECK:   layout = #sair.mapping<1 : d0>
     // CHECK:   loop_nest = [{iter = #sair.mapping_expr<d0>, name = "loopA"}]
@@ -21,13 +21,13 @@ func @from_to_memref(%arg0: memref<?xf32>, %arg1: memref<?xf32>) {
       loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
       storage = [{name = "ARG1", space = "memory",
                   layout = #sair.named_mapping<[d0:"loopA"] -> (d0)>}]
-    } : !sair.value<d0:range, f32>
+    } : !sair.value<d0:dyn_range, f32>
     // CHECK: sair.store_to_memref[d0:%{{.*}}] %[[M1]], %[[V1]]
     // CHECK:   layout = #sair.mapping<1 : d0>
     // CHECK:   loop_nest = [{iter = #sair.mapping_expr<d0>, name = "loopA"}]
     sair.to_memref %1 memref[d0:%2] %4(d0) {
       buffer_name = "ARG1"
-    } : #sair.shape<d0:range>, memref<?xf32>
+    } : #sair.shape<d0:dyn_range>, memref<?xf32>
     sair.exit
   }
   return
@@ -78,7 +78,7 @@ func @dynamic_shape(%arg0: f32, %arg1: index, %arg2: index) {
     %1 = sair.from_scalar %arg1 : !sair.value<(), index>
     // CHECK: %[[V2:.*]] = sair.from_scalar %{{.*}} : !sair.value<(), index>
     %2 = sair.from_scalar %arg2 : !sair.value<(), index>
-    %3 = sair.dyn_range %1, %2 step 4 : !sair.range
+    %3 = sair.dyn_range %1, %2 step 4 : !sair.dyn_range
     // CHECK: %[[V3:.*]] = sair.map %[[V1]], %[[V2]] attributes {
     // CHECK:   loop_nest = []
     // CHECK:   storage = [{layout = #sair.named_mapping<[] -> ()>, space = "register"}]
@@ -97,7 +97,7 @@ func @dynamic_shape(%arg0: f32, %arg1: index, %arg2: index) {
         name = "B", space = "memory",
         layout = #sair.named_mapping<[d0:"A"] -> (d0)>
       }]
-    } : !sair.value<d0:range, f32>
+    } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
   return
@@ -141,7 +141,7 @@ func @loop_nest(%arg0: f32) {
     // CHECK: sair.store_to_memref[d0:%{{.*}}, d1:%{{.*}}] %[[V6]](d0), %[[V7]](unstripe(d0, d1, [4, 1]))
     // CHECK:   layout = #sair.mapping<2 : d1>
     // CHECK:   loop_nest = [{iter = #sair.mapping_expr<d0>, name = "A"}, {iter = #sair.mapping_expr<d1>, name = "B"}]
-    // CHECK:   : #sair.shape<d0:static_range<16, 4> x d1:range(d0)>, memref<?xf32>
+    // CHECK:   : #sair.shape<d0:static_range<16, 4> x d1:dyn_range(d0)>, memref<?xf32>
 
     // CHECK: %[[V8:.*]] = sair.load_from_memref[d0:%{{.*}}, d1:%{{.*}}] %[[V6]](d0)
     // CHECK:   layout = #sair.mapping<3 : d1>
@@ -149,7 +149,7 @@ func @loop_nest(%arg0: f32) {
     // CHECK:     {iter = #sair.mapping_expr<d0>, name = "A"},
     // CHECK:     {iter = #sair.mapping_expr<d1>, name = "C"},
     // CHECK:     {iter = #sair.mapping_expr<d2>, name = "D"}]
-    // CHECK:   : memref<?xf32> -> !sair.value<d0:static_range<16, 4> x d1:range(d0) x d2:static_range<16>, f32>
+    // CHECK:   : memref<?xf32> -> !sair.value<d0:static_range<16, 4> x d1:dyn_range(d0) x d2:static_range<16>, f32>
     // CHECK: %[[V9:.*]] = sair.proj_any[d0:%{{.*}}] of[d1:%{{.*}}] %[[V8]](stripe(d0, [4]), stripe(d0, [4, 1]), d1)
     // CHECK:   : #sair.shape<d0:static_range<16> x d1:static_range<16>>, f32
     // CHECK: %[[V10:.*]] = sair.copy[d0:%{{.*}}] %[[V9]](d0)
@@ -178,7 +178,7 @@ func @loop_nest(%arg0: f32) {
     // CHECK:       {iter = #sair.mapping_expr<d0>, name = "A"},
     // CHECK:       {iter = #sair.mapping_expr<d1>, name = "C"},
     // CHECK:       {iter = #sair.mapping_expr<d2>, name = "D"}]
-    // CHECK:   : #sair.shape<d0:static_range<16, 4> x d1:range(d0) x d2:static_range<16>>, memref<?xf32>
+    // CHECK:   : #sair.shape<d0:static_range<16, 4> x d1:dyn_range(d0) x d2:static_range<16>>, memref<?xf32>
     // CHECK: sair.free[d0:%[[D0]]] %[[V6]](d0) {
     // CHECK:   loop_nest = [{iter = #sair.mapping_expr<d0>, name = "A"}]
     // CHECK: } : !sair.value<d0:static_range<16, 4>, memref<?xf32>>

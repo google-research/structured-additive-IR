@@ -5,14 +5,14 @@ func @from_memref(%arg0: index) {
   sair.program {
     %size = sair.from_scalar %arg0 : !sair.value<(), index>
     %0 = sair.static_range : !sair.static_range<4>
-    %1 = sair.dyn_range %size : !sair.range
+    %1 = sair.dyn_range %size : !sair.dyn_range
     %memref = sair.alloc[d0:%0] %size {
       loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
     } : !sair.value<d0:static_range<4>, memref<?xf32>>
     // expected-error @+1 {{sair.from_memref and sair.to_memref must be eliminated before loop normalization}}
     %2 = sair.from_memref[d0:%0] %memref(d0) memref[d1:%1] {
       buffer_name = "bufferA"
-    }  : #sair.shape<d0:static_range<4> x d1:range>, memref<?xf32>
+    }  : #sair.shape<d0:static_range<4> x d1:dyn_range>, memref<?xf32>
     sair.exit
   }
   return

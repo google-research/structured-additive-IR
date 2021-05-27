@@ -1,28 +1,28 @@
 // RUN: sair-opt -allow-unregistered-dialect %s | sair-opt -allow-unregistered-dialect | FileCheck %s
 
-// CHECK: -> !sair.range
-func private @range_type() -> !sair.range
+// CHECK: -> !sair.dyn_range
+func private @dyn_range_type() -> !sair.dyn_range
 
 // Make sure empty type-dependence list is dropped.
-// CHECK: -> !sair.range
+// CHECK: -> !sair.dyn_range
 // CHECK-NOT: <()>
-func private @independent_range_type() -> !sair.range<()>
+func private @independent_range_type() -> !sair.dyn_range<()>
 
-// CHECK: -> !sair.range<d0:range>
-func private @dependent_range_type_1() -> !sair.range<d0:range>
+// CHECK: -> !sair.dyn_range<d0:dyn_range>
+func private @dependent_range_type_1() -> !sair.dyn_range<d0:dyn_range>
 
 // CHECK: -> !sair.value<(), f32>
 func private @value_type_empty_domain() -> !sair.value<(), f32>
 
-// CHECK: -> !sair.value<d0:range x d1:range, f32>
-func private @value_type() -> !sair.value<d0:range x d1:range, f32>
+// CHECK: -> !sair.value<d0:dyn_range x d1:dyn_range, f32>
+func private @value_type() -> !sair.value<d0:dyn_range x d1:dyn_range, f32>
 
-// CHECK: -> !sair.range<d0:range x d1:range(d0)>
-func private @dependent_dimensions() -> !sair.range<d0:range x d1:range(d0)>
+// CHECK: -> !sair.dyn_range<d0:dyn_range x d1:dyn_range(d0)>
+func private @dependent_dimensions() -> !sair.dyn_range<d0:dyn_range x d1:dyn_range(d0)>
 
-// CHECK: -> !sair.range<d0:range x d1:range(d0) x d2:range(d0, d1)>
+// CHECK: -> !sair.dyn_range<d0:dyn_range x d1:dyn_range(d0) x d2:dyn_range(d0, d1)>
 func private @dependent_dimensions_2()
-  -> !sair.range<d0:range x d1:range(d0) x d2:range(d0, d1)>
+  -> !sair.dyn_range<d0:dyn_range x d1:dyn_range(d0) x d2:dyn_range(d0, d1)>
 
 // CHECK-LABEL: @sair_program
 func @sair_program() {
@@ -51,28 +51,28 @@ func @sair_program_return_values() {
   return
 }
 
-// CHECK-LABEL: @range_op
-func @range_op() {
+// CHECK-LABEL: @dyn_range_op
+func @dyn_range_op() {
   %c0 = constant 0 : index
   sair.program {
     // CHECK: %[[V0:.*]] = sair.from_scalar
     %0 = sair.from_scalar %c0 : !sair.value<(), index>
-    // CHECK: %{{.*}} = sair.dyn_range %[[V0]] : !sair.range
-    %1 = sair.dyn_range %0 : !sair.range
+    // CHECK: %{{.*}} = sair.dyn_range %[[V0]] : !sair.dyn_range
+    %1 = sair.dyn_range %0 : !sair.dyn_range
     sair.exit
   }
   return
 }
 
-// CHECK-LABEL: @range_with_step
-func @range_with_step(%arg0: index, %arg1: index) {
+// CHECK-LABEL: @dyn_range_with_step
+func @dyn_range_with_step(%arg0: index, %arg1: index) {
   sair.program {
     // CHECK: %[[V0:.*]] = sair.from_scalar
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
     // CHECK: %[[V1:.*]] = sair.from_scalar
     %1 = sair.from_scalar %arg1 : !sair.value<(), index>
-    // CHECK: %{{.*}} = sair.dyn_range %[[V0]], %[[V1]] step 2 : !sair.range
-    %2 = sair.dyn_range %0, %1 step 2 : !sair.range
+    // CHECK: %{{.*}} = sair.dyn_range %[[V0]], %[[V1]] step 2 : !sair.dyn_range
+    %2 = sair.dyn_range %0, %1 step 2 : !sair.dyn_range
     sair.exit
   }
   return
@@ -103,22 +103,22 @@ func @dependent_range_op(%arg0 : index) {
   sair.program {
     // CHECK: %[[V0:.*]] = sair.from_scalar
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
-    // CHECK: %[[D0:.*]] = sair.dyn_range %[[V0]] : !sair.range
-    %1 = sair.dyn_range %0 : !sair.range
+    // CHECK: %[[D0:.*]] = sair.dyn_range %[[V0]] : !sair.dyn_range
+    %1 = sair.dyn_range %0 : !sair.dyn_range
     // CHECK: %[[V1:.*]] = sair.copy
-    %2 = sair.copy[d0:%1] %0 : !sair.value<d0:range, index>
+    %2 = sair.copy[d0:%1] %0 : !sair.value<d0:dyn_range, index>
 
     // CHECK: %[[D1:.*]] = sair.dyn_range[d0:%[[D0]]] %[[V1]](d0)
-    // CHECK-SAME: : !sair.range<d0:range>
-    %3 = sair.dyn_range[d0:%1] %2(d0) : !sair.range<d0:range>
+    // CHECK-SAME: : !sair.dyn_range<d0:dyn_range>
+    %3 = sair.dyn_range[d0:%1] %2(d0) : !sair.dyn_range<d0:dyn_range>
     // CHECK: %[[V2:.*]] = sair.copy
     %4 = sair.copy[d0:%1, d1:%3] %0
-      : !sair.value<d0:range x d1:range(d0), index>
+      : !sair.value<d0:dyn_range x d1:dyn_range(d0), index>
 
     // CHECK: %{{.*}} = sair.dyn_range[d0:%[[D0]], d1:%[[D1]]] %[[V2]](d0, d1)
-    // CHECK-SAME: : !sair.range<d0:range x d1:range(d0)>
+    // CHECK-SAME: : !sair.dyn_range<d0:dyn_range x d1:dyn_range(d0)>
     %5 = sair.dyn_range[d0:%1, d1:%3] %4(d0, d1)
-      : !sair.range<d0:range x d1:range(d0)>
+      : !sair.dyn_range<d0:dyn_range x d1:dyn_range(d0)>
     sair.exit
   }
   return
@@ -140,8 +140,8 @@ func @generic_mapping_empty() {
 
 // CHECK-LABEL: @shape_attribute
 func @shape_attribute() {
-  // CHECK: "foo"() {shape = #sair.shape<d0:range x d1:range(d0)>}
-  "foo"() {shape = #sair.shape<d0:range x d1:range(d0)>} : () -> ()
+  // CHECK: "foo"() {shape = #sair.shape<d0:dyn_range x d1:dyn_range(d0)>}
+  "foo"() {shape = #sair.shape<d0:dyn_range x d1:dyn_range(d0)>} : () -> ()
 }
 
 // CHECK-LABEL: @copy
@@ -181,14 +181,14 @@ func @from_memref(%arg0 : memref<?x?xf32>) {
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     // CHECK: %[[D0:.*]] = sair.dyn_range
-    %0 = sair.dyn_range %sn : !sair.range
+    %0 = sair.dyn_range %sn : !sair.dyn_range
     // CHECK: %[[V0:.]] = sair.from_scalar
     %1 = sair.from_scalar %arg0 : !sair.value<(), memref<?x?xf32>>
     // CHECK: %{{.*}} = sair.from_memref[d0:%[[D0]]] %[[V0]] memref[d1:%[[D0]], d2:%[[D0]]]
-    // CHECK: : #sair.shape<d0:range x d1:range x d2:range>, memref<?x?xf32>
+    // CHECK: : #sair.shape<d0:dyn_range x d1:dyn_range x d2:dyn_range>, memref<?x?xf32>
     %2 = sair.from_memref[d0:%0] %1 memref[d1:%0, d2:%0] {
       buffer_name = "bufferA"
-    } : #sair.shape<d0:range x d1:range x d2:range>, memref<?x?xf32>
+    } : #sair.shape<d0:dyn_range x d1:dyn_range x d2:dyn_range>, memref<?x?xf32>
     sair.exit
   }
   return
@@ -200,14 +200,14 @@ func @to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     // CHECK: %[[D0:.*]] = sair.dyn_range
-    %0 = sair.dyn_range %sn : !sair.range
+    %0 = sair.dyn_range %sn : !sair.dyn_range
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // CHECK: %[[V1:.*]] = sair.from_scalar %{{.*}} : !sair.value<(), memref<?x?xf32>>
     %2 = sair.from_scalar %arg1 : !sair.value<(), memref<?x?xf32>>
     // CHECK: %[[V2:.*]] = sair.copy[d0:%{{.*}}] %[[V1]]
     %3 = sair.copy[d0:%0] %2 {
       loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
-    } : !sair.value<d0:range, memref<?x?xf32>>
+    } : !sair.value<d0:dyn_range, memref<?x?xf32>>
     // CHECK: %[[V0:.*]] = sair.copy
     %4 = sair.copy[d0:%0, d1:%0, d2:%0] %1 {
       loop_nest = [
@@ -215,13 +215,13 @@ func @to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
         {name = "B", iter = #sair.mapping_expr<d1>},
         {name = "C", iter = #sair.mapping_expr<d2>}
       ]
-    } : !sair.value<d0:range x d1:range x d2:range, f32>
+    } : !sair.value<d0:dyn_range x d1:dyn_range x d2:dyn_range, f32>
     // CHECK: sair.to_memref[d0:%[[D0]]] %[[V2]]
     // CHECK:  memref[d1:%[[D0]], d2:%[[D0]]] %[[V0]](d0, d1, d2)
-    // CHECK:  : #sair.shape<d0:range x d1:range x d2:range>, memref<?x?xf32>
+    // CHECK:  : #sair.shape<d0:dyn_range x d1:dyn_range x d2:dyn_range>, memref<?x?xf32>
     sair.to_memref[d0:%0] %3(d0) memref[d1:%0, d2:%0] %4(d0, d1, d2) {
       buffer_name = "bufferA"
-    } : #sair.shape<d0:range x d1:range x d2:range>, memref<?x?xf32>
+    } : #sair.shape<d0:dyn_range x d1:dyn_range x d2:dyn_range>, memref<?x?xf32>
     sair.exit
   }
   return
@@ -233,15 +233,15 @@ func @load_from_memref(%arg0 : memref<?x?xf32>) {
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     // CHECK: %[[D0:.*]] = sair.dyn_range
-    %0 = sair.dyn_range %sn : !sair.range
+    %0 = sair.dyn_range %sn : !sair.dyn_range
     // CHECK: %[[V0:.]] = sair.from_scalar
     %1 = sair.from_scalar %arg0 : !sair.value<(), memref<?x?xf32>>
     // CHECK: %{{.*}} = sair.load_from_memref[d0:%[[D0]], d1:%[[D0]], d2:%[[D0]]] %[[V0]]
     // CHECK:   layout = #sair.mapping<3 : d1, d2>
-    // CHECK: : memref<?x?xf32> -> !sair.value<d0:range x d1:range x d2:range, f32>
+    // CHECK: : memref<?x?xf32> -> !sair.value<d0:dyn_range x d1:dyn_range x d2:dyn_range, f32>
     %2 = sair.load_from_memref[d0:%0, d1:%0, d2:%0] %1 {
       layout = #sair.mapping<3: d1, d2>
-    } : memref<?x?xf32> -> !sair.value<d0:range x d1:range x d2:range, f32>
+    } : memref<?x?xf32> -> !sair.value<d0:dyn_range x d1:dyn_range x d2:dyn_range, f32>
     sair.exit
   }
   return
@@ -253,17 +253,17 @@ func @store_to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     // CHECK: %[[D0:.*]] = sair.dyn_range
-    %0 = sair.dyn_range %sn : !sair.range
+    %0 = sair.dyn_range %sn : !sair.dyn_range
     // CHECK: %[[V0:.*]] = sair.from_scalar %{{.*}} : !sair.value<(), f32>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // CHECK: %[[V1:.*]] = sair.from_scalar %{{.*}} : !sair.value<(), memref<?x?xf32>>
     %2 = sair.from_scalar %arg1 : !sair.value<(), memref<?x?xf32>>
     // CHECK: sair.store_to_memref[d0:%[[D0]], d1:%[[D0]], d2:%[[D0]]] %[[V1]], %[[V0]]
     // CHECK:   layout = #sair.mapping<3 : d1, d2>
-    // CHECK:  : #sair.shape<d0:range x d1:range x d2:range>, memref<?x?xf32>
+    // CHECK:  : #sair.shape<d0:dyn_range x d1:dyn_range x d2:dyn_range>, memref<?x?xf32>
     sair.store_to_memref[d0:%0, d1:%0, d2:%0] %2, %1{
       layout = #sair.mapping<3: d1, d2>
-    } : #sair.shape<d0:range x d1:range x d2:range>, memref<?x?xf32>
+    } : #sair.shape<d0:dyn_range x d1:dyn_range x d2:dyn_range>, memref<?x?xf32>
     sair.exit
   }
   return
@@ -275,13 +275,13 @@ func @map(%arg0 : f32, %arg1: i32) {
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     // CHECK: %[[D0:.*]] = sair.dyn_range
-    %0 = sair.dyn_range %sn : !sair.range
+    %0 = sair.dyn_range %sn : !sair.dyn_range
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %2 = sair.from_scalar %arg1 : !sair.value<(), i32>
     // CHECK: %[[V0:.*]] = sair.copy{{.*}} : !sair.value<{{.*}}, f32>
-    %3 = sair.copy[d0:%0, d1:%0] %1 : !sair.value<d0:range x d1:range, f32>
+    %3 = sair.copy[d0:%0, d1:%0] %1 : !sair.value<d0:dyn_range x d1:dyn_range, f32>
     // CHECK: %[[V1:.*]] = sair.copy{{.*}} : !sair.value<{{.*}}, i32>
-    %4 = sair.copy[d0:%0, d1:%0] %2 : !sair.value<d0:range x d1:range, i32>
+    %4 = sair.copy[d0:%0, d1:%0] %2 : !sair.value<d0:dyn_range x d1:dyn_range, i32>
 
     // CHECK: sair.map[d0:%[[D0]], d1:%[[D0]]] %[[V0]](d0, d1), %[[V1]](d1, d0) {
     sair.map[d0:%0, d1:%0] %3(d0, d1), %4(d1, d0) {
@@ -289,8 +289,8 @@ func @map(%arg0 : f32, %arg1: i32) {
     ^bb0(%arg2: index, %arg3: index, %arg4: f32, %arg5: i32):
       // CHECK: sair.return %[[ARG0]], %[[ARG1]]
       sair.return %arg4, %arg5 : f32, i32
-    // CHECK: } : #sair.shape<d0:range x d1:range>, (f32, i32) -> (f32, i32)
-    } : #sair.shape<d0:range x d1:range>, (f32, i32) -> (f32, i32)
+    // CHECK: } : #sair.shape<d0:dyn_range x d1:dyn_range>, (f32, i32) -> (f32, i32)
+    } : #sair.shape<d0:dyn_range x d1:dyn_range>, (f32, i32) -> (f32, i32)
     sair.exit
   }
   return
@@ -302,7 +302,7 @@ func @map_noargs() {
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     // CHECK: %[[D0:.*]] = sair.dyn_range
-    %0 = sair.dyn_range %sn : !sair.range
+    %0 = sair.dyn_range %sn : !sair.dyn_range
     // CHECK: sair.map[d0:%[[D0]], d1:%[[D0]]] {
     sair.map[d0:%0, d1:%0] {
     // CHECK: ^{{.*}}(%{{.*}}: index, %{{.*}}: index):
@@ -311,8 +311,8 @@ func @map_noargs() {
       %c1 = constant 1 : i32
       // CHECK: sair.return {{.*}} : f32, i32
       sair.return %c0, %c1 : f32, i32
-    // CHECK: } : #sair.shape<d0:range x d1:range>, () -> (f32, i32)
-    } : #sair.shape<d0:range x d1:range>, () -> (f32, i32)
+    // CHECK: } : #sair.shape<d0:dyn_range x d1:dyn_range>, () -> (f32, i32)
+    } : #sair.shape<d0:dyn_range x d1:dyn_range>, () -> (f32, i32)
     sair.exit
   }
   return
@@ -337,16 +337,16 @@ func @map_reduce(%arg0 : f32, %arg1 : i32, %arg2 : f64) {
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     // CHECK: %[[D0:.*]] = sair.dyn_range
-    %0 = sair.dyn_range %sn : !sair.range
+    %0 = sair.dyn_range %sn : !sair.dyn_range
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %2 = sair.from_scalar %arg1 : !sair.value<(), i32>
     %3 = sair.from_scalar %arg2 : !sair.value<(), f64>
     // CHECK: %[[V0:.*]] = sair.copy{{.*}} : !sair.value<{{.*}}, f32>
-    %4 = sair.copy[d0:%0, d1:%0] %1 : !sair.value<d0:range x d1:range, f32>
+    %4 = sair.copy[d0:%0, d1:%0] %1 : !sair.value<d0:dyn_range x d1:dyn_range, f32>
     // CHECK: %[[V1:.*]] = sair.copy{{.*}} : !sair.value<{{.*}}, i32>
-    %5 = sair.copy[d0:%0, d1:%0] %2 : !sair.value<d0:range x d1:range, i32>
+    %5 = sair.copy[d0:%0, d1:%0] %2 : !sair.value<d0:dyn_range x d1:dyn_range, i32>
     // CHECK: %[[V2:.*]] = sair.copy{{.*}} : !sair.value<{{.*}}, f64>
-    %6 = sair.copy[d0:%0, d1:%0] %3 : !sair.value<d0:range x d1:range, f64>
+    %6 = sair.copy[d0:%0, d1:%0] %3 : !sair.value<d0:dyn_range x d1:dyn_range, f64>
 
     // CHECK: sair.map_reduce[d0:%[[D0]], d1:%[[D0]]] %[[V0]](d0, d1)
     // CHECK:          reduce[d2:%[[D0]]] %[[V1]](d0, d2), %[[V2]](d2, d0)
@@ -358,8 +358,8 @@ func @map_reduce(%arg0 : f32, %arg1 : i32, %arg2 : f64) {
     ^bb0(%arg3: index, %arg4: index, %arg5: index, %arg6: f32, %arg7: i32, %arg8: f64):
       // CHECK: sair.return %[[ARG0]] : f32
       sair.return %arg6 : f32
-    // CHECK: } : #sair.shape<d0:range x d1:range x d2:range>, (i32, f64) -> f32
-    } : #sair.shape<d0:range x d1:range x d2:range>, (i32, f64) -> (f32)
+    // CHECK: } : #sair.shape<d0:dyn_range x d1:dyn_range x d2:dyn_range>, (i32, f64) -> f32
+    } : #sair.shape<d0:dyn_range x d1:dyn_range x d2:dyn_range>, (i32, f64) -> (f32)
     sair.exit
   }
   return
@@ -382,7 +382,7 @@ func @loop_nest_attr(%arg0: f32) {
   %n = constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
-    %0 = sair.dyn_range %sn : !sair.range
+    %0 = sair.dyn_range %sn : !sair.dyn_range
     // CHECK: %[[V0:.*]] = sair.from_scalar %{{.*}} : !sair.value<(), f32>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // CHECK: sair.copy[d0:%{{.*}}, d1:%{{.*}}] %[[V0]] {
@@ -395,10 +395,10 @@ func @loop_nest_attr(%arg0: f32) {
         // CHECK: {iter = #sair.mapping_expr<d1>, name = "loopC"}
         {name = "loopC", iter = #sair.mapping_expr<d1>}
       ]
-    } : !sair.value<d0:range x d1:range, f32>
+    } : !sair.value<d0:dyn_range x d1:dyn_range, f32>
     sair.copy[d0:%0] %1 {
       loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
-    } : !sair.value<d0:range, f32>
+    } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
   return
@@ -463,18 +463,18 @@ func @fby(%arg0: f32) {
     // CHECK: %[[V0:.*]] = sair.from_scalar %{{.*}} : !sair.value<(), f32>
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // CHECK: %[[D0:.*]] = sair.dyn_range
-    %1 = sair.dyn_range %sn : !sair.range
+    %1 = sair.dyn_range %sn : !sair.dyn_range
     // CHECK: %[[V1:.*]] = sair.copy[{{.*}}] %[[V0]]
-    %2 = sair.copy[d0:%1] %0 : !sair.value<d0:range, f32>
+    %2 = sair.copy[d0:%1] %0 : !sair.value<d0:dyn_range, f32>
 
     // CHECK: %[[D1:.*]] = sair.dyn_range
-    %3 = sair.dyn_range %sn : !sair.range
+    %3 = sair.dyn_range %sn : !sair.dyn_range
     // CHECK: %[[V2:.*]] = sair.fby[d0:%[[D0]]] %[[V1]](d0) then[d1:%[[D1]]] %[[V3:.*]](d0, d1)
-    // CHECK:   : !sair.value<d0:range x d1:range, f32>
+    // CHECK:   : !sair.value<d0:dyn_range x d1:dyn_range, f32>
     %4 = sair.fby[d0:%1] %2(d0) then[d1:%3] %5(d0, d1)
-      : !sair.value<d0:range x d1:range, f32>
+      : !sair.value<d0:dyn_range x d1:dyn_range, f32>
     // CHECK: %[[V3]] = sair.copy[d0:%[[D0]], d1:%[[D1]]] %[[V2]](d0, d1)
-    %5 = sair.copy[d0:%1, d1:%3] %4(d0, d1) : !sair.value<d0:range x d1:range, f32>
+    %5 = sair.copy[d0:%1, d1:%3] %4(d0, d1) : !sair.value<d0:dyn_range x d1:dyn_range, f32>
     sair.exit
   }
   return
@@ -510,7 +510,7 @@ func @stripe_mined_loop() {
   %n = constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
-    %0 = sair.dyn_range %sn : !sair.range
+    %0 = sair.dyn_range %sn : !sair.dyn_range
     sair.map[d0:%0] attributes {
       loop_nest = [
         {name = "A", iter = #sair.mapping_expr<stripe(d0, [4])>},
@@ -519,7 +519,7 @@ func @stripe_mined_loop() {
     } {
       ^bb0(%arg0: index):
         sair.return
-    } : #sair.shape<d0:range>, () -> ()
+    } : #sair.shape<d0:dyn_range>, () -> ()
     sair.exit
   }
   return
@@ -530,28 +530,28 @@ func @stripe_mapping(%arg0: f32) {
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     // CHECK: %[[D0:.*]] = sair.dyn_range
-    %0 = sair.dyn_range %sn : !sair.range
+    %0 = sair.dyn_range %sn : !sair.dyn_range
     // CHECK: %[[D1:.*]] = sair.dyn_range %{{.*}} step 2
-    %1 = sair.dyn_range %sn step 2 : !sair.range
+    %1 = sair.dyn_range %sn step 2 : !sair.dyn_range
     // CHECK: %[[I0:.*]]:2 = sair.map
     %2, %3 = sair.map[d0:%1] {
       ^bb0(%arg1: index):
         %c2 = constant 2 : index
         %4 = addi %arg1, %c2 : index
         sair.return %arg1, %4 : index, index
-    } : #sair.shape<d0:range>, () -> (index, index)
+    } : #sair.shape<d0:dyn_range>, () -> (index, index)
     // CHECK: %[[D2:.*]] = sair.dyn_range[d0:%[[D1]]] %[[I0]]#0(d0), %[[I0]]#1(d0)
-    %4 = sair.dyn_range[d0:%1] %2(d0), %3(d0) : !sair.range<d0:range>
+    %4 = sair.dyn_range[d0:%1] %2(d0), %3(d0) : !sair.dyn_range<d0:dyn_range>
     // CHECK: %[[V0:.*]] = sair.from_scalar
     %5 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // CHECK: %[[V1:.*]] = sair.copy[d0:%[[D0]]] %[[V0]]
-    %6 = sair.copy[d0:%0] %5 : !sair.value<d0:range, f32>
+    %6 = sair.copy[d0:%0] %5 : !sair.value<d0:dyn_range, f32>
     // CHECK: %[[V2:.*]] = sair.copy[d0:%[[D1]], d1:%[[D2]]] %[[V1]](unstripe(d0, d1, [2, 1]))
     %7 = sair.copy[d0:%1, d1:%4] %6(unstripe(d0, d1, [2, 1]))
-      : !sair.value<d0:range x d1:range(d0), f32>
+      : !sair.value<d0:dyn_range x d1:dyn_range(d0), f32>
     // CHECK: sair.copy[d0:%[[D0]]] %[[V2]](stripe(d0, [2]), stripe(d0, [2, 1]))
     %8 = sair.copy[d0:%0] %7(stripe(d0, [2]), stripe(d0, [2, 1]))
-      : !sair.value<d0:range, f32>
+      : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
   return
@@ -580,13 +580,13 @@ func @alloc(%arg0: index) {
   %n = constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
-    %0 = sair.dyn_range %sn : !sair.range
-    %1 = sair.dyn_range %sn : !sair.range
+    %0 = sair.dyn_range %sn : !sair.dyn_range
+    %1 = sair.dyn_range %sn : !sair.dyn_range
     %idx = sair.from_scalar %arg0 : !sair.value<(), index>
-    %2 = sair.copy[d0:%0] %idx : !sair.value<d0:range, index>
-    %3 = sair.copy[d0:%1] %idx : !sair.value<d0:range, index>
-    // CHECK: = sair.alloc[d0:%{{.*}}, d1:%{{.*}}] %{{.*}}(d0), %{{.*}}(d1) : !sair.value<d0:range x d1:range, memref<?x?xf32>>
-    sair.alloc[d0:%0, d1:%1] %2(d0), %3(d1) : !sair.value<d0:range x d1:range, memref<?x?xf32>>
+    %2 = sair.copy[d0:%0] %idx : !sair.value<d0:dyn_range, index>
+    %3 = sair.copy[d0:%1] %idx : !sair.value<d0:dyn_range, index>
+    // CHECK: = sair.alloc[d0:%{{.*}}, d1:%{{.*}}] %{{.*}}(d0), %{{.*}}(d1) : !sair.value<d0:dyn_range x d1:dyn_range, memref<?x?xf32>>
+    sair.alloc[d0:%0, d1:%1] %2(d0), %3(d1) : !sair.value<d0:dyn_range x d1:dyn_range, memref<?x?xf32>>
     sair.exit
   }
   return
@@ -597,13 +597,13 @@ func @alloc_nosize(%arg0: index) {
   %n = constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
-    %0 = sair.dyn_range %sn : !sair.range
-    %1 = sair.dyn_range %sn : !sair.range
+    %0 = sair.dyn_range %sn : !sair.dyn_range
+    %1 = sair.dyn_range %sn : !sair.dyn_range
     %idx = sair.from_scalar %arg0 : !sair.value<(), index>
-    %2 = sair.copy[d0:%0] %idx : !sair.value<d0:range, index>
-    %3 = sair.copy[d0:%1] %idx : !sair.value<d0:range, index>
-    // CHECK: = sair.alloc[d0:%{{.*}}, d1:%{{.*}}] : !sair.value<d0:range x d1:range, memref<42x42xf32>>
-    sair.alloc[d0:%0, d1:%1] : !sair.value<d0:range x d1:range, memref<42x42xf32>>
+    %2 = sair.copy[d0:%0] %idx : !sair.value<d0:dyn_range, index>
+    %3 = sair.copy[d0:%1] %idx : !sair.value<d0:dyn_range, index>
+    // CHECK: = sair.alloc[d0:%{{.*}}, d1:%{{.*}}] : !sair.value<d0:dyn_range x d1:dyn_range, memref<42x42xf32>>
+    sair.alloc[d0:%0, d1:%1] : !sair.value<d0:dyn_range x d1:dyn_range, memref<42x42xf32>>
     sair.exit
   }
   return
@@ -625,14 +625,14 @@ func @sair_free(%arg0: index) {
   %n = constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
-    %0 = sair.dyn_range %sn : !sair.range
-    %1 = sair.dyn_range %sn : !sair.range
+    %0 = sair.dyn_range %sn : !sair.dyn_range
+    %1 = sair.dyn_range %sn : !sair.dyn_range
     %idx = sair.from_scalar %arg0 : !sair.value<(), index>
-    %2 = sair.copy[d0:%0] %idx : !sair.value<d0:range, index>
-    %3 = sair.copy[d0:%1] %idx : !sair.value<d0:range, index>
-    %4 = sair.alloc[d0:%0, d1:%1] %2(d0), %3(d1) : !sair.value<d0:range x d1:range, memref<?x?xf32>>
-    // CHECK: sair.free[d0:%{{.*}}, d1:%{{.*}}] %{{.*}}(d1, d0) : !sair.value<d0:range x d1:range, memref<?x?xf32>>
-    sair.free[d0:%1, d1:%0] %4(d1, d0) : !sair.value<d0:range x d1:range, memref<?x?xf32>>
+    %2 = sair.copy[d0:%0] %idx : !sair.value<d0:dyn_range, index>
+    %3 = sair.copy[d0:%1] %idx : !sair.value<d0:dyn_range, index>
+    %4 = sair.alloc[d0:%0, d1:%1] %2(d0), %3(d1) : !sair.value<d0:dyn_range x d1:dyn_range, memref<?x?xf32>>
+    // CHECK: sair.free[d0:%{{.*}}, d1:%{{.*}}] %{{.*}}(d1, d0) : !sair.value<d0:dyn_range x d1:dyn_range, memref<?x?xf32>>
+    sair.free[d0:%1, d1:%0] %4(d1, d0) : !sair.value<d0:dyn_range x d1:dyn_range, memref<?x?xf32>>
     sair.exit
   }
   return
@@ -643,14 +643,14 @@ func @free_nosize(%arg0: index) {
   %n = constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
-    %0 = sair.dyn_range %sn : !sair.range
-    %1 = sair.dyn_range %sn : !sair.range
+    %0 = sair.dyn_range %sn : !sair.dyn_range
+    %1 = sair.dyn_range %sn : !sair.dyn_range
     %idx = sair.from_scalar %arg0 : !sair.value<(), index>
-    %2 = sair.copy[d0:%0] %idx : !sair.value<d0:range, index>
-    %3 = sair.copy[d0:%1] %idx : !sair.value<d0:range, index>
-    %4 = sair.alloc[d0:%0, d1:%1] : !sair.value<d0:range x d1:range, memref<42x42xf32>>
-    // CHECK: sair.free[d0:%{{.*}}, d1:%{{.*}}] %{{.*}}(d0, d1) : !sair.value<d0:range x d1:range, memref<42x42xf32>>
-    sair.free[d0:%0, d1:%1] %4(d0, d1) : !sair.value<d0:range x d1:range, memref<42x42xf32>>
+    %2 = sair.copy[d0:%0] %idx : !sair.value<d0:dyn_range, index>
+    %3 = sair.copy[d0:%1] %idx : !sair.value<d0:dyn_range, index>
+    %4 = sair.alloc[d0:%0, d1:%1] : !sair.value<d0:dyn_range x d1:dyn_range, memref<42x42xf32>>
+    // CHECK: sair.free[d0:%{{.*}}, d1:%{{.*}}] %{{.*}}(d0, d1) : !sair.value<d0:dyn_range x d1:dyn_range, memref<42x42xf32>>
+    sair.free[d0:%0, d1:%1] %4(d0, d1) : !sair.value<d0:dyn_range x d1:dyn_range, memref<42x42xf32>>
     sair.exit
   }
   return
@@ -662,7 +662,7 @@ func @storage_stripe(%arg0: f32) {
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %1 = sair.dyn_range %sn : !sair.range
+    %1 = sair.dyn_range %sn : !sair.dyn_range
     %2 = sair.copy[d0:%1] %0 {
       loop_nest = [
         {name = "A", iter = #sair.mapping_expr<stripe(d0, [4])>},
@@ -672,7 +672,7 @@ func @storage_stripe(%arg0: f32) {
         name = "B", space = "memory",
         layout = #sair.named_mapping<[d0:"B"] -> (d0)>
       }]
-    } : !sair.value<d0:range, f32>
+    } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
   return
@@ -684,11 +684,11 @@ func @storage_no_layout(%arg0: f32) {
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %1 = sair.dyn_range %sn : !sair.range
+    %1 = sair.dyn_range %sn : !sair.dyn_range
     %2 = sair.copy[d0:%1] %0 {
       loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
       storage = [{name = "B", space = "memory"}]
-    } : !sair.value<d0:range, f32>
+    } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
   return
@@ -699,10 +699,10 @@ func @placeholder(%arg0: f32) {
   %n = constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
-    %0 = sair.dyn_range %sn : !sair.range
-    %1 = sair.placeholder[d0:%0] : !sair.range<d0:range>
+    %0 = sair.dyn_range %sn : !sair.dyn_range
+    %1 = sair.placeholder[d0:%0] : !sair.dyn_range<d0:dyn_range>
     %2 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %3 = sair.copy[d0:%0, d1:%1] %2 : !sair.value<d0:range x d1:range(d0), f32>
+    %3 = sair.copy[d0:%0, d1:%1] %2 : !sair.value<d0:dyn_range x d1:dyn_range(d0), f32>
     sair.exit
   }
   return
@@ -713,15 +713,15 @@ func @placeholder_with_loop_nest(%arg0: f32) {
   %n = constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
-    %0 = sair.dyn_range %sn : !sair.range
-    %1 = sair.placeholder : !sair.range
+    %0 = sair.dyn_range %sn : !sair.dyn_range
+    %1 = sair.placeholder : !sair.dyn_range
     %2 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %3 = sair.copy[d0:%0] %2 {
       loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
-    } : !sair.value<d0:range, f32>
+    } : !sair.value<d0:dyn_range, f32>
     %4 = sair.copy[d0:%1] %2 {
       loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
-    } : !sair.value<d0:range, f32>
+    } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
   return
@@ -732,12 +732,12 @@ func @free_with_mapping() {
   %n = constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
-    %0 = sair.dyn_range %sn : !sair.range
-    %1 = sair.alloc[d0:%0] : !sair.value<d0:range, memref<f32>>
-    %2 = sair.placeholder : !sair.range
-    %3 = sair.placeholder[d0:%2] : !sair.range<d0:range>
+    %0 = sair.dyn_range %sn : !sair.dyn_range
+    %1 = sair.alloc[d0:%0] : !sair.value<d0:dyn_range, memref<f32>>
+    %2 = sair.placeholder : !sair.dyn_range
+    %3 = sair.placeholder[d0:%2] : !sair.dyn_range<d0:dyn_range>
     sair.free[d0:%2, d1:%3] %1(unstripe(d0, d1, [4, 1]))
-      : !sair.value<d0:range x d1:range(d0), memref<f32>>
+      : !sair.value<d0:dyn_range x d1:dyn_range(d0), memref<f32>>
     sair.exit
   }
   return

@@ -9,8 +9,8 @@ func @from_memref_in_memory(%arg0: memref<?xf32>, %arg1: f32) {
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 : !sair.value<(), memref<?xf32>>
-    %1 = sair.dyn_range %sn : !sair.range
-    %2 = sair.from_memref %0 memref[d0:%1] { buffer_name = "buffer" } : #sair.shape<d0:range>, memref<?xf32>
+    %1 = sair.dyn_range %sn : !sair.dyn_range
+    %2 = sair.from_memref %0 memref[d0:%1] { buffer_name = "buffer" } : #sair.shape<d0:dyn_range>, memref<?xf32>
     %3 = sair.from_scalar %arg1 : !sair.value<(), f32>
     sair.map_reduce[d0:%1] %2(d0) reduce %3 attributes {
       loop_nest = [
@@ -25,7 +25,7 @@ func @from_memref_in_memory(%arg0: memref<?xf32>, %arg1: f32) {
     } {
     ^bb0(%arg2: index, %arg3: f32, %arg4: f32):
       sair.return %arg3 : f32
-    } : #sair.shape<d0:range>, (f32) -> (f32)
+    } : #sair.shape<d0:dyn_range>, (f32) -> (f32)
     sair.exit
   }
   return

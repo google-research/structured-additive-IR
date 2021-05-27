@@ -211,7 +211,7 @@ def SairStorageAttr : OptionalAttr<ArrayAttr>;
 def SairDimension : Type<CPred<"$_self.isa<DimensionType>()">, "dimension">;
 
 // Type constraint for ranges.
-def SairRange : Type<CPred<"$_self.isa<RangeType>()">, "range">;
+def SairDynRange : Type<CPred<"$_self.isa<DynRangeType>()">, "range">;
 
 // Type constraint for static ranges.
 def SairStaticRange

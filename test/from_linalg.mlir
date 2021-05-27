@@ -67,7 +67,7 @@ func @dynamic(%arg0: memref<?x2x?xf32>, %arg1: memref<2x?x?xf32>) {
   // CHECK: %[[DIM0_2_VAL:.*]] = sair.from_scalar %[[DIM0_2]] : !sair.value<(), index>
   // CHECK: %[[s2:.*]] = sair.dyn_range %[[DIM0_2_VAL]]
   // CHECK: %[[v0_:.*]] = sair.from_memref %{{.*}} memref[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]]
-  // CHECK:   : #sair.shape<d0:range x d1:static_range<2> x d2:range>, memref<?x2x?xf32>
+  // CHECK:   : #sair.shape<d0:dyn_range x d1:static_range<2> x d2:dyn_range>, memref<?x2x?xf32>
   // CHECK: %[[v0:.*]] = sair.copy[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]] %[[v0_]](d0, d1, d2)
 
   // CHECK: %[[s0:.*]] = sair.static_range : !sair.static_range<2>
@@ -76,7 +76,7 @@ func @dynamic(%arg0: memref<?x2x?xf32>, %arg1: memref<2x?x?xf32>) {
   // CHECK: %[[DIM1_2_VAL:.*]] = sair.from_scalar %[[DIM1_2]] : !sair.value<(), index>
   // CHECK: %[[s2:.*]] = sair.dyn_range %[[DIM1_2_VAL]]
   // CHECK: %[[v1_:.*]] = sair.from_memref %{{.*}} memref[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]]
-  // CHECK:   : #sair.shape<d0:static_range<2> x d1:range x d2:range>, memref<2x?x?xf32>
+  // CHECK:   : #sair.shape<d0:static_range<2> x d1:dyn_range x d2:dyn_range>, memref<2x?x?xf32>
   // CHECK: %[[v1:.*]] = sair.copy[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]] %[[v1_]](d0, d1, d2)
 
   // CHECK: %[[DIM2_0_VAL:.*]] = sair.from_scalar %[[DIM2_0]] : !sair.value<(), index>
@@ -94,7 +94,7 @@ func @dynamic(%arg0: memref<?x2x?xf32>, %arg1: memref<2x?x?xf32>) {
   }
 
   // CHECK: sair.to_memref %{{.*}} memref[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]] %[[v2]](d2, d1, d0)
-  // CHECK:   : #sair.shape<d0:static_range<2> x d1:range x d2:range>, memref<2x?x?xf32>
+  // CHECK:   : #sair.shape<d0:static_range<2> x d1:dyn_range x d2:dyn_range>, memref<2x?x?xf32>
   return
 }
 

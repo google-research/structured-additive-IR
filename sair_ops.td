@@ -55,7 +55,7 @@ def SairDynRangeOp : SairOp<"dyn_range",
     DefaultValuedAttr<Confined<IndexAttr, [IntPositive]>, "1">:$step
   );
 
-  let results = (outs SairRange:$range);
+  let results = (outs SairDynRange:$range);
 
   let parser = [{return ParseDynRangeOp(parser, result);}];
   let printer = [{return Print(*this, p);}];

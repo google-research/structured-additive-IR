@@ -147,7 +147,7 @@ ParseResult ParseDynRangeOp(mlir::OpAsmParser &parser,
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 2> operands;
   llvm::SmallVector<MappingAttr, 2> mappings;
-  RangeType type;
+  DynRangeType type;
 
   if (ParseDomain(parser, domain) ||
       ParseOperandList(domain.size(), parser, operands, mappings)) {
@@ -163,7 +163,7 @@ ParseResult ParseDynRangeOp(mlir::OpAsmParser &parser,
     }
   }
 
-  if (parser.parseColonType<RangeType>(type) ||
+  if (parser.parseColonType<DynRangeType>(type) ||
       parser.addTypeToList(type, result.types) ||
       ResolveDomain(parser, type.Shape(), domain, result)) {
     return failure();
