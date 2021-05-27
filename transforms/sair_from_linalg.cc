@@ -77,10 +77,10 @@ mlir::Value CreateSairRange(mlir::Location loc, const LoopBound &bound,
                             SairProgramOp sair_program,
                             mlir::OpBuilder &rewriter) {
   mlir::MLIRContext *context = loc.getContext();
-  auto domain_0d = DomainShapeAttr::HyperRectangular(context, /*rank=*/0);
-  auto range_type = RangeType::get(domain_0d);
+  auto domain_0d = DomainShapeAttr::get(context);
   auto shaped_type = bound.referenced_value.getType().cast<mlir::ShapedType>();
   int dimension = shaped_type.getDimSize(bound.dimension);
+  auto range_type = RangeType::get(domain_0d);
 
   // If the shape is statically known, create a simple static range.
   if (!mlir::ShapedType::isDynamic(dimension)) {
@@ -145,18 +145,26 @@ llvm::SmallVector<LoopBound, 4> LoopBoundsOnShapedType(
 
 // Creates Sair ranges to define a statically-shaped hyperrectangular domain
 // with given "dimensions". Uses "rewriter" to produce new operations defining
-// the range, and places them at location "loc". Populates "ranges" with values
-// defined by the newly created operations. Non-Sair operations will be created
-// before "sair_program".
-llvm::SmallVector<mlir::Value, 4> CreateSairDomain(
-    mlir::Location loc, llvm::ArrayRef<LoopBound> dimensions,
-    SairProgramOp sair_program, mlir::OpBuilder &rewriter) {
-  llvm::SmallVector<mlir::Value, 4> ranges;
-  ranges.reserve(dimensions.size());
+// the range, and places them at location "loc". Populates "sair_dimensions"
+// with values defined by the newly created operations and
+// "sair_dimension_shapes" with the dimensions of the sair domain shape
+// attribute.  Non-Sair operations will be created before "sair_program".
+void CreateSairDomain(mlir::Location loc, llvm::ArrayRef<LoopBound> dimensions,
+                      SairProgramOp sair_program,
+                      llvm::SmallVector<mlir::Value> &sair_dimensions,
+                      llvm::SmallVector<DomainShapeDim> &sair_dimension_shapes,
+                      mlir::OpBuilder &rewriter) {
+  mlir::MLIRContext *context = sair_program.getContext();
+
+  sair_dimensions.reserve(dimensions.size());
+  sair_dimension_shapes.reserve(dimensions.size());
   for (const LoopBound &bound : dimensions) {
-    ranges.push_back(CreateSairRange(loc, bound, sair_program, rewriter));
+    sair_dimensions.push_back(
+        CreateSairRange(loc, bound, sair_program, rewriter));
+    auto mapping = MappingAttr::get(context, sair_dimension_shapes.size(), {});
+    auto type = sair_dimensions.back().getType().cast<RangeType>();
+    sair_dimension_shapes.emplace_back(type, mapping);
   }
-  return ranges;
 }
 
 // Converts Linalg indexing maps into Sair mappings. Populates
@@ -245,11 +253,10 @@ void EmitMemRefToValue(
     auto type = operand.getType().cast<mlir::ShapedType>();
 
     llvm::SmallVector<LoopBound, 4> bounds = LoopBoundsOnShapedType(operand);
-    llvm::SmallVector<mlir::Value, 4> ranges =
-        CreateSairDomain(loc, bounds, sair_program, rewriter);
-
-    auto domain_shape =
-        DomainShapeAttr::HyperRectangular(context, type.getRank());
+    llvm::SmallVector<mlir::Value> ranges;
+    llvm::SmallVector<DomainShapeDim> shape_dims;
+    CreateSairDomain(loc, bounds, sair_program, ranges, shape_dims, rewriter);
+    auto domain_shape = DomainShapeAttr::get(context, shape_dims);
     auto value_type = ValueType::get(domain_shape, type.getElementType());
     auto mappings = rewriter.getArrayAttr(
         {MappingAttr::GetIdentity(context, 0, type.getRank())});
@@ -299,7 +306,9 @@ void EmitValueToMemRef(mlir::Location loc, SairProgramOp program,
     auto mapping_array = ArrayAttr::get(
         context,
         {MappingAttr::GetIdentity(context, 0, ranges[i].size()), mappings[i]});
-    auto shape = DomainShapeAttr::HyperRectangular(context, ranges[i].size());
+    auto value_type = sair_values[i].getType().cast<ValueType>();
+    auto shape = value_type.Shape().AccessedShape(
+        mappings[i].cast<MappingAttr>().Inverse());
     auto memref_value_type =
         ValueType::get(DomainShapeAttr::get(context), memrefs[i].getType());
     mlir::Value from_scalar;
@@ -444,19 +453,15 @@ void MoveBodyBlock(mlir::AffineMap linalg_to_sair_loops,
 }
 
 // Populates "result_types" with Sair value types having the same elemental type
-// as "types" and a hyper-rectangular domain with the given number of dimensons.
-// Uses "rewriter" to construct the types.
-void CreateResultTypes(mlir::Builder &rewriter, int num_dimensions,
+// as "types" and the given shape. Uses "rewriter" to construct the types.
+void CreateResultTypes(mlir::Builder &rewriter, DomainShapeAttr shape,
                        const SmallVectorImpl<MemRefType> &types,
                        llvm::SmallVectorImpl<mlir::Type> &result_types) {
-  mlir::MLIRContext *context = rewriter.getContext();
-  auto result_domain_shape =
-      DomainShapeAttr::HyperRectangular(context, num_dimensions);
   int num_results = types.size();
   result_types.reserve(num_results);
   for (Type type : types) {
     mlir::Type element_type = type.cast<mlir::ShapedType>().getElementType();
-    result_types.push_back(ValueType::get(result_domain_shape, element_type));
+    result_types.push_back(ValueType::get(shape, element_type));
   }
 }
 
@@ -544,6 +549,7 @@ mlir::Operation *CreateMapReduceOp(
 // values and a Sair map or map_reduce operation.
 mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
                                         mlir::OpBuilder &rewriter) {
+  mlir::MLIRContext *context = op.getContext();
   // Only support Linalg on memrefs.
   if (!op.hasBufferSemantics() || op.getNumWindowLoops() != 0) {
     return mlir::failure();
@@ -616,18 +622,29 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
   llvm::SmallVector<LoopBound, 8> loop_bounds;
   CollectLoopBounds(num_loops, subscripts_to_loops, op.getShapedOperands(),
                     loop_bounds);
-  llvm::SmallVector<mlir::Value, 4> domain_ranges =
-      CreateSairDomain(loc, loop_bounds, sair_program, rewriter);
+  llvm::SmallVector<mlir::Value> domain_ranges;
+  llvm::SmallVector<DomainShapeDim> shape_dims;
+  CreateSairDomain(loc, loop_bounds, sair_program, domain_ranges, shape_dims,
+                   rewriter);
 
   llvm::SmallVector<mlir::Type, 4> result_types;
-  CreateResultTypes(rewriter, num_parallel_loops, op.getOutputBufferTypes(),
+  int num_reduction_dims = op.getNumReductionLoops();
+  DomainShapeAttr domain_shape = DomainShapeAttr::get(context, shape_dims);
+  auto result_shape =
+      domain_shape.Prefix(domain_shape.NumDimensions() - num_reduction_dims);
+  CreateResultTypes(rewriter, result_shape, op.getOutputBufferTypes(),
                     result_types);
+
+  // Check that all operands shapes match.
+  for (auto [value, mapping] : llvm::zip(map_operands, operand_mappings)) {
+    DomainShapeAttr shape = value.getType().cast<ValueType>().Shape();
+    if (domain_shape.AccessedShape(mapping.cast<MappingAttr>()) != shape) {
+      return mlir::failure();
+    }
+  }
 
   // Construct the main map or map_reduce operation.
   mlir::Operation *map_op;
-  int num_reduction_dims = op.getNumReductionLoops();
-  DomainShapeAttr domain_shape =
-      DomainShapeAttr::HyperRectangular(rewriter.getContext(), num_loops);
   if (num_reduction_dims == 0) {
     map_op = rewriter.create<SairMapOp>(
         loc, result_types, domain_ranges,

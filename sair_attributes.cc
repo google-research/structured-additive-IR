@@ -1147,19 +1147,6 @@ DomainShapeAttr DomainShapeAttr::get(mlir::MLIRContext *context,
   return Base::get(context, dims);
 }
 
-DomainShapeAttr DomainShapeAttr::HyperRectangular(mlir::MLIRContext *context,
-                                                  int rank) {
-  DomainShapeAttr empty_shape = DomainShapeAttr::get(context);
-  RangeType range_type = RangeType::get(empty_shape);
-  llvm::SmallVector<DomainShapeDim, 4> dims;
-  dims.reserve(rank);
-  for (int i = 0; i < rank; ++i) {
-    MappingAttr mapping = MappingAttr::get(context, i, {});
-    dims.emplace_back(range_type, mapping);
-  }
-  return DomainShapeAttr::get(context, dims);
-}
-
 DomainShapeAttr DomainShapeAttr::Prefix(int size) {
   if (size == NumDimensions()) return *this;
   return DomainShapeAttr::get(getContext(), Dimensions().take_front(size));

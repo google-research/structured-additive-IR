@@ -290,10 +290,6 @@ class DomainShapeAttr
   // the zero-dimensional shape when no dimenion shapes are given.
   static DomainShapeAttr get(mlir::MLIRContext *context,
                              llvm::ArrayRef<DomainShapeDim> dims = {});
-  // Returns the shape of an hyper-rectangular domain with 'rank' iteration
-  // dimensions.  An hyper-rectangular domain is a domain composed of range
-  // iteration dimensions with no dependencies between them.
-  static DomainShapeAttr HyperRectangular(mlir::MLIRContext *context, int rank);
 
   // Returns a prefix of this shape of the given size.
   DomainShapeAttr Prefix(int size);
