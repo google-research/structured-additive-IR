@@ -60,9 +60,9 @@ void CreateRange(SairOp op, const LoopNest &loop_nest, int loop,
   // and `arguments_mappings` and corresponding scalars to block arguments.
   llvm::SmallVector<ValueAccess> map_arguments;
   RangeParameters range_parameters = GetRangeParameters(
-      op.getLoc(), loop_nest.domain_to_loops().Slice(loop, 1),
-      loop_nest.domain(), inverse_mapping.ResizeUseDomain(range_rank),
-      map_arguments, *block, builder)[0];
+      op.getLoc(), loop_nest.DomainToLoops().Slice(loop, 1), loop_nest.domain(),
+      inverse_mapping.ResizeUseDomain(range_rank), map_arguments, *block,
+      builder)[0];
 
   // Create a sair.map operation with `block` as body and add a sair.return
   // operation to `block`. Create a range operation that uses the bounds
@@ -141,7 +141,7 @@ llvm::SmallVector<mlir::Value> GetDomain(
     const LoopNest &loop_nest, DomainShapeAttr shape,
     llvm::ArrayRef<mlir::Attribute> normalized_loops, mlir::OpBuilder &builder,
     LoopRangeCache &loop_range_cache) {
-  MappingAttr inverse_mapping = loop_nest.domain_to_loops().Inverse();
+  MappingAttr inverse_mapping = loop_nest.DomainToLoops().Inverse();
 
   llvm::SmallVector<mlir::Value> new_domain;
   new_domain.reserve(loop_names.size());

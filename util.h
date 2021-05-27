@@ -52,14 +52,6 @@ InsertionPoint FindInsertionPoint(
 void ForwardAttributes(mlir::Operation *old_op, mlir::Operation *new_op,
                        llvm::ArrayRef<llvm::StringRef> ignore = {});
 
-// Extends `target_domain` to contain `dimension` while making sure expression
-// pointing to `dimension` in `target_domain` can be unified with `constraint`.
-// Updates `constraint` with the unified expression and reports an error if
-// unification fails. `origin` is used to indicate where the error comes from.
-mlir::LogicalResult ResolveUnificationConstraint(
-    mlir::Location loc, llvm::StringRef origin, const ValueAccess &dimension,
-    MappingExpr &constraint, llvm::SmallVectorImpl<ValueAccess> &target_domain);
-
 // Sets an element in the array attribute of an operation. If the array
 // attribute is missing, creates a new array of the given size filled with
 // `unit` attributes.

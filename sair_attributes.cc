@@ -40,6 +40,12 @@ mlir::InFlightDiagnostic AttrLocation::EmitError() const {
   return mlir::emitError(location()) << "in " << kind_ << " " << name() << ": ";
 }
 
+mlir::Diagnostic &operator<<(mlir::Diagnostic &diag, const AttrLocation &loc) {
+  diag << loc.kind_;
+  if (loc.name_ == nullptr) return diag;
+  return diag << " " << loc.name_;
+}
+
 //===----------------------------------------------------------------------===//
 // MappingExpr
 //===----------------------------------------------------------------------===//
@@ -112,32 +118,30 @@ MappingExpr Unify(MappingExpr lhs, MappingExpr rhs) {
 }
 
 mlir::LogicalResult UnificationConstraints(
-    MappingExpr lhs, MappingExpr rhs,
+    MappingAttr lhs, MappingAttr rhs,
     llvm::MutableArrayRef<MappingExpr> constraints) {
+  assert(lhs.size() == rhs.size());
   // Shift lhs so that all its dimensions are distinct from rhs.
-  int shift = rhs.MinDomainSize();
-  MappingExpr shifted_lhs = lhs.Map([&](MappingExpr sub_expr) -> MappingExpr {
-    auto dim_expr = sub_expr.dyn_cast<MappingDimExpr>();
-    if (dim_expr == nullptr) return sub_expr;
-    return MappingDimExpr::get(dim_expr.dimension() + shift,
-                               dim_expr.getContext());
-  });
+  int shift = rhs.UseDomainSize();
+  lhs = lhs.ShiftRight(shift);
+  for (auto [lhs_expr, rhs_expr] : llvm::zip(lhs, rhs)) {
+    MappingExpr result =
+        lhs_expr.Unify(rhs_expr, [&](MappingExpr sub_lhs, MappingExpr sub_rhs) {
+          auto trivial_resolve =
+              ResolveNoneAndUnknownUnification(sub_lhs, sub_rhs);
+          if (trivial_resolve != nullptr) return trivial_resolve;
 
-  MappingExpr result =
-      shifted_lhs.Unify(rhs, [&](MappingExpr sub_lhs, MappingExpr sub_rhs) {
-        auto trivial_resolve =
-            ResolveNoneAndUnknownUnification(sub_lhs, sub_rhs);
-        if (trivial_resolve != nullptr) return trivial_resolve;
+          auto dim_expr = sub_lhs.dyn_cast<MappingDimExpr>();
+          if (dim_expr == nullptr) return MappingExpr();
 
-        auto dim_expr = sub_lhs.dyn_cast<MappingDimExpr>();
-        if (dim_expr == nullptr) return MappingExpr();
-
-        MappingExpr &constraint = constraints[dim_expr.dimension() - shift];
-        constraint = Unify(constraint, sub_rhs);
-        if (constraint == nullptr) return MappingExpr();
-        return sub_lhs;
-      });
-  return mlir::failure(result == nullptr);
+          MappingExpr &constraint = constraints[dim_expr.dimension() - shift];
+          constraint = Unify(constraint, sub_rhs);
+          if (constraint == nullptr) return MappingExpr();
+          return sub_lhs;
+        });
+    if (result == nullptr) return mlir::failure();
+  }
+  return mlir::success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1077,7 +1081,8 @@ DomainShapeDim::DomainShapeDim(RangeType type, MappingAttr dependency_mapping)
 }
 
 DomainShapeDim DomainShapeDim::Apply(MappingAttr mapping) const {
-  return DomainShapeDim(type_, mapping.Compose(dependency_mapping_));
+  return DomainShapeDim(type_,
+                        mapping.Compose(dependency_mapping_).Canonicalize());
 }
 
 bool operator==(const DomainShapeDim &lhs, const DomainShapeDim &rhs) {
@@ -1170,16 +1175,11 @@ llvm::ArrayRef<DomainShapeDim> DomainShapeAttr::Dimensions() const {
   return getImpl()->dimensions();
 }
 
-bool DomainShapeAttr::IsHyperRectangular() const {
-  for (auto &dim : getImpl()->dimensions()) {
-    if (dim.DependencyMask().any()) return false;
-  }
-  return true;
-}
-
-bool DomainShapeAttr::IsPrefixOf(DomainShapeAttr other) {
-  return Dimensions() == other.Dimensions().take_front(NumDimensions());
-}
+// Computes the shape of a dimension resulting from applying expr to shape.
+// `inverted_mapping` must be the inverse of the mapping expr is taken from.
+static DomainShapeDim AccessedShape(MappingExpr expr,
+                                    MappingAttr inverted_mapping,
+                                    DomainShapeAttr shape);
 
 DomainShapeAttr DomainShapeAttr::AccessedShape(MappingAttr mapping) const {
   assert(mapping.IsFullySpecified());
@@ -1189,8 +1189,8 @@ DomainShapeAttr DomainShapeAttr::AccessedShape(MappingAttr mapping) const {
   shape.reserve(mapping.size());
   MappingAttr inverted_mapping = mapping.Inverse();
   for (int i = 0, e = mapping.size(); i < e; ++i) {
-    DomainShapeDim shape_dim = AccessedShape(
-        mapping.Dimension(i), inverted_mapping.ResizeUseDomain(i));
+    DomainShapeDim shape_dim = sair::AccessedShape(
+        mapping.Dimension(i), inverted_mapping.ResizeUseDomain(i), *this);
     assert(shape_dim.dependency_mapping().UseDomainSize() == i);
     shape.push_back(shape_dim);
   }
@@ -1231,46 +1231,21 @@ static DomainShapeDim StripeAccessedShape(MappingStripeExpr expr,
   return DomainShapeDim(type, dependency_mapping);
 }
 
-DomainShapeDim DomainShapeAttr::AccessedShape(
-    MappingExpr expr, MappingAttr inverted_mapping) const {
+static DomainShapeDim AccessedShape(MappingExpr expr,
+                                    MappingAttr inverted_mapping,
+                                    DomainShapeAttr shape) {
   return mlir::TypeSwitch<MappingExpr, DomainShapeDim>(expr)
       .Case<MappingDimExpr>([&](MappingDimExpr expr) {
-        return Dimension(expr.dimension()).Apply(inverted_mapping);
+        return shape.Dimension(expr.dimension()).Apply(inverted_mapping);
       })
       .Case<MappingStripeExpr>([&](MappingStripeExpr expr) {
-        DomainShapeDim inner = AccessedShape(expr.operand(), inverted_mapping);
+        DomainShapeDim inner =
+            AccessedShape(expr.operand(), inverted_mapping, shape);
         return StripeAccessedShape(expr, inner, inverted_mapping);
       })
       .Case<MappingUnStripeExpr>([&](MappingUnStripeExpr expr) {
-        return AccessedShape(expr.operands().front(), inverted_mapping);
+        return AccessedShape(expr.operands().front(), inverted_mapping, shape);
       });
-}
-
-DomainShapeAttr DomainShapeAttr::Product(DomainShapeAttr other) const {
-  return ProductAt(NumDimensions(), other);
-}
-
-DomainShapeAttr DomainShapeAttr::ProductAt(int pos,
-                                           DomainShapeAttr other) const {
-  // The leftmost `pos` domain dimensions are kept as is, with the same
-  // dependency mapping.
-  auto shape = llvm::to_vector<8>(Dimensions().take_front(pos));
-  shape.reserve(NumDimensions() + other.NumDimensions());
-
-  // All dimensions coming from the other domain must have their dependencies
-  // shifted by `pos` to make sure their refer their new positions.
-  for (const DomainShapeDim &dim : other.Dimensions()) {
-    shape.emplace_back(dim.type(), dim.dependency_mapping().ShiftRight(pos));
-  }
-
-  // The remaining original dimensions must have their dependencies update to
-  // account for the inserted dimensions.
-  for (const DomainShapeDim &dim : Dimensions().drop_front(pos)) {
-    shape.emplace_back(dim.type(), dim.dependency_mapping().ShiftRight(
-                                       other.NumDimensions(), pos));
-  }
-
-  return DomainShapeAttr::get(getContext(), shape);
 }
 
 // Ensure that expr and its sub-expressions have a valid shape. Inverse must be

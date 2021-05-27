@@ -18,6 +18,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/Support/LogicalResult.h"
+#include "mapped_domain.h"
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
 
@@ -146,44 +147,11 @@ class ProgramPoint {
 };
 
 // A class of fused loops.
-class LoopFusionClass {
+class LoopFusionClass : public MappedDomain {
  public:
   // Builds an empty loop fusion class for the inner-most loop of loop_nest.
-  LoopFusionClass(llvm::ArrayRef<mlir::StringAttr> loop_nest, ComputeOp op);
-
-  // Loop nest of this loop, including this one.
-  llvm::ArrayRef<mlir::StringAttr> loop_nest() const { return loop_nest_; }
-
-  // Loops this class depends on.
-  llvm::ArrayRef<mlir::StringAttr> dependencies() const;
-
-  // Domain in which the loop size is defined. This is a list of dimensions,
-  // with an access pattern from dependencies indicies to the domain of each
-  // dimension.
-  //
-  // Domains of outer fusion classes must be a prefix of this one.
-  llvm::ArrayRef<ValueAccess> domain() const { return domain_; }
-
-  // Allow mutable access to the domain. This is will be removed in a later
-  // commit and should be used carefully as to keep the domain in syn with the
-  // rest of the class members.
-  llvm::SmallVector<ValueAccess> &domain() { return domain_; }
-
-  // Mapping from domain indices to the loop indices.
-  MappingExpr iter_expr() const { return iter_expr_; }
-
-  // Names of the loop.
-  mlir::StringAttr name() const { return loop_nest_.back(); }
-
-  // Location of the first occurence of the loop.
-  mlir::Location GetLoc() const { return location_; }
-
-  // Emits an error at the loop definition. Error has format
-  // `error in loop <loop_name>: <msg>`.
-  mlir::InFlightDiagnostic EmitError() const;
-
-  // Unifies `iter_expr` with another expression.
-  void UnifyIterExpr(MappingExpr expr);
+  LoopFusionClass(mlir::StringAttr name, ComputeOp op,
+                  const LoopNest &loop_nest);
 
   // Registers an operation nested in the loop.
   void AddUse(ComputeOp op);
@@ -195,14 +163,9 @@ class LoopFusionClass {
   void TrimDependencies(int num_dependencies);
 
  private:
-  mlir::Location location_;
-
-  // Names of outer loops, including this one.
-  llvm::SmallVector<mlir::StringAttr> loop_nest_;
   // Last loop of the loop nest this loop depends on.
   int num_dependencies_;
   llvm::SmallVector<ValueAccess> domain_;
-  MappingExpr iter_expr_;
 
   ComputeOp last_op_;
 };
@@ -210,28 +173,39 @@ class LoopFusionClass {
 // A loop nest of fused loops.
 class LoopNest {
  public:
-  LoopNest(llvm::ArrayRef<const LoopFusionClass *> fusion_classes,
-           mlir::MLIRContext *context);
+  // Creates an empty loop nest.
+  LoopNest(mlir::MLIRContext *context) : context_(context) {}
+
+  // Creates a loop nest given the fusion class of the inner-most loop.
+  LoopNest(const LoopFusionClass *fusion_class)
+      : context_(fusion_class->mapping().getContext()),
+        fusion_class_(fusion_class) {}
+
+  // Number of loops in the loop nest.
+  int size() const;
+
+  // Indicates if the loop nest contains no loop.
+  bool empty() const { return fusion_class_ == nullptr; }
 
   // Domain used to define loop ranges.
-  llvm::ArrayRef<ValueAccess> domain() const { return domain_; }
+  llvm::ArrayRef<ValueAccess> domain() const;
 
   // Mapping from domain to loops.
-  MappingAttr domain_to_loops() const { return domain_to_loops_; }
+  MappingAttr DomainToLoops() const;
+
+  // Name of the loops in the loop nest.
+  llvm::SmallVector<mlir::StringAttr> LoopNames() const;
 
   // Shape of the loop nest.
   DomainShapeAttr Shape() const;
-
-  // Shape of the domain the loop nest is defined from.
-  DomainShapeAttr DomainShape() const;
 
   // Shape of the nest, normalized so that dependencies between dimensions are
   // identity mappings.
   DomainShapeAttr NormalizedShape() const;
 
  private:
-  llvm::ArrayRef<ValueAccess> domain_;
-  MappingAttr domain_to_loops_;
+  mlir::MLIRContext *context_;
+  const LoopFusionClass *fusion_class_ = nullptr;
 };
 
 // Computes loop fusion classes in a sair program.
@@ -250,7 +224,6 @@ class LoopFusionAnalysis {
   }
 
   // Retrives the unified loop nest corresponding to loops.
-  LoopNest GetLoopNest(ComputeOp op) const;
   LoopNest GetLoopNest(llvm::ArrayRef<mlir::StringAttr> loop_names) const;
 
   // Generates a fresh loop name. May be called multiple times without
@@ -266,10 +239,9 @@ class LoopFusionAnalysis {
   // Populates the analysis with the operations appearing in `program_op`.
   mlir::LogicalResult Init(SairProgramOp program_op);
 
-  // Registers the last loop of loop_nest. All occurences of outer loops must be
-  // registered first.
-  mlir::LogicalResult RegisterLoop(ComputeOp op,
-                                   llvm::ArrayRef<mlir::Attribute> loop_nest);
+  // Registers loop at position `loop_pos` of `op` as a new fusion class or
+  // merges it in an existing fusion class.
+  mlir::LogicalResult RegisterLoop(ComputeOp op, int loop_pos);
 
   int next_loop_id_ = 0;
   mlir::MLIRContext *context_;

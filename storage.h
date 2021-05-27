@@ -18,6 +18,7 @@
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Operation.h"
 #include "loop_nest.h"
+#include "mapped_domain.h"
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
 
@@ -33,30 +34,19 @@ mlir::LogicalResult VerifyStorages(
 BufferAttr GetRegister0DBuffer(mlir::MLIRContext *context);
 
 // A buffer declared by one or more storage attributes.
-class Buffer {
+class Buffer : public MappedDomain {
  public:
   // Create a new buffer written to by the given operation.
-  Buffer(mlir::Location loc, mlir::Type element_type,
-         llvm::ArrayRef<mlir::StringAttr> loop_names,
+  Buffer(mlir::Location loc, mlir::StringAttr name, mlir::Type element_type,
          const LoopNest &loop_nest);
-  Buffer(FromToMemRefOp import_op, llvm::ArrayRef<mlir::StringAttr> loop_names,
+  Buffer(FromToMemRefOp import_op, mlir::StringAttr name,
          const LoopNest &loop_nest);
 
   // Number of dimensions in the buffer layout.
-  std::optional<int> rank() const;
+  int rank() const { return mapping().size(); }
 
   // Types of the scalars stored in the buffer.
   mlir::Type element_type() const { return element_type_; }
-
-  // Loop nest in which the buffer is defined.
-  llvm::ArrayRef<mlir::StringAttr> loop_nest() const { return loop_nest_; }
-
-  // Domain from which the buffer size is derived. This is prefixed by the
-  // domain of the buffer loop nest.
-  llvm::ArrayRef<ValueAccess> domain() const { return domain_; }
-
-  // Mapping from domain dimensions to buffer dimensions.
-  std::optional<MappingAttr> layout() const { return layout_; }
 
   // Indicates if the buffer is declared outside the Sair program.
   bool is_external() const { return import_op_ != nullptr; }
@@ -77,44 +67,17 @@ class Buffer {
   // List of values stored in the buffer.
   llvm::ArrayRef<mlir::Value> values() const { return values_; }
 
-  // Get the location of the first operation defining the buffer.
-  mlir::Location getLoc() const { return loc_; }
-
   // Registers a value stored in the buffer.
   void AddValue(mlir::Value value);
 
-  // Sets the loop_nest. The new loop nest must be a prefix of the former one.
-  void SetLoopNest(const LoopNest &new_loop_nest);
-
-  // Unifies this buffer layout with another layout.
-  void UnifyLayout(MappingAttr layout);
-
-  // Appends values to the buffer domain.
-  void AppendToDomain(llvm::ArrayRef<ValueAccess> new_values);
-
-  // Adds a dimension at the front of the layout. Fills the new dimension with
-  // `none`.
-  void AddNonePrefixToLayout(int num_new_dims);
-
  private:
-  mlir::Location loc_;
   mlir::Type element_type_;
   FromToMemRefOp import_op_ = nullptr;
 
-  llvm::SmallVector<mlir::StringAttr> loop_nest_;
-
-  llvm::SmallVector<ValueAccess> domain_;
-  std::optional<MappingAttr> layout_;
   llvm::SmallVector<std::pair<ComputeOp, int>> writes_;
   llvm::SmallVector<std::pair<ComputeOp, int>> reads_;
   llvm::SmallVector<mlir::Value> values_;
 };
-
-// Mapping of domain to layout prefixed by loop nest iterators. The prefix
-// corresponds to the different instances of the buffer. Asserts if the layout
-// is not yet specified.
-MappingAttr BufferInstanceLayout(const Buffer &buffer,
-                                 const LoopFusionAnalysis &fusion_analysis);
 
 // Describes how a value is stored. Attributes may be null if the buffer is not
 // yet specified. Merge* methods replace null attributes by a new value or

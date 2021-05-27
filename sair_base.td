@@ -287,6 +287,19 @@ def SairOpInterface : OpInterface<"SairOp"> {
       }]
     >,
     InterfaceMethod<
+      "Returns the operation domain with dependency mappings between dimensions",
+      "llvm::SmallVector<ValueAccess>", "DomainWithDependencies", (ins), [{}], [{
+        ConcreteOp op($_op);
+        llvm::SmallVector<ValueAccess> result;
+        result.reserve(op.domain().size());
+        for (auto [value, shape_dim] :
+             llvm::zip(op.domain(), op.shape().Dimensions())) {
+          result.push_back({value, shape_dim.dependency_mapping()});
+        }
+        return result;
+      }]
+    >,
+    InterfaceMethod<
       [{Returns a mask of the dimensions of the current operation that depend on
         `sair_operand`. The operand must be executed before entering these
         dimensions.}],

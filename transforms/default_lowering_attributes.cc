@@ -111,7 +111,7 @@ void InitializeStorage(mlir::Value value,
     int num_dimensions = 0;
     if (storage.buffer_name() != nullptr) {
       const Buffer &buffer = storage_analysis.GetBuffer(storage.buffer_name());
-      if (buffer.rank().has_value()) num_dimensions = buffer.rank().value();
+      num_dimensions = buffer.rank();
     }
     const IterationSpace &iter_space =
         iteration_spaces.Get(value.getDefiningOp());
@@ -154,7 +154,6 @@ mlir::LogicalResult ExtendLayout(ValueOperand operand,
          "-default-storage-attribute pass should have added buffer names "
          "before reaching this point.");
   const Buffer &buffer = storage_analysis.GetBuffer(storage.buffer_name());
-  assert(buffer.rank().has_value());
   if (buffer.is_external()) {
     return operand.value().getDefiningOp()->emitError()
            << "specifying value layout would require to increase the rank of "
@@ -164,9 +163,9 @@ mlir::LogicalResult ExtendLayout(ValueOperand operand,
   // Extend layout to cover comunication volume and permute dimensions so that
   // new dimensions are in front of the domain.
   MappingAttr extended_layout = layout_to_communication_volume.MakeSurjective();
-  int num_new_dims = extended_layout.UseDomainSize() - *buffer.rank();
+  int num_new_dims = extended_layout.UseDomainSize() - buffer.rank();
   auto new_dims_identity = MappingAttr::GetIdentity(context, num_new_dims);
-  auto permutation = MappingAttr::GetIdentity(context, *buffer.rank())
+  auto permutation = MappingAttr::GetIdentity(context, buffer.rank())
                          .ShiftRight(num_new_dims)
                          .AddSuffix(new_dims_identity.Dimensions());
   extended_layout = permutation.Compose(extended_layout);

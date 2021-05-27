@@ -75,32 +75,6 @@ void ForwardAttributes(mlir::Operation *old_op, mlir::Operation *new_op,
   }
 }
 
-mlir::LogicalResult ResolveUnificationConstraint(
-    mlir::Location loc, llvm::StringRef origin, const ValueAccess &dimension,
-    MappingExpr &constraint,
-    llvm::SmallVectorImpl<ValueAccess> &target_domain) {
-  mlir::MLIRContext *context = constraint.getContext();
-
-  // Ignore placeholders.
-  mlir::Operation *defining_op = dimension.value.getDefiningOp();
-  if (isa<SairPlaceholderOp>(defining_op)) return mlir::success();
-
-  if (constraint.isa<MappingNoneExpr, MappingUnknownExpr>()) {
-    constraint = MappingDimExpr::get(target_domain.size(), context);
-    target_domain.push_back(dimension);
-  } else if (auto dim_expr = constraint.dyn_cast<MappingDimExpr>()) {
-    if (dimension != target_domain[dim_expr.dimension()]) {
-      return mlir::emitError(loc) << "use of dimension in " << origin
-                                  << " does not match previous occurrences";
-    }
-  } else {
-    return mlir::emitError(loc)
-           << "cannot unify " << origin << " with previous occurences";
-  }
-
-  return mlir::success();
-}
-
 void SetInArrayAttr(mlir::Operation *operation, llvm::StringRef attr_name,
                     int array_size, int element, mlir::Attribute value) {
   mlir::MLIRContext *context = operation->getContext();

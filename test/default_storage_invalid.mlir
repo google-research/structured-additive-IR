@@ -37,7 +37,7 @@ func @non_rectangular_shape(%arg0: f32, %arg1: index) {
     %1 = sair.from_scalar %arg1 : !sair.value<(), index>
     %2 = sair.static_range 8 : !sair.range
     %3 = sair.dyn_range[d0:%2] %1 : !sair.range<d0:range>
-    // expected-error @+1 {{buffer "buffer_0" layout depends on loops it cannot be nested in}}
+    // expected-error @+1 {{in buffer "buffer_0": layout depends on loops it cannot be nested in}}
     %4 = sair.copy[d0:%2, d1:%3] %0 {
       loop_nest = [
         {name = "loopA", iter = #sair.mapping_expr<d0>},

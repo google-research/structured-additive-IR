@@ -198,7 +198,7 @@ MappingExpr Unify(MappingExpr lhs, MappingExpr rhs);
 // dimension i generates no constraints. Returns a failure if expressions cannot
 // be unified.
 mlir::LogicalResult UnificationConstraints(
-    MappingExpr lhs, MappingExpr rhs,
+    MappingAttr lhs, MappingAttr rhs,
     llvm::MutableArrayRef<MappingExpr> constraints);
 
 // A MappingAttr, with named dimensions in the use domain. Format is
@@ -315,27 +315,8 @@ class DomainShapeAttr
     return Dimensions()[index];
   }
 
-  // Indicates if all the dimensions of the domain are independent.
-  bool IsHyperRectangular() const;
-
-  // Indicates if this DomainShapeAttr is a prefix of another DomainShapeAttr.
-  bool IsPrefixOf(DomainShapeAttr other);
-
   // Returns the expected shape of the sair value the mapping refers to.
   DomainShapeAttr AccessedShape(MappingAttr mapping) const;
-  DomainShapeDim AccessedShape(MappingExpr expr,
-                               MappingAttr inverted_mapping) const;
-
-  // Returns a new domain that is a product of this and `other` domains, i.e.,
-  // is a concatenation of the dimensions of both.
-  DomainShapeAttr Product(DomainShapeAttr other) const;
-
-  // Returns a new domain that is a product of this and `other` domains, with
-  // dimensions of the `other` domain starting at `pos` in the result. In other
-  // words, the result is a concatenation of the first `pos` dimensions of this
-  // domain, the dimensions of `other`, and the remaining dimensions of this
-  // domain.
-  DomainShapeAttr ProductAt(int pos, DomainShapeAttr other) const;
 };
 
 // Location in a Sair attribute.
@@ -369,6 +350,9 @@ class AttrLocation {
   llvm::StringRef kind_;
   mlir::StringAttr name_;
 };
+
+// Appends the attribute kind and name to the error message.
+mlir::Diagnostic &operator<<(mlir::Diagnostic &diag, const AttrLocation &loc);
 
 // Verifies that the mapping can be applied to a domain with the given shape.
 // Does not emits errors.

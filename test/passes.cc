@@ -78,7 +78,12 @@ class TestMappingExprsPass
       assert(domain_size != nullptr);
       llvm::SmallVector<MappingExpr, 4> constraints(
           domain_size.getInt(), MappingNoneExpr::get(&getContext()));
-      if (mlir::failed(UnificationConstraints(expr, other, constraints))) {
+      auto mapping =
+          MappingAttr::get(&getContext(), expr.MinDomainSize(), {expr});
+      auto other_mapping =
+          MappingAttr::get(&getContext(), other.MinDomainSize(), {other});
+      if (mlir::failed(
+              UnificationConstraints(mapping, other_mapping, constraints))) {
         return nullptr;
       }
       return GetArrayAttr(constraints, builder);

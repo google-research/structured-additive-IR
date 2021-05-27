@@ -126,7 +126,7 @@ llvm::SmallVector<ValueAccess> LoadStoreIndices(
   // be we must make sure that GetRangePrameters can find subexpressions for the
   // layout inverse so we re-write the identity as a mapping that extends the
   // layout inverse with its inverse.
-  auto inverse_layout = source_op.layout().Inverse().MakeFullySpecified();
+  auto inverse_layout = source_op.layout().Inverse().MakeSurjective();
   auto identity = inverse_layout.Inverse().Compose(inverse_layout);
   llvm::SmallVector<RangeParameters> range_paramters =
       GetRangeParameters(source_op.getLoc(), source_op.layout(), domain,

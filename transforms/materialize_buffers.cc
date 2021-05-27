@@ -95,10 +95,10 @@ std::pair<mlir::SmallVector<int64_t>, ValueRange> GetMemRefShape(
   llvm::SmallVector<mlir::Value> scalar_sizes;
 
   auto loops_to_domain =
-      loop_nest.domain_to_loops().Inverse().Resize(buffer.domain().size());
-  llvm::SmallVector<RangeParameters> range_parameters = GetRangeParameters(
-      buffer.getLoc(), buffer.layout().value(), buffer.domain(),
-      loops_to_domain, map_arguments, *block, builder);
+      loop_nest.DomainToLoops().Inverse().Resize(buffer.domain().size());
+  llvm::SmallVector<RangeParameters> range_parameters =
+      GetRangeParameters(buffer.location(), buffer.mapping(), buffer.domain(),
+                         loops_to_domain, map_arguments, *block, builder);
   for (const auto &params : range_parameters) {
     int step = params.step;
     if (params.begin.is<mlir::Attribute>() &&
@@ -113,27 +113,27 @@ std::pair<mlir::SmallVector<int64_t>, ValueRange> GetMemRefShape(
     } else {
       memref_shape.push_back(mlir::ShapedType::kDynamicSize);
       // Handle dynamic dimensions.
-      mlir::Value beg = Materialize(buffer.getLoc(), params.begin, builder);
-      mlir::Value end = Materialize(buffer.getLoc(), params.end, builder);
+      mlir::Value beg = Materialize(buffer.location(), params.begin, builder);
+      mlir::Value end = Materialize(buffer.location(), params.end, builder);
       auto d0 = mlir::getAffineDimExpr(0, context);
       auto d1 = mlir::getAffineDimExpr(1, context);
       auto map = mlir::AffineMap::get(2, 0, (d1 - d0).ceilDiv(step));
       scalar_sizes.push_back(builder.create<mlir::AffineApplyOp>(
-          buffer.getLoc(), map, llvm::makeArrayRef({beg, end})));
+          buffer.location(), map, llvm::makeArrayRef({beg, end})));
     }
   }
 
   // Create a map operation that performs memref shape computations.
   ValueRange sizes;
   if (!scalar_sizes.empty()) {
-    builder.create<SairReturnOp>(buffer.getLoc(), scalar_sizes);
+    builder.create<SairReturnOp>(buffer.location(), scalar_sizes);
     builder.restoreInsertionPoint(map_point);
     llvm::SmallVector<mlir::Type> map_types(
         scalar_sizes.size(), ValueType::get(shape, builder.getIndexType()));
     llvm::SmallVector<mlir::Attribute> map_buffers(
         scalar_sizes.size(), GetRegister0DBuffer(context));
     auto map_op = builder.create<SairMapOp>(
-        buffer.getLoc(), map_types, /*domain=*/domain,
+        buffer.location(), map_types, /*domain=*/domain,
         /*inputs=*/map_arguments, /*shape=*/shape,
         /*loop_nest=*/loop_nest_attr,
         /*storage=*/builder.getArrayAttr(map_buffers));
@@ -158,7 +158,7 @@ mlir::Value AllocateBuffer(const Buffer &buffer,
   LoopNest loop_nest = fusion_analysis.GetLoopNest(buffer.loop_nest());
   DomainShapeAttr shape = loop_nest.Shape();
   llvm::SmallVector<mlir::Value> domain =
-      CreatePlaceholderDomain(buffer.getLoc(), shape, builder);
+      CreatePlaceholderDomain(buffer.location(), shape, builder);
 
   // Compute memref sizes.
   auto [memref_shape, sizes] = GetMemRefShape(buffer, shape, domain, loop_nest,
@@ -175,7 +175,7 @@ mlir::Value AllocateBuffer(const Buffer &buffer,
   // TODO(b/175664160): use sequence attribute here and improve/remove
   // FindInsertionPoint.
   mlir::Value alloc = builder.create<SairAllocOp>(
-      buffer.getLoc(), type, domain,
+      buffer.location(), type, domain,
       /*mapping_array=*/builder.getArrayAttr(size_mappings), sizes,
       /*loop_nest=*/alloc_point.loop_nest,
       /*storage=*/builder.getArrayAttr(GetRegister0DBuffer(context)),
@@ -183,7 +183,7 @@ mlir::Value AllocateBuffer(const Buffer &buffer,
 
   free_point.Set(builder);
   builder.create<SairFreeOp>(
-      buffer.getLoc(), domain,
+      buffer.location(), domain,
       /*mapping_array=*/builder.getArrayAttr(identity_mapping), alloc,
       /*loop_nest=*/free_point.loop_nest,
       /*sequence=*/IntegerAttr());
@@ -212,7 +212,7 @@ void InsertLoad(ComputeOp op, int operand_pos, const Buffer &buffer,
   DomainShapeAttr load_shape =
       fusion_analysis.GetLoopNest(op_iter_space.loop_names()).Shape();
   llvm::SmallVector<mlir::Value> load_domain =
-      CreatePlaceholderDomain(buffer.getLoc(), load_shape, builder);
+      CreatePlaceholderDomain(buffer.location(), load_shape, builder);
 
   // Create a load_from_memref operation.
   auto memref_mapping =
@@ -235,7 +235,7 @@ void InsertLoad(ComputeOp op, int operand_pos, const Buffer &buffer,
     DomainShapeAttr proj_shape =
         load_shape.AccessedShape(proj_mapping.Inverse());
     llvm::SmallVector<mlir::Value> proj_domain =
-        CreatePlaceholderDomain(buffer.getLoc(), proj_shape, builder);
+        CreatePlaceholderDomain(buffer.location(), proj_shape, builder);
     auto proj_type =
         ValueType::get(proj_shape.Prefix(op_domain_size), element_type);
     new_operand.value = builder.create<SairProjAnyOp>(
@@ -272,7 +272,7 @@ void InsertStore(ComputeOp op, int result_pos, const Buffer &buffer,
   DomainShapeAttr store_shape =
       fusion_analysis.GetLoopNest(op_iter_space.loop_names()).Shape();
   llvm::SmallVector<mlir::Value> store_domain =
-      CreatePlaceholderDomain(buffer.getLoc(), store_shape, builder);
+      CreatePlaceholderDomain(buffer.location(), store_shape, builder);
 
   // Create a store operation.
   auto memref_mapping =

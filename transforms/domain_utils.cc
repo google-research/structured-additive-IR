@@ -94,8 +94,8 @@ RangeParameters RangeParameterBuilder::Get(MappingExpr expr) {
 RangeParameters RangeParameterBuilder::Get(MappingDimExpr expr) {
   const ValueAccess &dimension = source_domain_[expr.dimension()];
   auto range_op = mlir::cast<RangeOp>(dimension.value.getDefiningOp());
-  MappingAttr mapping =
-      dimension.mapping.ResizeUseDomain(current_domain_size());
+  MappingAttr mapping = current_to_source_.Compose(
+      dimension.mapping.ResizeUseDomain(current_to_source_.size()));
   assert(mapping.IsSurjective());
 
   return {.begin = AddArgument(range_op.LowerBound().Map(mapping)),

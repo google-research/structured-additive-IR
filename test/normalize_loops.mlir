@@ -81,15 +81,17 @@ func @stripe() {
 
 // CHECK-LABEL: @unstripe
 func @unstripe(%arg0: f32) {
+  %c4 = constant 4 : index
   sair.program {
+    %sc4 = sair.from_scalar %c4 : !sair.value<(), index>
     // CHECK-DAG: %[[D0:.*]] = sair.static_range 4 : !sair.range
     %0 = sair.static_range 4 step 4 : !sair.range
-    %1 = sair.static_range 4 : !sair.range
-    // CHECK-DAG: %[[V0:.*]] = sair.from_scalar
+    %1 = sair.dyn_range[d0:%0] %sc4 : !sair.range<d0:range>
+    // CHECK-DAG: %[[V0:.*]] = sair.from_scalar %{{.*}} : !sair.value<(), f32>
     %2 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // CHECK: %[[V1:.*]] = sair.map_reduce %[[V0]] reduce[d0:%[[D0]]] attributes
     // CHECK: loop_nest = [{iter = #sair.mapping_expr<d0>, name = "loopA"}]
-    %3 = sair.map_reduce %2 reduce[d0:%0, d1:%0] attributes {
+    %3 = sair.map_reduce %2 reduce[d0:%0, d1:%1] attributes {
       loop_nest = [{name = "loopA", iter = #sair.mapping_expr<unstripe(d0, d1, [4, 1])>}],
       storage = [{space = "register", layout = #sair.named_mapping<[] -> ()>}]
     } {
@@ -97,7 +99,7 @@ func @unstripe(%arg0: f32) {
       ^bb0(%arg1: index, %arg2: index, %arg3: f32):
         // CHECK: sair.return %[[V3]]
         sair.return %arg3: f32
-    } : #sair.shape<d0:range x d1:range>, () -> (f32)
+    } : #sair.shape<d0:range x d1:range(d0)>, () -> (f32)
     // CHECK: sair.exit %[[V1]]
     sair.exit %3 : f32
   } : f32
