@@ -339,9 +339,8 @@ class LoopNestState {
       LoopAttr loop = attribute.cast<LoopAttr>();
 
       if (closed_loops_.count(loop.name()) > 0) {
-        return op.emitError()
-               << "occurrences of loop " << loop.name()
-               << " must be contiguous and nested in the same loops";
+        return op.emitError() << "occurrences of loop " << loop.name()
+                              << " must be contiguous";
       }
 
       open_loops_.push_back(loop.name());
@@ -693,11 +692,22 @@ mlir::LogicalResult LoopFusionAnalysis::RegisterLoop(
   auto [it, was_inserted] =
       fusion_classes_.try_emplace(loop.name(), loop.name(), op, loop_nest);
   LoopFusionClass &fusion_class = it->second;
+
+  if (loop_names != fusion_class.loop_nest()) {
+    mlir::InFlightDiagnostic diag =
+        op.emitError()
+        << "loop " << loop.name()
+        << " is not nested in the same loops than at previous occurence";
+    diag.attachNote(fusion_class.location()) << "previous occurence here";
+    return diag;
+  }
+
   if (!was_inserted) {
     fusion_class.AddUse(op, sequence_analysis);
   }
 
   auto mapping = MappingAttr::get(context_, domain_size, {loop.iter()});
+  assert(fusion_class.loop_nest().size() == loop_nest_mapping.size());
   return fusion_class.UnifyMapping(op.getLoc(), loop_nest_mapping, mapping,
                                    sair_op.DomainWithDependencies());
 }

@@ -760,13 +760,14 @@ func @loop_fusion_different_prefix(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<8>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    // expected-note @+1 {{previous occurence here}}
     sair.copy[d0: %0, d1: %0] %1 {
       loop_nest = [
         {name = "A", iter=#sair.mapping_expr<d0>},
         {name = "B", iter=#sair.mapping_expr<d1>}
       ]
     } : !sair.value<d0:static_range<8> x d1:static_range<8>, f32>
-    // expected-error @+1 {{occurrences of loop "B" must be contiguous and nested in the same loops}}
+    // expected-error @+1 {{loop "B" is not nested in the same loops than at previous occurence}}
     sair.copy[d0: %0, d1: %0] %1 {
       loop_nest = [
         {name = "C", iter=#sair.mapping_expr<d0>},
@@ -787,7 +788,7 @@ func @loop_fusion_not_contiguous(%arg0: f32) {
     sair.copy[d0: %0] %1 { loop_nest = [{name = "A", iter=#sair.mapping_expr<d0>}] }
       : !sair.value<d0:static_range<8>, f32>
     sair.copy %1 : !sair.value<(), f32>
-    // expected-error @+1 {{occurrences of loop "A" must be contiguous and nested in the same loops}}
+    // expected-error @+1 {{occurrences of loop "A" must be contiguous}}
     sair.copy[d0: %0] %1 { loop_nest = [{name = "A", iter=#sair.mapping_expr<d0>}] }
       : !sair.value<d0:static_range<8>, f32>
     sair.exit
@@ -2250,3 +2251,38 @@ func @storage_invalid_shape(%arg0: f32) {
 
 // expected-error @+1 {{expected positive step and size}}
 func @static_range_type() -> !sair.static_range<0>
+
+// -----
+
+func @sequence_attr(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.static_range : !sair.static_range<16>
+
+    // expected-error @+1 {{loop "D" is not nested in the same loops than at previous occurence}}
+    %2 = sair.copy[d0:%1, d1:%1] %0 {
+      loop_nest = [
+        {name = "B", iter = #sair.mapping_expr<stripe(d0, [4])>},
+        {name = "C", iter = #sair.mapping_expr<stripe(d0, [4, 1])>},
+        {name = "D", iter = #sair.mapping_expr<d1>}
+      ],
+      sequence = 2
+    } : !sair.value<d0:static_range<16> x d1:static_range<16>, f32>
+
+    %3 = sair.copy[d0:%1] %0 {
+      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
+      sequence = 3
+    } : !sair.value<d0:static_range<16>, f32>
+
+    // expected-note @+1 {{previous occurence here}}
+    %4 = sair.copy[d0:%1] %0 {
+      loop_nest = [
+        {name = "B", iter = #sair.mapping_expr<none>},
+        {name = "D", iter = #sair.mapping_expr<d0>}
+      ],
+      sequence = 1
+    } : !sair.value<d0:static_range<16>, f32>
+    sair.exit
+  }
+  return
+}
