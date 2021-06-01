@@ -198,110 +198,6 @@ class SequenceAnalysis {
       SairOp start, llvm::ArrayRef<mlir::Attribute> current_loop_nest,
       int num_loops, Direction direction = Direction::kBefore) const;
 
-  // An iterator that visits explicitly and implicitly sequenced ops in their
-  // sequence order. Implicitly sequenced ops are additionally visited in the
-  // order that respects their use-def chains.
-  class SairOpIterator {
-    friend class SequenceAnalysis;
-
-   public:
-    // Increments the iterator.
-    SairOpIterator &operator++() {
-      // This is essentially a nested iterator: if we reached the last element
-      // in implicitly sequenced vector, take the next explicitly sequenced
-      // operation.
-      if (implicitly_sequenced_next_pos_ == implicitly_sequenced_.size()) {
-        ++compute_iterator_;
-        RepopulateImplicitlySequenced();
-      } else {
-        ++implicitly_sequenced_next_pos_;
-      }
-      return *this;
-    }
-
-    // Dereferences the iterator.
-    SairOp operator*() const {
-      if (implicitly_sequenced_next_pos_ == 0) {
-        ComputeOp compute_op = *compute_iterator_;
-        return cast<SairOp>(compute_op.getOperation());
-      }
-      return implicitly_sequenced_[implicitly_sequenced_next_pos_ - 1];
-    }
-
-    // Compares this iterator with `other`.
-    bool operator==(const SairOpIterator &other) const {
-      assert(&other.sequence_analysis_ == &sequence_analysis_);
-      return compute_iterator_ == other.compute_iterator_ &&
-             implicitly_sequenced_next_pos_ ==
-                 other.implicitly_sequenced_next_pos_;
-    }
-    bool operator!=(const SairOpIterator &other) const {
-      return !(*this == other);
-    }
-
-   private:
-    // Constructs an iterator pointing to the first explicitly sequenced
-    // operation.
-    explicit SairOpIterator(const SequenceAnalysis &sequence_analysis)
-        : sequence_analysis_(sequence_analysis) {
-      compute_iterator_ = sequence_analysis.Ops().begin();
-      RepopulateImplicitlySequenced();
-    }
-
-    // Token structure to construct end iterators.
-    struct End {};
-
-    // Constructs an end iterator.
-    SairOpIterator(const SequenceAnalysis &sequence_analysis, End)
-        : sequence_analysis_(sequence_analysis) {
-      SetEnd();
-    }
-
-    // Updates `implicitly_sequenced_` to contain the ordered list of implicitly
-    // sequenced operations that can be placed after the current explicitly
-    // sequenced operation.
-    void RepopulateImplicitlySequenced() {
-      if (compute_iterator_ != sequence_analysis_.Ops().end()) {
-        sequence_analysis_.ImplicitlySequencedOps(
-            sequence_analysis_.ExplicitSequenceNumber(*compute_iterator_),
-            implicitly_sequenced_);
-      } else {
-        implicitly_sequenced_.clear();
-      }
-      implicitly_sequenced_next_pos_ = 0;
-    }
-
-    // Sets the current iterator to be the end iterator.
-    void SetEnd() {
-      compute_iterator_ = sequence_analysis_.Ops().end();
-      implicitly_sequenced_.clear();
-      implicitly_sequenced_next_pos_ = 0;
-    }
-
-    // Iterator over explicitly sequenced operations.
-    IterType compute_iterator_;
-
-    // Ordered list of implicitly sequenced operations to place after the one
-    // pointer to be `compute_iterator_`.
-    llvm::SmallVector<SairOp> implicitly_sequenced_;
-
-    // The position of the _next_ element to be taken from the
-    // `implicitly_sequenced_` list (the current element is this value minus
-    // one). When set to zero, the iterator will take the explicitly sequenced
-    // element isntead.
-    size_t implicitly_sequenced_next_pos_;
-
-    // Back-reference to the parent analysis.
-    const SequenceAnalysis &sequence_analysis_;
-  };
-
-  // Returns an iterator range covering all explicitly and implicitly sequenced
-  // operations.
-  llvm::iterator_range<SairOpIterator> AllOps() const {
-    return llvm::make_range(SairOpIterator(*this),
-                            SairOpIterator(*this, SairOpIterator::End{}));
-  }
-
  private:
   // Default noop constructor. Init must be called separately.
   SequenceAnalysis() = default;
@@ -334,11 +230,6 @@ class SequenceAnalysis {
   // In other words, the given op should be sequenced between result and
   // result+1.
   int64_t ImplicitSequenceNumber(SairOp op) const;
-
-  // Populates `ops` with non-compute ops that are implicitly sequenced after
-  // `sequence_number` and before `sequence_number` + 1.
-  void ImplicitlySequencedOps(int64_t sequence_number,
-                              llvm::SmallVectorImpl<SairOp> &ops) const;
 
   // Sequence state: the position in the vector indicates the sequence number of
   // the operation.

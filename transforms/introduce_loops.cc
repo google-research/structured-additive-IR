@@ -234,20 +234,14 @@ bool IsPrefix(mlir::ArrayAttr prefix, mlir::ArrayAttr array) {
 mlir::LogicalResult RegisterOperations(
     SairProgramOp program, const SequenceAnalysis &sequence_analysis,
     Driver &driver) {
-  // First, add operations is their sequence order. The order is crucially
-  // important because Sair ops may be sequenced differently from their
-  // "natural" order in the block, but the loops must be created in the proper
-  // order in the block.
-  for (SairOp op : sequence_analysis.AllOps()) {
+  // First, add compute operations is their sequence order. The order is
+  // crucially important because Sair ops may be sequenced differently from
+  // their "natural" order in the block, but the loops must be created in the
+  // proper order in the block. The order of non-compute ops doesn't matter
+  // because they don't result in any executable code at this stage.
+  for (ComputeOp op : sequence_analysis.Ops()) {
     mlir::Operation &operation = *op;
-    if (isa<SairProjAnyOp>(operation)) {
-      return operation.emitError() << "sair.proj_any operations must be "
-                                      "eliminated before introducing loops";
-    }
-
     driver.AddOperation(&operation);
-    if (!isa<ComputeOp>(operation)) continue;
-
     SairMapOp map_op = dyn_cast<SairMapOp>(operation);
     if (map_op == nullptr) {
       return operation.emitError() << "operation must be lowered to sair.map";
@@ -265,10 +259,15 @@ mlir::LogicalResult RegisterOperations(
       }
     }
   }
-  // Add ops that do not have implicit sequencing because they don't depend on
-  // any compute ops, such as empty terminators or placeholders. These will be
-  // essentially canonicalized away by the driver.
+  // Add non-compute ops. These will be canonicalized by the driver and their
+  // relative order doesn't matter.
   for (mlir::Operation &operation : program.body().front()) {
+    if (isa<SairProjAnyOp>(operation)) {
+      return operation.emitError() << "sair.proj_any operations must be "
+                                      "eliminated before introducing loops";
+    }
+    // Compute ops have been added above.
+    if (isa<ComputeOp>(operation)) continue;
     driver.AddOperation(&operation);
   }
 

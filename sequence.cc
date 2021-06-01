@@ -386,51 +386,6 @@ void SequenceAnalysis::Erase(ComputeOp op) {
   compute_ops_.erase(compute_ops_.begin() + sequence_number);
 }
 
-void SequenceAnalysis::ImplicitlySequencedOps(
-    int64_t sequence_number, llvm::SmallVectorImpl<SairOp> &ops) const {
-  assert(sequence_number >= 0 && sequence_number < compute_ops_.size() &&
-         "sequence number not in analysis");
-  ComputeOp compute_op = compute_ops_[sequence_number];
-
-  // Iterative post-order DFS starting from the compute op.
-  llvm::SetVector<Operation *> visited;
-  llvm::SetVector<Operation *> stack;
-  stack.insert(compute_op);
-  do {
-    SairOp current = cast<SairOp>(stack.back());
-    bool all_visited = true;
-    // Schedule users of the current operation for visitation before visiting
-    // the current operation. Avoid already visited operations and stack cycles.
-    // Stop at an explicitly sequenced (compute) operation.
-    for (mlir::Operation *user : current->getUsers()) {
-      if (visited.count(user) != 0 || stack.count(user) != 0) continue;
-      auto sair_op = dyn_cast<SairOp>(user);
-      if (!sair_op || isa<ComputeOp>(user)) continue;
-      // The user may depend on another compute operation sequenced after
-      // `compute_op` and therefore not be implicitly sequenced after
-      // `compute_op`. Don't visit it in this case.
-      if (ImplicitSequenceNumber(sair_op) > sequence_number) continue;
-      stack.insert(user);
-      all_visited = false;
-      break;
-    }
-    if (all_visited) {
-      visited.insert(stack.pop_back_val());
-    }
-  } while (!stack.empty());
-
-  // `visited` contains the operations in DFS postorder of their use-def
-  // dependencies, with `current_op` being the last one. Drop it and reverse the
-  // order to create a topologically sorted list of operations according to
-  // their use-def dependencies.
-  visited.pop_back();
-  ops.clear();
-  llvm::append_range(
-      ops, llvm::map_range(llvm::reverse(visited), [](mlir::Operation *op) {
-        return cast<SairOp>(op);
-      }));
-}
-
 int64_t SequenceAnalysis::ImplicitSequenceNumber(SairOp op) const {
   assert(!isa<ComputeOp>(op.getOperation()) &&
          "only non-compute ops have implicit sequence numbers");
