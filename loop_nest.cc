@@ -16,6 +16,7 @@
 
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallString.h"
+#include "sequence.h"
 #include "util.h"
 
 namespace sair {
@@ -499,12 +500,14 @@ static mlir::LogicalResult VerifyDependencies(
 // range is defined before it is used.
 static mlir::LogicalResult VerifyLoopRanges(
     ComputeOp op, llvm::ArrayRef<mlir::Attribute> loop_nest,
-    const LoopFusionAnalysis &fusion_analysis) {
+    const LoopFusionAnalysis &fusion_analysis,
+    const SequenceAnalysis &sequence_analysis) {
   for (mlir::Attribute attr : loop_nest) {
     LoopAttr loop = attr.cast<LoopAttr>();
     const LoopFusionClass &fusion_class = fusion_analysis.GetClass(loop.name());
     for (const auto &dimension : fusion_class.domain()) {
-      if (op.getOperation()->isBeforeInBlock(dimension.value.getDefiningOp())) {
+      if (sequence_analysis.IsBefore(op,
+                                     dimension.value.getDefiningOp<SairOp>())) {
         return (op.emitError()
                 << "rematerialized loop " << loop.name()
                 << " indirectly uses the range before it is defined")
@@ -556,33 +559,37 @@ static mlir::LogicalResult VerifySubDomains(
 
 mlir::LogicalResult VerifyLoopNests(
     SairProgramOp program, const LoopFusionAnalysis &fusion_analysis,
-    const IterationSpaceAnalysis &iteration_spaces) {
+    const IterationSpaceAnalysis &iteration_spaces,
+    const SequenceAnalysis &sequence_analysis) {
   // Verify that the loop structure forms a tree, loops are open when they need
   // to and loop ranges are well defined.
   LoopNestState loop_nest_state;
   LoopNestConstraintsAnalysis loop_constraints_analysis(program,
                                                         iteration_spaces);
-  auto result = program.walk([&](ComputeOp op) -> mlir::WalkResult {
-    if (op.loop_nest().hasValue()) {
-      if (mlir::failed(loop_nest_state.Update(cast<SairOp>(op.getOperation()),
-                                              op.LoopNestLoops()))) {
+  for (ComputeOp compute_op :
+       llvm::make_second_range(sequence_analysis.Ops())) {
+    auto sair_op = cast<SairOp>(compute_op.getOperation());
+    if (compute_op.loop_nest().hasValue()) {
+      if (mlir::failed(
+              loop_nest_state.Update(sair_op, compute_op.LoopNestLoops()))) {
         return mlir::failure();
       }
-      if (mlir::failed(
-              VerifyLoopRanges(op, op.LoopNestLoops(), fusion_analysis))) {
+      if (mlir::failed(VerifyLoopRanges(compute_op, compute_op.LoopNestLoops(),
+                                        fusion_analysis, sequence_analysis))) {
         return mlir::failure();
       }
     } else if (mlir::failed(loop_nest_state.CloseLoops())) {
       return mlir::failure();
     }
-    return VerifyLoopsOpen(cast<SairOp>(op.getOperation()), loop_nest_state,
-                           loop_constraints_analysis);
-  });
-  if (result.wasInterrupted()) return mlir::failure();
+    if (mlir::failed(VerifyLoopsOpen(sair_op, loop_nest_state,
+                                     loop_constraints_analysis))) {
+      return mlir::failure();
+    }
+  }
   if (mlir::failed(loop_nest_state.CloseLoops())) return mlir::failure();
 
   // Verify dependencies.
-  result = program.walk([&](SairOp op) -> mlir::WalkResult {
+  mlir::WalkResult result = program.walk([&](SairOp op) -> mlir::WalkResult {
     if (mlir::failed(VerifySubDomains(op, iteration_spaces.Get(op)))) {
       return mlir::failure();
     }
@@ -593,23 +600,29 @@ mlir::LogicalResult VerifyLoopNests(
   return mlir::success();
 }
 
-LoopFusionAnalysis::LoopFusionAnalysis(mlir::Operation *operation)
+LoopFusionAnalysis::LoopFusionAnalysis(
+    mlir::Operation *operation, const SequenceAnalysis *sequence_analysis)
     : context_(operation->getContext()) {
   SairProgramOp program_op = dyn_cast<SairProgramOp>(operation);
   if (program_op == nullptr) return;
-  mlir::LogicalResult status = Init(program_op);
+  mlir::LogicalResult status =
+      Init(program_op, sequence_analysis ? *sequence_analysis
+                                         : SequenceAnalysis(program_op));
   assert(mlir::succeeded(status));
   (void)status;
 }
 
 std::optional<LoopFusionAnalysis> LoopFusionAnalysis::Create(
-    SairProgramOp program_op) {
+    SairProgramOp program_op, const SequenceAnalysis &sequence_analysis) {
   LoopFusionAnalysis analysis(program_op->getContext());
-  if (mlir::failed(analysis.Init(program_op))) return std::nullopt;
+  if (mlir::failed(analysis.Init(program_op, sequence_analysis))) {
+    return std::nullopt;
+  }
   return analysis;
 }
 
-mlir::LogicalResult LoopFusionAnalysis::Init(SairProgramOp program_op) {
+mlir::LogicalResult LoopFusionAnalysis::Init(
+    SairProgramOp program_op, const SequenceAnalysis &sequence_analysis) {
   llvm::SmallVector<ComputeOp> work_list;
   program_op.walk([&](ComputeOp op) {
     auto sair_op = cast<SairOp>(op.getOperation());
@@ -633,7 +646,9 @@ mlir::LogicalResult LoopFusionAnalysis::Init(SairProgramOp program_op) {
         --i;
         continue;
       }
-      if (mlir::failed(RegisterLoop(op, level))) return mlir::failure();
+      if (mlir::failed(RegisterLoop(op, level, sequence_analysis))) {
+        return mlir::failure();
+      }
     }
   }
 
@@ -658,8 +673,8 @@ mlir::LogicalResult LoopFusionAnalysis::Init(SairProgramOp program_op) {
   return mlir::success();
 }
 
-mlir::LogicalResult LoopFusionAnalysis::RegisterLoop(ComputeOp op,
-                                                     int loop_pos) {
+mlir::LogicalResult LoopFusionAnalysis::RegisterLoop(
+    ComputeOp op, int loop_pos, const SequenceAnalysis &sequence_analysis) {
   auto sair_op = cast<SairOp>(op.getOperation());
   int domain_size = sair_op.domain().size();
 
@@ -680,7 +695,7 @@ mlir::LogicalResult LoopFusionAnalysis::RegisterLoop(ComputeOp op,
       fusion_classes_.try_emplace(loop.name(), loop.name(), op, loop_nest);
   LoopFusionClass &fusion_class = it->second;
   if (!was_inserted) {
-    fusion_class.AddUse(op);
+    fusion_class.AddUse(op, sequence_analysis);
   }
 
   auto mapping = MappingAttr::get(context_, domain_size, {loop.iter()});
@@ -706,35 +721,6 @@ mlir::StringAttr LoopFusionAnalysis::GetFreshLoopName() {
   return attr;
 }
 
-ProgramPoint::ProgramPoint(ComputeOp op, Direction direction,
-                           llvm::ArrayRef<mlir::StringAttr> loop_nest)
-    : program_(op->getParentOp()),
-      op_(op),
-      direction_(direction),
-      loop_nest_(loop_nest) {}
-
-int ProgramPoint::NumCommonLoops(const ProgramPoint &other) const {
-  assert(program_ == other.program_);
-  auto it = std::mismatch(loop_nest_.begin(), loop_nest_.end(),
-                          other.loop_nest_.begin(), other.loop_nest_.end());
-  return std::distance(loop_nest_.begin(), it.first);
-}
-
-bool ProgramPoint::IsBefore(ComputeOp op) const {
-  assert(program_ == op->getParentOp());
-  if (op_ == nullptr || op_ == op) return direction_ == Direction::kBefore;
-  return op_->isBeforeInBlock(op);
-}
-
-bool ProgramPoint::IsAfter(ComputeOp op) const {
-  assert(program_ == op->getParentOp());
-  if (op_ == nullptr || op_ == op) return direction_ == Direction::kAfter;
-  return op->isBeforeInBlock(op_);
-}
-
-void ProgramPoint::TrimLoopNest(int num_loops) {
-  loop_nest_ = loop_nest_.take_front(num_loops);
-}
 
 LoopFusionClass::LoopFusionClass(mlir::StringAttr name, ComputeOp op,
                                  const LoopNest &loop_nest)
@@ -743,8 +729,9 @@ LoopFusionClass::LoopFusionClass(mlir::StringAttr name, ComputeOp op,
   AddNonePrefixToMapping(1);
 }
 
-void LoopFusionClass::AddUse(ComputeOp op) {
-  if (last_op_->isBeforeInBlock(op)) last_op_ = op;
+void LoopFusionClass::AddUse(ComputeOp op,
+                             const SequenceAnalysis &sequence_analysis) {
+  if (sequence_analysis.IsBefore(last_op_, op)) last_op_ = op;
 }
 
 void LoopFusionClass::TrimDependencies(int num_dependencies) {

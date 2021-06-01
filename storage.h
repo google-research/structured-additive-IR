@@ -21,6 +21,7 @@
 #include "mapped_domain.h"
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
+#include "sequence.h"
 
 namespace sair {
 
@@ -28,7 +29,8 @@ namespace sair {
 // Sair operands are defined in the same program.
 mlir::LogicalResult VerifyStorages(
     SairProgramOp program, const LoopFusionAnalysis &fusion_analysis,
-    const IterationSpaceAnalysis &iteration_spaces);
+    const IterationSpaceAnalysis &iteration_spaces,
+    const SequenceAnalysis &sequence_analysis);
 
 // Returns the buffer attribute representing a 0-dimensional register.
 BufferAttr GetRegister0DBuffer(mlir::MLIRContext *context);
@@ -182,7 +184,8 @@ class StorageAnalysis {
   // passes.
   mlir::LogicalResult VerifyAndMinimizeBufferLoopNests(
       const LoopFusionAnalysis &fusion_analysis,
-      const IterationSpaceAnalysis &iteration_spaces);
+      const IterationSpaceAnalysis &iteration_spaces,
+      const SequenceAnalysis &sequence_analysis);
 
   // Extends the layout of a value by adding dimensions at the front of the
   // buffer layout. The previous layout must be a suffix of the new one. The
@@ -222,7 +225,8 @@ class StorageAnalysis {
 mlir::LogicalResult VerifyValuesNotOverwritten(
     const LoopFusionAnalysis &fusion_analysis,
     const IterationSpaceAnalysis &iteration_spaces,
-    const StorageAnalysis &storage_analysis);
+    const StorageAnalysis &storage_analysis,
+    const SequenceAnalysis &sequence_analysis);
 
 }  // namespace sair
 

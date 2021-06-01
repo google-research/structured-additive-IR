@@ -63,7 +63,9 @@ func @static_shape(%arg0: f32) {
       loop_nest = [{name = "B", iter = #sair.mapping_expr<d0>}],
       storage = [{space = "register", layout = #sair.named_mapping<[] -> ()>}]
     } : !sair.value<d0:static_range<16, 2>, f32>
-    // CHECK: sair.free %[[V0]] {loop_nest = []} : !sair.value<(), memref<8xf32>>
+    // CHECK: sair.free %[[V0]] {
+    // CHECK:   loop_nest = []
+    // CHECK: } : !sair.value<(), memref<8xf32>>
     %4 = sair.proj_last of[d0:%1] %3(d0) : #sair.shape<d0:static_range<16, 2>>, f32
     sair.exit %4 : f32
   } : f32
@@ -182,6 +184,65 @@ func @loop_nest(%arg0: f32) {
     // CHECK: sair.free[d0:%[[D0]]] %[[V6]](d0) {
     // CHECK:   loop_nest = [{iter = #sair.mapping_expr<d0>, name = "A"}]
     // CHECK: } : !sair.value<d0:static_range<16, 4>, memref<?xf32>>
+    sair.exit
+  }
+  return
+}
+
+// CHECK-LABEL: @sequence_attr
+func @sequence_attr(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.static_range : !sair.static_range<16>
+
+    // CHECK: sair.alloc
+    // CHECK-SAME: sequence = 4
+    // CHECK: sair.copy
+    // CHECK-SAME: sequence = 5
+    %2 = sair.copy[d0:%1] %0 {
+      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
+      storage = [{
+        name = "buf2", space = "memory",
+        layout = #sair.named_mapping<[d0:"A"] -> (d0)>
+      }],
+      sequence = 2
+    } : !sair.value<d0:static_range<16>, f32>
+    // CHECK: sair.store_to_memref
+    // CHECK-SAME: sequence = 6
+
+    // CHECK: sair.alloc
+    // CHECK-SAME: sequence = 0
+    // CHECK: sair.copy
+    // CHECK-SAME: sequence = 1
+    %3 = sair.copy[d0:%1] %0 {
+      loop_nest = [{name = "B", iter = #sair.mapping_expr<d0>}],
+      storage = [{
+        name = "buf1", space = "memory",
+        layout = #sair.named_mapping<[d0:"B"] -> (d0)>
+      }],
+      sequence = 1
+    } : !sair.value<d0:static_range<16>, f32>
+    // CHECK: sair.store_to_memref
+    // CHECK-SAME: sequence = 2
+    // CHECK: sair.free
+    // CHECK-SAME: sequence = 3
+
+    // CHECK: sair.load_from_memref
+    // CHECK-SAME: sequence = 7
+    // CHECK: sair.copy
+    // CHECK-SAME: sequence = 8
+    %4 = sair.copy[d0:%1] %2(d0) {
+      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
+      storage = [{
+        name = "buf2", space = "memory",
+        layout = #sair.named_mapping<[d0:"A"] -> (d0)>
+      }],
+      sequence = 3
+    } : !sair.value<d0:static_range<16>, f32>
+    // CHECK: sair.store_to_memref
+    // CHECK-SAME: sequence = 9
+    // CHECK: sair.free
+    // CHECK-SAME: sequence = 10
     sair.exit
   }
   return

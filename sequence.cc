@@ -14,10 +14,14 @@
 
 #include "sequence.h"
 
+#include <algorithm>
+#include <limits>
+
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/Support/Debug.h"
 #include "sair_ops.h"
+#include "util.h"
 
 #define DEBUG_TYPE "sair-sequence"
 #define DBGS(X) llvm::dbgs() << "[" DEBUG_TYPE "]"
@@ -265,6 +269,24 @@ ComputeOpSet ComputeOpFrontier(SairOp op, ArrayRef<SairFbyOp> ignore = {}) {
 
 }  // end namespace
 
+ProgramPoint::ProgramPoint(ComputeOp op, Direction direction,
+                           llvm::ArrayRef<mlir::StringAttr> loop_nest)
+    : program_(op->getParentOp()),
+      op_(op),
+      direction_(direction),
+      loop_nest_(loop_nest) {}
+
+int ProgramPoint::NumCommonLoops(const ProgramPoint &other) const {
+  assert(program_ == other.program_);
+  auto it = std::mismatch(loop_nest_.begin(), loop_nest_.end(),
+                          other.loop_nest_.begin(), other.loop_nest_.end());
+  return std::distance(loop_nest_.begin(), it.first);
+}
+
+void ProgramPoint::TrimLoopNest(int num_loops) {
+  loop_nest_ = loop_nest_.take_front(num_loops);
+}
+
 SequenceAnalysis::SequenceAnalysis(SairProgramOp program_op) {
   AssertSuccess(Init(program_op, /*report_errors=*/false));
 }
@@ -292,6 +314,13 @@ SequenceAnalysis::ConstRangeType SequenceAnalysis::Ops() const {
   return ConstRangeType(sequenced_ops_);
 }
 
+void SequenceAnalysis::AssignInferred() const {
+  int64_t number = 0;
+  for (ComputeOp op : llvm::make_second_range(Ops())) {
+    op.SetSequence(number++);
+  }
+}
+
 SequenceAnalysis::ConstRangeType SequenceAnalysis::OpsBefore(
     ComputeOp op) const {
   llvm::Optional<int64_t> sequence_number = op.Sequence();
@@ -301,6 +330,198 @@ SequenceAnalysis::ConstRangeType SequenceAnalysis::OpsBefore(
 
   return ConstRangeType(sequenced_ops_.begin(),
                         sequenced_ops_.lower_bound(*sequence_number));
+}
+
+bool SequenceAnalysis::IsBefore(ComputeOp first, SairOp second) const {
+  if (first.getOperation() == second.getOperation()) return false;
+  int64_t first_number = ExplicitSequenceNumber(first);
+  // If both ops are ComputeOps, just check the sequence numbers.
+  if (auto second_compute = dyn_cast<ComputeOp>(second.getOperation())) {
+    return first_number < ExplicitSequenceNumber(second_compute);
+  }
+  // If the second op is a non-compute, its implicit sequence number is equal to
+  // the largest explicit sequence number of its operands; so equal numbers mean
+  // the compute op is sequenced before the non-compute op due to a use-def
+  // chain between them.
+  // NOTE: extending this function to query the order between two non-compute
+  // ops will require looking for a potential use-def chain between them.
+  return first_number <= ImplicitSequenceNumber(second);
+}
+
+bool SequenceAnalysis::IsBefore(ProgramPoint point, ComputeOp op) const {
+  if (point.operation() == nullptr || point.operation() == op) {
+    return point.direction() == Direction::kBefore;
+  }
+  return IsBefore(point.operation(), op);
+}
+
+bool SequenceAnalysis::IsAfter(ProgramPoint point, ComputeOp op) const {
+  if (point.operation() == nullptr || point.operation() == op) {
+    return point.direction() == Direction::kAfter;
+  }
+  return IsBefore(op, point.operation());
+}
+
+void SequenceAnalysis::Insert(ComputeOp op, ComputeOp reference,
+                              Direction direction) {
+  Insert(op, cast<SairOp>(reference.getOperation()), direction);
+}
+
+void SequenceAnalysis::Insert(ComputeOp op, SairOp reference,
+                              Direction direction) {
+  auto reference_compute_op = dyn_cast<ComputeOp>(reference.getOperation());
+  int64_t sequence_number = reference_compute_op
+                                ? ExplicitSequenceNumber(reference_compute_op)
+                                : ImplicitSequenceNumber(reference);
+  if (direction == Direction::kAfter) ++sequence_number;
+
+  // TODO(zinenko): this is _really_ inefficient, need a better data structure.
+  MapType new_sequence;
+  for (auto [index, entry] : sequenced_ops_) {
+    new_sequence.emplace(index < sequence_number ? index : (index + 1), entry);
+  }
+  new_sequence.emplace(sequence_number, op);
+  sequenced_ops_ = new_sequence;
+}
+
+void SequenceAnalysis::Erase(ComputeOp op) {
+  int64_t sequence_number = ExplicitSequenceNumber(op);
+  sequenced_ops_.erase(sequence_number);
+  // TODO: this leaves holes in the sequence numbers, which isn't a problem per
+  // se, but a better data structure could avoid this.
+}
+
+SequenceAnalysis::MapType::const_iterator SequenceAnalysis::FindSequencedOp(
+    ComputeOp op) const {
+  // TODO: this makes a linear scan and isn't very efficient, we can consider
+  // storing the reverse map from ops to inferred sequence numbers.
+  return llvm::find_if(sequenced_ops_,
+                       [op](const std::pair<int64_t, ComputeOp> &kvp) {
+                         return kvp.second == op;
+                       });
+}
+
+void SequenceAnalysis::ImplicitlySequencedOps(
+    int64_t sequence_number, llvm::SmallVectorImpl<SairOp> &ops) const {
+  auto iter = sequenced_ops_.find(sequence_number);
+  assert(iter != sequenced_ops_.end() && "sequence number not in analysis");
+  ComputeOp compute_op = iter->second;
+
+  // Iterative post-order DFS starting from the compute op.
+  llvm::SetVector<Operation *> visited;
+  llvm::SetVector<Operation *> stack;
+  stack.insert(compute_op);
+  do {
+    SairOp current = cast<SairOp>(stack.back());
+    bool all_visited = true;
+    // Schedule users of the current operation for visitation before visiting
+    // the current operation. Avoid already visited operations and stack cycles.
+    // Stop at an explicitly sequenced (compute) operation.
+    for (mlir::Operation *user : current->getUsers()) {
+      if (visited.count(user) != 0 || stack.count(user) != 0) continue;
+      auto sair_op = dyn_cast<SairOp>(user);
+      if (!sair_op || isa<ComputeOp>(user)) continue;
+      // The user may depend on another compute operation sequenced after
+      // `compute_op` and therefore not be implicitly sequenced after
+      // `compute_op`. Don't visit it in this case.
+      if (ImplicitSequenceNumber(sair_op) > sequence_number) continue;
+      stack.insert(user);
+      all_visited = false;
+      break;
+    }
+    if (all_visited) {
+      visited.insert(stack.pop_back_val());
+    }
+  } while (!stack.empty());
+
+  // `visited` contains the operations in DFS postorder of their use-def
+  // dependencies, with `current_op` being the last one. Drop it and reverse the
+  // order to create a topologically sorted list of operations according to
+  // their use-def dependencies.
+  visited.pop_back();
+  ops.clear();
+  llvm::append_range(
+      ops, llvm::map_range(llvm::reverse(visited), [](mlir::Operation *op) {
+        return cast<SairOp>(op);
+      }));
+}
+
+int64_t SequenceAnalysis::ExplicitSequenceNumber(ComputeOp op) const {
+  auto it = FindSequencedOp(op);
+  assert(it != sequenced_ops_.end() && "op not in the sequence analysis");
+  return it->first;
+}
+
+int64_t SequenceAnalysis::ImplicitSequenceNumber(SairOp op) const {
+  assert(!isa<ComputeOp>(op.getOperation()) &&
+         "only non-compute ops have implicit sequence numbers");
+  ComputeOpSet frontier = ComputeOpFrontier(op, fby_ops_to_cut_);
+  auto range = llvm::map_range(frontier.Ops(), [this](ComputeOp compute_op) {
+    return ExplicitSequenceNumber(compute_op);
+  });
+  int64_t number = -1;
+  for (int64_t sequence : range) number = std::max(number, sequence);
+  return number;
+}
+
+std::pair<ComputeOp, ComputeOp> SequenceAnalysis::GetSpan(
+    llvm::ArrayRef<ComputeOp> ops) const {
+  assert(!ops.empty());
+  int64_t min = std::numeric_limits<int64_t>::max();
+  int64_t max = std::numeric_limits<int64_t>::min();
+  for (int64_t sequence_number : llvm::map_range(
+           ops, [&](ComputeOp op) { return ExplicitSequenceNumber(op); })) {
+    min = std::min(sequence_number, min);
+    max = std::max(sequence_number, max);
+  }
+  return std::make_pair(sequenced_ops_.find(min)->second,
+                        sequenced_ops_.find(max)->second);
+}
+
+InsertionPoint SequenceAnalysis::FindInsertionPoint(
+    SairOp start, llvm::ArrayRef<mlir::Attribute> current_loop_nest,
+    int num_loops, Direction direction) const {
+  mlir::Operation *point = start;
+  ComputeOp current_op = [&]() {
+    if (auto compute_op = dyn_cast<ComputeOp>(start.getOperation())) {
+      return compute_op;
+    }
+    int64_t sequence_number = ImplicitSequenceNumber(start);
+    auto iter = sequenced_ops_.find(sequence_number);
+    if (iter == sequenced_ops_.end()) return ComputeOp();
+    return iter->second;
+  }();
+  if (current_op != nullptr) point = current_op;
+  auto target_loop_nest = mlir::ArrayAttr::get(
+      start.getContext(), current_loop_nest.take_front(num_loops));
+
+  // Look for a point where only the first `num_loops` of the current loop nest
+  // are open.
+  while (current_loop_nest.size() > num_loops) {
+    // Look for the adjacent in sequence compute op.
+    current_op = direction == Direction::kAfter ? NextOp(current_op)
+                                                : PrevOp(current_op);
+    if (current_op == nullptr) break;
+
+    assert(current_op.loop_nest().hasValue() &&
+           "expected loop nests to have been set");
+
+    // Trim current_loop_nest of dimensions that are not open in current_op.
+    llvm::ArrayRef<mlir::Attribute> new_loop_nest = current_op.LoopNestLoops();
+    int size = std::min(current_loop_nest.size(), new_loop_nest.size());
+    for (; size > num_loops; --size) {
+      if (current_loop_nest[size - 1].cast<LoopAttr>().name() ==
+          new_loop_nest[size - 1].cast<LoopAttr>().name()) {
+        break;
+      }
+    }
+    current_loop_nest = current_loop_nest.take_front(std::max(size, num_loops));
+    if (size > num_loops) {
+      point = current_op;
+    }
+  }
+
+  return {point, direction, target_loop_nest};
 }
 
 // Detects use-def cycles in the program and if they can be cut by removing the

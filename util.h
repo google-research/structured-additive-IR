@@ -40,13 +40,6 @@ struct InsertionPoint {
   void Set(mlir::OpBuilder &builder) const;
 };
 
-// Finds the first point in the program where it is possible to insert an
-// operation nested in the first `num_loops` of `current_loop_nest`, when
-// starting from `start`.
-InsertionPoint FindInsertionPoint(
-    SairOp start, llvm::ArrayRef<mlir::Attribute> current_loop_nest,
-    int num_loops, Direction direction = Direction::kBefore);
-
 // Forwards attributes of old_op to new_op. Skips attributes already set in
 // `new_op`.
 void ForwardAttributes(mlir::Operation *old_op, mlir::Operation *new_op,

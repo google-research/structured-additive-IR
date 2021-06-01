@@ -1550,15 +1550,18 @@ mlir::LogicalResult Verify(SairProgramOp program) {
   }
 
   IterationSpaceAnalysis iteration_spaces(program);
-  auto fusion_analysis_res = LoopFusionAnalysis::Create(program);
+  SequenceAnalysis sequence_analysis(program);
+  auto fusion_analysis_res =
+      LoopFusionAnalysis::Create(program, sequence_analysis);
   if (!fusion_analysis_res.has_value()) return mlir::failure();
   LoopFusionAnalysis fusion_analysis = std::move(fusion_analysis_res).value();
 
-  if (mlir::failed(
-          VerifyLoopNests(program, fusion_analysis, iteration_spaces))) {
+  if (mlir::failed(VerifyLoopNests(program, fusion_analysis, iteration_spaces,
+                                   sequence_analysis))) {
     return mlir::failure();
   }
-  return VerifyStorages(program, fusion_analysis, iteration_spaces);
+  return VerifyStorages(program, fusion_analysis, iteration_spaces,
+                        sequence_analysis);
 }
 
 void SairProgramOp::build(mlir::OpBuilder &builder,

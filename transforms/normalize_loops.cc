@@ -15,6 +15,7 @@
 #include "loop_nest.h"
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
+#include "sequence.h"
 #include "storage.h"
 #include "transforms/domain_utils.h"
 #include "transforms/lowering_pass_classes.h"
@@ -30,6 +31,7 @@ namespace {
 void CreateRange(SairOp op, const LoopNest &loop_nest, int loop,
                  const DomainShapeDim &loop_shape, MappingAttr inverse_mapping,
                  llvm::ArrayRef<mlir::Attribute> new_loop_nest,
+                 SequenceAnalysis &sequence_analysis,
                  llvm::SmallVectorImpl<mlir::Value> &new_domain,
                  mlir::OpBuilder &builder) {
   mlir::OpBuilder::InsertionGuard guard(builder);
@@ -46,7 +48,7 @@ void CreateRange(SairOp op, const LoopNest &loop_nest, int loop,
   // * by introducing placeholder dimensions for non-compute ops instead of
   //   calling CreateRange.
   InsertionPoint insertion_point =
-      FindInsertionPoint(op, new_loop_nest, range_rank);
+      sequence_analysis.FindInsertionPoint(op, new_loop_nest, range_rank);
 
   // Create a block that will hold computations for the new bounds of the
   // range.
@@ -113,6 +115,9 @@ void CreateRange(SairOp op, const LoopNest &loop_nest, int loop,
         /*shape=*/range_shape,
         /*loop_nest=*/map_loop_nest,
         /*storage=*/builder.getArrayAttr(map_buffers));
+    sequence_analysis.Insert(cast<ComputeOp>(map_op.getOperation()),
+                             cast<SairOp>(insertion_point.operation),
+                             Direction::kBefore);
     map_op.body().takeBody(region);
     auto identity_mapping = MappingAttr::GetIdentity(context, range_rank);
     llvm::SmallVector<mlir::Attribute> range_mappings(scalar_results.size(),
@@ -136,6 +141,7 @@ using LoopRangeCache = llvm::DenseMap<mlir::Attribute, mlir::Value>;
 llvm::SmallVector<mlir::Value> GetDomain(
     SairOp op, llvm::ArrayRef<mlir::StringAttr> loop_names,
     const LoopNest &loop_nest, DomainShapeAttr shape,
+    SequenceAnalysis &sequence_analysis,
     llvm::ArrayRef<mlir::Attribute> normalized_loops, mlir::OpBuilder &builder,
     LoopRangeCache &loop_range_cache) {
   MappingAttr inverse_mapping = loop_nest.DomainToLoops().Inverse();
@@ -151,7 +157,7 @@ llvm::SmallVector<mlir::Value> GetDomain(
     }
 
     CreateRange(op, loop_nest, i, shape.Dimension(i), inverse_mapping,
-                normalized_loops, new_domain, builder);
+                normalized_loops, sequence_analysis, new_domain, builder);
     loop_range_cache.try_emplace(loop_names[i], new_domain.back());
   }
 
@@ -213,7 +219,9 @@ llvm::SmallVector<llvm::SmallVector<mlir::Value>> PartitionDomain(
 // Replaces `op` by a copy with a different domain such that each loop in the
 // iteration space corresponds to a full dimension.
 void NormalizeLoops(SairOp op, const IterationSpace &iteration_space,
-                    const LoopNest &loop_nest, mlir::OpBuilder &builder,
+                    const LoopNest &loop_nest,
+                    SequenceAnalysis &sequence_analysis,
+                    mlir::OpBuilder &builder,
                     LoopRangeCache &loop_range_cache) {
   if (iteration_space.num_loops() == 0) return;
   mlir::OpBuilder::InsertionGuard insertion_guard(builder);
@@ -231,7 +239,7 @@ void NormalizeLoops(SairOp op, const IterationSpace &iteration_space,
   MappingAttr mapping = iteration_space.MappingToLoops();
   llvm::SmallVector<mlir::Value> new_domain =
       GetDomain(op, iteration_space.loop_names(), loop_nest, new_shape,
-                normalized_loops, builder, loop_range_cache);
+                sequence_analysis, normalized_loops, builder, loop_range_cache);
   llvm::SmallVector<llvm::SmallVector<mlir::Value>> partitioned_domain =
       PartitionDomain(op, mapping, new_shape, new_domain);
 
@@ -240,6 +248,7 @@ void NormalizeLoops(SairOp op, const IterationSpace &iteration_space,
   SairOp new_op = op.ReCreateWithNewDomain(partitioned_domain, new_shape,
                                            mapping.Inverse(), builder);
   if (auto compute_op = dyn_cast<ComputeOp>(*new_op)) {
+    sequence_analysis.Insert(compute_op, op, Direction::kBefore);
     compute_op.setLoopNest(builder.getArrayAttr(normalized_loops));
   }
 
@@ -255,6 +264,9 @@ void NormalizeLoops(SairOp op, const IterationSpace &iteration_space,
       assert(old_value.getType().isa<ValueType>());
       UpdateValueUses(old_value,
                       {new_value, mapping.Resize(new_op.results_rank())});
+    }
+    if (auto compute_op = dyn_cast<ComputeOp>(op.getOperation())) {
+      sequence_analysis.Erase(compute_op);
     }
     op.erase();
     return;
@@ -282,6 +294,9 @@ void NormalizeLoops(SairOp op, const IterationSpace &iteration_space,
     old_value.replaceAllUsesWith(proj_any);
   }
 
+  if (auto compute_op = dyn_cast<ComputeOp>(op.getOperation())) {
+    sequence_analysis.Erase(compute_op);
+  }
   op.erase();
 }
 
@@ -295,6 +310,7 @@ class NormalizeLoopsPass : public NormalizeLoopsPassBase<NormalizeLoopsPass> {
       LoopRangeCache loop_range_cache;
       auto iteration_spaces = getChildAnalysis<IterationSpaceAnalysis>(program);
       auto fusion_analysis = getChildAnalysis<LoopFusionAnalysis>(program);
+      auto sequence_analysis = getChildAnalysis<SequenceAnalysis>(program);
 
       llvm::SmallVector<SairOp> ops;
       program.walk([&](SairOp op) {
@@ -329,9 +345,11 @@ class NormalizeLoopsPass : public NormalizeLoopsPassBase<NormalizeLoopsPass> {
 
         LoopNest loop_nest =
             fusion_analysis.GetLoopNest(iteration_space.loop_names());
-        NormalizeLoops(op, iteration_space, loop_nest, builder,
-                       loop_range_cache);
-      };
+        NormalizeLoops(op, iteration_space, loop_nest, sequence_analysis,
+                       builder, loop_range_cache);
+      }
+
+      sequence_analysis.AssignInferred();
     });
   }
 };

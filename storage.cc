@@ -16,6 +16,7 @@
 
 #include "llvm/ADT/SmallString.h"
 #include "loop_nest.h"
+#include "sequence.h"
 
 namespace sair {
 
@@ -412,7 +413,8 @@ mlir::LogicalResult StorageAnalysis::ComputeValueStorages(
 
 mlir::LogicalResult StorageAnalysis::Init(SairProgramOp program) {
   // TODO(b/181938550): use cached analysis.
-  LoopFusionAnalysis fusion_analysis(program);
+  SequenceAnalysis sequence_analysis(program);
+  LoopFusionAnalysis fusion_analysis(program, &sequence_analysis);
   IterationSpaceAnalysis iteration_spaces(program);
 
   if (mlir::failed(DeclareBuffers(program, iteration_spaces, fusion_analysis,
@@ -425,19 +427,19 @@ mlir::LogicalResult StorageAnalysis::Init(SairProgramOp program) {
     return mlir::failure();
   }
 
-  if (mlir::failed(VerifyAndMinimizeBufferLoopNests(fusion_analysis,
-                                                    iteration_spaces))) {
+  if (mlir::failed(VerifyAndMinimizeBufferLoopNests(
+          fusion_analysis, iteration_spaces, sequence_analysis))) {
     return mlir::failure();
   }
 
   // Ensure that writes to external buffers occure after the buffer is defined.
   for (auto &[name, buffer] : buffers_) {
     if (!buffer.is_external()) continue;
-    mlir::Operation *defining_op =
-        buffer.import_op().MemRef().value().getDefiningOp();
+    auto defining_op =
+        buffer.import_op().MemRef().value().getDefiningOp<SairOp>();
     // We only need to check writes as reads always occure after writes.
     for (auto write : buffer.writes()) {
-      if (write.first->isBeforeInBlock(defining_op)) {
+      if (sequence_analysis.IsBefore(write.first, defining_op)) {
         mlir::InFlightDiagnostic diag = write.first.emitError()
                                         << "buffer " << name
                                         << " used before it is defined";
@@ -616,11 +618,12 @@ mlir::LogicalResult StorageAnalysis::SetStorage(
 static mlir::LogicalResult CheckMallocInsertionPoint(
     mlir::StringAttr buffer_name, const Buffer &buffer,
     const llvm::SmallBitVector &used_dimensions,
-    const IterationSpaceAnalysis &iteration_spaces, int &min_num_loops) {
+    const IterationSpaceAnalysis &iteration_spaces,
+    const SequenceAnalysis &sequence_analysis, int &min_num_loops) {
   // Find the first compute op writting to the buffer.
   ComputeOp first_write = buffer.writes().front().first;
   for (auto p : buffer.writes()) {
-    if (p.first->isBeforeInBlock(first_write)) {
+    if (sequence_analysis.IsBefore(p.first, first_write)) {
       first_write = p.first;
     }
   }
@@ -631,7 +634,7 @@ static mlir::LogicalResult CheckMallocInsertionPoint(
   for (int dim : used_dimensions.set_bits()) {
     auto dimension_op =
         cast<SairOp>(buffer.domain()[dim].value.getDefiningOp());
-    if (first_write->isBeforeInBlock(dimension_op)) {
+    if (sequence_analysis.IsBefore(first_write, dimension_op)) {
       mlir::InFlightDiagnostic diag =
           first_write.emitError()
           << "buffer " << buffer_name
@@ -669,7 +672,8 @@ static mlir::LogicalResult CheckMallocInsertionPoint(
 
 mlir::LogicalResult StorageAnalysis::VerifyAndMinimizeBufferLoopNests(
     const LoopFusionAnalysis &fusion_analysis,
-    const IterationSpaceAnalysis &iteration_spaces) {
+    const IterationSpaceAnalysis &iteration_spaces,
+    const SequenceAnalysis &sequence_analysis) {
   for (auto &[name_attr, buffer] : buffers_) {
     mlir::StringAttr name = name_attr.cast<mlir::StringAttr>();
     MappingAttr mapping = buffer.NestedMapping();
@@ -698,7 +702,8 @@ mlir::LogicalResult StorageAnalysis::VerifyAndMinimizeBufferLoopNests(
 
     llvm::SmallBitVector used_dimensions = buffer.mapping().DependencyMask();
     if (mlir::failed(CheckMallocInsertionPoint(
-            name, buffer, used_dimensions, iteration_spaces, min_num_loops))) {
+            name, buffer, used_dimensions, iteration_spaces, sequence_analysis,
+            min_num_loops))) {
       return mlir::failure();
     }
 
@@ -790,7 +795,8 @@ static mlir::LogicalResult VerifyNoWriteBetween(
     mlir::StringAttr buffer_name, const Buffer &buffer,
     const ProgramPoint &from, const ProgramPoint &to, MappingAttr layout,
     ComputeOp allowed_write, const IterationSpaceAnalysis &iteration_spaces,
-    const StorageAnalysis &storage_analysis) {
+    const StorageAnalysis &storage_analysis,
+    const SequenceAnalysis &sequence_analysis) {
   int num_common_loops = from.NumCommonLoops(to);
   for (auto [write_op, write_pos] : buffer.writes()) {
     const IterationSpace &iter_space =
@@ -798,7 +804,7 @@ static mlir::LogicalResult VerifyNoWriteBetween(
     if (write_op == allowed_write) continue;
 
     // Check if the write occurs before `from`.
-    if (from.IsAfter(write_op)) {
+    if (sequence_analysis.IsAfter(from, write_op)) {
       int write_common_loops = iter_space.NumCommonLoops(from.loop_nest());
       if (write_common_loops <= num_common_loops) continue;
       const ValueStorage &value_storage =
@@ -810,7 +816,7 @@ static mlir::LogicalResult VerifyNoWriteBetween(
               layout.ResizeUseDomain(write_common_loops)) {
         continue;
       }
-    } else if (to.IsBefore(write_op)) {
+    } else if (sequence_analysis.IsBefore(to, write_op)) {
       int write_common_loops = iter_space.NumCommonLoops(to.loop_nest());
       if (write_common_loops <= num_common_loops) continue;
     }
@@ -843,7 +849,8 @@ static mlir::LogicalResult VerifyValueNotOverwritten(
     mlir::StringAttr buffer_name, const Buffer &buffer, mlir::Value value,
     ProgramPoint use, const LoopFusionAnalysis &fusion_analysis,
     const IterationSpaceAnalysis &iteration_spaces,
-    const StorageAnalysis &storage_analysis) {
+    const StorageAnalysis &storage_analysis,
+    const SequenceAnalysis &sequence_analysis) {
   // Mark visited fby operations to avoid infinite loops.
   llvm::DenseSet<mlir::Operation *> visited_fby;
   // Allow the use to overwritte the buffer in order to support in-place
@@ -867,7 +874,8 @@ static mlir::LogicalResult VerifyValueNotOverwritten(
       const ValueStorage &storage = storage_analysis.GetStorage(value);
       if (mlir::failed(VerifyNoWriteBetween(
               buffer_name, buffer, def_point, use_point, storage.layout(),
-              allowed_write, iteration_spaces, storage_analysis))) {
+              allowed_write, iteration_spaces, storage_analysis,
+              sequence_analysis))) {
         return mlir::failure();
       }
     } else if (auto proj = dyn_cast<SairProjLastOp>(defining_op)) {
@@ -878,9 +886,10 @@ static mlir::LogicalResult VerifyValueNotOverwritten(
       MappingAttr layout = FromToMemRefLayout(from_memref, iter_space);
       ProgramPoint before_program(
           cast<SairProgramOp>(defining_op->getParentOp()), Direction::kBefore);
-      if (mlir::failed(VerifyNoWriteBetween(
-              buffer_name, buffer, before_program, use_point, layout,
-              allowed_write, iteration_spaces, storage_analysis))) {
+      if (mlir::failed(VerifyNoWriteBetween(buffer_name, buffer, before_program,
+                                            use_point, layout, allowed_write,
+                                            iteration_spaces, storage_analysis,
+                                            sequence_analysis))) {
         return mlir::failure();
       }
     } else if (auto fby = dyn_cast<SairFbyOp>(defining_op)) {
@@ -928,7 +937,8 @@ static mlir::LogicalResult VerifyValueNotOverwritten(
 mlir::LogicalResult VerifyValuesNotOverwritten(
     const LoopFusionAnalysis &fusion_analysis,
     const IterationSpaceAnalysis &iteration_spaces,
-    const StorageAnalysis &storage_analysis) {
+    const StorageAnalysis &storage_analysis,
+    const SequenceAnalysis &sequence_analysis) {
   // Ensure that no operation is writting in buffers between the moment
   // where a value is written and the moment where a value is read.
   for (const auto &[name_attr, buffer] : storage_analysis.buffers()) {
@@ -940,7 +950,7 @@ mlir::LogicalResult VerifyValuesNotOverwritten(
       ProgramPoint use_point(op, Direction::kBefore, iter_space.loop_names());
       if (mlir::failed(VerifyValueNotOverwritten(
               buffer_name, buffer, operand, use_point, fusion_analysis,
-              iteration_spaces, storage_analysis))) {
+              iteration_spaces, storage_analysis, sequence_analysis))) {
         return mlir::failure();
       }
     }
@@ -955,7 +965,8 @@ mlir::LogicalResult VerifyValuesNotOverwritten(
                                Direction::kAfter);
     if (mlir::failed(VerifyValueNotOverwritten(
             buffer_name, buffer, to_memref.value(), after_program,
-            fusion_analysis, iteration_spaces, storage_analysis))) {
+            fusion_analysis, iteration_spaces, storage_analysis,
+            sequence_analysis))) {
       return mlir::failure();
     }
   }
@@ -1002,7 +1013,8 @@ static mlir::LogicalResult VerifyCommunicationVolume(
 
 mlir::LogicalResult VerifyStorages(
     SairProgramOp program, const LoopFusionAnalysis &fusion_analysis,
-    const IterationSpaceAnalysis &iteration_spaces) {
+    const IterationSpaceAnalysis &iteration_spaces,
+    const SequenceAnalysis &sequence_analysis) {
   // Check storage attributes are well-formed.
   mlir::WalkResult result = program.walk([](ComputeOp op) -> mlir::WalkResult {
     return VerifyStorageAttrWellFormed(op);
@@ -1046,8 +1058,8 @@ mlir::LogicalResult VerifyStorages(
           VerifyCommunicationVolume(program, iteration_spaces, analysis))) {
     return mlir::failure();
   }
-  return VerifyValuesNotOverwritten(fusion_analysis, iteration_spaces,
-                                    analysis);
+  return VerifyValuesNotOverwritten(fusion_analysis, iteration_spaces, analysis,
+                                    sequence_analysis);
 }
 
 BufferAttr GetRegister0DBuffer(mlir::MLIRContext *context) {

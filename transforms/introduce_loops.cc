@@ -39,8 +39,10 @@
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
 #include "sair_types.h"
+#include "sequence.h"
 #include "storage.h"
 #include "transforms/lowering_pass_classes.h"
+#include "util.h"
 
 namespace sair {
 namespace {
@@ -53,10 +55,17 @@ void getAllPatterns(mlir::OwningRewritePatternList &list, mlir::MLIRContext *ctx
 
 // Keeps track of the operations to process to introduce loops. Maintains two
 // work lists, one for sair operations to canonicalize and one for sair.map
-// operations to lower.
+// operations to lower. Keeps `sequence_analysis` updated with op additions and
+// deletions using the pattern rewriter notification hooks: the sequence numbers
+// of compute operations are updated in the analysis on every addition and
+// deletion. Note that the op attributes are not updated until `AssignInferred`
+// is called on `sequence_analysis`.
 class Driver : public mlir::PatternRewriter {
  public:
-  Driver(mlir::MLIRContext *ctx) : PatternRewriter(ctx), canonicalization_patterns_(ctx) {
+  Driver(mlir::MLIRContext *ctx, SequenceAnalysis &sequence_analysis)
+      : PatternRewriter(ctx),
+        canonicalization_patterns_(ctx),
+        sequence_analysis_(sequence_analysis) {
     getAllPatterns<
 #define GET_OP_LIST
 #include "sair_ops.cc.inc"
@@ -110,6 +119,16 @@ class Driver : public mlir::PatternRewriter {
   // Hook called when a new operation is created.
   void notifyOperationInserted(mlir::Operation *op) override {
     AddOperation(op);
+
+    // This hook is called after the op has been inserted in the block so we can
+    // obtain the "reference" operation as next in the block. It should always
+    // exist since we are never inserting after the terminator, and it should be
+    // a SairOp if the inserted operation is a SairOp because only such ops are
+    // allowed in a SairProgram.
+    if (auto compute_op = dyn_cast<ComputeOp>(op)) {
+      SairOp next_op = cast<SairOp>(op->getNextNode());
+      sequence_analysis_.Insert(compute_op, next_op, Direction::kBefore);
+    }
   }
 
   // Hook called when an opertion is erased. Removes the operation from work
@@ -131,6 +150,10 @@ class Driver : public mlir::PatternRewriter {
         std::swap(dependencies[i], dependencies.back());
         dependencies.pop_back();
       }
+    }
+
+    if (auto compute_op = dyn_cast<ComputeOp>(op)) {
+      sequence_analysis_.Erase(compute_op);
     }
   }
 
@@ -187,31 +210,9 @@ class Driver : public mlir::PatternRewriter {
 
   llvm::DenseMap<mlir::Operation *, llvm::SmallVector<mlir::Operation *, 4>>
       pending_updates_;
+
+  SequenceAnalysis &sequence_analysis_;
 };
-
-// Returns the first sair.map operation before `op`, if any.
-SairMapOp PrevMapOp(SairMapOp op) {
-  mlir::Operation *operation = op.getOperation()->getPrevNode();
-
-  while (operation != nullptr) {
-    SairMapOp map_op = dyn_cast<SairMapOp>(operation);
-    if (map_op != nullptr) return map_op;
-    operation = operation->getPrevNode();
-  }
-  return nullptr;
-}
-
-// Returns the first sair.map operation after `op`, if any.
-SairMapOp NextMapOp(SairMapOp op) {
-  mlir::Operation *operation = op.getOperation()->getNextNode();
-
-  while (operation != nullptr) {
-    SairMapOp map_op = dyn_cast<SairMapOp>(operation);
-    if (map_op != nullptr) return map_op;
-    operation = operation->getNextNode();
-  }
-  return nullptr;
-}
 
 // Indicates if `prefix` is a prefix of `array`. Returns `false` if any of the
 // arrays is a null array.
@@ -230,9 +231,15 @@ bool IsPrefix(mlir::ArrayAttr prefix, mlir::ArrayAttr array) {
 // Registers operations of the sair.program in the driver. Checks that
 // ComputeOps have been lowered to sair.map, that all sair.map have a
 // `loop_nest` attribute set and that sair.proj_any operations are eliminated.
-mlir::LogicalResult RegisterOperations(SairProgramOp program, Driver &driver) {
-  mlir::Block &block = program.body().front();
-  for (mlir::Operation &operation : block) {
+mlir::LogicalResult RegisterOperations(
+    SairProgramOp program, const SequenceAnalysis &sequence_analysis,
+    Driver &driver) {
+  // First, add operations is their sequence order. The order is crucially
+  // important because Sair ops may be sequenced differently from their
+  // "natural" order in the block, but the loops must be created in the proper
+  // order in the block.
+  for (SairOp op : sequence_analysis.AllOps()) {
+    mlir::Operation &operation = *op;
     if (isa<SairProjAnyOp>(operation)) {
       return operation.emitError() << "sair.proj_any operations must be "
                                       "eliminated before introducing loops";
@@ -257,6 +264,12 @@ mlir::LogicalResult RegisterOperations(SairProgramOp program, Driver &driver) {
                << "loop must not rematerialize or be strip-mined";
       }
     }
+  }
+  // Add ops that do not have implicit sequencing because they don't depend on
+  // any compute ops, such as empty terminators or placeholders. These will be
+  // essentially canonicalized away by the driver.
+  for (mlir::Operation &operation : program.body().front()) {
+    driver.AddOperation(&operation);
   }
 
   return mlir::success();
@@ -732,11 +745,15 @@ bool CanFuse(mlir::ArrayAttr lhs, mlir::ArrayAttr rhs) {
 
 // Introduces the innermost loop of `op` or fuse it with one of its immediate
 // neigbors if possible.
-mlir::LogicalResult IntroduceLoopOrFuse(SairMapOp op,
-                                        const StorageAnalysis &storage_analysis,
-                                        Driver &driver) {
-  SairMapOp prev_op = PrevMapOp(op);
-  SairMapOp next_op = NextMapOp(op);
+mlir::LogicalResult IntroduceLoopOrFuse(
+    SairMapOp op, const StorageAnalysis &storage_analysis,
+    const SequenceAnalysis &sequence_analysis, Driver &driver) {
+  ComputeOp prev_compute_op =
+      sequence_analysis.PrevOp(cast<ComputeOp>(op.getOperation()));
+  ComputeOp next_compute_op =
+      sequence_analysis.NextOp(cast<ComputeOp>(op.getOperation()));
+  auto prev_op = cast_or_null<SairMapOp>(prev_compute_op.getOperation());
+  auto next_op = cast_or_null<SairMapOp>(next_compute_op.getOperation());
   mlir::ArrayAttr curr_loop_nest = op.loop_nest().getValue();
   mlir::ArrayAttr prev_loop_nest =
       prev_op == nullptr ? nullptr : prev_op.loop_nest().getValue();
@@ -764,9 +781,10 @@ mlir::LogicalResult IntroduceLoopOrFuse(SairMapOp op,
 class IntroduceLoops : public IntroduceLoopsPassBase<IntroduceLoops> {
   // Introduce loops for a sair.program operation.
   void IntroduceProgramLoops(SairProgramOp program) {
-    Driver driver(&getContext());
+    auto &sequence_analysis = getChildAnalysis<SequenceAnalysis>(program);
+    Driver driver(&getContext(), sequence_analysis);
     auto storage_analysis = getChildAnalysis<StorageAnalysis>(program);
-    if (mlir::failed(RegisterOperations(program, driver))) {
+    if (mlir::failed(RegisterOperations(program, sequence_analysis, driver))) {
       signalPassFailure();
       return;
     }
@@ -774,7 +792,8 @@ class IntroduceLoops : public IntroduceLoopsPassBase<IntroduceLoops> {
     driver.Simplify();
 
     while (SairMapOp op = driver.PopMapOp()) {
-      if (mlir::failed(IntroduceLoopOrFuse(op, storage_analysis, driver))) {
+      if (mlir::failed(IntroduceLoopOrFuse(op, storage_analysis,
+                                           sequence_analysis, driver))) {
         signalPassFailure();
         return;
       }

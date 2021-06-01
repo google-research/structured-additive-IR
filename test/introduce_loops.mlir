@@ -130,6 +130,75 @@ func @fuse(%arg0: f32) {
   return
 }
 
+// CHECK-LABEL: @fuse_reorder
+func @fuse_reorder(%arg0: f32) {
+  sair.program {
+    %0 = sair.static_range : !sair.static_range<8>
+    %1 = sair.static_range : !sair.static_range<16>
+    %2 = sair.from_scalar %arg0: !sair.value<(), f32>
+    // Check that loop introduction and fusion accounts for sequence numbers.
+    // In particular, the body of the second map (sequence number 1) should
+    // come first, and have a separate inner loop. The bodies of the first
+    // (sequence number 2) and third (sequence number 3) map should be fused
+    // and not include the body of the second map.
+    // CHECK: sair.map
+    // CHECK: ^{{.*}}(%[[ARG:.*]]: f32):
+    // CHECK:   scf.for %[[IV1:.*]] = {{.*}} {
+    // CHECK:     scf.for {{.*}} {
+    // CHECK:       call @bar(%[[ARG]])
+    // CHECK:     }
+    // CHECK:     scf.for %[[IV2:.*]] = {{.*}} {
+    // CHECK:       call @foo(%[[IV1]], %[[IV2]])
+    // CHECK-NOT:   call @bar
+    // CHECK:       constant 1
+    // CHECK:       addf %[[ARG]]
+    // CHECK:       index_cast
+    // CHECK:       sitofp
+    // CHECK:       call @bar
+    // CHECK:     }
+    // CHECK:   }
+    %3 = sair.map[d0:%0, d1:%1] %2 attributes {
+      loop_nest = [
+        {name = "A", iter = #sair.mapping_expr<d0>},
+        {name = "C", iter = #sair.mapping_expr<d1>}
+      ],
+      sequence = 2
+    } {
+    ^bb0(%arg1: index, %arg2: index, %arg3: f32):
+      call @foo(%arg1, %arg2) : (index, index) -> ()
+      %4 = constant 1.0 : f32
+      %5 = addf %arg3, %4 : f32
+      sair.return %5 : f32
+    } : #sair.shape<d0:static_range<8> x d1:static_range<16>>, (f32) -> (f32)
+    %6 = sair.map[d0:%0, d1:%1] %2 attributes {
+      loop_nest = [
+        {name = "A", iter = #sair.mapping_expr<d0>},
+        {name = "B", iter = #sair.mapping_expr<d1>}
+      ],
+      sequence = 1
+    } {
+    ^bb0(%arg1: index, %arg2: index, %arg3: f32):
+      %7 = call @bar(%arg3) : (f32) -> f32
+      sair.return %7 : f32
+    } : #sair.shape<d0:static_range<8> x d1:static_range<16>>, (f32) -> (f32)
+    sair.map[d0:%0, d1:%1] attributes {
+      loop_nest = [
+        {name = "A", iter = #sair.mapping_expr<d0>},
+        {name = "C", iter = #sair.mapping_expr<d1>}
+      ],
+      sequence = 3
+    } {
+    ^bb0(%arg1: index, %arg2: index):
+      %9 = index_cast %arg1 : index to i32
+      %10 = sitofp %9 : i32 to f32
+      call @bar(%10) : (f32) -> f32
+      sair.return
+    } : #sair.shape<d0:static_range<8> x d1:static_range<16>>, () -> ()
+    sair.exit
+  }
+  return
+}
+
 // CHECK-LABEL: @dependent_dims
 func @dependent_dims() {
   sair.program {

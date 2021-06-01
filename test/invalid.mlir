@@ -997,18 +997,18 @@ func @fby_dim_out_of_range(%arg0: f32) {
 
 // -----
 
-func @wrong_order_for_remat(%arg0: f32) {
+func @wrong_order_for_remat(%arg0: index) {
   sair.program {
-    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %0 = sair.from_scalar %arg0 : !sair.value<(), index>
     // expected-error @+1 {{rematerialized loop "A" indirectly uses the range before it is defined}}
     %2 = sair.copy %0 {
       loop_nest = [{name = "A", iter = #sair.mapping_expr<none>}]
-    } : !sair.value<(), f32>
+    } : !sair.value<(), index>
     // expected-note @+1 {{range defined here}}
-    %1 = sair.static_range : !sair.static_range<8>
+    %1 = sair.dyn_range %2: !sair.dyn_range
     %3 = sair.copy[d0:%1] %2 {
       loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
-    } : !sair.value<d0:static_range<8>, f32>
+    } : !sair.value<d0:dyn_range , index>
     sair.exit
   }
   return
@@ -1455,7 +1455,7 @@ func @layout_depends_indexed_loop(%arg0: f32) {
 
 // -----
 
-func @buffer_used_before_dimension_def(%arg0: f32) {
+func @buffer_used_before_dimension_def(%arg0: f32, %arg1: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
 
@@ -1469,8 +1469,10 @@ func @buffer_used_before_dimension_def(%arg0: f32) {
       }]
     } : !sair.value<d0:static_range<8>, f32>
 
+    %dim = sair.from_scalar %arg1 : !sair.value<(), index>
+    %copy = sair.copy %dim { sequence = 1 } : !sair.value<(), index>
     // expected-note @+1 {{dimension defined here}}
-    %4 = sair.static_range : !sair.static_range<16>
+    %4 = sair.dyn_range %copy : !sair.dyn_range
     %5 = sair.copy[d0:%4] %0 {
       loop_nest = [
         {name = "loopB", iter = #sair.mapping_expr<d0>}
@@ -1479,7 +1481,7 @@ func @buffer_used_before_dimension_def(%arg0: f32) {
         space = "memory", name = "bufferA",
         layout = #sair.named_mapping<[d0:"loopB"] -> (none, d0)>
       }]
-    } : !sair.value<d0:static_range<16>, f32>
+    } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
   return
@@ -1579,11 +1581,35 @@ func @buffer_used_before_def(%arg0: f32, %arg1: memref<f32>) {
       loop_nest = [],
       storage = [{name = "bufferA", space = "memory", layout = #sair.named_mapping<[] -> ()>}]
     } : !sair.value<(), f32>
-    // expected-note @+1 {{buffer defined here}}
     %2 = sair.from_scalar %arg1 : !sair.value<(), memref<f32>>
-    %3 = sair.from_memref %2 memref {
+    // expected-note @+1 {{buffer defined here}}
+    %copy = sair.copy %2 : !sair.value<(), memref<f32>>
+    %3 = sair.from_memref %copy memref {
       buffer_name = "bufferA"
     } : #sair.shape<()>, memref<f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @buffer_used_before_def_seq(%arg0: f32, %arg1: memref<f32>) {
+  sair.program {
+    %2 = sair.from_scalar %arg1 : !sair.value<(), memref<f32>>
+    // expected-note @+1 {{buffer defined here}}
+    %copy = sair.copy %2 { sequence = 2 }: !sair.value<(), memref<f32>>
+    %3 = sair.from_memref %copy memref {
+      buffer_name = "bufferA"
+    } : #sair.shape<()>, memref<f32>
+
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    // expected-error @+1 {{buffer "bufferA" used before it is defined}}
+    %1 = sair.copy %0 {
+      loop_nest = [],
+      storage = [{name = "bufferA", space = "memory", layout = #sair.named_mapping<[] -> ()>}],
+      sequence = 1
+    } : !sair.value<(), f32>
     sair.exit
   }
   return

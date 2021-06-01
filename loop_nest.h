@@ -21,6 +21,7 @@
 #include "mapped_domain.h"
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
+#include "sequence.h"
 
 namespace sair {
 
@@ -103,49 +104,6 @@ class IterationSpaceAnalysis {
   llvm::DenseMap<mlir::Operation *, IterationSpace> iteration_space_;
 };
 
-// A point in the execution of the program. A point can be:
-// - Immediately before or after a Sair operation.
-// - Immediately before entering the Sair program.
-// - Immediately after exiting the Sair program.
-class ProgramPoint {
- public:
-  // Constructs a program point that is before or after the whole program.
-  ProgramPoint(SairProgramOp program, Direction direction)
-      : program_(program), direction_(direction) {}
-
-  // Constructs a program point that is before or after `op`. Saves a reference
-  // to `loop_nest`.
-  ProgramPoint(ComputeOp op, Direction direction,
-               llvm::ArrayRef<mlir::StringAttr> loop_nest);
-
-  // If null, the point is outside of the sair program. If non-null the point is
-  // immediately before or after this operation.
-  ComputeOp operation() const { return op_; }
-
-  // Indicates if the point is before or after operation() or before or after
-  // the Sair program.
-  Direction direction() const { return direction_; }
-
-  // Loop nest the point is nested in.
-  llvm::ArrayRef<mlir::StringAttr> loop_nest() const { return loop_nest_; }
-
-  // Reduces the number of loops in loop_nest().
-  void TrimLoopNest(int num_loops);
-
-  // Indicates if `this` is before or after `op`.
-  bool IsBefore(ComputeOp op) const;
-  bool IsAfter(ComputeOp op) const;
-
-  // Number of common loops between two program points.
-  int NumCommonLoops(const ProgramPoint &other) const;
-
- private:
-  SairProgramOp program_;
-  ComputeOp op_ = nullptr;
-  Direction direction_;
-  llvm::ArrayRef<mlir::StringAttr> loop_nest_;
-};
-
 // A class of fused loops.
 class LoopFusionClass : public MappedDomain {
  public:
@@ -154,7 +112,7 @@ class LoopFusionClass : public MappedDomain {
                   const LoopNest &loop_nest);
 
   // Registers an operation nested in the loop.
-  void AddUse(ComputeOp op);
+  void AddUse(ComputeOp op, const SequenceAnalysis &sequence_analysis);
 
   // Program point at which the loop ends.
   ProgramPoint EndPoint() const;
@@ -211,12 +169,16 @@ class LoopNest {
 // Computes loop fusion classes in a sair program.
 class LoopFusionAnalysis {
  public:
-  // Builds an analysis populated with all loops appearing in `program_op`.
-  explicit LoopFusionAnalysis(mlir::Operation *operation);
+  // Builds an analysis populated with all loops appearing in `program_op`. Uses
+  // `sequence_analysis` to reason about relative position of operations.
+  explicit LoopFusionAnalysis(
+      mlir::Operation *operation,
+      const SequenceAnalysis *sequence_analysis = nullptr);
 
   // Creates a LoopFusionAnalysis populated with the loops appearing in
   // `program_op`. Returns `nullopt` if the analysis fails.
-  static std::optional<LoopFusionAnalysis> Create(SairProgramOp program_op);
+  static std::optional<LoopFusionAnalysis> Create(
+      SairProgramOp program_op, const SequenceAnalysis &sequence_analysis);
 
   // Retrieves the fusion class with the given name.
   const LoopFusionClass &GetClass(mlir::StringAttr name) const {
@@ -236,12 +198,15 @@ class LoopFusionAnalysis {
  private:
   LoopFusionAnalysis(mlir::MLIRContext *context) : context_(context) {}
 
-  // Populates the analysis with the operations appearing in `program_op`.
-  mlir::LogicalResult Init(SairProgramOp program_op);
+  // Populates the analysis with the operations appearing in `program_op`. Uses
+  // `sequence_analysis` to reason about relative position of operations.
+  mlir::LogicalResult Init(SairProgramOp program_op,
+                           const SequenceAnalysis &sequence_analysis);
 
   // Registers loop at position `loop_pos` of `op` as a new fusion class or
   // merges it in an existing fusion class.
-  mlir::LogicalResult RegisterLoop(ComputeOp op, int loop_pos);
+  mlir::LogicalResult RegisterLoop(ComputeOp op, int loop_pos,
+                                   const SequenceAnalysis &sequence_analysis);
 
   int next_loop_id_ = 0;
   mlir::MLIRContext *context_;
@@ -254,7 +219,8 @@ class LoopFusionAnalysis {
 // operation. Assumes that Sair operands are defined in the same program.
 mlir::LogicalResult VerifyLoopNests(
     SairProgramOp program, const LoopFusionAnalysis &fusion_analysis,
-    const IterationSpaceAnalysis &iteration_spaces);
+    const IterationSpaceAnalysis &iteration_spaces,
+    const SequenceAnalysis &sequence_analysis);
 
 // Verifies that the loop_nest attribute is correct with regard to the shape of
 // the operation it is attached to.

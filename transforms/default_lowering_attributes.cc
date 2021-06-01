@@ -254,6 +254,7 @@ class DefaultStorage : public DefaultStoragePassBase<DefaultStorage> {
     auto &iteration_spaces = getChildAnalysis<IterationSpaceAnalysis>(program);
     auto &fusion_analysis = getChildAnalysis<LoopFusionAnalysis>(program);
     auto &storage_analysis = getChildAnalysis<StorageAnalysis>(program);
+    auto &sequence_analysis = getChildAnalysis<SequenceAnalysis>(program);
 
     // Assign memory space and buffer names to values that won't fit in
     // register.
@@ -303,9 +304,10 @@ class DefaultStorage : public DefaultStoragePassBase<DefaultStorage> {
     });
 
     if (mlir::failed(storage_analysis.VerifyAndMinimizeBufferLoopNests(
-            fusion_analysis, iteration_spaces)) ||
-        mlir::failed(VerifyValuesNotOverwritten(
-            fusion_analysis, iteration_spaces, storage_analysis))) {
+            fusion_analysis, iteration_spaces, sequence_analysis)) ||
+        mlir::failed(
+            VerifyValuesNotOverwritten(fusion_analysis, iteration_spaces,
+                                       storage_analysis, sequence_analysis))) {
       return program.emitError()
              << "unable to generate storage attributes, see other "
                 "errors for more information";
@@ -375,10 +377,7 @@ class DefaultLoopNest : public DefaultLoopNestPassBase<DefaultLoopNest> {
 // otherwise unspecified for operations that do not have "sequence" attribute
 // and belong to different connected components of the use-def dependency graph.
 void UpdateSequence(SairProgramOp program) {
-  SequenceAnalysis sequence_analysis(program);
-  for (auto [index, op] : sequence_analysis.Ops()) {
-    op.SetSequence(index);
-  }
+  SequenceAnalysis(program).AssignInferred();
 }
 
 class DefaultSequencePass
