@@ -276,3 +276,69 @@ func @sequence_attr(%arg0: f32) {
   }
   return
 }
+
+// Loop bound computation code will be inserted before the operation with the
+// lowest sequence number that participates in the loop. This is fine because
+// Sair doesn't enforce use-def order but relies on sequences instead.
+// CHECK-LABEL: @sequence_attr_inversion
+func @sequence_attr_inversion(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.static_range : !sair.static_range<16>
+
+    // CHECK: sair.map[d0:%[[STATIC:.*]], d1:%[[DYN:.*]]] %{{.*}} attributes
+    // CHECK-SAME: sequence = 2
+    sair.map[d0:%1] %0 attributes {
+      loop_nest = [
+        {name = "B", iter = #sair.mapping_expr<stripe(d0, [4])>},
+        {name = "C", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
+      ],
+      sequence = 2
+    } {
+    ^bb0(%arg1: index, %arg2: f32):
+      call @foo(%arg1, %arg2) : (index, f32) -> ()
+      sair.return
+    } : #sair.shape<d0:static_range<16>>, (f32) -> ()
+
+    // CHECK: %[[OTHER_STATIC:.*]] = sair.static_range : !sair.static_range<16>
+    // CHECK: sair.map[d0:%[[OTHER_STATIC]]]
+    // CHECK-SAME: sequence = 3
+    sair.map[d0:%1] %0 attributes {
+      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
+      sequence = 3
+    } {
+    ^bb0(%arg1: index, %arg2: f32):
+      call @foo(%arg1, %arg2) : (index, f32) -> ()
+      sair.return
+    } : #sair.shape<d0:static_range<16>>, (f32) -> ()
+
+    // CHECK: %[[STATIC]] = sair.static_range : !sair.static_range<16, 4>
+    // CHECK: %[[RANGE:.*]]:2 = sair.map
+    // CHECK-SAME: sequence = 0
+    // CHECK: ^{{.*}}(%[[ARG:.*]]: index):
+    // CHECK:   %[[V1:.*]] = affine.apply affine_map<(d0) -> (d0)>(%[[ARG]])
+    // CHECK:   %[[C4:.*]] = constant 4
+    // CHECK:   %[[V2:.*]] = addi %[[V1]], %[[C4]]
+    // CHECK:   %[[C16:.*]] = constant 16
+    // CHECK:   %[[V3:.*]] = cmpi ult, %[[C16]], %[[V2]]
+    // CHECK:   %[[V4:.*]] = select %[[V3]], %[[C16]], %[[V2]]
+    // CHECK:   sair.return %[[V1]], %[[V4]]
+    // CHECK: %[[DYN]] = sair.dyn_range[d0:%[[STATIC]]] %[[RANGE]]#0(d0), %[[RANGE]]#1(d0)
+
+    // CHECK: sair.map[d0:%[[STATIC]], d1:%[[DYN]]]
+    // CHECK-SAME: sequence = 1
+    sair.map[d0:%1] %0 attributes {
+      loop_nest = [
+        {name = "B", iter = #sair.mapping_expr<stripe(d0, [4])>},
+        {name = "C", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
+      ],
+      sequence = 1
+    } {
+    ^bb0(%arg1: index, %arg2: f32):
+      call @foo(%arg1, %arg2) : (index, f32) -> ()
+      sair.return
+    } : #sair.shape<d0:static_range<16>>, (f32) -> ()
+    sair.exit
+  }
+  return
+}

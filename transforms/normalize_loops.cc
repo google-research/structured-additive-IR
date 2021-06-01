@@ -40,13 +40,6 @@ void CreateRange(SairOp op, const LoopNest &loop_nest, int loop,
   // Find the loop nest and domain of the new operation.
   int range_rank = loop_shape.dependency_mapping().MinDomainSize();
   auto range_domain = llvm::makeArrayRef(new_domain).take_front(range_rank);
-  // TODO(b/175664160): this fails if op is not a ComputeOp and compute ops
-  // surrounding op are not nested in loop_nest. We can fix this either
-  // * by normalizing instructions order so that this property is satisfied,
-  // * by not enforcing dominances and relying on a dedicated attribute for
-  //   ordering, or
-  // * by introducing placeholder dimensions for non-compute ops instead of
-  //   calling CreateRange.
   InsertionPoint insertion_point =
       sequence_analysis.FindInsertionPoint(op, new_loop_nest, range_rank);
 

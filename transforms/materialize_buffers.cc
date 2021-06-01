@@ -191,6 +191,8 @@ void InsertLoad(ComputeOp op, int operand_pos, const Buffer &buffer,
                 const IterationSpaceAnalysis &iteration_spaces,
                 const StorageAnalysis &storage_analysis,
                 SequenceAnalysis &sequence_analysis, mlir::OpBuilder &builder) {
+  // This isn't strictly necessary because Sair doesn't rely on textual order,
+  // but leads to more readable IR with loads textually preceding the user.
   mlir::OpBuilder::InsertionGuard guard(builder);
   mlir::MLIRContext *context = op.getContext();
   builder.setInsertionPoint(op);
@@ -257,6 +259,8 @@ void InsertStore(ComputeOp op, int result_pos, const Buffer &buffer,
                  const StorageAnalysis &storage_analysis,
                  SequenceAnalysis &sequence_analysis,
                  mlir::OpBuilder &builder) {
+  // This isn't strictly necessary because Sair doesn't rely on textual order,
+  // but leads to more readable IR with stores textually following the producer.
   mlir::OpBuilder::InsertionGuard guard(builder);
   builder.setInsertionPointAfter(op);
 

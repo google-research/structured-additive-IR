@@ -149,11 +149,6 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
       return op->emitError()
              << "sair dimensions must be defined in the region they are used";
     }
-    if (!defining_op->isBeforeInBlock(op)) {
-      return (op->emitError() << "dimension used before its definition")
-                 .attachNote(defining_op->getLoc())
-             << "definition here";
-    }
   }
 
   if (!sair_op.ValueOperands().empty()) {
@@ -198,12 +193,6 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
     if (expected_shape != given_shape) {
       return op->emitError() << "invalid operand shape: expected "
                              << expected_shape << ", got " << given_shape;
-    }
-
-    if (!defining_op->isBeforeInBlock(op) && !v.AllowUseBeforeDef()) {
-      return (op->emitError() << "operand used before its definition")
-                 .attachNote(defining_op->getLoc())
-             << "definition here";
     }
 
     llvm::SmallBitVector dependency_mask = v.Mapping().DependencyMask();

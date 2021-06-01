@@ -247,3 +247,44 @@ func @sequence_attr(%arg0: f32) {
   }
   return
 }
+
+// Allocation will be inserted textually after the use and the deallocation,
+// but this is totally fine since Sair doesn't rely on textual order.
+func @sequence_attr_inversion(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.static_range : !sair.static_range<16>
+
+    // CHECK: sair.copy
+    // CHECK-SAME: sequence = 3
+    %2 = sair.copy[d0:%1] %0 {
+      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
+      storage = [{
+        name = "buf2", space = "memory",
+        layout = #sair.named_mapping<[d0:"A"] -> (d0)>
+      }],
+      sequence = 2
+    } : !sair.value<d0:static_range<16>, f32>
+    // CHECK: sair.store_to_memref
+    // CHECK-SAME: sequence = 4
+    // CHECK: sair.free
+    // CHECK-SAME: sequence = 5
+
+    // CHECK: sair.alloc
+    // CHECK-SAME: sequence = 0
+    // CHECK: sair.copy
+    // CHECK-SAME: sequence = 1
+    %4 = sair.copy[d0:%1] %0 {
+      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
+      storage = [{
+        name = "buf2", space = "memory",
+        layout = #sair.named_mapping<[d0:"A"] -> (d0)>
+      }],
+      sequence = 1
+    } : !sair.value<d0:static_range<16>, f32>
+    // CHECK: sair.store_to_memref
+    // CHECK-SAME: sequence = 2
+    sair.exit
+  }
+  return
+}

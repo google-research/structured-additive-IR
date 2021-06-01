@@ -130,13 +130,16 @@ func @domain_dim_redefinition(%arg0 : !sair.value<(), index>) {
 
 // -----
 
-func @dimension_use_before_def(%arg0 : f32) {
+func @fby_cycle(%arg0: f32) {
   sair.program {
-    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    // expected-error @+1 {{dimension used before its definition}}
-    %1 = sair.copy[d0:%2] %0 : !sair.value<d0:static_range<8>, f32>
-    // expected-note @+1 {{definition here}}
-    %2 = sair.static_range : !sair.static_range<8>
+    %0 = sair.static_range : !sair.static_range<8>
+    // expected-error @below {{unexpected use-def cycle}}
+    // expected-note @below {{operation in the cycle}}
+    %1 = sair.proj_last of[d0:%0] %4(d0) : #sair.shape<d0:static_range<8>>, f32
+    %2 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %3 = sair.copy[d0:%0] %2 : !sair.value<d0:static_range<8>, f32>
+    // expected-note @below {{operation in the cycle}}
+    %4 = sair.fby %1 then[d0:%0] %3(d0) : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
   return
@@ -144,12 +147,55 @@ func @dimension_use_before_def(%arg0 : f32) {
 
 // -----
 
-func @operand_use_before_def(%arg0 : f32) {
+func @copy_cycle(%arg0: f32) {
   sair.program {
-    // expected-error @+1 {{operand used before its definition}}
-    %0 = sair.copy %1 : !sair.value<(), f32>
-    // expected-note @+1 {{definition here}}
-    %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %0 = sair.static_range : !sair.static_range<8>
+    // expected-error @below {{unexpected use-def cycle}}
+    // expected-note @below {{operation in the cycle}}
+    %1 = sair.proj_any of[d0:%0] %6(d0) : #sair.shape<d0:static_range<8>>, f32
+    // expected-note @below {{operation in the cycle}}
+    %2 = sair.copy[d0:%0] %1 : !sair.value<d0:static_range<8>, f32>
+    // expected-note @below {{operation in the cycle}}
+    %3 = sair.copy[d0:%0] %2(d0) : !sair.value<d0:static_range<8>, f32>
+    // expected-note @below {{operation in the cycle}}
+    %4 = sair.copy[d0:%0] %3(d0) : !sair.value<d0:static_range<8>, f32>
+    // expected-note @below {{operation in the cycle}}
+    %5 = sair.copy[d0:%0] %4(d0) : !sair.value<d0:static_range<8>, f32>
+    // expected-note @below {{operation in the cycle}}
+    %6 = sair.copy[d0:%0] %5(d0) : !sair.value<d0:static_range<8>, f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @mixed_cycle(%arg0: f32) {
+  sair.program {
+    %0 = sair.static_range : !sair.static_range<8>
+    // expected-error @below {{unexpected use-def cycle}}
+    // expected-note @below {{operation in the cycle}}
+    %1 = sair.proj_any of[d0:%0] %3(d0) : #sair.shape<d0:static_range<8>>, f32
+    %2 = sair.copy[d0:%0] %1 : !sair.value<d0:static_range<8>, f32>
+    // expected-note @below {{operation in the cycle}}
+    %3 = sair.fby %1 then[d0:%0] %2(d0) : !sair.value<d0:static_range<8>, f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @domain_cycle(%arg0: f32, %arg1: index) {
+  sair.program {
+    %0 = sair.from_scalar %arg1 : !sair.value<(), index>
+    %1 = sair.static_range : !sair.static_range<42>
+    // expected-error @below {{unexpected use-def cycle}}
+    // expected-note @below {{operation in the cycle}}
+    %2 = sair.proj_any[d0:%1] of[d1:%3] %4(d0, d1) : #sair.shape<d0:static_range<42> x d1:dyn_range(d0)>, index
+    // expected-note @below {{operation in the cycle}}
+    %3 = sair.dyn_range[d0:%1] %2(d0) : !sair.dyn_range<d0:static_range<42>>
+    %4 = sair.copy[d0:%1, d1:%3] %0 : !sair.value<d0:static_range<42> x d1:dyn_range(d0), index>
     sair.exit
   }
   return

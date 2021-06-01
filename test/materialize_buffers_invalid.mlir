@@ -47,37 +47,3 @@ func @missing_layout(%arg0: f32) {
   return
 }
 
-// -----
-
-// Buffer materialization will currently result in invalid IR because the
-// allocation will be inserted before the compute operation with the lowest
-// sequence number, i.e. the second copy, and will be used by the operation
-// preceding it. This will be resolved by relaxing use-def order later.
-func @sequence_attr(%arg0: f32) {
-  sair.program {
-    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %1 = sair.static_range : !sair.static_range<16>
-
-    // expected-error @below {{operand used before its definition}}
-    // expected-note @below {{definition here}}
-    %2 = sair.copy[d0:%1] %0 {
-      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
-      storage = [{
-        name = "buf2", space = "memory",
-        layout = #sair.named_mapping<[d0:"A"] -> (d0)>
-      }],
-      sequence = 2
-    } : !sair.value<d0:static_range<16>, f32>
-
-    %4 = sair.copy[d0:%1] %0 {
-      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
-      storage = [{
-        name = "buf2", space = "memory",
-        layout = #sair.named_mapping<[d0:"A"] -> (d0)>
-      }],
-      sequence = 1
-    } : !sair.value<d0:static_range<16>, f32>
-    sair.exit
-  }
-  return
-}

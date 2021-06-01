@@ -528,8 +528,9 @@ InsertionPoint SequenceAnalysis::FindInsertionPoint(
 // use-def edge of the "value" operand of a "fby" op, adds such ops into
 // `fby_ops_to_cut`. Otherwise, returns failure.
 static mlir::LogicalResult FindEdgesToCut(
-    SairProgramOp program, llvm::SmallVectorImpl<SairFbyOp> &fby_ops_to_cut) {
-  // Create a graph with of Sair predecessor ops.
+    SairProgramOp program, llvm::SmallVectorImpl<SairFbyOp> &fby_ops_to_cut,
+    bool report_errors) {
+  // Create a graph of Sair predecessor ops.
   SairOpGraph predecessors;
   program.walk([&](SairOp op) {
     predecessors.insert(op);
@@ -574,8 +575,14 @@ static mlir::LogicalResult FindEdgesToCut(
       }
       // If there is no edge in the cycle that connects an operation to "fby"
       // through its "then" operand, the cycle is invalid in the program.
-      if (!found) return mlir::failure();
-      break;
+      if (found) break;
+      if (!report_errors) return mlir::failure();
+      mlir::InFlightDiagnostic diag = cycle.front().emitError()
+                                      << "unexpected use-def cycle";
+      for (SairOp cycle_op : llvm::drop_begin(cycle)) {
+        diag.attachNote(cycle_op->getLoc()) << "operation in the cycle";
+      }
+      return diag;
     }
   } while (found);
   return mlir::success();
@@ -610,7 +617,9 @@ mlir::LogicalResult SequenceAnalysis::ComputeDefaultSequence(
   // IR. When we don't, this could fail on unexpected use-def cycles, i.e.
   // cycles that are not caused by "fby", and should be reported back to the
   // caller.
-  AssertSuccess(FindEdgesToCut(program, fby_ops_to_cut_));
+  if (mlir::failed(FindEdgesToCut(program, fby_ops_to_cut_, report_errors))) {
+    return mlir::failure();
+  }
 
   ComputeOpGraph predecessors;
   program.walk([&](ComputeOp op) {
