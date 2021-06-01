@@ -15,8 +15,6 @@
 #ifndef SAIR_SEQUENCE_H_
 #define SAIR_SEQUENCE_H_
 
-#include <map>
-
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SetVector.h"
@@ -121,11 +119,8 @@ class ProgramPoint {
 // sequence attributes.
 class SequenceAnalysis {
  public:
-  // We use a standard multimap because (a) the sequence numbers can be shared
-  // and (b) we need a deterministic increasing order that is provided by this
-  // map and not provided by hash table-based maps.
-  using MapType = std::multimap<int64_t, ComputeOp>;
-  using ConstRangeType = llvm::iterator_range<MapType::const_iterator>;
+  using IterType = llvm::SmallVector<ComputeOp>::const_iterator;
+  using RangeType = llvm::iterator_range<IterType>;
 
   // Performs the analysis in the given Sair program.
   explicit SequenceAnalysis(SairProgramOp program_op);
@@ -141,18 +136,11 @@ class SequenceAnalysis {
   // sequence attribute attached. The sequence number returned in this iteration
   // may differ from that of the sequence attribute if the Sair program hasn't
   // been canonicalized.
-  ConstRangeType Ops() const;
+  RangeType Ops() const;
 
   // Assings inferred (contiguous) sequence numbers to operations by setting
   // their "sequence" attributes.
   void AssignInferred() const;
-
-  // Returns an iterator range of all operations sequenced before the given one,
-  // in their relative order. All operations are given a relative order even if
-  // they don't have a sequence attribute attached. The sequence number returned
-  // in this iteration may differ from that of the sequence attribute if the
-  // Sair program hasn't been canonicalized.
-  ConstRangeType OpsBefore(ComputeOp op) const;
 
   // Returns true if `first` is known to be sequenced before `second`, false
   // otherwise. Note that this currently relies on the default implicit order of
@@ -182,20 +170,21 @@ class SequenceAnalysis {
   // over the operations of other kinds.
   ComputeOp PrevOp(ComputeOp op) const {
     if (op == nullptr) return nullptr;
-    auto iter = FindSequencedOp(op);
-    assert(iter != sequenced_ops_.end() && "op not in sequence analysis");
-    if (iter == sequenced_ops_.begin()) return nullptr;
-    return (--iter)->second;
+    auto iter = op_to_sequence_number_.find(op);
+    assert(iter != op_to_sequence_number_.end() &&
+           "op not in sequence analysis");
+    if (iter->getSecond() == 0) return nullptr;
+    return compute_ops_[iter->getSecond() - 1];
   }
 
   // Returns the Sair operation of the given kind preceding `op` if any; steps
   // over the operations of other kinds.
   ComputeOp NextOp(ComputeOp op) const {
     if (op == nullptr) return nullptr;
-    auto iter = FindSequencedOp(op);
-    assert(iter != sequenced_ops_.end() && "op not in sequence analysis");
-    if (++iter == sequenced_ops_.end()) return nullptr;
-    return iter->second;
+    auto iter = op_to_sequence_number_.find(op);
+    assert(iter != op_to_sequence_number_.end());
+    if (iter->getSecond() == compute_ops_.size() - 1) return nullptr;
+    return compute_ops_[iter->getSecond() + 1];
   }
 
   // Returns the pair (first, last) of the given ops according to their sequence
@@ -233,7 +222,7 @@ class SequenceAnalysis {
     // Dereferences the iterator.
     SairOp operator*() const {
       if (implicitly_sequenced_next_pos_ == 0) {
-        ComputeOp compute_op = compute_iterator_->second;
+        ComputeOp compute_op = *compute_iterator_;
         return cast<SairOp>(compute_op.getOperation());
       }
       return implicitly_sequenced_[implicitly_sequenced_next_pos_ - 1];
@@ -272,9 +261,10 @@ class SequenceAnalysis {
     // sequenced operations that can be placed after the current explicitly
     // sequenced operation.
     void RepopulateImplicitlySequenced() {
-      if (compute_iterator_ != sequence_analysis_.sequenced_ops_.end()) {
-        sequence_analysis_.ImplicitlySequencedOps(compute_iterator_->first,
-                                                  implicitly_sequenced_);
+      if (compute_iterator_ != sequence_analysis_.Ops().end()) {
+        sequence_analysis_.ImplicitlySequencedOps(
+            sequence_analysis_.ExplicitSequenceNumber(*compute_iterator_),
+            implicitly_sequenced_);
       } else {
         implicitly_sequenced_.clear();
       }
@@ -289,7 +279,7 @@ class SequenceAnalysis {
     }
 
     // Iterator over explicitly sequenced operations.
-    MapType::const_iterator compute_iterator_;
+    IterType compute_iterator_;
 
     // Ordered list of implicitly sequenced operations to place after the one
     // pointer to be `compute_iterator_`.
@@ -321,7 +311,7 @@ class SequenceAnalysis {
   // allowed only through the non-compute by operation).
   mlir::LogicalResult Init(SairProgramOp program_op, bool report_errors);
 
-  // Updates `sequenced_ops_` to have sequence numbers for all compute
+  // Updates the internal state to have sequence numbers for all compute
   // operations in the program, inferring their relative order from the
   // available sequence attribtues and use-def chains. The relative order is
   // preserved but not the absolute sequence numbers. The traversal order is
@@ -332,7 +322,12 @@ class SequenceAnalysis {
                                              bool report_errors);
 
   // Returns the sequence number of the given op.
-  int64_t ExplicitSequenceNumber(ComputeOp op) const;
+  int64_t ExplicitSequenceNumber(ComputeOp op) const {
+    auto it = op_to_sequence_number_.find(op);
+    assert(it != op_to_sequence_number_.end() &&
+           "op not in the sequence analysis");
+    return it->getSecond();
+  }
 
   // Returns the sequence number of the last explicitly sequenceable op that
   // (transitively) produces the operands for this implicitly sequenceable op.
@@ -340,15 +335,20 @@ class SequenceAnalysis {
   // result+1.
   int64_t ImplicitSequenceNumber(SairOp op) const;
 
-  // Returns the iterator pointing to the given op in the sequence map.
-  MapType::const_iterator FindSequencedOp(ComputeOp op) const;
-
   // Populates `ops` with non-compute ops that are implicitly sequenced after
   // `sequence_number` and before `sequence_number` + 1.
   void ImplicitlySequencedOps(int64_t sequence_number,
                               llvm::SmallVectorImpl<SairOp> &ops) const;
 
-  MapType sequenced_ops_;
+  // Sequence state: the position in the vector indicates the sequence number of
+  // the operation.
+  llvm::SmallVector<ComputeOp> compute_ops_;
+
+  // Lookup cache for the position of the (compute) operation in the vector.
+  llvm::DenseMap<Operation *, int64_t> op_to_sequence_number_;
+
+  // List of "fby" operations that create a use-def cycle, which can be removed
+  // by dropping the use-def edge entering into their "value" operand.
   llvm::SmallVector<SairFbyOp> fby_ops_to_cut_;
 };
 

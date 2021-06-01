@@ -566,8 +566,7 @@ mlir::LogicalResult VerifyLoopNests(
   LoopNestState loop_nest_state;
   LoopNestConstraintsAnalysis loop_constraints_analysis(program,
                                                         iteration_spaces);
-  for (ComputeOp compute_op :
-       llvm::make_second_range(sequence_analysis.Ops())) {
+  for (ComputeOp compute_op : sequence_analysis.Ops()) {
     auto sair_op = cast<SairOp>(compute_op.getOperation());
     if (compute_op.loop_nest().hasValue()) {
       if (mlir::failed(
