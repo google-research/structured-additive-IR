@@ -652,8 +652,6 @@ static mlir::LogicalResult CheckMallocInsertionPoint(
         if (operand_loops[new_min - 1] == write_loops[new_min - 1]) break;
       }
 
-      // TODO(b/170195606): this check is not enough if other operations are
-      // present between the dimension definition and its arguments.
       if (new_min > buffer.loop_nest().size()) {
         mlir::InFlightDiagnostic diag =
             first_write.emitError()
