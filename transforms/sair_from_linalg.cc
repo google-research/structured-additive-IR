@@ -582,7 +582,7 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
   // Linalg does not seem to restrict the output indexing to parallel dimensions
   // only, but Sair does. Abort the conversion in case of incompatibility.
   int num_parallel_loops = op.getNumParallelLoops();
-  int num_operands = op.getNumShapedOperands();
+  int num_operands = op.getNumInputsAndOutputs();
   for (int i = op.getNumInputs(); i < num_operands; ++i) {
     auto mapping = operand_mappings[i].cast<MappingAttr>();
     if (mlir::failed(VerifyReductionMapping(mapping, num_parallel_loops))) {
@@ -610,15 +610,14 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
   // Convert input and input/output MemRefs used by Linalg to Sair values.
   llvm::SmallVector<mlir::Value, 4> map_operands;
   llvm::SmallVector<llvm::SmallVector<mlir::Value, 4>, 4> result_ranges;
-  EmitMemRefToValue(op.getShapedOperands(), op.getNumOutputs(), loc,
-                    sair_program, storage_analysis, rewriter, map_operands,
-                    result_ranges);
+  llvm::SmallVector<mlir::Value> operands = op.getInputAndOutputOperands();
+  EmitMemRefToValue(operands, op.getNumOutputs(), loc, sair_program,
+                    storage_analysis, rewriter, map_operands, result_ranges);
 
   // Prepare parameters of the Sair map operation.
   int num_loops = op.getNumLoops();
   llvm::SmallVector<LoopBound, 8> loop_bounds;
-  CollectLoopBounds(num_loops, subscripts_to_loops, op.getShapedOperands(),
-                    loop_bounds);
+  CollectLoopBounds(num_loops, subscripts_to_loops, operands, loop_bounds);
   llvm::SmallVector<mlir::Value> domain_ranges;
   llvm::SmallVector<DomainShapeDim> shape_dims;
   CreateSairDomain(loc, loop_bounds, sair_program, domain_ranges, shape_dims,
@@ -655,9 +654,9 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
   MoveBodyBlock(linalg_to_sair_loops, rewriter, map_op->getRegion(0), op);
 
   // Convert output values to input/output MemRefs used by Linalg.
-  EmitValueToMemRef(loc, sair_program, map_op->getResults(),
-                    op.getOutputBuffers(), result_mappings, result_ranges,
-                    storage_analysis, rewriter);
+  llvm::SmallVector<mlir::Value> output_buffers = op.getOutputBufferOperands();
+  EmitValueToMemRef(loc, sair_program, map_op->getResults(), output_buffers,
+                    result_mappings, result_ranges, storage_analysis, rewriter);
 
   // Add the sair.program terminator.
   rewriter.create<SairExitOp>(loc);
