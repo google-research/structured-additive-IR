@@ -185,7 +185,8 @@ class SairStructAttr<string name,
 def SairLoopAttr : SairStructAttr<"LoopAttr", [
   // Name of the loop to generate.
   StructFieldAttr<"name", StrAttr>,
-  StructFieldAttr<"iter", SairMappingExpr>
+  StructFieldAttr<"iter", SairMappingExpr>,
+  StructFieldAttr<"unroll", OptionalAttr<Confined<I64Attr, [IntPositive]>>>,
 ]>;
 
 // A loop nest to generate when lowering an operation.

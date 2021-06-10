@@ -347,7 +347,7 @@ mlir::ArrayAttr GetDefaultLoopNest(int num_dimensions,
   for (MappingExpr expr :
        new_iter_exprs.Dimensions().drop_front(prefix.size())) {
     mlir::StringAttr name = fusion_analysis.GetFreshLoopName();
-    loop_nest.push_back(LoopAttr::get(name, expr, context));
+    loop_nest.push_back(LoopAttr::get(name, expr, /*unroll=*/{}, context));
   }
 
   return mlir::ArrayAttr::get(context, loop_nest);

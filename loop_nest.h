@@ -120,12 +120,22 @@ class LoopFusionClass : public MappedDomain {
   // Reduces the number of dependencies.
   void TrimDependencies(int num_dependencies);
 
+  // Returns the unroll factor of the loop, zero if no unrolling is specified.
+  unsigned unroll_factor() const { return unroll_factor_; }
+
+  // Returns the attribute containing the unroll factor suitable for
+  // constructing a loop nest attribute.
+  mlir::IntegerAttr GetUnrollAttr(mlir::MLIRContext &context) const;
+
  private:
   // Last loop of the loop nest this loop depends on.
   int num_dependencies_;
   llvm::SmallVector<ValueAccess> domain_;
 
   ComputeOp last_op_;
+
+  // Unroll factor of the (current) loop.
+  unsigned unroll_factor_;
 };
 
 // A loop nest of fused loops.

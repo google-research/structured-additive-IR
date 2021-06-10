@@ -213,6 +213,7 @@ llvm::SmallVector<llvm::SmallVector<mlir::Value>> PartitionDomain(
 // iteration space corresponds to a full dimension.
 void NormalizeLoops(SairOp op, const IterationSpace &iteration_space,
                     const LoopNest &loop_nest,
+                    const LoopFusionAnalysis &fusion_analysis,
                     SequenceAnalysis &sequence_analysis,
                     mlir::OpBuilder &builder,
                     LoopRangeCache &loop_range_cache) {
@@ -226,7 +227,10 @@ void NormalizeLoops(SairOp op, const IterationSpace &iteration_space,
   for (int i = 0, e = iteration_space.num_loops(); i < e; ++i) {
     auto dim_expr = MappingDimExpr::get(i, context);
     mlir::StringAttr name = iteration_space.loop_names()[i];
-    normalized_loops.push_back(LoopAttr::get(name, dim_expr, context));
+    mlir::IntegerAttr unroll_attr =
+        fusion_analysis.GetClass(name).GetUnrollAttr(*builder.getContext());
+    normalized_loops.push_back(
+        LoopAttr::get(name, dim_expr, unroll_attr, context));
   }
 
   MappingAttr mapping = iteration_space.MappingToLoops();
@@ -338,8 +342,8 @@ class NormalizeLoopsPass : public NormalizeLoopsPassBase<NormalizeLoopsPass> {
 
         LoopNest loop_nest =
             fusion_analysis.GetLoopNest(iteration_space.loop_names());
-        NormalizeLoops(op, iteration_space, loop_nest, sequence_analysis,
-                       builder, loop_range_cache);
+        NormalizeLoops(op, iteration_space, loop_nest, fusion_analysis,
+                       sequence_analysis, builder, loop_range_cache);
       }
 
       sequence_analysis.AssignInferred();

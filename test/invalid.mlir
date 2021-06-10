@@ -2286,3 +2286,61 @@ func @sequence_attr(%arg0: f32) {
   }
   return
 }
+
+// -----
+
+func @mismatching_unroll() {
+  sair.program {
+    %0 = sair.static_range : !sair.static_range<3>
+    // expected-note@below {{previous occurrence here}}
+    sair.map[d0:%0] attributes {
+      loop_nest = [
+        {name = "A", iter = #sair.mapping_expr<d0>, unroll = 3}
+      ]
+    } {
+    ^bb0(%arg0: index):
+      sair.return
+    } : #sair.shape<d0:static_range<3>>, () -> ()
+
+    // expected-error@below {{mismatching unroll factors for loop "A" (2 vs 3)}}
+    sair.map[d0:%0] attributes {
+      loop_nest = [
+        {name = "A", iter = #sair.mapping_expr<d0>, unroll = 2}
+      ]
+    } {
+    ^bb0(%arg0: index):
+      sair.return
+    } : #sair.shape<d0:static_range<3>>, () -> ()
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @mismatching_unroll_missing() {
+  sair.program {
+    %0 = sair.static_range : !sair.static_range<3>
+    // expected-note@below {{previous occurrence here}}
+    sair.map[d0:%0] attributes {
+      loop_nest = [
+        {name = "A", iter = #sair.mapping_expr<d0>}
+      ]
+    } {
+    ^bb0(%arg0: index):
+      sair.return
+    } : #sair.shape<d0:static_range<3>>, () -> ()
+
+    // expected-error@below {{mismatching unroll factors for loop "A" (2 vs 0)}}
+    sair.map[d0:%0] attributes {
+      loop_nest = [
+        {name = "A", iter = #sair.mapping_expr<d0>, unroll = 2}
+      ]
+    } {
+    ^bb0(%arg0: index):
+      sair.return
+    } : #sair.shape<d0:static_range<3>>, () -> ()
+    sair.exit
+  }
+  return
+}

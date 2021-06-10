@@ -16,6 +16,7 @@
 
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallString.h"
+#include "mlir/IR/Builders.h"
 #include "sequence.h"
 #include "util.h"
 
@@ -671,6 +672,16 @@ mlir::LogicalResult LoopFusionAnalysis::Init(
   return mlir::success();
 }
 
+// Returns the unroll factor of the `pos`-th loop in the given compute op.
+// Expects the op to have a well-formed loop nest attribute.
+static unsigned ExtractUnrollFactor(ComputeOp op, unsigned pos) {
+  auto loop = op.LoopNestLoops()[pos].cast<LoopAttr>();
+  if (mlir::IntegerAttr unroll_factor = loop.unroll()) {
+    return unroll_factor.getInt();
+  }
+  return 0u;
+}
+
 mlir::LogicalResult LoopFusionAnalysis::RegisterLoop(
     ComputeOp op, int loop_pos, const SequenceAnalysis &sequence_analysis) {
   auto sair_op = cast<SairOp>(op.getOperation());
@@ -679,6 +690,8 @@ mlir::LogicalResult LoopFusionAnalysis::RegisterLoop(
   // Retrieve outer loops information.
   llvm::SmallVector<mlir::StringAttr> loop_names;
   llvm::SmallVector<MappingExpr> iter_exprs;
+  loop_names.reserve(loop_pos);
+  iter_exprs.reserve(loop_pos);
   for (int i = 0; i < loop_pos; ++i) {
     LoopAttr loop = op.LoopNestLoops()[i].cast<LoopAttr>();
     loop_names.push_back(loop.name());
@@ -703,6 +716,15 @@ mlir::LogicalResult LoopFusionAnalysis::RegisterLoop(
   }
 
   if (!was_inserted) {
+    if (ExtractUnrollFactor(op, loop_pos) != fusion_class.unroll_factor()) {
+      mlir::InFlightDiagnostic diag =
+          op.emitError() << "mismatching unroll factors for loop "
+                         << loop.name() << " ("
+                         << ExtractUnrollFactor(op, loop_pos) << " vs "
+                         << fusion_class.unroll_factor() << ")";
+      diag.attachNote(fusion_class.location()) << "previous occurrence here";
+      return diag;
+    }
     fusion_class.AddUse(op, sequence_analysis);
   }
 
@@ -730,10 +752,11 @@ mlir::StringAttr LoopFusionAnalysis::GetFreshLoopName() {
   return attr;
 }
 
-
 LoopFusionClass::LoopFusionClass(mlir::StringAttr name, ComputeOp op,
                                  const LoopNest &loop_nest)
-    : MappedDomain(op.getLoc(), "loop", name, loop_nest), last_op_(op) {
+    : MappedDomain(op.getLoc(), "loop", name, loop_nest),
+      last_op_(op),
+      unroll_factor_(ExtractUnrollFactor(op, loop_nest.size())) {
   num_dependencies_ = loop_nest.size();
   AddNonePrefixToMapping(1);
 }
@@ -748,6 +771,12 @@ void LoopFusionClass::TrimDependencies(int num_dependencies) {
   for (auto &dimension : domain_) {
     dimension.mapping = dimension.mapping.ResizeUseDomain(num_dependencies);
   }
+}
+
+mlir::IntegerAttr LoopFusionClass::GetUnrollAttr(
+    mlir::MLIRContext &context) const {
+  if (unroll_factor_ == 0) return {};
+  return mlir::Builder(&context).getI64IntegerAttr(unroll_factor_);
 }
 
 ProgramPoint LoopFusionClass::EndPoint() const {

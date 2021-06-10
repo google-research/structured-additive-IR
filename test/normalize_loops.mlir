@@ -342,3 +342,60 @@ func @sequence_attr_inversion(%arg0: f32) {
   }
   return
 }
+
+// CHECK-LABEL: @unroll_preserved
+func @unroll_preserved(%arg0: index, %arg1: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), index>
+    %1 = sair.from_scalar %arg1 : !sair.value<(), f32>
+    %2 = sair.static_range : !sair.static_range<8>
+    %3 = sair.dyn_range %0 : !sair.dyn_range
+    %4 = sair.fby[d0:%2] %1 then[d1:%3] %5(d0, d1)
+      : !sair.value<d0:static_range<8> x d1:dyn_range, f32>
+    %5 = sair.copy[d0:%2, d1:%3] %4(d0, d1) {
+      loop_nest = [
+        // CHECK: name = "loopA"
+        // CHECK-SAME: unroll = 42
+        {name = "loopA", iter = #sair.mapping_expr<d0>, unroll = 42},
+        // CHECK: name = "loopB"
+        // CHECK-SAME: unroll = 10
+        {name = "loopB", iter = #sair.mapping_expr<d1>, unroll = 10}
+      ],
+      storage = [{space = "register", layout = #sair.named_mapping<[] -> ()>}]
+    } : !sair.value<d0:static_range<8> x d1:dyn_range, f32>
+    %6 = sair.proj_last of[d0:%2, d1:%3] %5(d0, d1)
+      : #sair.shape<d0:static_range<8> x d1:dyn_range>, f32
+    sair.exit %6 : f32
+  } : f32
+  return
+}
+
+// CHECK-LABEL: @unroll_propagated
+func @unroll_propagated() {
+  sair.program {
+    %0 = sair.static_range : !sair.static_range<62>
+    // CHECK: %[[D0:.*]] = sair.static_range : !sair.static_range<62, 4>
+
+    // CHECK: sair.map[d0:%[[D0]]]
+    // CHECK-SAME: name = "loopA"
+    // CHECK-SAME: unroll = 10
+
+    // CHECK: sair.map[d0:%[[D0]], d1:%{{.*}}] attributes
+    %1 = sair.map[d0: %0] attributes {
+      loop_nest = [
+        // CHECK: name = "loopA"
+        // CHECK-SAME: unroll = 10
+        {name = "loopA", iter = #sair.mapping_expr<stripe(d0, [4])>, unroll = 10},
+        // CHECK: name = "loopB"
+        // CHECK-NOT: unroll
+        {name = "loopB", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
+      ]
+    } {
+      ^bb0(%arg0: index):
+        sair.return %arg0 : index
+    } : #sair.shape<d0:static_range<62>>, () -> (index)
+    %2 = sair.proj_any of[d0:%0] %1(d0) : #sair.shape<d0:static_range<62>>, index
+    sair.exit %2 : index
+  } : index
+  return
+}

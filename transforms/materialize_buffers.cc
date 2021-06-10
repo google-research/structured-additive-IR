@@ -28,6 +28,7 @@ namespace {
 
 // Creates a loop-nest that maps pointwise to the domain with given loop names.
 mlir::ArrayAttr PointwiseLoopNest(llvm::ArrayRef<mlir::StringAttr> loop_names,
+                                  const LoopFusionAnalysis &fusion_analysis,
                                   mlir::OpBuilder &builder) {
   mlir::MLIRContext *context = builder.getContext();
 
@@ -35,15 +36,17 @@ mlir::ArrayAttr PointwiseLoopNest(llvm::ArrayRef<mlir::StringAttr> loop_names,
   loops.reserve(loop_names.size());
   for (int i = 0, e = loop_names.size(); i < e; ++i) {
     auto dim_expr = MappingDimExpr::get(i, context);
-    loops.push_back(LoopAttr::get(loop_names[i], dim_expr, context));
+    mlir::IntegerAttr unroll = fusion_analysis.GetClass(loop_names[i])
+                                   .GetUnrollAttr(*builder.getContext());
+    loops.push_back(LoopAttr::get(loop_names[i], dim_expr, unroll, context));
   }
   return builder.getArrayAttr(loops);
 }
 
 // Find insertion points for alloc and free operations.
 std::pair<InsertionPoint, InsertionPoint> FindInsertionPoints(
-    const Buffer &buffer, const SequenceAnalysis &sequence_analysis,
-    mlir::OpBuilder &builder) {
+    const Buffer &buffer, const LoopFusionAnalysis &fusion_analysis,
+    const SequenceAnalysis &sequence_analysis, mlir::OpBuilder &builder) {
   auto reads_writes =
       llvm::to_vector<8>(llvm::make_first_range(buffer.reads()));
   llvm::append_range(reads_writes, llvm::make_first_range(buffer.writes()));
@@ -58,7 +61,8 @@ std::pair<InsertionPoint, InsertionPoint> FindInsertionPoints(
       num_loops, Direction::kAfter);
 
   // Define a loop-nest in the domain of loops.
-  mlir::ArrayAttr loop_nest = PointwiseLoopNest(buffer.loop_nest(), builder);
+  mlir::ArrayAttr loop_nest =
+      PointwiseLoopNest(buffer.loop_nest(), fusion_analysis, builder);
   alloc_point.loop_nest = loop_nest;
   free_point.loop_nest = loop_nest;
   return std::make_pair(alloc_point, free_point);
@@ -142,7 +146,7 @@ mlir::Value AllocateBuffer(const Buffer &buffer,
   mlir::OpBuilder::InsertionGuard guard(builder);
   mlir::MLIRContext *context = builder.getContext();
   auto [alloc_point, free_point] =
-      FindInsertionPoints(buffer, sequence_analysis, builder);
+      FindInsertionPoints(buffer, fusion_analysis, sequence_analysis, builder);
 
   // Create the domain for malloc and free.
   alloc_point.Set(builder);
@@ -216,7 +220,7 @@ void InsertLoad(ComputeOp op, int operand_pos, const Buffer &buffer,
       memref.mapping.ResizeUseDomain(op_iter_space.num_loops());
   auto loaded_type = ValueType::get(load_shape, element_type);
   mlir::ArrayAttr loop_nest =
-      PointwiseLoopNest(op_iter_space.loop_names(), builder);
+      PointwiseLoopNest(op_iter_space.loop_names(), fusion_analysis, builder);
   BufferAttr loaded_storage = GetRegister0DBuffer(context);
   mlir::Value loaded = builder.create<SairLoadFromMemRefOp>(
       op.getLoc(), loaded_type, load_domain,
@@ -280,7 +284,7 @@ void InsertStore(ComputeOp op, int result_pos, const Buffer &buffer,
       memref.mapping.ResizeUseDomain(op_iter_space.num_loops());
   auto result_mapping = op_iter_space.mapping().Inverse();
   mlir::ArrayAttr loop_nest =
-      PointwiseLoopNest(op_iter_space.loop_names(), builder);
+      PointwiseLoopNest(op_iter_space.loop_names(), fusion_analysis, builder);
   auto store_to_memref_op = builder.create<SairStoreToMemRefOp>(
       op.getLoc(), store_domain,
       builder.getArrayAttr({memref_mapping, result_mapping}), memref.value,

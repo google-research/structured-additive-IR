@@ -34,6 +34,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
+#include "mlir/Transforms/LoopUtils.h"
 #include "mlir/Transforms/RegionUtils.h"
 #include "sair_attributes.h"
 #include "sair_op_interfaces.h"
@@ -351,7 +352,8 @@ mlir::ArrayAttr EraseDimensionFromLoopNest(
       continue;
     }
     new_loop_nest.push_back(LoopAttr::get(
-        loop.name(), MappingDimExpr::get(old_dimension - 1, context), context));
+        loop.name(), MappingDimExpr::get(old_dimension - 1, context),
+        loop.unroll(), context));
   }
   return mlir::ArrayAttr::get(context, new_loop_nest);
 }
@@ -624,8 +626,14 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
 
   // Create the scf.for operation.
   mlir::Value old_index = new_op.body().getArgument(dimension);
-  CreateForOp(op.getLoc(), lower_bound, upper_bound, step, old_index,
-              iter_args_init, iter_args, iter_args_result, results_pos, driver);
+  mlir::scf::ForOp for_op = CreateForOp(
+      op.getLoc(), lower_bound, upper_bound, step, old_index, iter_args_init,
+      iter_args, iter_args_result, results_pos, driver);
+  if (loop.unroll()) {
+    if (mlir::failed(mlir::loopUnrollByFactor(
+            for_op, loop.unroll().getValue().getZExtValue())))
+      return failure();
+  }
   new_op.body().eraseArgument(dimension);
 
   // Erase the old operation.

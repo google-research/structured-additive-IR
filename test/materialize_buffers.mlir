@@ -15,16 +15,16 @@ func @from_to_memref(%arg0: memref<?xf32>, %arg1: memref<?xf32>) {
     } : #sair.shape<d0:dyn_range>, memref<?xf32>
     // CHECK: %[[V0:.*]] = sair.load_from_memref[d0:%{{.*}}] %[[M0]]
     // CHECK:   layout = #sair.mapping<1 : d0>
-    // CHECK:   loop_nest = [{iter = #sair.mapping_expr<d0>, name = "loopA"}]
+    // CHECK:   loop_nest = [{iter = #sair.mapping_expr<d0>, name = "loopA", unroll = 42 : i64}]
     // CHECK: %[[V1:.*]] = sair.copy[d0:%{{.*}}] %[[V0]](d0)
     %4 = sair.copy[d0:%2] %3(d0) {
-      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
+      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>, unroll = 42}],
       storage = [{name = "ARG1", space = "memory",
                   layout = #sair.named_mapping<[d0:"loopA"] -> (d0)>}]
     } : !sair.value<d0:dyn_range, f32>
     // CHECK: sair.store_to_memref[d0:%{{.*}}] %[[M1]], %[[V1]]
     // CHECK:   layout = #sair.mapping<1 : d0>
-    // CHECK:   loop_nest = [{iter = #sair.mapping_expr<d0>, name = "loopA"}]
+    // CHECK:   loop_nest = [{iter = #sair.mapping_expr<d0>, name = "loopA", unroll = 42 : i64}]
     sair.to_memref %1 memref[d0:%2] %4(d0) {
       buffer_name = "ARG1"
     } : #sair.shape<d0:dyn_range>, memref<?xf32>

@@ -245,3 +245,107 @@ func @dependent_dims() {
   }
   return
 }
+
+func private @baz()
+
+// CHECK-LABEL: @full_unroll
+func @full_unroll() {
+  sair.program {
+    %0 = sair.static_range : !sair.static_range<3>
+    // CHECK: sair.map
+    // CHECK-SAME: loop_nest = []
+    // CHECK-NOT: scf.for
+    // CHECK-COUNT-3: call @baz()
+    sair.map[d0:%0] attributes {
+      loop_nest = [
+        {name = "A", iter = #sair.mapping_expr<d0>, unroll = 3}
+      ]
+    } {
+    ^bb0(%arg0: index):
+      call @baz() : () -> ()
+      sair.return
+    } : #sair.shape<d0:static_range<3>>, () -> ()
+    sair.exit
+  }
+  return
+}
+
+// CHECK-LABEL: @partial_unroll
+func @partial_unroll() {
+  sair.program {
+    %0 = sair.static_range : !sair.static_range<5>
+    // CHECK: sair.map
+    // CHECK-SAME: loop_nest = []
+    // CHECK: %[[STEP:.*]] = constant 2 : index
+    // CHECK: scf.for %{{.*}} = %{{.*}} to %{{.*}} step %[[STEP]] {
+    // CHECK-COUNT-2: call @baz()
+    // CHECK: }
+    // Epilogue loop is simplified.
+    // CHECK-NOT: scf.for
+    // CHECK: call @baz()
+    sair.map[d0:%0] attributes {
+      loop_nest = [
+        {name = "A", iter = #sair.mapping_expr<d0>, unroll = 2}
+      ]
+    } {
+    ^bb0(%arg0: index):
+      call @baz() : () -> ()
+      sair.return
+    } : #sair.shape<d0:static_range<5>>, () -> ()
+    sair.exit
+  }
+  return
+}
+
+// CHECK-LABEL: @dyn_range_unroll
+func @dyn_range_unroll(%sz: index) {
+  sair.program {
+    %0 = sair.from_scalar %sz : !sair.value<(), index>
+    %1 = sair.dyn_range %0 : !sair.dyn_range
+    // CHECK: sair.map
+    // CHECK-SAME: loop_nest = []
+    // CHECK: scf.for {{.*}} {
+    // CHECK-COUNT-2: call @baz()
+    // CHECK: }
+    // Epilogue loop.
+    // CHECK: scf.for {{.*}} {
+    // CHECK: call @baz()
+    // CHECK: }
+    sair.map[d0:%1] attributes {
+      loop_nest = [
+        {name = "A", iter = #sair.mapping_expr<d0>, unroll = 2}
+      ]
+    } {
+    ^bb0(%arg0: index):
+      call @baz() : () -> ()
+      sair.return
+    } : #sair.shape<d0:dyn_range>, () -> ()
+    sair.exit
+  }
+  return
+}
+
+// CHECK-LABEL: @nested_unroll
+func @nested_unroll() {
+  sair.program {
+    %0 = sair.static_range : !sair.static_range<2>
+    // CHECK: sair.map
+    // CHECK-SAME: loop_nest = []
+    // CHECK-NOT: scf.for
+    // CHECK-COUNT-8: call @baz()
+    sair.map[d0:%0, d1:%0, d2:%0] attributes {
+      loop_nest = [
+        {name = "A", iter = #sair.mapping_expr<d0>, unroll = 2},
+        {name = "B", iter = #sair.mapping_expr<d1>, unroll = 2},
+        {name = "C", iter = #sair.mapping_expr<d2>, unroll = 2}
+      ]
+    } {
+    ^bb0(%arg0: index, %arg1: index, %arg2: index):
+      call @baz() : () -> ()
+      sair.return
+    } : #sair.shape<d0:static_range<2> x d1:static_range<2> x d2:static_range<2>>, () -> ()
+    sair.exit
+  }
+  return
+}
+

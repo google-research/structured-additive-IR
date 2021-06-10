@@ -1711,7 +1711,8 @@ static mlir::ArrayAttr ComposeLoopNest(MappingAttr new_to_old_mapping,
     MappingExpr new_iter = loop.iter()
                                .SubstituteDims(new_to_old_mapping.Dimensions())
                                .Canonicalize();
-    new_loop_nest.push_back(LoopAttr::get(loop.name(), new_iter, context));
+    new_loop_nest.push_back(
+        LoopAttr::get(loop.name(), new_iter, loop.unroll(), context));
   }
   return mlir::ArrayAttr::get(old_loop_nest.getContext(), new_loop_nest);
 }
