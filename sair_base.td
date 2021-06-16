@@ -424,7 +424,7 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
       "Sets the storage of the values produced by the operation",
       "void", "SetStorage", (ins "int":$result, "BufferAttr":$buffer), [{}], [{
         SetInArrayAttr(
-          $_op, kStorageAttrName, $_op->getNumResults(), result, buffer);
+          $_op, ComputeOp::kStorageAttrName, $_op->getNumResults(), result, buffer);
       }]
     >,
     InterfaceMethod<
@@ -440,7 +440,7 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
       "value is None, removes the sequence number entirely.",
       "void", "SetSequence", (ins "::llvm::Optional<int64_t>":$seq), [{}], [{
         if (!seq) {
-          $_op->removeAttr(kSequenceAttrName);
+          $_op->removeAttr(ComputeOp::kSequenceAttrName);
           return;
         }
         ::mlir::Builder builder($_op->getContext());
