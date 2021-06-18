@@ -396,8 +396,7 @@ void SegmentPermutation(int num_first, int num_second,
 void MoveBodyBlock(mlir::AffineMap linalg_to_sair_loops,
                    mlir::OpBuilder &rewriter, mlir::Region &target_region,
                    mlir::linalg::LinalgOp source_op) {
-  assert(isa<mlir::linalg::GenericOp>(source_op.getOperation()) ||
-         isa<mlir::linalg::IndexedGenericOp>(source_op.getOperation()));
+  assert(isa<mlir::linalg::GenericOp>(source_op.getOperation()));
 
   mlir::Region &source_region = source_op.getOperation()->getRegion(0);
   target_region.getBlocks().clear();
@@ -409,35 +408,18 @@ void MoveBodyBlock(mlir::AffineMap linalg_to_sair_loops,
   // of the list to comply with Sair order if "map_reduce" is generated. Since
   // we don't have access to the underlying argument storage, simply recreate
   // the arguments.
-  bool has_indices =
-      isa<mlir::linalg::IndexedGenericOp>(source_op.getOperation());
   bool has_reductions = source_op.getNumReductionLoops() != 0;
   if (has_reductions) {
-    int first_value_arg = has_indices ? source_op.getNumLoops() : 0;
     llvm::SmallVector<int, 8> permutation;
     SegmentPermutation(source_op.getNumInputs(), source_op.getNumOutputs(),
                        permutation);
-    PermuteBlockArguments(permutation, first_value_arg, body);
-
-    // Permute indices to put those related to reductions last.
-    if (has_indices) {
-      llvm::SmallVector<int, 4> index_permutation;
-      index_permutation.reserve(linalg_to_sair_loops.getNumResults());
-      MappingAttr linalg_to_sair_loops_mapping =
-          MappingAttr::FromAffineMap(linalg_to_sair_loops);
-      for (MappingExpr expr : linalg_to_sair_loops_mapping) {
-        index_permutation.push_back(expr.cast<MappingDimExpr>().dimension());
-      }
-      PermuteBlockArguments(index_permutation, /*offset=*/0, body);
-    }
+    PermuteBlockArguments(permutation, 0, body);
   }
 
-  // Insert arguments for iteration indices if they are not already present.
-  if (!has_indices) {
-    int num_loops = source_op.getNumLoops();
-    for (int i = 0; i < num_loops; ++i) {
-      body.insertArgument(body.args_begin(), rewriter.getIndexType());
-    }
+  // Insert arguments for iteration indices.
+  int num_loops = source_op.getNumLoops();
+  for (int i = 0; i < num_loops; ++i) {
+    body.insertArgument(body.args_begin(), rewriter.getIndexType());
   }
 
   // Replace the linalg.yield terminator with sair.return.

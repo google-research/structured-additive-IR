@@ -152,24 +152,3 @@ func @reductions(%arg0: memref<2x3x4x5x6xf32>, %arg1: memref<2x4x6xf32>) {
   return
 }
 
-// CHECK-LABEL: @indexed
-func @indexed(%arg0: memref<2x3x4x5x6xf64>, %arg1: memref<2x4x6xf64>) {
-  linalg.indexed_generic #reductions_trait
-    ins(%arg0 : memref<2x3x4x5x6xf64>)
-   outs(%arg1 : memref<2x4x6xf64>) {
-  // Sair puts reduction dimensions as innermost, so we expect the corresponding
-  // indices (j and l) to be permuted accordingly in the block signature. Value
-  // arguments are also permuted, similarly to the regular reduction.
-  // CHECK: ^{{.*}}(%[[I:.*]]: index, %[[K:.*]]: index, %[[M:.*]]: index, %[[J:.*]]: index, %[[L:.*]]: index, %[[reduce:.*]]: f64, %[[arg:.*]]: f64):
-  ^bb0(%i: index, %j: index, %k: index, %l: index, %m: index, %a0: f64, %a1: f64):
-    // CHECK: addf %[[reduce]], %[[arg]]
-    %0 = addf %a1, %a0 : f64
-    // CHECK: affine.apply {{.*}}(%[[I]], %[[J]], %[[K]], %[[L]], %[[M]])
-    %1 = affine.apply affine_map<(d0, d1, d2, d3, d4) -> (d0 + d1 + d2 + d3 + d4)>(%i, %j, %k, %l, %m)
-    %2 = index_cast %1 : index to i64
-    %3 = sitofp %2 : i64 to f64
-    %4 = addf %0, %3 : f64
-    linalg.yield %4 : f64
-  }
-  return
-}
