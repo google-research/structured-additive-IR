@@ -152,3 +152,25 @@ func @reductions(%arg0: memref<2x3x4x5x6xf32>, %arg1: memref<2x4x6xf32>) {
   return
 }
 
+// CHECK-LABEL: @indices
+func @indices(%arg0: memref<1x2x3xf32>, %arg1: memref<2x3x1xf32>) {
+  // CHECK: sair.map
+  // CHECK: ^{{.*}}(%[[I0:.*]]: index, %[[I1:.*]]: index, %[[I2:.*]]: index, %{{.*}}: f32, %{{.*}}: f32):
+  linalg.generic #pointwise_trait
+    ins(%arg0 : memref<1x2x3xf32>)
+   outs(%arg1 : memref<2x3x1xf32>) {
+  ^bb(%a0: f32, %a1: f32):
+    // CHECK-NOT: linalg.index
+    %0 = linalg.index 0 : index
+    %1 = linalg.index 2 : index
+    %2 = linalg.index 1 : index
+    // CHECK: = addi %[[I0]], %[[I2]]
+    // CHECK: = addi %{{.*}}, %[[I1]]
+    %3 = addi %0, %1 : index
+    %4 = addi %3, %2 : index
+    %5 = index_cast %4 : index to i32
+    %6 = sitofp %5 : i32 to f32
+    linalg.yield %6 : f32
+  }
+  return
+}

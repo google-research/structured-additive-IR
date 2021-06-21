@@ -391,8 +391,6 @@ void SegmentPermutation(int num_first, int num_second,
 
 // Moves the body region of "source_op" into "target_region" using "rewriter" to
 // keep track of changes. The region is cleared of its existing content.
-// TODO(zinenko): use PatternRewriter infrastructure when it supports changes to
-// Block arguments.
 void MoveBodyBlock(mlir::AffineMap linalg_to_sair_loops,
                    mlir::OpBuilder &rewriter, mlir::Region &target_region,
                    mlir::linalg::LinalgOp source_op) {
@@ -421,6 +419,13 @@ void MoveBodyBlock(mlir::AffineMap linalg_to_sair_loops,
   for (int i = 0; i < num_loops; ++i) {
     body.insertArgument(body.args_begin(), rewriter.getIndexType());
   }
+
+  // Replace index operations with index values coming from block arguments.
+  body.walk([&](mlir::linalg::IndexOp index_op) {
+    Value index = body.getArgument(index_op.dim());
+    index_op.replaceAllUsesWith(index);
+    index_op.erase();
+  });
 
   // Replace the linalg.yield terminator with sair.return.
   {
