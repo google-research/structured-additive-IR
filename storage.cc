@@ -529,10 +529,14 @@ static mlir::LogicalResult UpdateStorage(
            << "conflicting buffer names: expected " << new_storage.buffer_name()
            << ", got " << storage.buffer_name();
   }
-  if (mlir::failed(storage.MergeLayout(new_storage.layout()))) {
+  MappingAttr canonical_layout;
+  if (new_storage.layout() != nullptr) {
+    canonical_layout = new_storage.layout().Canonicalize();
+  }
+  if (mlir::failed(storage.MergeLayout(canonical_layout))) {
     return value.getDefiningOp()->emitError()
-           << "conflicting layouts: expected " << new_storage.layout()
-           << ", got " << storage.layout();
+           << "conflicting layouts: expected " << canonical_layout << ", got "
+           << storage.layout();
   }
 
   return mlir::success();

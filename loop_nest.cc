@@ -697,6 +697,10 @@ mlir::LogicalResult LoopFusionAnalysis::RegisterLoop(
     loop_names.push_back(loop.name());
     iter_exprs.push_back(loop.iter());
   }
+
+  // Ensure that fusion_classes will not be resized while loop_nest is live as
+  // it maintain a pointer to a fusion class.
+  fusion_classes_.reserve(fusion_classes_.size() + 1);
   LoopNest loop_nest = GetLoopNest(loop_names);
   auto loop_nest_mapping =
       MappingAttr::get(op.getContext(), domain_size, iter_exprs);
