@@ -17,6 +17,9 @@
 #include <memory>
 
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
+#include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
+#include "mlir/Conversion/LLVMCommon/Pattern.h"
+#include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
 #include "mlir/Conversion/SCFToStandard/SCFToStandard.h"
 #include "mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -65,6 +68,7 @@ class LowerToLLVMPass : public LowerToLLVMBase<LowerToLLVMPass> {
 
     OwningRewritePatternList patterns(&getContext());
     LLVMTypeConverter converter(&getContext());
+    populateMemRefToLLVMConversionPatterns(converter, patterns);
     populateStdToLLVMConversionPatterns(converter, patterns);
     patterns.insert<LowerUndef>(converter);
 

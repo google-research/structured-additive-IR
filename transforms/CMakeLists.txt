@@ -78,6 +78,7 @@ add_mlir_library(sair_lowering
   MLIRAffine
   MLIRAffineToStandard
   MLIRIR
+  MLIRLLVMCommonConversion
   MLIRLLVMIR
   MLIRMemRef
   MLIRPass
