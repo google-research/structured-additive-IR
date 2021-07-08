@@ -93,15 +93,16 @@ void CreateRange(SairOp op, const LoopNest &loop_nest, int loop,
     auto map_loop_nest =
         builder.getArrayAttr(new_loop_nest.take_front(range_rank));
 
-    auto map_op = builder.create<SairMapOp>(
-        op.getLoc(), map_result_types,
-        /*domain=*/range_domain,
-        /*inputs=*/map_body.sair_values(),
-        /*shape=*/range_shape,
+    auto decisions = DecisionsAttr::get(
+        /*sequence=*/nullptr,
         /*loop_nest=*/map_loop_nest,
         /*storage=*/builder.getArrayAttr(map_buffers),
-        /*sequence=*/nullptr,
-        /*expansion=*/builder.getStringAttr(kMapExpansionPattern));
+        /*expansion=*/builder.getStringAttr(kMapExpansionPattern), context);
+    auto map_op = builder.create<SairMapOp>(op.getLoc(), map_result_types,
+                                            /*domain=*/range_domain,
+                                            /*inputs=*/map_body.sair_values(),
+                                            /*shape=*/range_shape,
+                                            /*decisions=*/decisions);
     sequence_analysis.Insert(cast<ComputeOp>(map_op.getOperation()),
                              cast<SairOp>(insertion_point.operation),
                              Direction::kBefore);

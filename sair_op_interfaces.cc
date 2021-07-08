@@ -213,13 +213,9 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
   }
 
   if (!isa<ComputeOp>(sair_op.getOperation())) {
-    if (sair_op->hasAttr(ComputeOp::kLoopNestAttrName)) {
+    if (sair_op->hasAttr(ComputeOp::kDecisionsAttrName)) {
       return op->emitError() << "only compute Sair ops can have the '"
-                             << ComputeOp::kLoopNestAttrName << "' attribute";
-    }
-    if (sair_op->hasAttr(ComputeOp::kSequenceAttrName)) {
-      return op->emitOpError() << "unexpected '" << ComputeOp::kSequenceAttrName
-                               << "' attribute on a non-compute op";
+                             << ComputeOp::kDecisionsAttrName << "' attribute";
     }
   }
 

@@ -120,11 +120,14 @@ std::pair<mlir::SmallVector<int64_t>, ValueRange> GetMemRefShape(
         scalar_sizes.size(), ValueType::get(shape, builder.getIndexType()));
     llvm::SmallVector<mlir::Attribute> map_buffers(
         scalar_sizes.size(), GetRegister0DBuffer(context));
+    auto decisions =
+        DecisionsAttr::get(/*sequence=*/nullptr, /*loop_nest=*/loop_nest_attr,
+                           /*storage=*/builder.getArrayAttr(map_buffers),
+                           /*expansion=*/nullptr, context);
     auto map_op = builder.create<SairMapOp>(
         buffer.location(), map_types, /*domain=*/domain,
         /*inputs=*/map_body.sair_values(), /*shape=*/shape,
-        /*loop_nest=*/loop_nest_attr,
-        /*storage=*/builder.getArrayAttr(map_buffers));
+        /*decisions=*/decisions);
     map_op.body().takeBody(map_body.region());
     sizes = map_op.getResults();
   } else {
@@ -162,24 +165,27 @@ mlir::Value AllocateBuffer(const Buffer &buffer,
   llvm::SmallVector<mlir::Attribute> size_mappings(sizes.size(),
                                                    identity_mapping);
 
+  auto alloc_decisions = DecisionsAttr::get(
+      /*sequence=*/nullptr, /*loop_nest=*/alloc_point.loop_nest,
+      /*storage=*/builder.getArrayAttr(GetRegister0DBuffer(context)),
+      /*expansion=*/builder.getStringAttr(kAllocExpansionPattern), context);
   mlir::Value alloc = builder.create<SairAllocOp>(
       buffer.location(), type, domain,
       /*mapping_array=*/builder.getArrayAttr(size_mappings), sizes,
-      /*loop_nest=*/alloc_point.loop_nest,
-      /*storage=*/builder.getArrayAttr(GetRegister0DBuffer(context)),
-      /*sequence=*/IntegerAttr(),
-      /*expansion=*/builder.getStringAttr(kAllocExpansionPattern));
+      /*decisions=*/alloc_decisions);
   sequence_analysis.Insert(alloc.getDefiningOp<ComputeOp>(),
                            cast<ComputeOp>(alloc_point.operation),
                            Direction::kBefore);
 
   free_point.Set(builder);
+  auto free_decisions = DecisionsAttr::get(
+      /*sequence=*/nullptr, /*loop_nest=*/free_point.loop_nest,
+      /*storage=*/nullptr,
+      /*expansion=*/builder.getStringAttr(kFreeExpansionPattern), context);
   auto free_op = builder.create<SairFreeOp>(
       buffer.location(), domain,
       /*mapping_array=*/builder.getArrayAttr(identity_mapping), alloc,
-      /*loop_nest=*/free_point.loop_nest,
-      /*sequence=*/IntegerAttr(),
-      /*expansion=*/builder.getStringAttr(kFreeExpansionPattern));
+      /*decisions=*/free_decisions);
   sequence_analysis.Insert(free_op, cast<ComputeOp>(free_point.operation),
                            Direction::kAfter);
 
@@ -219,12 +225,14 @@ void InsertLoad(ComputeOp op, int operand_pos, const Buffer &buffer,
   mlir::ArrayAttr loop_nest =
       PointwiseLoopNest(op_iter_space.loop_names(), fusion_analysis, builder);
   BufferAttr loaded_storage = GetRegister0DBuffer(context);
+  auto decisions = DecisionsAttr::get(
+      /*sequence=*/nullptr, /*loop_nest=*/loop_nest,
+      /*storage=*/builder.getArrayAttr({loaded_storage}),
+      /*expansion=*/builder.getStringAttr(kLoadExpansionPattern), context);
   mlir::Value loaded = builder.create<SairLoadFromMemRefOp>(
       op.getLoc(), loaded_type, load_domain,
       builder.getArrayAttr({memref_mapping}), memref.value,
-      operand_storage.layout(), loop_nest,
-      builder.getArrayAttr({loaded_storage}), IntegerAttr(),
-      /*expansion=*/builder.getStringAttr(kLoadExpansionPattern));
+      operand_storage.layout(), decisions);
   sequence_analysis.Insert(loaded.getDefiningOp<ComputeOp>(), op,
                            Direction::kBefore);
 
@@ -283,11 +291,14 @@ void InsertStore(ComputeOp op, int result_pos, const Buffer &buffer,
   auto result_mapping = op_iter_space.mapping().Inverse();
   mlir::ArrayAttr loop_nest =
       PointwiseLoopNest(op_iter_space.loop_names(), fusion_analysis, builder);
+  auto decisions = DecisionsAttr::get(
+      /*sequence=*/nullptr, /*loop_nest=*/loop_nest, /*storage=*/nullptr,
+      /*expansion=*/builder.getStringAttr(kStoreExpansionPattern),
+      op.getContext());
   auto store_to_memref_op = builder.create<SairStoreToMemRefOp>(
       op.getLoc(), store_domain,
       builder.getArrayAttr({memref_mapping, result_mapping}), memref.value,
-      result, result_storage.layout(), store_shape, loop_nest, IntegerAttr(),
-      /*expansion=*/builder.getStringAttr(kStoreExpansionPattern));
+      result, result_storage.layout(), store_shape, decisions);
   sequence_analysis.Insert(store_to_memref_op, op, Direction::kAfter);
 
   // Change result storage to register.
