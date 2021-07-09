@@ -9,3 +9,18 @@ func @no_expansion_pattern(%arg0: f32) {
   }
   return
 }
+
+// -----
+
+func @copies(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    // expected-error @+1 {{copies must be materialized before lowering operations}}
+    %1 = sair.copy %0 {
+      decisions = {expansion = "copy"},
+      copies = [[{sequence = 0}]]
+    } : !sair.value<(), f32>
+    sair.exit
+  }
+  return
+}

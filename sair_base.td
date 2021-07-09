@@ -204,6 +204,22 @@ def SairBufferAttr : SairStructAttr<"BufferAttr", [
 // memory.
 def SairStorageAttr : OptionalAttr<ArrayAttr>;
 
+// An attribute that species to implement an operation.
+def SairDecisionsAttr : SairStructAttr<"DecisionsAttr", [
+  StructFieldAttr<"sequence", OptionalAttr<I64Attr>>,
+  StructFieldAttr<
+    "loop_nest",
+    OptionalAttr<TypedArrayAttrBase<SairLoopAttr,"array of LoopAttr">>
+  >,
+  StructFieldAttr<"storage", OptionalAttr<ArrayAttr>>,
+  StructFieldAttr<"expansion", OptionalAttr<StrAttr>>
+]>;
+
+// An attribute that species copies of the result of an operation.
+def SairCopiesAttr
+  : TypedArrayAttrBase<TypedArrayAttrBase<SairDecisionsAttr, "">,
+                       "array of array of Sair decisions">;
+
 //===----------------------------------------------------------------------===//
 // Sair Types
 //===----------------------------------------------------------------------===//
@@ -393,13 +409,36 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
 
   let methods = [
     InterfaceMethod<
+      "Returns lowering decisions for the operation",
+      "DecisionsAttr", "GetDecisions", (ins), [{}], [{
+        if (!$_op.decisions().hasValue()) {
+          return DecisionsAttr::get(
+            nullptr, nullptr, nullptr, nullptr, $_op.getContext());
+        }
+        return *$_op.decisions();
+      }]
+    >,
+    InterfaceMethod<
+      "Sets lowering decisions for the operation",
+      "void", "SetDecisions", (ins "DecisionsAttr":$value), [{}], [{
+        $_op.decisionsAttr(value);
+      }]
+    >,
+    InterfaceMethod<
       "Returns the loop nest to generate when lowering the operation",
-      "Optional<mlir::ArrayAttr>", "loop_nest"
+      "llvm::Optional<mlir::ArrayAttr>", "loop_nest", (ins), [{}], [{
+        DecisionsAttr decisions = $_op.GetDecisions();
+        if (decisions.loop_nest() == nullptr) return llvm::None;
+        return decisions.loop_nest();
+      }]
     >,
     InterfaceMethod<
       "Sets the loop nest to generate when lowering the operation",
       "void", "setLoopNest", (ins "mlir::ArrayAttr":$loop_nest), [{
-        $_op.loop_nestAttr(loop_nest);
+        DecisionsAttr decisions = $_op.GetDecisions();
+        $_op.SetDecisions(DecisionsAttr::get(
+          decisions.sequence(), loop_nest, decisions.storage(),
+          decisions.expansion(), $_op.getContext()));
       }]
     >,
     InterfaceMethod<
@@ -414,7 +453,11 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
     >,
     InterfaceMethod<
       "Returns the storage of the values produced by the operation",
-      "Optional<mlir::ArrayAttr>", "storage"
+      "Optional<mlir::ArrayAttr>", "storage", (ins), [{}], [{
+        DecisionsAttr decisions = $_op.GetDecisions();
+        if (decisions.storage() == nullptr) return llvm::None;
+        return decisions.storage();
+      }]
     >,
     InterfaceMethod<
       "Returns the storage of the values produced by the operation",
@@ -428,39 +471,56 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
     InterfaceMethod<
       "Sets the storage of the values produced by the operation",
       "void", "SetStorage", (ins "int":$result, "BufferAttr":$buffer), [{}], [{
-        SetInArrayAttr(
-          $_op, ComputeOp::kStorageAttrName, $_op->getNumResults(), result, buffer);
+        DecisionsAttr decisions = $_op.GetDecisions();
+        llvm::SmallVector<mlir::Attribute, 4> values;
+        int num_results = $_op->getNumResults();
+        if (decisions.storage() == nullptr) {
+          values.resize(num_results, mlir::UnitAttr::get($_op.getContext()));
+        } else {
+          llvm::append_range(values, decisions.storage().getValue());
+        }
+        values[result] = buffer;
+        auto new_storage = mlir::ArrayAttr::get($_op.getContext(), values);
+        $_op.SetDecisions(DecisionsAttr::get(
+          decisions.sequence(), decisions.loop_nest(), new_storage,
+          decisions.expansion(), $_op.getContext()));
       }]
     >,
     InterfaceMethod<
       "Returns the sequence number of this operation as signed integer.",
       "::llvm::Optional<int64_t>", "Sequence", (ins), [{}], [{
-        ::llvm::Optional<uint64_t> raw_attr_value = $_op.sequence();
-        if (!raw_attr_value) return ::llvm::None;
-        return static_cast<int64_t>(*raw_attr_value);
+        DecisionsAttr decisions = $_op.GetDecisions();
+        if (decisions.sequence() == nullptr) return ::llvm::None;
+        return decisions.sequence().getInt();
       }]
     >,
     InterfaceMethod<
-      "Sets the sequence number of the operation to the given value. If the "
-      "value is None, removes the sequence number entirely.",
-      "void", "SetSequence", (ins "::llvm::Optional<int64_t>":$seq), [{}], [{
-        if (!seq) {
-          $_op->removeAttr(ComputeOp::kSequenceAttrName);
-          return;
-        }
+      "Sets the sequence number of the operation to the given value.",
+      "void", "SetSequence", (ins "int64_t":$seq), [{}], [{
         ::mlir::Builder builder($_op->getContext());
-        $_op.sequenceAttr(builder.getI64IntegerAttr(*seq));
+        DecisionsAttr decisions = GetDecisions();
+        $_op.SetDecisions(DecisionsAttr::get(
+          builder.getI64IntegerAttr(seq), decisions.loop_nest(),
+          decisions.storage(), decisions.expansion(),
+          $_op.getContext()));
       }]
     >,
     InterfaceMethod<
       "Returns the name of the expansion pattern for the operation.",
-      "::llvm::Optional<llvm::StringRef>", "expansion"
+      "::llvm::Optional<llvm::StringRef>", "expansion", (ins), [{}], [{
+        DecisionsAttr decisions = $_op.GetDecisions();
+        if (decisions.expansion() == nullptr) return llvm::None;
+        return decisions.expansion().getValue();
+      }]
     >,
     InterfaceMethod<
       "Sets the expansion attribute of the operation",
       "void", "SetExpansion", (ins "llvm::StringRef":$expansion), [{}], [{
+        DecisionsAttr decisions = $_op.GetDecisions();
         ::mlir::Builder builder($_op->getContext());
-        $_op.expansionAttr(builder.getStringAttr(expansion));
+        $_op.SetDecisions(DecisionsAttr::get(
+          decisions.sequence(), decisions.loop_nest(), decisions.storage(),
+          builder.getStringAttr(expansion), $_op.getContext()));
       }]
     >
   ];
@@ -468,11 +528,46 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
   let verify = [{return sair::VerifyComputeOp(op);}];
 
   let extraClassDeclaration = [{
-    static constexpr llvm::StringRef kLoopNestAttrName = "loop_nest";
-    static constexpr llvm::StringRef kStorageAttrName = "storage";
-    static constexpr llvm::StringRef kSequenceAttrName = "sequence";
-    static constexpr llvm::StringRef kExpansionAttrName = "expansion";
+    static constexpr llvm::StringRef kDecisionsAttrName = "decisions";
   }];
+}
+
+def SairValueProducerOp : OpInterface<"ValueProducerOp"> {
+  let description = [{
+    A Sair operation that produces Sair values.
+
+    Value producer operations have a `copies` attributes that lists copy
+    operations to insert to make copies of the operation results. The copy
+    attribute is an array of arrays, with one array for each result of the
+    operation. The array corresponding to a result contains `DecisionAttr`
+    attributes that describes decisions for the copy operation to insert.
+  }];
+
+  let methods = [
+    InterfaceMethod<
+      "List of copies of the given result. This is an array of DecisionAttr.",
+      "llvm::ArrayRef<mlir::Attribute>", "GetCopies", (ins "int":$result), [{}], [{
+          auto all_copies = $_op.copiesAttr();
+          if (all_copies == nullptr) return {};
+          return all_copies.getValue()[result]
+            .template cast<mlir::ArrayAttr>().getValue();
+      }]>,
+    InterfaceMethod<
+      "Indicates if the operation as any copy set in its `copies` attribute`",
+      "bool", "HasCopies", (ins), [{}], [{
+        auto all_copies = $_op.copiesAttr();
+        if (all_copies == nullptr) return false;
+        return llvm::any_of(all_copies.getValue(), [](mlir::Attribute attr) {
+          return attr.cast<mlir::ArrayAttr>().size() > 0;
+        });
+      }]>
+  ];
+
+  let extraClassDeclaration = [{
+    static constexpr llvm::StringRef kCopiesAttrName = "copies";
+  }];
+
+  let verify = [{return sair::VerifyValueProducerOp(op);}];
 }
 
 def SairInferIterationSpaceOp : OpInterface<"InferIterationSpaceOp"> {
