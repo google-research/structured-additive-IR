@@ -267,51 +267,49 @@ class LoopNestConstraintsAnalysis {
 };
 
 mlir::LogicalResult VerifyLoopNestWellFormed(
-    ComputeOp op, llvm::ArrayRef<mlir::Attribute> loop_nest) {
+    mlir::Location loc, DomainShapeAttr shape,
+    llvm::ArrayRef<mlir::Attribute> loop_nest) {
   llvm::SmallVector<MappingExpr> iter_exprs;
   iter_exprs.reserve(loop_nest.size());
-  auto sair_op = cast<SairOp>(op.getOperation());
+  int domain_size = shape.Dimensions().size();
 
-  int domain_size = sair_op.domain().size();
-  // Bitfield that keeps track of which dimensions are implemented by loops.
   for (int i = 0, e = loop_nest.size(); i < e; ++i) {
     LoopAttr loop = loop_nest[i].dyn_cast<LoopAttr>();
-    // Delegate checking attributes type to other verifiers.
-    if (loop == nullptr) return mlir::success();
-
     // Ensure that symbols are unique in the loop nest.
     for (int j = 0; j < i; ++j) {
       if (loop.name() == loop_nest[j].cast<LoopAttr>().name()) {
-        return op.emitError()
+        return mlir::emitError(loc)
                << "name " << loop.name() << " used twice in the same loop nest";
       }
     }
 
     int min_domain_size = loop.iter().MinDomainSize();
     if (loop.iter().MinDomainSize() > domain_size) {
-      return op.emitError() << "dimension 'd" << min_domain_size - 1 << "' "
-                            << "is out of range of the domain";
+      return mlir::emitError(loc)
+             << "dimension 'd" << min_domain_size - 1 << "' "
+             << "is out of range of the domain";
     }
 
     if (loop.iter().HasUnknownExprs()) {
-      return op.emitError() << "loop iterators cannot contain `?` expressions";
+      return mlir::emitError(loc)
+             << "loop iterators cannot contain `?` expressions";
     }
 
     iter_exprs.push_back(loop.iter());
   }
 
-  mlir::MLIRContext *context = op.getContext();
+  mlir::MLIRContext *context = shape.getContext();
   auto mapping = MappingAttr::getChecked(context, domain_size, iter_exprs);
   if (mapping == nullptr) {
-    return op.emitError() << "incompatible loop iterators";
+    return mlir::emitError(loc) << "incompatible loop iterators";
   }
 
   if (mapping.Inverse().HasNoneExprs()) {
-    return op.emitError() << "not all dimensions are covered by the loop nest";
+    return mlir::emitError(loc)
+           << "not all dimensions are covered by the loop nest";
   }
 
-  return VerifyMappingShape(AttrLocation(op.getLoc(), "loop_nest"), mapping,
-                            sair_op.shape());
+  return VerifyMappingShape(AttrLocation(loc, "loop_nest"), mapping, shape);
 }
 
 namespace {

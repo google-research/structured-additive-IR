@@ -392,32 +392,55 @@ class DefaultSequencePass
   }
 };
 
+// Sets the expansion field of op to a default scalar
+// expansion pattern implementing the operation.
+static mlir::LogicalResult SetDefaultExpansion(ComputeOpInstance op) {
+  DecisionsAttr decisions = op.GetDecisions();
+  if (decisions.expansion() != nullptr) return mlir::success();
+
+  llvm::StringRef pattern_name;
+  if (op.is_copy()) {
+    pattern_name = kCopyExpansionPattern;
+  } else {
+    mlir::Operation *operation = op.AsComputeOp().getOperation();
+    if (isa<SairMapReduceOp>(operation)) {
+      return op.EmitError()
+             << "map_reduce is not supported by sair-assign-default-expansion";
+    }
+
+    pattern_name =
+        llvm::TypeSwitch<mlir::Operation *, llvm::StringRef>(operation)
+            .Case<SairCopyOp>([](auto) { return kCopyExpansionPattern; })
+            .Case<SairMapOp>([](auto) { return kMapExpansionPattern; })
+            .Case<SairAllocOp>([](auto) { return kAllocExpansionPattern; })
+            .Case<SairFreeOp>([](auto) { return kFreeExpansionPattern; })
+            .Case<SairLoadFromMemRefOp>(
+                [](auto) { return kLoadExpansionPattern; })
+            .Case<SairStoreToMemRefOp>(
+                [](auto) { return kStoreExpansionPattern; });
+  }
+
+  mlir::MLIRContext *context = decisions.getContext();
+  op.SetDecisions(DecisionsAttr::get(
+      decisions.sequence(), decisions.loop_nest(), decisions.storage(),
+      mlir::StringAttr::get(context, pattern_name), context));
+  return mlir::success();
+}
+
 // Sets the `expansion` attribute of compute operations to a default scalar
 // expansion pattern implementing the operation.
 class DefaultExpansion : public DefaultExpansionPassBase<DefaultExpansion> {
  public:
   void runOnFunction() override {
-    getFunction().walk([&](ComputeOp op) {
-      if (op.expansion().hasValue()) return;
-      if (isa<SairMapReduceOp>(op.getOperation())) {
-        op.emitError()
-            << "map_reduce is not supported by sair-assign-default-expansion";
-        signalPassFailure();
-        return;
-      }
-      llvm::StringRef pattern_name =
-          llvm::TypeSwitch<mlir::Operation *, llvm::StringRef>(
-              op.getOperation())
-              .Case<SairCopyOp>([](auto) { return kCopyExpansionPattern; })
-              .Case<SairMapOp>([](auto) { return kMapExpansionPattern; })
-              .Case<SairAllocOp>([](auto) { return kAllocExpansionPattern; })
-              .Case<SairFreeOp>([](auto) { return kFreeExpansionPattern; })
-              .Case<SairLoadFromMemRefOp>(
-                  [](auto) { return kLoadExpansionPattern; })
-              .Case<SairStoreToMemRefOp>(
-                  [](auto) { return kStoreExpansionPattern; });
-      op.SetExpansion(pattern_name);
+    auto result = getFunction().walk([&](SairProgramOp program) {
+      return program.WalkComputeOpInstances(
+          [&](ComputeOpInstance op) -> mlir::WalkResult {
+            return SetDefaultExpansion(op);
+          });
     });
+    if (result.wasInterrupted()) {
+      signalPassFailure();
+    }
   }
 };
 

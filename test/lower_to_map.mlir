@@ -16,7 +16,7 @@ func @copy(%arg0 : memref<?x?xf32>) {
     // CHECK: ^{{.*}}(%{{.*}}: index, %{{.*}}: index, %[[ARG0:.*]]: f32):
     // CHECK: sair.return %[[ARG0]] : f32
     %3 = sair.copy[d0:%0, d1:%0] %2(d1, d0) {
-      expansion = "copy"
+      decisions = {expansion = "copy"}
     // CHECK: } : #sair.shape<d0:dyn_range x d1:dyn_range>, (f32) -> f32
     }  : !sair.value<d0:dyn_range x d1:dyn_range, f32>
     sair.exit
@@ -36,11 +36,11 @@ func @alloc(%arg0: index) {
     %idx = sair.from_scalar %arg0 : !sair.value<(), index>
     // CHECK: %[[SZ0:.*]] = sair.map
     %2 = sair.copy[d0:%0] %idx {
-      expansion = "copy"
+      decisions = {expansion = "copy"}
     } : !sair.value<d0:dyn_range, index>
     // CHECK: %[[SZ1:.*]] = sair.map
     %3 = sair.copy[d0:%1] %idx {
-      expansion = "copy"
+      decisions = {expansion = "copy"}
     } : !sair.value<d0:dyn_range, index>
     // CHECK: sair.map[d0:%[[D0]], d1:%[[D1]]] %[[SZ0]](d0), %[[SZ1]](d1)
     // CHECK: ^{{.*}}(%{{.*}}: index, %{{.*}}: index, %[[ARG2:.*]]: index, %[[ARG3:.*]]: index):
@@ -48,7 +48,7 @@ func @alloc(%arg0: index) {
     // CHECK:   sair.return %[[ALLOC]]
     // CHECK: } : #sair.shape<d0:dyn_range x d1:dyn_range>, (index, index) -> memref<?x?xf32>
     sair.alloc[d0:%0, d1:%1] %2(d0), %3(d1) {
-      expansion = "alloc"
+      decisions = {expansion = "alloc"}
     } : !sair.value<d0:dyn_range x d1:dyn_range, memref<?x?xf32>>
     sair.exit
   }
@@ -65,15 +65,15 @@ func @sair_free(%arg0: index) {
     %1 = sair.dyn_range %idx : !sair.dyn_range
     // CHECK: sair.map
     %2 = sair.copy[d0:%0] %idx {
-      expansion = "copy"
+      decisions = {expansion = "copy"}
     } : !sair.value<d0:dyn_range, index>
     // CHECK: sair.map
     %3 = sair.copy[d0:%1] %idx {
-      expansion = "copy"
+      decisions = {expansion = "copy"}
     } : !sair.value<d0:dyn_range, index>
     // CHECK: %[[ALLOC:.*]] = sair.map
     %4 = sair.alloc[d0:%0, d1:%1] %2(d0), %3(d1) {
-      expansion = "alloc"
+      decisions = {expansion = "alloc"}
     } : !sair.value<d0:dyn_range x d1:dyn_range, memref<?x?xf32>>
     // CHECK: sair.map[d0:%[[D1]], d1:%[[D0]]] %[[ALLOC]](d1, d0)
     // CHECK: ^{{.*}}(%{{.*}}: index, %{{.*}}: index, %[[ARG2:.*]]: memref<?x?xf32>):
@@ -81,7 +81,7 @@ func @sair_free(%arg0: index) {
     // CHECK:   sair.return
     // CHECK: } : #sair.shape<d0:dyn_range x d1:dyn_range>, (memref<?x?xf32>) -> ()
     sair.free[d0:%1, d1:%0] %4(d1, d0) {
-      expansion = "free"
+      decisions = {expansion = "free"}
     }: !sair.value<d0:dyn_range x d1:dyn_range, memref<?x?xf32>>
     sair.exit
   }
@@ -93,7 +93,7 @@ func @load_from_memref(%arg0 : memref<?x?xf32>) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<8, 2>
     %1, %2 = sair.map[d0:%0] attributes {
-      expansion = "map"
+      decisions = {expansion = "map"}
     } {
       ^bb0(%arg1: index):
         %c4 = constant 4 : index
@@ -112,7 +112,7 @@ func @load_from_memref(%arg0 : memref<?x?xf32>) {
     // CHECK: } : #sair.shape<d0:static_range<8, 2> x d1:static_range<8, 2> x d2:dyn_range(d0)>, (memref<?x?xf32>, index, index) -> f32
     %5 = sair.load_from_memref[d0:%0, d1:%0, d2:%3] %4 {
       layout = #sair.mapping<3 : d2, d1>,
-      expansion = "load"
+      decisions = {expansion = "load"}
     } : memref<?x?xf32> -> !sair.value<d0:static_range<8, 2> x d1:static_range<8, 2> x d2:dyn_range(d0), f32>
     sair.exit
   }
@@ -127,7 +127,7 @@ func @store_to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
     %2 = sair.from_scalar %arg1 : !sair.value<(), memref<?x?xf32>>
     // CHECK: sair.map
     %3 = sair.copy[d0:%0, d1:%0, d2:%0] %1 {
-      expansion = "copy"
+      decisions = {expansion = "copy"}
     } : !sair.value<d0:static_range<8> x d1:static_range<8> x d2:static_range<8>, f32>
 
     // CHECK: sair.map[d0:%{{.*}}, d1:%{{.*}}, d2:%{{.*}}] %{{.*}}, %{{.*}}(d0, d1, d2)
@@ -141,7 +141,7 @@ func @store_to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
     // CHECK: } : #sair.shape<d0:static_range<8> x d1:static_range<8> x d2:static_range<8>>, (memref<?x?xf32>, f32) -> ()
     sair.store_to_memref[d0:%0, d1:%0, d2:%0] %2, %3(d0, d1, d2) {
       layout = #sair.mapping<3 : d2, d1>,
-      expansion = "store"
+      decisions = {expansion = "store"}
     } : #sair.shape<d0:static_range<8> x d1:static_range<8> x d2:static_range<8>>, memref<?x?xf32>
     sair.exit
   }
