@@ -65,12 +65,13 @@ class LowerToMap : public LowerToMapPassBase<LowerToMap> {
       builder.create<SairReturnOp>(op.getLoc(), results);
 
       builder.setInsertionPoint(op);
+      DecisionsAttr decisions = op.GetDecisions();
+      auto new_decisions = DecisionsAttr::get(
+          decisions.sequence(), decisions.loop_nest(), decisions.storage(),
+          builder.getStringAttr(kMapExpansionPattern), context);
       SairMapOp map_op = builder.create<SairMapOp>(
           op.getLoc(), op->getResultTypes(), sair_op.domain(),
-          map_body.sair_values(), sair_op.shape(), /*loop_nest=*/nullptr,
-          /*storage=*/nullptr,
-          /*sequence=*/nullptr,
-          /*expansion=*/builder.getStringAttr(kMapExpansionPattern));
+          map_body.sair_values(), sair_op.shape(), new_decisions);
       map_op.body().takeBody(map_body.region());
       ForwardAttributes(op, map_op);
 

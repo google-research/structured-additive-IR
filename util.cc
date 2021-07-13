@@ -167,24 +167,6 @@ void ForwardAttributes(mlir::Operation *old_op, mlir::Operation *new_op,
   }
 }
 
-void SetInArrayAttr(mlir::Operation *operation, llvm::StringRef attr_name,
-                    int array_size, int element, mlir::Attribute value) {
-  mlir::MLIRContext *context = operation->getContext();
-  llvm::SmallVector<mlir::Attribute, 4> values;
-
-  auto old_attr = operation->getAttr(attr_name);
-  if (old_attr == nullptr) {
-    values.resize(array_size, mlir::UnitAttr::get(context));
-  } else {
-    auto old_array_attr = old_attr.cast<mlir::ArrayAttr>();
-    assert(old_array_attr.size() == array_size);
-    llvm::append_range(values, old_array_attr.getValue());
-  }
-
-  values[element] = value;
-  operation->setAttr(attr_name, mlir::ArrayAttr::get(context, values));
-}
-
 mlir::Value Materialize(mlir::Location loc, mlir::OpFoldResult value,
                         mlir::OpBuilder &builder) {
   if (value.is<mlir::Value>()) return value.get<mlir::Value>();

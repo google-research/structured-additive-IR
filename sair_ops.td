@@ -160,10 +160,7 @@ def SairCopyOp : SairOp<"copy", [
     Variadic<SairDimension>:$domain,
     SairMappingArrayAttr:$mapping_array,
     SairValue:$value,
-    SairLoopNestAttr:$loop_nest,
-    SairStorageAttr:$storage,
-    OptionalAttr<I64Attr>:$sequence,
-    OptionalAttr<StrAttr>:$expansion
+    OptionalAttr<SairDecisionsAttr>:$decisions
   );
 
   let results = (outs SairValue:$result);
@@ -289,10 +286,7 @@ def SairLoadFromMemRefOp : SairOp<"load_from_memref", [SairComputeOp]> {
     SairMappingArrayAttr:$mapping_array,
     SairValueOf<AnyMemRef>:$memref,
     SairMappingAttr:$layout,
-    SairLoopNestAttr:$loop_nest,
-    SairStorageAttr:$storage,
-    OptionalAttr<I64Attr>:$sequence,
-    OptionalAttr<StrAttr>:$expansion
+    OptionalAttr<SairDecisionsAttr>:$decisions
   );
 
   let results = (outs SairValue:$result);
@@ -399,9 +393,7 @@ def SairStoreToMemRefOp : SairOp<"store_to_memref", [SairComputeOp]> {
     SairValue:$value,
     SairMappingAttr:$layout,
     SairDomainShapeAttr:$shape,
-    SairLoopNestAttr:$loop_nest,
-    OptionalAttr<I64Attr>:$sequence,
-    OptionalAttr<StrAttr>:$expansion
+    OptionalAttr<SairDecisionsAttr>:$decisions
   );
 
   let parser = [{return ParseStoreToMemRef(parser, result);}];
@@ -412,10 +404,6 @@ def SairStoreToMemRefOp : SairOp<"store_to_memref", [SairComputeOp]> {
   }];
 
   let extraClassDeclaration = [{
-    llvm::Optional<mlir::ArrayAttr> storage() {
-      return mlir::ArrayAttr::get(getContext(), {});
-    }
-
     ValueOperand MemRef() { return ValueOperands()[0]; }
 
     ValueOperand Value() { return ValueOperands()[1]; }
@@ -478,10 +466,7 @@ def SairMapOp : SairOp<"map", [
     SairMappingArrayAttr:$mapping_array,
     Variadic<SairValue>:$inputs,
     SairDomainShapeAttr:$shape,
-    SairLoopNestAttr:$loop_nest,
-    SairStorageAttr:$storage,
-    OptionalAttr<I64Attr>:$sequence,
-    OptionalAttr<StrAttr>:$expansion
+    OptionalAttr<SairDecisionsAttr>:$decisions
   );
 
   let results = (outs Variadic<SairValue>:$results);
@@ -494,17 +479,11 @@ def SairMapOp : SairOp<"map", [
     OpBuilder<(ins "mlir::TypeRange":$result_types,
       "mlir::ValueRange":$domain, "mlir::ArrayAttr":$mappings_array,
       "mlir::ValueRange":$inputs, "DomainShapeAttr":$shape,
-      CArg<"/*optional*/ mlir::ArrayAttr", "nullptr">:$loop_nest,
-      CArg<"/*optional*/ mlir::ArrayAttr", "nullptr">:$storage,
-      CArg<"/*optional*/ mlir::IntegerAttr", "nullptr">:$sequence,
-      CArg<"/*optional*/ mlir::StringAttr", "nullptr">:$expansion)>,
+      "DecisionsAttr":$decisions)>,
     OpBuilder<(ins "mlir::TypeRange":$result_types,
       "mlir::ValueRange":$domain, "mlir::ArrayRef<ValueAccess>":$inputs,
       "DomainShapeAttr":$shape,
-      CArg<"/*optional*/ mlir::ArrayAttr", "nullptr">:$loop_nest,
-      CArg<"/*optional*/ mlir::ArrayAttr", "nullptr">:$storage,
-      CArg<"/*optional*/ mlir::IntegerAttr", "nullptr">:$sequence,
-      CArg<"/*optional*/ mlir::StringAttr", "nullptr">:$expansion)>,
+      "DecisionsAttr":$decisions)>
   ];
 
   let extraClassDeclaration = [{
@@ -564,10 +543,7 @@ def SairMapReduceOp : SairOp<"map_reduce", [
     Variadic<SairValue>:$inits,
     Variadic<SairValue>:$inputs,
     SairDomainShapeAttr:$shape,
-    SairLoopNestAttr:$loop_nest,
-    SairStorageAttr:$storage,
-    OptionalAttr<I64Attr>:$sequence,
-    OptionalAttr<StrAttr>:$expansion
+    OptionalAttr<SairDecisionsAttr>:$decisions
   );
 
   let results = (outs Variadic<SairValue>:$results);
@@ -850,10 +826,7 @@ def SairAllocOp : SairOp<"alloc", [
     Variadic<SairDimension>:$domain,
     SairMappingArrayAttr:$mapping_array,
     Variadic<SairValueOf<Index>>:$dynamic_sizes,
-    SairLoopNestAttr:$loop_nest,
-    SairStorageAttr:$storage,
-    OptionalAttr<I64Attr>:$sequence,
-    OptionalAttr<StrAttr>:$expansion
+    OptionalAttr<SairDecisionsAttr>:$decisions
   );
 
   let results = (outs SairValueOf<AnyMemRef>:$result);
@@ -889,9 +862,7 @@ def SairFreeOp : SairOp<"free", [
     Variadic<SairDimension>:$domain,
     SairMappingArrayAttr:$mapping_array,
     SairValueOf<AnyMemRef>:$value,
-    SairLoopNestAttr:$loop_nest,
-    OptionalAttr<I64Attr>:$sequence,
-    OptionalAttr<StrAttr>:$expansion
+    OptionalAttr<SairDecisionsAttr>:$decisions
   );
 
   let parser = [{return ParseFreeOp(parser, result); }];
@@ -899,10 +870,6 @@ def SairFreeOp : SairOp<"free", [
 
   let extraClassDeclaration = [{
     ValueOperand Value() { return ValueOperands()[0]; }
-
-    llvm::Optional<mlir::ArrayAttr> storage() {
-      return mlir::ArrayAttr::get(getContext(), {});
-    }
   }];
 }
 
