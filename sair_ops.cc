@@ -1119,8 +1119,7 @@ ParseResult ParseMapOp(mlir::OpAsmParser &parser,
 void SairMapOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,
                       mlir::TypeRange result_types, mlir::ValueRange domain,
                       llvm::ArrayRef<ValueAccess> inputs, DomainShapeAttr shape,
-                      mlir::ArrayAttr loop_nest, mlir::ArrayAttr storage,
-                      mlir::IntegerAttr sequence, mlir::StringAttr expansion) {
+                      DecisionsAttr decisions, mlir::ArrayAttr copies) {
   llvm::SmallVector<mlir::Value> values;
   llvm::SmallVector<mlir::Attribute> mappings;
   for (const auto &input : inputs) {
@@ -1129,8 +1128,7 @@ void SairMapOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,
   }
   auto mappings_attr = builder.getArrayAttr(mappings);
   return SairMapOp::build(builder, result, result_types, domain, mappings_attr,
-                          values, shape, loop_nest, storage, sequence,
-                          expansion);
+                          values, shape, decisions, copies);
 }
 
 // Builds a sair.map operation and setups its block with the right arguments.
@@ -1138,25 +1136,18 @@ void SairMapOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,
 void SairMapOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,
                       mlir::TypeRange result_types, mlir::ValueRange domain,
                       mlir::ArrayAttr mappings_array, mlir::ValueRange inputs,
-                      DomainShapeAttr shape, mlir::ArrayAttr loop_nest,
-                      mlir::ArrayAttr storage, mlir::IntegerAttr sequence,
-                      mlir::StringAttr expansion) {
+                      DomainShapeAttr shape, DecisionsAttr decisions,
+                      mlir::ArrayAttr copies) {
   result.addTypes(result_types);
   result.addOperands(domain);
   result.addOperands(inputs);
   result.addAttribute(SairOp::kMappingAttrName, mappings_array);
   result.addAttribute(SairDialect::kShapeAttrName, shape);
-  if (loop_nest != nullptr) {
-    result.addAttribute(ComputeOp::kLoopNestAttrName, loop_nest);
+  if (decisions != nullptr) {
+    result.addAttribute(ComputeOp::kDecisionsAttrName, decisions);
   }
-  if (storage != nullptr) {
-    result.addAttribute(ComputeOp::kStorageAttrName, storage);
-  }
-  if (sequence != nullptr) {
-    result.addAttribute(ComputeOp::kSequenceAttrName, sequence);
-  }
-  if (expansion != nullptr) {
-    result.addAttribute(ComputeOp::kExpansionAttrName, expansion);
+  if (copies != nullptr) {
+    result.addAttribute(ValueProducerOp::kCopiesAttrName, copies);
   }
 
   auto operand_segment_sizes =
@@ -1558,8 +1549,11 @@ mlir::LogicalResult Verify(SairProgramOp program) {
                                    sequence_analysis))) {
     return mlir::failure();
   }
-  return VerifyStorages(program, fusion_analysis, iteration_spaces,
-                        sequence_analysis);
+  if (mlir::failed(VerifyStorages(program, fusion_analysis, iteration_spaces,
+                                  sequence_analysis))) {
+    return mlir::failure();
+  }
+  return VerifyExpansionPatterns(program);
 }
 
 void SairProgramOp::build(mlir::OpBuilder &builder,
@@ -1715,6 +1709,32 @@ static mlir::ArrayAttr ComposeLoopNest(MappingAttr new_to_old_mapping,
   return mlir::ArrayAttr::get(old_loop_nest.getContext(), new_loop_nest);
 }
 
+// Translates the copies attribute to a new domain.
+static mlir::ArrayAttr ComposeCopies(MappingAttr new_to_old_mapping,
+                                     mlir::ArrayAttr old_copies) {
+  if (old_copies == nullptr) return nullptr;
+  mlir::MLIRContext *context = new_to_old_mapping.getContext();
+
+  llvm::SmallVector<mlir::Attribute> new_copies;
+  new_copies.reserve(old_copies.size());
+  for (mlir::Attribute attr : old_copies.getValue()) {
+    auto old_result_copies = attr.cast<mlir::ArrayAttr>();
+    llvm::SmallVector<mlir::Attribute> new_result_copies;
+    new_result_copies.reserve(old_result_copies.size());
+    for (mlir::Attribute copie_attr : old_result_copies.getValue()) {
+      auto decisions = copie_attr.cast<DecisionsAttr>();
+      auto new_loop_nest =
+          ComposeLoopNest(new_to_old_mapping, decisions.loop_nest());
+      auto new_decisions = DecisionsAttr::get(
+          decisions.sequence(), new_loop_nest, decisions.storage(),
+          decisions.expansion(), context);
+      new_result_copies.push_back(new_decisions);
+    }
+    new_copies.push_back(mlir::ArrayAttr::get(context, new_result_copies));
+  }
+  return mlir::ArrayAttr::get(context, new_copies);
+}
+
 SairOp SairDynRangeOp::ReCreateWithNewDomain(
     llvm::ArrayRef<llvm::SmallVector<mlir::Value>> new_domains,
     DomainShapeAttr new_shape, MappingAttr new_to_old_mapping,
@@ -1748,12 +1768,17 @@ SairOp SairCopyOp::ReCreateWithNewDomain(
       ComposeMappings(new_to_old_mapping, mapping_array());
   auto new_type =
       ValueType::get(new_shape, getType().cast<ValueType>().ElementType());
+  DecisionsAttr decisions = GetDecisions();
   mlir::ArrayAttr new_loop_nest =
-      ComposeLoopNest(new_to_old_mapping, loop_nestAttr());
+      ComposeLoopNest(new_to_old_mapping, decisions.loop_nest());
 
-  auto new_op = builder.create<SairCopyOp>(
-      getLoc(), new_type, new_domains[0], new_mappings, value(), new_loop_nest,
-      storageAttr(), sequenceAttr(), expansionAttr());
+  auto new_decisions = DecisionsAttr::get(decisions.sequence(), new_loop_nest,
+                                          decisions.storage(),
+                                          decisions.expansion(), getContext());
+  auto new_copies = ComposeCopies(new_to_old_mapping, copiesAttr());
+  auto new_op = builder.create<SairCopyOp>(getLoc(), new_type, new_domains[0],
+                                           new_mappings, value(), new_decisions,
+                                           new_copies);
   ForwardAttributes(getOperation(), new_op.getOperation());
   return llvm::cast<SairOp>(new_op.getOperation());
 }
@@ -1780,15 +1805,20 @@ SairOp SairLoadFromMemRefOp::ReCreateWithNewDomain(
   assert(new_domains.size() == 1);
   mlir::ArrayAttr new_mappings =
       ComposeMappings(new_to_old_mapping, mapping_array());
+  DecisionsAttr decisions = GetDecisions();
   mlir::ArrayAttr new_loop_nest =
-      ComposeLoopNest(new_to_old_mapping, loop_nestAttr());
+      ComposeLoopNest(new_to_old_mapping, decisions.loop_nest());
 
   MappingAttr new_layout = new_to_old_mapping.Compose(layout());
   auto return_type =
       ValueType::get(new_shape, getType().cast<ValueType>().ElementType());
+  auto new_decisions = DecisionsAttr::get(decisions.sequence(), new_loop_nest,
+                                          decisions.storage(),
+                                          decisions.expansion(), getContext());
+  auto new_copies = ComposeCopies(new_to_old_mapping, copiesAttr());
   auto new_op = builder.create<SairLoadFromMemRefOp>(
       getLoc(), return_type, new_domains[0], new_mappings, memref(), new_layout,
-      new_loop_nest, storageAttr(), sequenceAttr(), expansionAttr());
+      new_decisions, new_copies);
   ForwardAttributes(getOperation(), new_op.getOperation());
   return llvm::cast<SairOp>(new_op.getOperation());
 }
@@ -1808,12 +1838,17 @@ SairOp SairStoreToMemRefOp::ReCreateWithNewDomain(
 
   mlir::ArrayAttr new_mappings =
       ComposeMappings(new_to_old_mapping, mapping_array());
+  DecisionsAttr decisions = GetDecisions();
   mlir::ArrayAttr new_loop_nest =
-      ComposeLoopNest(new_to_old_mapping, loop_nestAttr());
+      ComposeLoopNest(new_to_old_mapping, decisions.loop_nest());
   MappingAttr new_layout = new_to_old_mapping.Compose(layout());
+  auto new_decisions = DecisionsAttr::get(decisions.sequence(), new_loop_nest,
+                                          decisions.storage(),
+                                          decisions.expansion(), getContext());
+  auto new_copies = ComposeCopies(new_to_old_mapping, copiesAttr());
   auto new_op = builder.create<SairStoreToMemRefOp>(
       getLoc(), new_domains[0], new_mappings, memref(), value(), new_layout,
-      new_shape, new_loop_nest, sequenceAttr(), expansionAttr());
+      new_shape, new_decisions, new_copies);
   ForwardAttributes(getOperation(), new_op.getOperation());
   return llvm::cast<SairOp>(new_op.getOperation());
 }
@@ -1850,17 +1885,22 @@ SairOp SairMapOp::ReCreateWithNewDomain(
 
   mlir::ArrayAttr new_mappings =
       ComposeMappings(new_to_old_mapping, mapping_array());
+  DecisionsAttr decisions = GetDecisions();
   mlir::ArrayAttr new_loop_nest =
-      ComposeLoopNest(new_to_old_mapping, loop_nestAttr());
+      ComposeLoopNest(new_to_old_mapping, decisions.loop_nest());
   llvm::SmallVector<mlir::Type, 4> new_return_types;
   new_return_types.reserve(getResults().size());
   for (mlir::Type type : getResultTypes()) {
     new_return_types.push_back(
         ValueType::get(new_shape, type.cast<ValueType>().ElementType()));
   }
+  auto new_decisions = DecisionsAttr::get(decisions.sequence(), new_loop_nest,
+                                          decisions.storage(),
+                                          decisions.expansion(), getContext());
+  auto new_copies = ComposeCopies(new_to_old_mapping, copiesAttr());
   auto new_op = builder.create<SairMapOp>(
       getLoc(), new_return_types, new_domains[0], new_mappings, inputs(),
-      new_shape, new_loop_nest, storageAttr(), sequenceAttr(), expansionAttr());
+      new_shape, new_decisions, new_copies);
   ForwardAttributes(getOperation(), new_op.getOperation());
   MoveMapBody(getLoc(), block(), new_op.block(), new_to_old_mapping, builder);
   return llvm::cast<SairOp>(new_op.getOperation());
@@ -1874,8 +1914,9 @@ SairOp SairMapReduceOp::ReCreateWithNewDomain(
 
   mlir::ArrayAttr new_mappings =
       ComposeMappings(new_to_old_mapping, mapping_array());
+  DecisionsAttr decisions = GetDecisions();
   mlir::ArrayAttr new_loop_nest =
-      ComposeLoopNest(new_to_old_mapping, loop_nestAttr());
+      ComposeLoopNest(new_to_old_mapping, decisions.loop_nest());
   llvm::SmallVector<mlir::Type, 4> new_return_types;
   new_return_types.reserve(getResults().size());
   for (mlir::Type type : getResultTypes()) {
@@ -1883,10 +1924,13 @@ SairOp SairMapReduceOp::ReCreateWithNewDomain(
         ValueType::get(new_shape.Prefix(new_domains[0].size()),
                        type.cast<ValueType>().ElementType()));
   }
+  auto new_decisions = DecisionsAttr::get(decisions.sequence(), new_loop_nest,
+                                          decisions.storage(),
+                                          decisions.expansion(), getContext());
+  auto new_copies = ComposeCopies(new_to_old_mapping, copiesAttr());
   auto new_op = builder.create<SairMapReduceOp>(
       getLoc(), new_return_types, new_domains[0], new_domains[1], new_mappings,
-      inits(), inputs(), new_shape, new_loop_nest, storageAttr(),
-      sequenceAttr(), expansionAttr());
+      inits(), inputs(), new_shape, new_decisions, new_copies);
   ForwardAttributes(getOperation(), new_op.getOperation());
   // Create the map body.
   llvm::SmallVector<mlir::Type> block_arg_types(new_shape.NumDimensions(),
@@ -1913,9 +1957,10 @@ SairOp SairProjLastOp::ReCreateWithNewDomain(
   auto new_return_type =
       ValueType::get(new_shape.Prefix(new_domains[0].size()),
                      getType().cast<ValueType>().ElementType());
+  auto new_copies = ComposeCopies(new_to_old_mapping, copiesAttr());
   auto new_op = builder.create<SairProjLastOp>(
       getLoc(), new_return_type, new_domains[0], new_domains[1], new_mappings,
-      value(), new_shape);
+      value(), new_shape, new_copies);
   ForwardAttributes(getOperation(), new_op.getOperation());
   return llvm::cast<SairOp>(new_op.getOperation());
 }
@@ -1931,9 +1976,10 @@ SairOp SairProjAnyOp::ReCreateWithNewDomain(
   auto new_return_type =
       ValueType::get(new_shape.Prefix(new_domains[0].size()),
                      getType().cast<ValueType>().ElementType());
-  auto new_op = builder.create<SairProjAnyOp>(getLoc(), new_return_type,
-                                              new_domains[0], new_domains[1],
-                                              new_mappings, value(), new_shape);
+  auto new_copies = ComposeCopies(new_to_old_mapping, copiesAttr());
+  auto new_op = builder.create<SairProjAnyOp>(
+      getLoc(), new_return_type, new_domains[0], new_domains[1], new_mappings,
+      value(), new_shape, new_copies);
   ForwardAttributes(getOperation(), new_op.getOperation());
   return llvm::cast<SairOp>(new_op.getOperation());
 }
@@ -1948,9 +1994,10 @@ SairOp SairFbyOp::ReCreateWithNewDomain(
       ComposeMappings(new_to_old_mapping, mapping_array());
   auto new_return_type =
       ValueType::get(new_shape, getType().cast<ValueType>().ElementType());
-  auto new_op =
-      builder.create<SairFbyOp>(getLoc(), new_return_type, new_domains[0],
-                                new_domains[1], new_mappings, init(), value());
+  auto new_copies = ComposeCopies(new_to_old_mapping, copiesAttr());
+  auto new_op = builder.create<SairFbyOp>(
+      getLoc(), new_return_type, new_domains[0], new_domains[1], new_mappings,
+      init(), value(), new_copies);
   ForwardAttributes(getOperation(), new_op.getOperation());
   return llvm::cast<SairOp>(new_op.getOperation());
 }
@@ -1971,12 +2018,17 @@ SairOp SairAllocOp::ReCreateWithNewDomain(
 
   mlir::ArrayAttr new_mappings =
       ComposeMappings(new_to_old_mapping, mapping_array());
+  DecisionsAttr decisions = GetDecisions();
   mlir::ArrayAttr new_loop_nest =
-      ComposeLoopNest(new_to_old_mapping, loop_nestAttr());
+      ComposeLoopNest(new_to_old_mapping, decisions.loop_nest());
   auto new_return_type = ValueType::get(new_shape, MemType());
+  auto new_decisions = DecisionsAttr::get(decisions.sequence(), new_loop_nest,
+                                          decisions.storage(),
+                                          decisions.expansion(), getContext());
+  auto new_copies = ComposeCopies(new_to_old_mapping, copiesAttr());
   auto new_op = builder.create<SairAllocOp>(
       getLoc(), new_return_type, new_domains[0], new_mappings, dynamic_sizes(),
-      new_loop_nest, storageAttr(), sequenceAttr(), expansionAttr());
+      new_decisions, new_copies);
   ForwardAttributes(getOperation(), new_op.getOperation());
   return llvm::cast<SairOp>(new_op.getOperation());
 }
@@ -1989,11 +2041,14 @@ SairOp SairFreeOp::ReCreateWithNewDomain(
 
   mlir::ArrayAttr new_mappings =
       ComposeMappings(new_to_old_mapping, mapping_array());
+  DecisionsAttr decisions = GetDecisions();
   mlir::ArrayAttr new_loop_nest =
-      ComposeLoopNest(new_to_old_mapping, loop_nestAttr());
-  auto new_op = builder.create<SairFreeOp>(getLoc(), new_domains[0],
-                                           new_mappings, value(), new_loop_nest,
-                                           sequenceAttr(), expansionAttr());
+      ComposeLoopNest(new_to_old_mapping, decisions.loop_nest());
+  auto new_decisions = DecisionsAttr::get(decisions.sequence(), new_loop_nest,
+                                          decisions.storage(),
+                                          decisions.expansion(), getContext());
+  auto new_op = builder.create<SairFreeOp>(
+      getLoc(), new_domains[0], new_mappings, value(), new_decisions);
   ForwardAttributes(getOperation(), new_op.getOperation());
   return llvm::cast<SairOp>(new_op.getOperation());
 }

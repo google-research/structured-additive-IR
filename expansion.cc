@@ -16,8 +16,26 @@
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "sair_dialect.h"
 
 namespace sair {
+
+mlir::LogicalResult VerifyExpansionPatterns(SairProgramOp program) {
+  auto *sair_dialect = static_cast<SairDialect *>(program->getDialect());
+  auto result = program.walk([&](ComputeOp op) -> mlir::WalkResult {
+    llvm::Optional<mlir::StringRef> pattern_name = op.expansion();
+    if (!pattern_name.hasValue()) return mlir::success();
+    const ExpansionPattern *pattern =
+        sair_dialect->GetExpansionPattern(pattern_name.getValue());
+    assert(pattern != nullptr);
+    if (mlir::failed(pattern->Match(op))) {
+      return op.emitError()
+             << "expansion pattern does not apply to the operation";
+    }
+    return mlir::success();
+  });
+  return mlir::failure(result.wasInterrupted());
+}
 
 //===----------------------------------------------------------------------===//
 // RegisterExpansionPatterns

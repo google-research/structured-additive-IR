@@ -267,6 +267,11 @@ mlir::LogicalResult RegisterOperations(
       return operation.emitError() << "sair.proj_any operations must be "
                                       "eliminated before introducing loops";
     }
+    auto value_producer = dyn_cast<ValueProducerOp>(&operation);
+    if (value_producer != nullptr && value_producer.HasCopies()) {
+      return operation.emitError()
+             << "copies must be materialized before introducing loops";
+    }
     // Compute ops have been added above.
     if (isa<ComputeOp>(operation)) continue;
     driver.AddOperation(&operation);
@@ -375,7 +380,8 @@ void EraseDimension(SairProjLastOp op, int dimension, mlir::Value new_value,
       /*projection_domain=*/EraseValue(op.projection_domain(), dim_pos),
       /*mapping_array*/ driver.getArrayAttr({mapping}),
       /*value=*/new_value,
-      /*shape=*/EraseDimension(op.shape(), dimension));
+      /*shape=*/EraseDimension(op.shape(), dimension),
+      /*copies=*/nullptr);
 }
 
 // Erases a sequential dimension from a sair.fby operation and replaces
@@ -399,7 +405,7 @@ void EraseDimension(SairFbyOp op, int dimension, mlir::Value new_value,
       /*sequential_domain=*/EraseValue(op.sequential_domain(), dim_pos),
       /*mapping_array*/
       driver.getArrayAttr({op.Init().Mapping(), mapping}),
-      /*init=*/op.init(), /*value=*/new_value);
+      /*init=*/op.init(), /*value=*/new_value, /*copies=*/nullptr);
 }
 
 // Creates a for operation of size `size` at the current insertion point of
@@ -561,6 +567,12 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
   driver.setInsertionPoint(op);
   mlir::ArrayAttr new_loop_nest = EraseDimensionFromLoopNest(
       loop_nest.drop_back(), dimension, driver.getContext());
+  DecisionsAttr decisions = op.GetDecisions();
+  auto new_decisions = DecisionsAttr::get(
+      /*sequence=*/decisions.sequence(),
+      /*loop_nest=*/new_loop_nest,
+      /*storage=*/decisions.storage(),
+      /*expansion=*/decisions.expansion(), op.getContext());
   SairMapOp new_op = driver.create<SairMapOp>(
       op.getLoc(),
       /*result_types=*/EraseDimension(op.getResultTypes(), dimension),
@@ -568,10 +580,8 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
       /*mappings_array=*/driver.getArrayAttr(mappings),
       /*inputs=*/inputs,
       /*shape=*/EraseDimension(op.shape(), dimension),
-      /*loop_nest=*/new_loop_nest,
-      /*memory_space=*/op.storageAttr(),
-      /*sequence=*/nullptr,
-      /*expansion=*/driver.getStringAttr(kMapExpansionPattern));
+      /*decisions=*/new_decisions,
+      /*copies=*/nullptr);
   new_op.body().takeBody(op.body());
 
   // Position of the sair.map in the results of the scf.for operation.
@@ -726,6 +736,12 @@ void Fuse(SairMapOp first_op, SairMapOp second_op, Driver &driver) {
 
   // Create the operation.
   driver.setInsertionPoint(second_op);
+  DecisionsAttr first_decisions = first_op.GetDecisions();
+  auto new_decisions = DecisionsAttr::get(
+      /*sequence=*/first_decisions.sequence(),
+      /*loop_nest=*/first_decisions.loop_nest(),
+      /*storage=*/driver.getArrayAttr(storages),
+      /*expansion=*/first_decisions.expansion(), context);
   SairMapOp new_op = driver.create<SairMapOp>(
       /*location=*/first_op.getLoc(),
       /*result_types=*/result_types,
@@ -733,10 +749,8 @@ void Fuse(SairMapOp first_op, SairMapOp second_op, Driver &driver) {
       /*mappings_array=*/driver.getArrayAttr(mappings),
       /*inputs=*/inputs,
       /*shape=*/first_op.shape(),
-      /*loop_nest=*/first_op.loop_nestAttr(),
-      /*memory_space=*/driver.getArrayAttr(storages),
-      /*sequence=*/nullptr,
-      /*expansion=*/driver.getStringAttr(kMapExpansionPattern));
+      /*decisions=*/new_decisions,
+      /*copies=*/nullptr);
   new_op.body().takeBody(first_op.body());
   driver.replaceOp(first_op,
                    new_op.getResults().take_front(first_op.getNumResults()));
