@@ -1,4 +1,4 @@
-// RUN: sair-opt -split-input-file -verify-diagnostics %s
+// RUN: sair-opt --allow-unregistered-dialect -split-input-file -verify-diagnostics %s
 
 // expected-error @+1 {{invalid sair type}}
 func @invalid_type() -> !sair.foo
