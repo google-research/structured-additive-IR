@@ -18,6 +18,7 @@
 #include <variant>
 
 #include "llvm/ADT/Optional.h"
+#include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/SmallBitVector.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -159,6 +160,9 @@ mlir::LogicalResult VerifySairOp(mlir::Operation *op);
 // Verifies a `ComputeOp`.
 mlir::LogicalResult VerifyComputeOp(mlir::Operation *op);
 
+// Verifies a `ValueProducerOp`.
+mlir::LogicalResult VerifyValueProducerOp(mlir::Operation *operation);
+
 // Returns the Sair value accessed by the operation, along with the
 // corresponding mappings.
 template<typename ConcreteType>
@@ -178,6 +182,67 @@ void SetMapping(SairOp op, int position, ::sair::MappingAttr mapping);
 using namespace mlir;  // NOLINT
 #include "sair_op_interfaces.h.inc"
 
+// Abstraction around either a ComputeOp or a copy of a Sair value specified by
+// the `copies` attribute of a ValueProducerOp.
+class ComputeOpInstance {
+ public:
+  // Creates an operation instance that points to a ComputeOp.
+  ComputeOpInstance(ComputeOp op) : op_(op) {}
+  // Creates an operation instance that points to a value copy.
+  ComputeOpInstance(ValueProducerOp op, int result, int copy)
+      : op_(op), result_(result), copy_(copy) {}
+
+  // Indicates if the instance is the copy of a value.
+  bool is_copy() { return op_.is<ValueProducerOp>(); }
+
+  // Returns the ComputeOp pointed to by the instance. Fails if the instance is
+  // a copy.
+  ComputeOp AsComputeOp() { return op_.get<ComputeOp>(); }
+
+  // Returns lowering decisions for the operation instance.
+  DecisionsAttr GetDecisions();
+
+  // Sets lowering decisions for the operation instance.
+  void SetDecisions(DecisionsAttr decisions);
+
+  // Emits an error at the location of the operation instance.
+  mlir::InFlightDiagnostic EmitError();
+
+ private:
+  // Points to a ComputeOp if the operation is an actual operation. Point to a
+  // ValueProducerOp if the operation is a copy.
+  llvm::PointerUnion<ComputeOp, ValueProducerOp> op_;
+  int result_;
+  int copy_;
+};
+
 }  // namespace sair
+
+// Allow using traits in pointer union.
+namespace llvm {
+
+template <>
+struct llvm::PointerLikeTypeTraits<sair::ComputeOp> {
+  static inline void *getAsVoidPointer(sair::ComputeOp val) {
+    return const_cast<void *>(val.getAsOpaquePointer());
+  }
+  static inline sair::ComputeOp getFromVoidPointer(void *p) {
+    return sair::ComputeOp::getFromOpaquePointer(p);
+  }
+  static constexpr int NumLowBitsAvailable = 3;
+};
+
+template <>
+struct llvm::PointerLikeTypeTraits<sair::ValueProducerOp> {
+  static inline void *getAsVoidPointer(sair::ValueProducerOp val) {
+    return const_cast<void *>(val.getAsOpaquePointer());
+  }
+  static inline sair::ValueProducerOp getFromVoidPointer(void *p) {
+    return sair::ValueProducerOp::getFromOpaquePointer(p);
+  }
+  static constexpr int NumLowBitsAvailable = 3;
+};
+
+}  // namespace llvm
 
 #endif  // SAIR_SAIR_OP_INTERFACES_H_

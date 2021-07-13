@@ -25,6 +25,8 @@
 
 namespace sair {
 
+class SairDialect;
+
 // Verifies that storage attributes in the program are correct. Assumes that
 // Sair operands are defined in the same program.
 mlir::LogicalResult VerifyStorages(
@@ -227,6 +229,20 @@ mlir::LogicalResult VerifyValuesNotOverwritten(
     const IterationSpaceAnalysis &iteration_spaces,
     const StorageAnalysis &storage_analysis,
     const SequenceAnalysis &sequence_analysis);
+
+// Verifies that the storage attribute is well-formed:
+// - that storage attributes are arrays of buffer or unit attributes,
+// - that the number of entries in the storage array matches the number of,
+//   results of the operation,
+// - that indexes are not stored in memory,
+// - that memory spaces referenced by the attribute exist,
+// - that multi-dimensional buffers are not stored in registers,
+// - that loops referenced by the attribute exist and
+// - that the buffer has a name if and only if the memory space is addressable.
+mlir::LogicalResult VerifyStorageAttrWellFormed(
+    mlir::Location loc, SairDialect *sair_dialect, mlir::TypeRange result_types,
+    llvm::DenseSet<mlir::Attribute> loop_names,
+    llvm::ArrayRef<mlir::Attribute> storage);
 
 }  // namespace sair
 

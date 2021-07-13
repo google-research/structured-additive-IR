@@ -37,6 +37,7 @@
 #include "sair_dialect.h"
 #include "sair_ops.h"
 #include "sair_types.h"
+#include "storage.h"
 
 namespace sair {
 
@@ -213,40 +214,84 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
   }
 
   if (!isa<ComputeOp>(sair_op.getOperation())) {
-    if (sair_op->hasAttr(ComputeOp::kLoopNestAttrName)) {
+    if (sair_op->hasAttr(ComputeOp::kDecisionsAttrName)) {
       return op->emitError() << "only compute Sair ops can have the '"
-                             << ComputeOp::kLoopNestAttrName << "' attribute";
-    }
-    if (sair_op->hasAttr(ComputeOp::kSequenceAttrName)) {
-      return op->emitOpError() << "unexpected '" << ComputeOp::kSequenceAttrName
-                               << "' attribute on a non-compute op";
+                             << ComputeOp::kDecisionsAttrName << "' attribute";
     }
   }
 
   return ::mlir::success();
 }
 
-mlir::LogicalResult VerifyComputeOp(mlir::Operation *operation) {
-  ComputeOp op(operation);
-  if (op.loop_nest().hasValue()) {
-    if (mlir::failed(VerifyLoopNestWellFormed(op, op.LoopNestLoops()))) {
+// Verifies that `decisions` is well formed when used for an operation with the
+// given shape and result types.
+static mlir::LogicalResult VerifyDecisionsWellFormed(mlir::Location loc,
+                                                     DomainShapeAttr shape,
+                                                     TypeRange result_types,
+                                                     DecisionsAttr decisions) {
+  auto *sair_dialect = shape.getContext()->getLoadedDialect<SairDialect>();
+
+  // Check loop nest.
+  mlir::ArrayAttr loop_nest = decisions.loop_nest();
+  llvm::DenseSet<mlir::Attribute> loop_names;
+  if (loop_nest != nullptr) {
+    if (mlir::failed(
+            VerifyLoopNestWellFormed(loc, shape, loop_nest.getValue()))) {
       return mlir::failure();
+    }
+    loop_names.reserve(loop_nest.size());
+    for (mlir::Attribute attr : loop_nest.getValue()) {
+      loop_names.insert(attr.cast<LoopAttr>().name());
     }
   }
 
-  // Check expansion pattern.
-  llvm::Optional<llvm::StringRef> pattern_name = op.expansion();
-  if (!pattern_name.hasValue()) return mlir::success();
-  auto *sair_dialect = static_cast<SairDialect *>(op->getDialect());
-  const ExpansionPattern *pattern =
-      sair_dialect->GetExpansionPattern(*pattern_name);
-  if (pattern == nullptr) {
-    return op.emitError() << "invalid expansion pattern name \""
-                          << *pattern_name << "\"";
+  // Check storage.
+  mlir::ArrayAttr storage = decisions.storage();
+  if (storage != nullptr &&
+      mlir::failed(VerifyStorageAttrWellFormed(
+          loc, sair_dialect, result_types, loop_names, storage.getValue()))) {
+    return mlir::failure();
   }
-  if (mlir::failed(pattern->Match(op))) {
+
+  // Check expansion pattern.
+  mlir::StringAttr pattern_name = decisions.expansion();
+  if (pattern_name == nullptr) return mlir::success();
+  const ExpansionPattern *pattern =
+      sair_dialect->GetExpansionPattern(pattern_name.getValue());
+  if (pattern == nullptr) {
+    return mlir::emitError(loc)
+           << "invalid expansion pattern name " << pattern_name;
+  }
+  return mlir::success();
+}
+
+mlir::LogicalResult VerifyComputeOp(mlir::Operation *operation) {
+  ComputeOp op(operation);
+  SairOp sair_op(operation);
+  return VerifyDecisionsWellFormed(op.getLoc(), sair_op.shape(),
+                                   op->getResultTypes(), op.GetDecisions());
+}
+
+mlir::LogicalResult VerifyValueProducerOp(mlir::Operation *operation) {
+  ValueProducerOp op(operation);
+  SairOp sair_op(operation);
+  auto copies = operation->getAttrOfType<mlir::ArrayAttr>(
+      ValueProducerOp::kCopiesAttrName);
+  if (copies == nullptr) return mlir::success();
+  if (copies.size() != operation->getNumResults()) {
     return op.emitError()
-           << "expansion pattern does not apply to the operation";
+           << "the `copies` attribute must have one entry per operation result";
+  }
+
+  DomainShapeAttr shape = sair_op.shape().Prefix(sair_op.results_rank());
+  for (int i = 0, e = op->getNumResults(); i < e; ++i) {
+    for (mlir::Attribute attr : op.GetCopies(i)) {
+      auto decisions = attr.cast<DecisionsAttr>();
+      if (mlir::failed(VerifyDecisionsWellFormed(
+              op.getLoc(), shape, {op->getResultTypes()[i]}, decisions))) {
+        return mlir::failure();
+      }
+    }
   }
   return mlir::success();
 }
@@ -257,6 +302,32 @@ void SetMapping(SairOp op, int position, ::sair::MappingAttr mapping) {
   new_array[position] = mapping;
   mlir::ArrayAttr new_attr = mlir::ArrayAttr::get(op.getContext(), new_array);
   op->setAttr(SairOp::kMappingAttrName, new_attr);
+}
+
+DecisionsAttr ComputeOpInstance::GetDecisions() {
+  if (auto compute_op = op_.dyn_cast<ComputeOp>()) {
+    return compute_op.GetDecisions();
+  }
+  auto value_producer = op_.get<ValueProducerOp>();
+  llvm::ArrayRef<mlir::Attribute> copies = value_producer.GetCopies(result_);
+  return copies[copy_].cast<DecisionsAttr>();
+}
+
+void ComputeOpInstance::SetDecisions(DecisionsAttr decisions) {
+  if (auto compute_op = op_.dyn_cast<ComputeOp>()) {
+    compute_op.SetDecisions(decisions);
+  } else {
+    op_.get<ValueProducerOp>().SetCopy(result_, copy_, decisions);
+  }
+}
+
+mlir::InFlightDiagnostic ComputeOpInstance::EmitError() {
+  if (auto compute_op = op_.dyn_cast<ComputeOp>()) {
+    return compute_op.emitError();
+  }
+  auto value_producer = op_.get<ValueProducerOp>();
+  return value_producer.emitError()
+         << "in copy " << copy_ << " of result " << result_ << ": ";
 }
 
 #include "sair_op_interfaces.cc.inc"
