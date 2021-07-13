@@ -2344,3 +2344,31 @@ func @mismatching_unroll_missing() {
   }
   return
 }
+
+// -----
+
+func @invalid_expansion_pattern_name(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    // expected-error @+1 {{invalid expansion pattern name "invalid_name"}}
+    %1 = sair.copy %0 {
+      expansion = "invalid_name"
+    } : !sair.value<(), f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @invalid_expansion_pattern(%arg0: f32) {
+  sair.program {
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    // expected-error @+1 {{expansion pattern does not apply to the operation}}
+    %1 = sair.copy %0 {
+      expansion = "alloc"
+    } : !sair.value<(), f32>
+    sair.exit
+  }
+  return
+}

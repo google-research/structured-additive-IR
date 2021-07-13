@@ -42,6 +42,10 @@ std::unique_ptr<mlir::Pass> CreateDefaultSequencePass();
 // value. Leaves existing memory space attributes intact.
 std::unique_ptr<mlir::Pass> CreateDefaultStoragePass();
 
+// Returns a pass that sets sets the `expansion` attribute of Sair compute
+// operations to use the default scalar implementation of the operation.
+std::unique_ptr<mlir::Pass> CreateDefaultExpansionPass();
+
 }  // namespace sair
 
 #endif  // SAIR_DEFAULT_LOWERING_ATTRIBUTES_H_

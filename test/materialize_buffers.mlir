@@ -38,7 +38,7 @@ func @static_shape(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<16, 2>
-    // CHECK: %[[V0:.*]] = sair.alloc {loop_nest = [],
+    // CHECK: %[[V0:.*]] = sair.alloc {expansion = "alloc", loop_nest = [],
     // CHECK-SAME: storage = [{layout = #sair.named_mapping<[] -> ()>, space = "register"}]
     // CHECK-SAME: : !sair.value<(), memref<8xf32>>
     // CHECK: %[[V1:.*]] = sair.copy[d0:%{{.*}}]

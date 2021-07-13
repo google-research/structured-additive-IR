@@ -505,8 +505,7 @@ mlir::LogicalResult UpdateLoopUser(SairMapOp old_op, SairMapOp new_op,
 mlir::LogicalResult IntroduceLoop(SairMapOp op,
                                   const StorageAnalysis &storage_analysis,
                                   Driver &driver) {
-  auto *sair_dialect = op.getContext()->getLoadedDialect<SairDialect>();
-
+  auto *sair_dialect = static_cast<SairDialect *>(op->getDialect());
   llvm::ArrayRef<mlir::Attribute> loop_nest = op.LoopNestLoops();
   LoopAttr loop = loop_nest.back().cast<LoopAttr>();
 
@@ -570,7 +569,9 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
       /*inputs=*/inputs,
       /*shape=*/EraseDimension(op.shape(), dimension),
       /*loop_nest=*/new_loop_nest,
-      /*memory_space=*/op.storageAttr());
+      /*memory_space=*/op.storageAttr(),
+      /*sequence=*/nullptr,
+      /*expansion=*/driver.getStringAttr(kMapExpansionPattern));
   new_op.body().takeBody(op.body());
 
   // Position of the sair.map in the results of the scf.for operation.
@@ -733,7 +734,9 @@ void Fuse(SairMapOp first_op, SairMapOp second_op, Driver &driver) {
       /*inputs=*/inputs,
       /*shape=*/first_op.shape(),
       /*loop_nest=*/first_op.loop_nestAttr(),
-      /*memory_space=*/driver.getArrayAttr(storages));
+      /*memory_space=*/driver.getArrayAttr(storages),
+      /*sequence=*/nullptr,
+      /*expansion=*/driver.getStringAttr(kMapExpansionPattern));
   new_op.body().takeBody(first_op.body());
   driver.replaceOp(first_op,
                    new_op.getResults().take_front(first_op.getNumResults()));

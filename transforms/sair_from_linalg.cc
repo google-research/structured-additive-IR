@@ -31,6 +31,7 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "sair_attributes.h"
+#include "sair_dialect.h"
 #include "sair_ops.h"
 #include "sair_types.h"
 #include "storage.h"
@@ -273,7 +274,8 @@ void EmitMemRefToValue(
         {MappingAttr::GetIdentity(context, ranges.size())});
     Value copied_operand = rewriter.create<SairCopyOp>(
         loc, value_type, ranges, copy_mapping, new_operand,
-        /*loop_nest=*/nullptr, /*storage=*/nullptr, /*sequence=*/nullptr);
+        /*loop_nest=*/nullptr, /*storage=*/nullptr, /*sequence=*/nullptr,
+        /*expansion=*/nullptr);
     map_operands.push_back(copied_operand);
 
     // For in/out operands, store the ranges.
@@ -525,7 +527,8 @@ mlir::Operation *CreateMapReduceOp(
   return rewriter.create<SairMapReduceOp>(
       loc, result_types, parallel_domain, reduction_domain, mappings_attr,
       init_operands, input_operands, domain_shape,
-      /*loop_nest=*/nullptr, /*memory_space=*/nullptr, /*sequence=*/nullptr);
+      /*loop_nest=*/nullptr, /*memory_space=*/nullptr, /*sequence=*/nullptr,
+      /*expansion=*/nullptr);
 }
 
 // Rewrites Linalg generic operation into a semantically equivalent sequence of

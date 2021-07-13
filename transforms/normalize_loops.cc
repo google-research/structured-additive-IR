@@ -43,21 +43,13 @@ void CreateRange(SairOp op, const LoopNest &loop_nest, int loop,
   InsertionPoint insertion_point =
       sequence_analysis.FindInsertionPoint(op, new_loop_nest, range_rank);
 
-  // Create a block that will hold computations for the new bounds of the
-  // range.
-  mlir::Region region;
-  llvm::SmallVector<mlir::Type> block_arg_types(range_rank,
-                                                builder.getIndexType());
-  mlir::Block *block = builder.createBlock(&region, {}, block_arg_types);
-
-  // Populate the block with the computations for the bounds of the new range.
-  // Adds !sair.value arguments necessary to compute the bounds to `arguments`,
-  // and `arguments_mappings` and corresponding scalars to block arguments.
-  llvm::SmallVector<ValueAccess> map_arguments;
+  // Populate a new map operation body with computations for the bounds of the
+  // new range.
+  MapBodyBuilder map_body(range_rank, context);
+  builder.setInsertionPointToStart(&map_body.block());
   RangeParameters range_parameters = GetRangeParameters(
       op.getLoc(), loop_nest.DomainToLoops().Slice(loop, 1), loop_nest.domain(),
-      inverse_mapping.ResizeUseDomain(range_rank), map_arguments, *block,
-      builder)[0];
+      inverse_mapping.ResizeUseDomain(range_rank), map_body, builder)[0];
 
   // Create a sair.map operation with `block` as body and add a sair.return
   // operation to `block`. Create a range operation that uses the bounds
@@ -104,14 +96,16 @@ void CreateRange(SairOp op, const LoopNest &loop_nest, int loop,
     auto map_op = builder.create<SairMapOp>(
         op.getLoc(), map_result_types,
         /*domain=*/range_domain,
-        /*inputs=*/map_arguments,
+        /*inputs=*/map_body.sair_values(),
         /*shape=*/range_shape,
         /*loop_nest=*/map_loop_nest,
-        /*storage=*/builder.getArrayAttr(map_buffers));
+        /*storage=*/builder.getArrayAttr(map_buffers),
+        /*sequence=*/nullptr,
+        /*expansion=*/builder.getStringAttr(kMapExpansionPattern));
     sequence_analysis.Insert(cast<ComputeOp>(map_op.getOperation()),
                              cast<SairOp>(insertion_point.operation),
                              Direction::kBefore);
-    map_op.body().takeBody(region);
+    map_op.body().takeBody(map_body.region());
     auto identity_mapping = MappingAttr::GetIdentity(context, range_rank);
     llvm::SmallVector<mlir::Attribute> range_mappings(scalar_results.size(),
                                                       identity_mapping);

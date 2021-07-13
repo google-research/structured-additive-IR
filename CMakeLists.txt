@@ -76,6 +76,7 @@ add_public_tablegen_target(sair_op_interfaces_inc_gen)
 # Main dialect library.
 add_mlir_library(sair_dialect
   canonicalization_patterns.cc
+  expansion.cc
   loop_nest.cc
   mapped_domain.cc
   sair_attributes.cc

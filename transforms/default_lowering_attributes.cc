@@ -21,12 +21,14 @@
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/TypeSwitch.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "sair_attributes.h"
+#include "sair_dialect.h"
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
 #include "sequence.h"
@@ -98,7 +100,8 @@ void InitializeStorage(mlir::Value value,
                        const IterationSpaceAnalysis &iteration_spaces,
                        StorageAnalysis &storage_analysis) {
   mlir::MLIRContext *context = value.getContext();
-  auto *sair_dialect = context->getLoadedDialect<SairDialect>();
+  auto *sair_dialect =
+      static_cast<SairDialect *>(value.getDefiningOp()->getDialect());
   ValueStorage storage = storage_analysis.GetStorage(value);
 
   // Set memory space to register.
@@ -389,6 +392,35 @@ class DefaultSequencePass
   }
 };
 
+// Sets the `expansion` attribute of compute operations to a default scalar
+// expansion pattern implementing the operation.
+class DefaultExpansion : public DefaultExpansionPassBase<DefaultExpansion> {
+ public:
+  void runOnFunction() override {
+    getFunction().walk([&](ComputeOp op) {
+      if (op.expansion().hasValue()) return;
+      if (isa<SairMapReduceOp>(op.getOperation())) {
+        op.emitError()
+            << "map_reduce is not supported by sair-assign-default-expansion";
+        signalPassFailure();
+        return;
+      }
+      llvm::StringRef pattern_name =
+          llvm::TypeSwitch<mlir::Operation *, llvm::StringRef>(
+              op.getOperation())
+              .Case<SairCopyOp>([](auto) { return kCopyExpansionPattern; })
+              .Case<SairMapOp>([](auto) { return kMapExpansionPattern; })
+              .Case<SairAllocOp>([](auto) { return kAllocExpansionPattern; })
+              .Case<SairFreeOp>([](auto) { return kFreeExpansionPattern; })
+              .Case<SairLoadFromMemRefOp>(
+                  [](auto) { return kLoadExpansionPattern; })
+              .Case<SairStoreToMemRefOp>(
+                  [](auto) { return kStoreExpansionPattern; });
+      op.SetExpansion(pattern_name);
+    });
+  }
+};
+
 }  // namespace
 
 std::unique_ptr<mlir::Pass> CreateDefaultLoopNestPass() {
@@ -403,10 +435,15 @@ std::unique_ptr<mlir::Pass> CreateDefaultStoragePass() {
   return std::make_unique<DefaultStorage>();
 }
 
+std::unique_ptr<mlir::Pass> CreateDefaultExpansionPass() {
+  return std::make_unique<DefaultExpansion>();
+}
+
 void CreateDefaultLoweringAttributesPipeline(mlir::OpPassManager *pm) {
   pm->addPass(CreateDefaultSequencePass());
   pm->addPass(CreateDefaultLoopNestPass());
   pm->addPass(CreateDefaultStoragePass());
+  pm->addPass(CreateDefaultExpansionPass());
 }
 
 }  // namespace sair

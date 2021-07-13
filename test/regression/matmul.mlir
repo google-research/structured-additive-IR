@@ -15,6 +15,7 @@ func @main(%arg0: memref<512x512xf32>, %arg1: memref<512x512xf32>, %arg2: memref
       : #sair.shape<d0:static_range<512> x d1:static_range<512>>, memref<512x512xf32>
     %9 = sair.from_scalar %cst : !sair.value<(), f32>
     %10 = sair.copy[d0:%6, d1:%6] %9 {
+      expansion = "copy",
       loop_nest = [
         {iter = #sair.mapping_expr<stripe(d0, [2])>, name = "loop_0"},
         {iter = #sair.mapping_expr<stripe(d1, [29])>, name = "loop_1"},
@@ -32,6 +33,7 @@ func @main(%arg0: memref<512x512xf32>, %arg1: memref<512x512xf32>, %arg2: memref
     %11 = sair.fby[d0:%6, d1:%6] %10(d0, d1) then[d2:%6] %12(d0, d1, d2)
       : !sair.value<d0:static_range<512> x d1:static_range<512> x d2:static_range<512>, f32>
     %12 = sair.map[d0:%6, d1:%6, d2:%6] %11(d0, d1, d2), %7(d0, d2), %8(d1, d2) attributes {
+      expansion = "map",
       loop_nest = [
         {iter = #sair.mapping_expr<stripe(d0, [3])>, name = "loop_5"},
         {iter = #sair.mapping_expr<stripe(d2, [3])>, name = "loop_6"},

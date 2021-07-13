@@ -58,6 +58,7 @@ SairDialect::SairDialect(mlir::MLIRContext *context)
 
   register_ = mlir::StringAttr::get(context, "register");
   memory_ = mlir::StringAttr::get(context, "memory");
+  RegisterExpansionPatterns(expansion_patterns_);
 }
 
 namespace {
@@ -388,8 +389,8 @@ void PrintMapping(MappingAttr mapping, llvm::raw_ostream &os) {
 }
 
 // Prints the Sair type using MLIR printing facilities.
-void sair::SairDialect::printType(mlir::Type type,
-                                  mlir::DialectAsmPrinter &os) const {
+void SairDialect::printType(mlir::Type type,
+                            mlir::DialectAsmPrinter &os) const {
   if (auto range_type = type.dyn_cast<DynRangeType>()) {
     return Print(range_type, os);
   } else if (auto static_range_type = type.dyn_cast<StaticRangeType>()) {
@@ -400,8 +401,8 @@ void sair::SairDialect::printType(mlir::Type type,
 }
 
 // Prints the Sair attribute using MLIR printing facilities.
-void sair::SairDialect::printAttribute(mlir::Attribute attr,
-                                       mlir::DialectAsmPrinter &os) const {
+void SairDialect::printAttribute(mlir::Attribute attr,
+                                 mlir::DialectAsmPrinter &os) const {
   llvm::TypeSwitch<mlir::Attribute>(attr)
       .Case([&os](DomainShapeAttr shape_attr) {
         os << "shape<" << shape_attr << ">";
@@ -421,6 +422,13 @@ void sair::SairDialect::printAttribute(mlir::Attribute attr,
         PrintMappingExpr(expr, os.getStream());
         os << ">";
       });
+}
+
+const ExpansionPattern *SairDialect::GetExpansionPattern(
+    llvm::StringRef name) const {
+  auto it = expansion_patterns_.find(name);
+  if (it == expansion_patterns_.end()) return nullptr;
+  return it->second.get();
 }
 
 }  // namespace sair

@@ -153,10 +153,9 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
 
   if (!sair_op.ValueOperands().empty()) {
     // Verify that the "mapping_array" attribute exists.
-    if (!op->getAttr(::sair::SairDialect::kMappingAttrName)) {
+    if (!op->getAttr(SairOp::kMappingAttrName)) {
       return mlir::emitError(op->getLoc())
-             << "missing " << ::sair::SairDialect::kMappingAttrName
-             << " attribute";
+             << "missing " << SairOp::kMappingAttrName << " attribute";
     }
     for (mlir::Attribute attr : sair_op.mapping_array()) {
       MappingAttr mapping = attr.cast<MappingAttr>();
@@ -229,8 +228,35 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
 
 mlir::LogicalResult VerifyComputeOp(mlir::Operation *operation) {
   ComputeOp op(operation);
-  if (!op.loop_nest().hasValue()) return mlir::success();
-  return VerifyLoopNestWellFormed(op, op.LoopNestLoops());
+  if (op.loop_nest().hasValue()) {
+    if (mlir::failed(VerifyLoopNestWellFormed(op, op.LoopNestLoops()))) {
+      return mlir::failure();
+    }
+  }
+
+  // Check expansion pattern.
+  llvm::Optional<llvm::StringRef> pattern_name = op.expansion();
+  if (!pattern_name.hasValue()) return mlir::success();
+  auto *sair_dialect = static_cast<SairDialect *>(op->getDialect());
+  const ExpansionPattern *pattern =
+      sair_dialect->GetExpansionPattern(*pattern_name);
+  if (pattern == nullptr) {
+    return op.emitError() << "invalid expansion pattern name \""
+                          << *pattern_name << "\"";
+  }
+  if (mlir::failed(pattern->Match(op))) {
+    return op.emitError()
+           << "expansion pattern does not apply to the operation";
+  }
+  return mlir::success();
+}
+
+void SetMapping(SairOp op, int position, ::sair::MappingAttr mapping) {
+  llvm::SmallVector<mlir::Attribute, 4> new_array =
+      llvm::to_vector<4>(op.mapping_array());
+  new_array[position] = mapping;
+  mlir::ArrayAttr new_attr = mlir::ArrayAttr::get(op.getContext(), new_array);
+  op->setAttr(SairOp::kMappingAttrName, new_attr);
 }
 
 #include "sair_op_interfaces.cc.inc"

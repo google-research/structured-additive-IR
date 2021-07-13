@@ -10,7 +10,7 @@ func @map(%arg0: index) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
     %1 = sair.dyn_range %0 : !sair.dyn_range
     %2 = sair.static_range : !sair.static_range<8>
-    // CHECK: sair.map %[[V0]] attributes {loop_nest = []} {
+    // CHECK: sair.map %[[V0]] attributes {expansion = "map", loop_nest = []} {
     sair.map[d0: %1, d1: %2] attributes {
       loop_nest = [
         {name = "A", iter = #sair.mapping_expr<d1>},

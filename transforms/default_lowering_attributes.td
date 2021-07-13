@@ -34,3 +34,14 @@ def DefaultStoragePass : FunctionPass<"sair-assign-default-storage"> {
 
   let constructor = [{ ::sair::CreateDefaultStoragePass(); }];
 }
+
+def DefaultExpansionPass : FunctionPass<"sair-assign-default-expansion"> {
+  let summary = "Assigns default expansion patterns to Sair operations";
+
+  let description = [{
+    Assigns the default scalar expansion pattern to implement each Sair
+    operation.
+  }];
+
+  let constructor = [{ ::sair::CreateDefaultExpansionPass(); }];
+}

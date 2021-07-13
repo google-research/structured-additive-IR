@@ -17,6 +17,7 @@
 
 #include <limits>
 
+#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/SMLoc.h"
 #include "mlir/IR/Dialect.h"
@@ -25,6 +26,7 @@
 #include "mlir/IR/Types.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
+#include "expansion.h"
 #include "sair_attributes.h"
 
 namespace sair {
@@ -34,9 +36,6 @@ namespace sair {
 // parsing and printing facilities.
 class SairDialect : public mlir::Dialect {
  public:
-  // The string identifier used for mapping attribute in Sair ops.
-  static constexpr llvm::StringRef kMappingAttrName = "mapping_array";
-
   // The string identifier used for shape attribute in Sair ops.
   static constexpr llvm::StringRef kShapeAttrName = "shape";
 
@@ -70,6 +69,10 @@ class SairDialect : public mlir::Dialect {
   void printAttribute(mlir::Attribute attribute,
                       mlir::DialectAsmPrinter &os) const override;
 
+  // Returns the expansion pattern with the given name. Returns nullptr if no
+  // pattern is registered under that name.
+  const ExpansionPattern *GetExpansionPattern(llvm::StringRef name) const;
+
  private:
   /// Register the attributes of this dialect.
   void registerAttributes();
@@ -77,6 +80,7 @@ class SairDialect : public mlir::Dialect {
   void registerTypes();
 
   mlir::StringAttr register_, memory_;
+  llvm::StringMap<std::unique_ptr<ExpansionPattern>> expansion_patterns_;
 };
 
 // Pretty-prints an mapping, for use in custom printers. In particular,

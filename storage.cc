@@ -16,6 +16,7 @@
 
 #include "llvm/ADT/SmallString.h"
 #include "loop_nest.h"
+#include "sair_dialect.h"
 #include "sequence.h"
 
 namespace sair {
@@ -84,8 +85,7 @@ std::optional<StorageAnalysis> StorageAnalysis::Create(SairProgramOp program) {
 // - that loops referenced by the attribute exist and
 // - that the buffer has a name if and only if the memory space is addressable.
 static mlir::LogicalResult VerifyStorageAttrWellFormed(ComputeOp op) {
-  auto *sair_dialect = op.getContext()->getLoadedDialect<SairDialect>();
-
+  auto *sair_dialect = static_cast<SairDialect *>(op->getDialect());
   llvm::Optional<mlir::ArrayAttr> storage_attr = op.storage();
   if (!op.storage().hasValue()) return mlir::success();
   llvm::ArrayRef<mlir::Attribute> storage = storage_attr.getValue().getValue();
@@ -353,7 +353,7 @@ mlir::LogicalResult StorageAnalysis::ComputeValueStorages(
     SairProgramOp program, const LoopFusionAnalysis &fusion_analysis,
     const IterationSpaceAnalysis &iteration_spaces) {
   mlir::MLIRContext *context = program.getContext();
-  auto *sair_dialect = context->getLoadedDialect<SairDialect>();
+  auto *sair_dialect = static_cast<SairDialect *>(program->getDialect());
   mlir::StringAttr memory_space = sair_dialect->memory_attr();
 
   // Initialize storage information from compute operations.
@@ -728,9 +728,8 @@ void StorageAnalysis::CreateBuffer(
   buffers_.try_emplace(buffer_name, value.getLoc(), buffer_name, element_type,
                        loop_nest);
 
-  mlir::MLIRContext *context = value.getContext();
-  auto *sair_dialect = context->getLoadedDialect<SairDialect>();
-
+  auto *sair_dialect =
+      static_cast<SairDialect *>(value.getDefiningOp()->getDialect());
   ValueStorage storage = GetStorage(value);
   AssertSuccess(storage.MergeBufferName(buffer_name));
   AssertSuccess(storage.MergeSpace(sair_dialect->memory_attr()));

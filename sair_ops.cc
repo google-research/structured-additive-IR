@@ -172,7 +172,7 @@ ParseResult ParseDynRangeOp(mlir::OpAsmParser &parser,
   llvm::ArrayRef<mlir::Attribute> mapping_attrs(mappings.begin(),
                                                 mappings.size());
   result.addAttribute(
-      SairDialect::kMappingAttrName,
+      SairOp::kMappingAttrName,
       ArrayAttr::get(parser.getBuilder().getContext(), mapping_attrs));
   result.addAttribute(
       SairDynRangeOp::getOperandSegmentSizeAttr(),
@@ -238,7 +238,7 @@ ParseResult ParseCopyOp(mlir::OpAsmParser &parser,
     return failure();
   }
 
-  result.addAttribute(SairDialect::kMappingAttrName,
+  result.addAttribute(SairOp::kMappingAttrName,
                       parser.getBuilder().getArrayAttr({mapping}));
   return ResolveOperand(value, mapping, type.Shape(), type.ElementType(),
                         parser, result);
@@ -302,7 +302,7 @@ ParseResult ParseFromMemRef(mlir::OpAsmParser &parser,
            static_cast<int32_t>(1)}));
 
   mapping = mapping.ResizeUseDomain(domain.size());
-  result.addAttribute(SairDialect::kMappingAttrName,
+  result.addAttribute(SairOp::kMappingAttrName,
                       parser.getBuilder().getArrayAttr({mapping}));
 
   auto result_type = ValueType::get(shape, memref_type.getElementType());
@@ -336,7 +336,7 @@ ParseResult ParseLoadFromMemRef(mlir::OpAsmParser &parser,
     return failure();
   }
 
-  result.addAttribute(SairDialect::kMappingAttrName,
+  result.addAttribute(SairOp::kMappingAttrName,
                       parser.getBuilder().getArrayAttr({mapping}));
   return ResolveOperand(memref, mapping, value_type.Shape(), memref_type,
                         parser, result);
@@ -372,7 +372,7 @@ ParseResult ParseToMemRef(mlir::OpAsmParser &parser,
 
   memref_mapping = memref_mapping.ResizeUseDomain(domain.size());
   result.addAttribute(
-      SairDialect::kMappingAttrName,
+      SairOp::kMappingAttrName,
       parser.getBuilder().getArrayAttr({memref_mapping, value_mapping}));
 
   // It is irrelevant which Op class we use to get the attribute name because it
@@ -416,7 +416,7 @@ ParseResult ParseStoreToMemRef(mlir::OpAsmParser &parser,
   }
 
   result.addAttribute(
-      SairDialect::kMappingAttrName,
+      SairOp::kMappingAttrName,
       parser.getBuilder().getArrayAttr({memref_mapping, value_mapping}));
 
   return failure(ResolveOperand(memref, memref_mapping, shape, memref_type,
@@ -454,7 +454,7 @@ ParseResult ParseProjection(mlir::OpAsmParser &parser,
   }
 
   mapping = mapping.ResizeUseDomain(domain.size());
-  result.addAttribute(SairDialect::kMappingAttrName,
+  result.addAttribute(SairOp::kMappingAttrName,
                       parser.getBuilder().getArrayAttr({mapping}));
   DomainShapeAttr result_shape = shape.Prefix(num_parallel_dimensions);
   result.addTypes(ValueType::get(result_shape, element_type));
@@ -506,7 +506,7 @@ ParseResult ParseExitOp(mlir::OpAsmParser &parser,
   llvm::ArrayRef<mlir::Attribute> mapping_attrs(mappings.begin(),
                                                 mappings.end());
   result.addAttribute(
-      SairDialect::kMappingAttrName,
+      SairOp::kMappingAttrName,
       ArrayAttr::get(parser.getBuilder().getContext(), mapping_attrs));
 
   assert(mappings.size() == operands.size());
@@ -562,7 +562,7 @@ static mlir::ParseResult ParseAllocOp(mlir::OpAsmParser &parser,
                            parser.getBuilder().getI32VectorAttr(
                                {static_cast<int32_t>(domain.size()),
                                 static_cast<int32_t>(values.size())}));
-  result.attributes.append(SairDialect::kMappingAttrName,
+  result.attributes.append(SairOp::kMappingAttrName,
                            parser.getBuilder().getArrayAttr(access_patterns));
 
   ValueType resultType;
@@ -606,7 +606,7 @@ static mlir::ParseResult ParseFreeOp(mlir::OpAsmParser &parser,
     return mlir::failure();
   }
 
-  result.addAttribute(SairDialect::kMappingAttrName,
+  result.addAttribute(SairOp::kMappingAttrName,
                       parser.getBuilder().getArrayAttr(mapping));
   return mlir::success();
 }
@@ -636,7 +636,7 @@ static mlir::ParseResult ParseFbyOp(mlir::OpAsmParser &parser,
   }
 
   result.addAttribute(
-      SairDialect::kMappingAttrName,
+      SairOp::kMappingAttrName,
       mlir::ArrayAttr::get(
           type.getContext(),
           {init_mapping.ResizeUseDomain(domain.size()), value_mapping}));
@@ -699,8 +699,7 @@ void Print(SairCopyOp op, OpAsmPrinter &printer) {
   PrintDomain(op.domain(), printer);
   printer << " ";
   PrintValueAccess(op.Value(), printer);
-  printer.printOptionalAttrDict(op->getAttrs(),
-                                {SairDialect::kMappingAttrName});
+  printer.printOptionalAttrDict(op->getAttrs(), {SairOp::kMappingAttrName});
   printer << " : " << op.getType();
 }
 
@@ -723,7 +722,7 @@ void Print(SairFromMemRefOp op, OpAsmPrinter &printer) {
   // comes from a trait. However, we cannot call a trait method directly.
   printer.printOptionalAttrDict(op->getAttrs(),
                                 {SairFromMemRefOp::getOperandSegmentSizeAttr(),
-                                 SairDialect::kMappingAttrName});
+                                 SairOp::kMappingAttrName});
   printer << " : " << op.shape() << ", " << op.MemRefType();
 }
 
@@ -733,8 +732,7 @@ void Print(SairLoadFromMemRefOp op, OpAsmPrinter &printer) {
   PrintDomain(op.domain(), printer);
   printer << " ";
   PrintValueAccess(op.MemRef(), printer);
-  printer.printOptionalAttrDict(op->getAttrs(),
-                                {SairDialect::kMappingAttrName});
+  printer.printOptionalAttrDict(op->getAttrs(), {SairOp::kMappingAttrName});
   printer << " : " << op.MemRefType() << " -> " << op.getType();
 }
 
@@ -751,9 +749,8 @@ void Print(SairToMemRefOp op, OpAsmPrinter &printer) {
   // It is irrelevant which Op class we use to get the attribute name because it
   // comes from a trait. However, we cannot call a trait method directly.
   printer.printOptionalAttrDict(
-      op->getAttrs(),
-      {SairFromMemRefOp::getOperandSegmentSizeAttr(),
-       SairDialect::kShapeAttrName, SairDialect::kMappingAttrName});
+      op->getAttrs(), {SairFromMemRefOp::getOperandSegmentSizeAttr(),
+                       SairDialect::kShapeAttrName, SairOp::kMappingAttrName});
   printer << " : " << op.shape() << ", " << op.MemRefType();
 }
 
@@ -765,8 +762,8 @@ void Print(SairStoreToMemRefOp op, OpAsmPrinter &printer) {
   PrintValueAccess(op.MemRef(), printer);
   printer << ", ";
   PrintValueAccess(op.Value(), printer);
-  printer.printOptionalAttrDict(op->getAttrs(), {SairDialect::kMappingAttrName,
-                                                 SairDialect::kShapeAttrName});
+  printer.printOptionalAttrDict(
+      op->getAttrs(), {SairOp::kMappingAttrName, SairDialect::kShapeAttrName});
   printer << " : " << op.shape() << ", " << op.MemRefType();
 }
 
@@ -808,8 +805,7 @@ void Print(SairReturnOp op, OpAsmPrinter &printer) {
 void Print(SairExitOp op, OpAsmPrinter &printer) {
   printer << SairExitOp::getOperationName() << " ";
   PrintValueAccessList(op.ValueOperands(), printer);
-  printer.printOptionalAttrDict(op->getAttrs(),
-                                {SairDialect::kMappingAttrName});
+  printer.printOptionalAttrDict(op->getAttrs(), {SairOp::kMappingAttrName});
   if (op.inputs().empty()) return;
   printer << " : ";
   llvm::interleaveComma(
@@ -832,7 +828,7 @@ void Print(SairFbyOp op, OpAsmPrinter &printer) {
   printer.printOptionalAttrDict(op->getAttrs(),
                                 {
                                     SairMapOp::getOperandSegmentSizeAttr(),
-                                    SairDialect::kMappingAttrName,
+                                    SairOp::kMappingAttrName,
                                 });
   printer << " : ";
   printer.printType(op.getType());
@@ -845,9 +841,9 @@ static void Print(SairAllocOp op, mlir::OpAsmPrinter &printer) {
   llvm::interleaveComma(op.ValueOperands(), printer, [&](ValueOperand value) {
     PrintValueAccess(value, printer);
   });
-  printer.printOptionalAttrDict(op->getAttrs(),
-                                {SairDialect::kMappingAttrName,
-                                 SairAllocOp::getOperandSegmentSizeAttr()});
+  printer.printOptionalAttrDict(
+      op->getAttrs(),
+      {SairOp::kMappingAttrName, SairAllocOp::getOperandSegmentSizeAttr()});
   printer << " : " << op.result().getType();
 }
 
@@ -856,8 +852,7 @@ static void Print(SairFreeOp op, mlir::OpAsmPrinter &printer) {
   PrintDomain(op.domain(), printer);
   printer << " ";
   PrintValueAccess(op.Value(), printer);
-  printer.printOptionalAttrDict(op->getAttrs(),
-                                {SairDialect::kMappingAttrName});
+  printer.printOptionalAttrDict(op->getAttrs(), {SairOp::kMappingAttrName});
   mlir::Type element_type = op.Value().GetType().ElementType();
   printer << " : " << ValueType::get(op.shape(), element_type);
 }
@@ -1057,7 +1052,7 @@ ParseResult ParseMapOp(mlir::OpAsmParser &parser,
   llvm::ArrayRef<mlir::Attribute> mapping_attrs(mappings.begin(),
                                                 mappings.size());
   result.addAttribute(
-      SairDialect::kMappingAttrName,
+      SairOp::kMappingAttrName,
       ArrayAttr::get(parser.getBuilder().getContext(), mapping_attrs));
 
   // Parse an optional attribute dictionary.
@@ -1125,7 +1120,7 @@ void SairMapOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,
                       mlir::TypeRange result_types, mlir::ValueRange domain,
                       llvm::ArrayRef<ValueAccess> inputs, DomainShapeAttr shape,
                       mlir::ArrayAttr loop_nest, mlir::ArrayAttr storage,
-                      mlir::IntegerAttr sequence) {
+                      mlir::IntegerAttr sequence, mlir::StringAttr expansion) {
   llvm::SmallVector<mlir::Value> values;
   llvm::SmallVector<mlir::Attribute> mappings;
   for (const auto &input : inputs) {
@@ -1134,7 +1129,8 @@ void SairMapOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,
   }
   auto mappings_attr = builder.getArrayAttr(mappings);
   return SairMapOp::build(builder, result, result_types, domain, mappings_attr,
-                          values, shape, loop_nest, storage, sequence);
+                          values, shape, loop_nest, storage, sequence,
+                          expansion);
 }
 
 // Builds a sair.map operation and setups its block with the right arguments.
@@ -1143,11 +1139,12 @@ void SairMapOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,
                       mlir::TypeRange result_types, mlir::ValueRange domain,
                       mlir::ArrayAttr mappings_array, mlir::ValueRange inputs,
                       DomainShapeAttr shape, mlir::ArrayAttr loop_nest,
-                      mlir::ArrayAttr storage, mlir::IntegerAttr sequence) {
+                      mlir::ArrayAttr storage, mlir::IntegerAttr sequence,
+                      mlir::StringAttr expansion) {
   result.addTypes(result_types);
   result.addOperands(domain);
   result.addOperands(inputs);
-  result.addAttribute(SairDialect::kMappingAttrName, mappings_array);
+  result.addAttribute(SairOp::kMappingAttrName, mappings_array);
   result.addAttribute(SairDialect::kShapeAttrName, shape);
   if (loop_nest != nullptr) {
     result.addAttribute(ComputeOp::kLoopNestAttrName, loop_nest);
@@ -1157,6 +1154,9 @@ void SairMapOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,
   }
   if (sequence != nullptr) {
     result.addAttribute(ComputeOp::kSequenceAttrName, sequence);
+  }
+  if (expansion != nullptr) {
+    result.addAttribute(ComputeOp::kExpansionAttrName, expansion);
   }
 
   auto operand_segment_sizes =
@@ -1202,9 +1202,8 @@ void Print(SairMapOp op, OpAsmPrinter &printer) {
 
   // Print the attributes except those that are handled specially in the syntax.
   printer.printOptionalAttrDictWithKeyword(
-      op->getAttrs(),
-      {SairMapOp::getOperandSegmentSizeAttr(), SairDialect::kShapeAttrName,
-       SairDialect::kMappingAttrName});
+      op->getAttrs(), {SairMapOp::getOperandSegmentSizeAttr(),
+                       SairDialect::kShapeAttrName, SairOp::kMappingAttrName});
 
   printer.printRegion(op.body());
   printer << " : ";
@@ -1347,7 +1346,7 @@ ParseResult ParseMapReduceOp(mlir::OpAsmParser &parser,
   llvm::ArrayRef<mlir::Attribute> mapping_attrs(mappings.begin(),
                                                 mappings.size());
   result.addAttribute(
-      SairDialect::kMappingAttrName,
+      SairOp::kMappingAttrName,
       ArrayAttr::get(parser.getBuilder().getContext(), mapping_attrs));
 
   // Parse the remaining part of the operation and build the domain shape. Note
@@ -1440,9 +1439,8 @@ void Print(SairMapReduceOp op, mlir::OpAsmPrinter &printer) {
 
   // Print the attributes and the body.
   printer.printOptionalAttrDictWithKeyword(
-      op->getAttrs(),
-      {SairMapOp::getOperandSegmentSizeAttr(), SairDialect::kShapeAttrName,
-       SairDialect::kMappingAttrName});
+      op->getAttrs(), {SairMapOp::getOperandSegmentSizeAttr(),
+                       SairDialect::kShapeAttrName, SairOp::kMappingAttrName});
   printer.printRegion(op.body());
 
   // Print the trailing type using operand and result element types as a single
@@ -1581,7 +1579,7 @@ void SairExitOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,
       MappingAttr::get(context, /*domain_size =*/0, /*mapping =*/{});
   mlir::SmallVector<mlir::Attribute, 4> mappings(operands.size(), mapping);
   auto mappings_attr = mlir::ArrayAttr::get(context, mappings);
-  result.addAttribute(SairDialect::kMappingAttrName, mappings_attr);
+  result.addAttribute(SairOp::kMappingAttrName, mappings_attr);
 }
 
 OperandRange ChainOperandRanges(OperandRange first, OperandRange second) {
@@ -1753,9 +1751,9 @@ SairOp SairCopyOp::ReCreateWithNewDomain(
   mlir::ArrayAttr new_loop_nest =
       ComposeLoopNest(new_to_old_mapping, loop_nestAttr());
 
-  auto new_op = builder.create<SairCopyOp>(getLoc(), new_type, new_domains[0],
-                                           new_mappings, value(), new_loop_nest,
-                                           storageAttr(), sequenceAttr());
+  auto new_op = builder.create<SairCopyOp>(
+      getLoc(), new_type, new_domains[0], new_mappings, value(), new_loop_nest,
+      storageAttr(), sequenceAttr(), expansionAttr());
   ForwardAttributes(getOperation(), new_op.getOperation());
   return llvm::cast<SairOp>(new_op.getOperation());
 }
@@ -1790,7 +1788,7 @@ SairOp SairLoadFromMemRefOp::ReCreateWithNewDomain(
       ValueType::get(new_shape, getType().cast<ValueType>().ElementType());
   auto new_op = builder.create<SairLoadFromMemRefOp>(
       getLoc(), return_type, new_domains[0], new_mappings, memref(), new_layout,
-      new_loop_nest, storageAttr(), sequenceAttr());
+      new_loop_nest, storageAttr(), sequenceAttr(), expansionAttr());
   ForwardAttributes(getOperation(), new_op.getOperation());
   return llvm::cast<SairOp>(new_op.getOperation());
 }
@@ -1815,7 +1813,7 @@ SairOp SairStoreToMemRefOp::ReCreateWithNewDomain(
   MappingAttr new_layout = new_to_old_mapping.Compose(layout());
   auto new_op = builder.create<SairStoreToMemRefOp>(
       getLoc(), new_domains[0], new_mappings, memref(), value(), new_layout,
-      new_shape, new_loop_nest, sequenceAttr());
+      new_shape, new_loop_nest, sequenceAttr(), expansionAttr());
   ForwardAttributes(getOperation(), new_op.getOperation());
   return llvm::cast<SairOp>(new_op.getOperation());
 }
@@ -1862,7 +1860,7 @@ SairOp SairMapOp::ReCreateWithNewDomain(
   }
   auto new_op = builder.create<SairMapOp>(
       getLoc(), new_return_types, new_domains[0], new_mappings, inputs(),
-      new_shape, new_loop_nest, storageAttr());
+      new_shape, new_loop_nest, storageAttr(), sequenceAttr(), expansionAttr());
   ForwardAttributes(getOperation(), new_op.getOperation());
   MoveMapBody(getLoc(), block(), new_op.block(), new_to_old_mapping, builder);
   return llvm::cast<SairOp>(new_op.getOperation());
@@ -1888,7 +1886,7 @@ SairOp SairMapReduceOp::ReCreateWithNewDomain(
   auto new_op = builder.create<SairMapReduceOp>(
       getLoc(), new_return_types, new_domains[0], new_domains[1], new_mappings,
       inits(), inputs(), new_shape, new_loop_nest, storageAttr(),
-      sequenceAttr());
+      sequenceAttr(), expansionAttr());
   ForwardAttributes(getOperation(), new_op.getOperation());
   // Create the map body.
   llvm::SmallVector<mlir::Type> block_arg_types(new_shape.NumDimensions(),
@@ -1978,7 +1976,7 @@ SairOp SairAllocOp::ReCreateWithNewDomain(
   auto new_return_type = ValueType::get(new_shape, MemType());
   auto new_op = builder.create<SairAllocOp>(
       getLoc(), new_return_type, new_domains[0], new_mappings, dynamic_sizes(),
-      new_loop_nest, storageAttr(), sequenceAttr());
+      new_loop_nest, storageAttr(), sequenceAttr(), expansionAttr());
   ForwardAttributes(getOperation(), new_op.getOperation());
   return llvm::cast<SairOp>(new_op.getOperation());
 }
@@ -1993,9 +1991,9 @@ SairOp SairFreeOp::ReCreateWithNewDomain(
       ComposeMappings(new_to_old_mapping, mapping_array());
   mlir::ArrayAttr new_loop_nest =
       ComposeLoopNest(new_to_old_mapping, loop_nestAttr());
-  auto new_op =
-      builder.create<SairFreeOp>(getLoc(), new_domains[0], new_mappings,
-                                 value(), new_loop_nest, sequenceAttr());
+  auto new_op = builder.create<SairFreeOp>(getLoc(), new_domains[0],
+                                           new_mappings, value(), new_loop_nest,
+                                           sequenceAttr(), expansionAttr());
   ForwardAttributes(getOperation(), new_op.getOperation());
   return llvm::cast<SairOp>(new_op.getOperation());
 }

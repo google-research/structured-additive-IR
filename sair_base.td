@@ -285,7 +285,7 @@ def SairOpInterface : OpInterface<"SairOp"> {
       "Sets the mapping for the given Sair value operand",
       "void", "SetMapping",
       (ins "int":$position, "MappingAttr":$mapping), [{}], [{
-        ::sair::SetMapping(ConcreteOp($_op), position, mapping);
+        ::sair::SetMapping($_op, position, mapping);
       }]
     >,
     InterfaceMethod<
@@ -357,6 +357,11 @@ def SairOpInterface : OpInterface<"SairOp"> {
   ];
 
   let verify = [{return VerifySairOp(op);}];
+
+  let extraClassDeclaration = [{
+    // The string identifier used for mapping attribute in Sair ops.
+    static constexpr llvm::StringRef kMappingAttrName = "mapping_array";
+  }];
 }
 
 // Base class for all Sair operators.
@@ -447,6 +452,17 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
         $_op.sequenceAttr(builder.getI64IntegerAttr(*seq));
       }]
     >,
+    InterfaceMethod<
+      "Returns the name of the expansion pattern for the operation.",
+      "::llvm::Optional<llvm::StringRef>", "expansion"
+    >,
+    InterfaceMethod<
+      "Sets the expansion attribute of the operation",
+      "void", "SetExpansion", (ins "llvm::StringRef":$expansion), [{}], [{
+        ::mlir::Builder builder($_op->getContext());
+        $_op.expansionAttr(builder.getStringAttr(expansion));
+      }]
+    >
   ];
 
   let verify = [{return sair::VerifyComputeOp(op);}];
@@ -455,6 +471,7 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
     static constexpr llvm::StringRef kLoopNestAttrName = "loop_nest";
     static constexpr llvm::StringRef kStorageAttrName = "storage";
     static constexpr llvm::StringRef kSequenceAttrName = "sequence";
+    static constexpr llvm::StringRef kExpansionAttrName = "expansion";
   }];
 }
 

@@ -19,6 +19,7 @@
 
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SmallBitVector.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Operation.h"
@@ -26,9 +27,7 @@
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Support/LogicalResult.h"
 #include "sair_attributes.h"
-#include "sair_dialect.h"
 #include "sair_types.h"
-#include "util.h"
 
 namespace sair {
 
@@ -171,15 +170,10 @@ template<typename ConcreteType>
   return ::sair::ValueOperandRange(operands);
 }
 
+class SairOp;
+
 // Sets the mapping at the given position.
-template <typename ConcreteType>
-void SetMapping(ConcreteType op, int position, ::sair::MappingAttr mapping) {
-  llvm::SmallVector<mlir::Attribute, 4> new_array =
-      llvm::to_vector<4>(op.mapping_array());
-  new_array[position] = mapping;
-  mlir::ArrayAttr new_attr = mlir::ArrayAttr::get(op.getContext(), new_array);
-  op->setAttr(::sair::SairDialect::kMappingAttrName, new_attr);
-}
+void SetMapping(SairOp op, int position, ::sair::MappingAttr mapping);
 
 using namespace mlir;  // NOLINT
 #include "sair_op_interfaces.h.inc"

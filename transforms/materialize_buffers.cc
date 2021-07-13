@@ -77,21 +77,16 @@ std::pair<mlir::SmallVector<int64_t>, ValueRange> GetMemRefShape(
   mlir::MLIRContext *context = builder.getContext();
   mlir::OpBuilder::InsertPoint map_point = builder.saveInsertionPoint();
 
-  // Create a block that will hold computations for memref sizes.
-  mlir::Region region;
-  llvm::SmallVector<mlir::Type> block_arg_types(domain.size(),
-                                                builder.getIndexType());
-  mlir::Block *block = builder.createBlock(&region, {}, block_arg_types);
-  llvm::SmallVector<ValueAccess> map_arguments;
-
+  MapBodyBuilder map_body(domain.size(), context);
   llvm::SmallVector<int64_t> memref_shape;
   llvm::SmallVector<mlir::Value> scalar_sizes;
 
   auto loops_to_domain =
       loop_nest.DomainToLoops().Inverse().Resize(buffer.domain().size());
+  builder.setInsertionPointToStart(&map_body.block());
   llvm::SmallVector<RangeParameters> range_parameters =
       GetRangeParameters(buffer.location(), buffer.mapping(), buffer.domain(),
-                         loops_to_domain, map_arguments, *block, builder);
+                         loops_to_domain, map_body, builder);
   for (const auto &params : range_parameters) {
     int step = params.step;
     if (params.begin.is<mlir::Attribute>() &&
@@ -127,10 +122,10 @@ std::pair<mlir::SmallVector<int64_t>, ValueRange> GetMemRefShape(
         scalar_sizes.size(), GetRegister0DBuffer(context));
     auto map_op = builder.create<SairMapOp>(
         buffer.location(), map_types, /*domain=*/domain,
-        /*inputs=*/map_arguments, /*shape=*/shape,
+        /*inputs=*/map_body.sair_values(), /*shape=*/shape,
         /*loop_nest=*/loop_nest_attr,
         /*storage=*/builder.getArrayAttr(map_buffers));
-    map_op.body().takeBody(region);
+    map_op.body().takeBody(map_body.region());
     sizes = map_op.getResults();
   } else {
     builder.restoreInsertionPoint(map_point);
@@ -172,7 +167,8 @@ mlir::Value AllocateBuffer(const Buffer &buffer,
       /*mapping_array=*/builder.getArrayAttr(size_mappings), sizes,
       /*loop_nest=*/alloc_point.loop_nest,
       /*storage=*/builder.getArrayAttr(GetRegister0DBuffer(context)),
-      /*sequence=*/IntegerAttr());
+      /*sequence=*/IntegerAttr(),
+      /*expansion=*/builder.getStringAttr(kAllocExpansionPattern));
   sequence_analysis.Insert(alloc.getDefiningOp<ComputeOp>(),
                            cast<ComputeOp>(alloc_point.operation),
                            Direction::kBefore);
@@ -182,7 +178,8 @@ mlir::Value AllocateBuffer(const Buffer &buffer,
       buffer.location(), domain,
       /*mapping_array=*/builder.getArrayAttr(identity_mapping), alloc,
       /*loop_nest=*/free_point.loop_nest,
-      /*sequence=*/IntegerAttr());
+      /*sequence=*/IntegerAttr(),
+      /*expansion=*/builder.getStringAttr(kFreeExpansionPattern));
   sequence_analysis.Insert(free_op, cast<ComputeOp>(free_point.operation),
                            Direction::kAfter);
 
@@ -226,7 +223,8 @@ void InsertLoad(ComputeOp op, int operand_pos, const Buffer &buffer,
       op.getLoc(), loaded_type, load_domain,
       builder.getArrayAttr({memref_mapping}), memref.value,
       operand_storage.layout(), loop_nest,
-      builder.getArrayAttr({loaded_storage}), IntegerAttr());
+      builder.getArrayAttr({loaded_storage}), IntegerAttr(),
+      /*expansion=*/builder.getStringAttr(kLoadExpansionPattern));
   sequence_analysis.Insert(loaded.getDefiningOp<ComputeOp>(), op,
                            Direction::kBefore);
 
@@ -288,7 +286,8 @@ void InsertStore(ComputeOp op, int result_pos, const Buffer &buffer,
   auto store_to_memref_op = builder.create<SairStoreToMemRefOp>(
       op.getLoc(), store_domain,
       builder.getArrayAttr({memref_mapping, result_mapping}), memref.value,
-      result, result_storage.layout(), store_shape, loop_nest, IntegerAttr());
+      result, result_storage.layout(), store_shape, loop_nest, IntegerAttr(),
+      /*expansion=*/builder.getStringAttr(kStoreExpansionPattern));
   sequence_analysis.Insert(store_to_memref_op, op, Direction::kAfter);
 
   // Change result storage to register.
