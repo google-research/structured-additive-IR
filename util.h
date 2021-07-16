@@ -46,12 +46,6 @@ struct InsertionPoint {
 void ForwardAttributes(mlir::Operation *old_op, mlir::Operation *new_op,
                        llvm::ArrayRef<llvm::StringRef> ignore = {});
 
-// Sets an element in the array attribute of an operation. If the array
-// attribute is missing, creates a new array of the given size filled with
-// `unit` attributes.
-void SetInArrayAttr(mlir::Operation *operation, llvm::StringRef attr_name,
-                    int array_size, int element, mlir::Attribute value);
-
 // Materializes `value` as an mlir value.
 mlir::Value Materialize(mlir::Location loc, mlir::OpFoldResult value,
                         mlir::OpBuilder &builder);

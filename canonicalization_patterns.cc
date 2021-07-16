@@ -208,11 +208,15 @@ mlir::LogicalResult DeduplicateMapInputsOutputs(
   rewriter.eraseOp(return_op);
 
   rewriter.setInsertionPoint(op);
-  SairMapOp new_op = rewriter.create<SairMapOp>(
-      op.getLoc(), new_result_types, op.domain(),
-      rewriter.getArrayAttr(new_mappings), new_operands, op.shape(),
-      op.loop_nestAttr(), rewriter.getArrayAttr(new_storages),
-      op.sequenceAttr());
+  DecisionsAttr decisions = op.GetDecisions();
+  auto new_decisions =
+      DecisionsAttr::get(decisions.sequence(), decisions.loop_nest(),
+                         rewriter.getArrayAttr(new_storages),
+                         decisions.expansion(), op.getContext());
+  SairMapOp new_op =
+      rewriter.create<SairMapOp>(op.getLoc(), new_result_types, op.domain(),
+                                 rewriter.getArrayAttr(new_mappings),
+                                 new_operands, op.shape(), new_decisions);
   new_op.body().takeBody(op.body());
 
   for (auto [old_res, new_res] :

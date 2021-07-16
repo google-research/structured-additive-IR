@@ -661,8 +661,8 @@ func @sair_exit_type_operands_mismatch() {
 
 func @expected_loop_attr() {
   sair.program {
-    // expected-error @+1 {{failed to satisfy constraint: array of LoopAttr}}
-    sair.map attributes { loop_nest = [0] } {
+    // expected-error @+1 {{attribute 'decisions' failed to satisfy constraint}}
+    sair.map attributes {decisions = {loop_nest = [0]}} {
       ^bb0:
         sair.return
     } : #sair.shape<()>, () -> ()
@@ -678,10 +678,12 @@ func @loop_name_used_twice(%arg0: f32) {
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{name "A" used twice in the same loop nest}}
     sair.copy[d0: %0, d1:%0] %1 {
-      loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<d0>},
-        {name = "A", iter = #sair.mapping_expr<d1>}
-      ]
+      decisions = {
+        loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<d0>},
+          {name = "A", iter = #sair.mapping_expr<d1>}
+        ]
+      }
     } : !sair.value<d0:static_range<8> x d1:static_range<8>, f32>
     sair.exit
   }
@@ -695,7 +697,8 @@ func @dim_not_covered_by_loop_nest(%arg0: f32) {
     %0 = sair.static_range : !sair.static_range<8>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{not all dimensions are covered by the loop nest}}
-    sair.copy[d0: %0] %1 { loop_nest = [] } : !sair.value<d0:static_range<8>, f32>
+    sair.copy[d0: %0] %1 {decisions = {loop_nest = []}}
+      : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
   sair.return
@@ -712,10 +715,12 @@ func @loop_dependencies_not_covered(%arg0: index, %arg1: f32) {
 
     // expected-error @+1 {{in loop_nest: dimension 0 of the mapping depends on dimension 1 of the mapping}}
     sair.copy[d0: %0, d1: %2] %3 {
-      loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<d1>},
-        {name = "B", iter = #sair.mapping_expr<d0>}
-      ]
+      decisions = {
+        loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<d1>},
+          {name = "B", iter = #sair.mapping_expr<d0>}
+        ]
+      }
     } : !sair.value<d0:static_range<8> x d1:dyn_range(d0), f32>
     sair.exit
   }
@@ -729,7 +734,7 @@ func @unknown_dim_in_loop_nest(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{dimension 'd0' is out of range of the domain}}
     sair.copy %0 {
-      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
+      decisions = {loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]}
     } : !sair.value<(), f32>
     sair.exit
   }
@@ -744,10 +749,12 @@ func @loop_step_increasing(%arg0: f32) {
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{in loop_nest: dimension 0 of the mapping depends on dimension 1 of the mapping}}
     sair.copy[d0: %0] %1 {
-      loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<stripe(d0, [4, 1])>},
-        {name = "B", iter = #sair.mapping_expr<stripe(d0, [4])>}
-      ]
+      decisions = {
+        loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<stripe(d0, [4, 1])>},
+          {name = "B", iter = #sair.mapping_expr<stripe(d0, [4])>}
+        ]
+      }
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
@@ -762,17 +769,21 @@ func @loop_fusion_different_prefix(%arg0: f32) {
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-note @+1 {{previous occurence here}}
     sair.copy[d0: %0, d1: %0] %1 {
-      loop_nest = [
-        {name = "A", iter=#sair.mapping_expr<d0>},
-        {name = "B", iter=#sair.mapping_expr<d1>}
-      ]
+      decisions = {
+        loop_nest = [
+          {name = "A", iter=#sair.mapping_expr<d0>},
+          {name = "B", iter=#sair.mapping_expr<d1>}
+        ]
+      }
     } : !sair.value<d0:static_range<8> x d1:static_range<8>, f32>
     // expected-error @+1 {{loop "B" is not nested in the same loops than at previous occurence}}
     sair.copy[d0: %0, d1: %0] %1 {
-      loop_nest = [
-        {name = "C", iter=#sair.mapping_expr<d0>},
-        {name = "B", iter=#sair.mapping_expr<d1>}
-      ]
+      decisions = {
+        loop_nest = [
+          {name = "C", iter=#sair.mapping_expr<d0>},
+          {name = "B", iter=#sair.mapping_expr<d1>}
+        ]
+      }
     } : !sair.value<d0:static_range<8> x d1:static_range<8>, f32>
     sair.exit
   }
@@ -785,12 +796,14 @@ func @loop_fusion_not_contiguous(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<8>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    sair.copy[d0: %0] %1 { loop_nest = [{name = "A", iter=#sair.mapping_expr<d0>}] }
-      : !sair.value<d0:static_range<8>, f32>
+    sair.copy[d0: %0] %1 {
+      decisions = {loop_nest = [{name = "A", iter=#sair.mapping_expr<d0>}]}
+    } : !sair.value<d0:static_range<8>, f32>
     sair.copy %1 : !sair.value<(), f32>
     // expected-error @+1 {{occurrences of loop "A" must be contiguous}}
-    sair.copy[d0: %0] %1 { loop_nest = [{name = "A", iter=#sair.mapping_expr<d0>}] }
-      : !sair.value<d0:static_range<8>, f32>
+    sair.copy[d0: %0] %1 {
+      decisions = {loop_nest = [{name = "A", iter=#sair.mapping_expr<d0>}]}
+    } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
   return
@@ -802,8 +815,9 @@ func @iter_field_missing(%arg0: f32) {
   sair.program {
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{in loop "A": iterator is not fully specified}}
-    sair.copy %1 { loop_nest = [{name = "A", iter=#sair.mapping_expr<none>}] }
-      : !sair.value<(), f32>
+    sair.copy %1 {
+      decisions = {loop_nest = [{name = "A", iter=#sair.mapping_expr<none>}]}
+    } : !sair.value<(), f32>
     sair.exit
   }
   return
@@ -817,13 +831,15 @@ func @loop_definition_mismatch(%arg0: f32) {
 
     %1 = sair.static_range : !sair.static_range<8>
     // expected-note @+1 {{previous occurence here}}
-    sair.copy[d0: %1] %0 {loop_nest = [{name = "A", iter=#sair.mapping_expr<d0>}]}
-      : !sair.value<d0:static_range<8>, f32>
+    sair.copy[d0: %1] %0 {
+      decisions = {loop_nest = [{name = "A", iter=#sair.mapping_expr<d0>}]}
+    } : !sair.value<d0:static_range<8>, f32>
 
     %2 = sair.static_range : !sair.static_range<8>
     // expected-error @+1 {{use of dimension d0 in loop "A" does not match previous occurrences}}
-    sair.copy[d0: %2] %0 {loop_nest = [{name = "A", iter=#sair.mapping_expr<d0>}]}
-      : !sair.value<d0:static_range<8>, f32>
+    sair.copy[d0: %2] %0 {
+      decisions = {loop_nest = [{name = "A", iter=#sair.mapping_expr<d0>}]}
+    } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
   return
@@ -837,11 +853,11 @@ func @init_nested_in_reduction_loop(%arg0: f32) {
     %1 = sair.static_range : !sair.static_range<8>
     // expected-error @+1 {{operation cannot be nested in loop "A"}}
     %2 = sair.copy %0 {
-      loop_nest = [{name = "A", iter = #sair.mapping_expr<none>}]
+      decisions = {loop_nest = [{name = "A", iter = #sair.mapping_expr<none>}]}
     } : !sair.value<(), f32>
     // expected-note @+1 {{because of this operation}}
     sair.map_reduce %2 reduce[d0:%1] attributes {
-      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
+      decisions = {loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]}
     } {
       ^bb0(%arg1: index, %arg2: f32):
          sair.return %arg2 : f32
@@ -859,13 +875,12 @@ func @dimension_defined_in_loop_nest(%arg0: index, %arg1: f32) {
     %1 = sair.from_scalar %arg1 : !sair.value<(), f32>
     // expected-error @+1 {{rematerialized loop "A" indirectly uses the range before it is defined}}
     %2 = sair.copy %0 {
-      loop_nest = [{name = "A", iter = #sair.mapping_expr<none>}]
+      decisions = {loop_nest = [{name = "A", iter = #sair.mapping_expr<none>}]}
     } : !sair.value<(), index>
     // expected-note @+1 {{range defined here}}
     %3 = sair.dyn_range %2 : !sair.dyn_range
     %4 = sair.copy[d0:%3] %1 {
-      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
-      memory_space = [1]
+      decisions = {loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]}
     } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
@@ -879,12 +894,12 @@ func @proj_last_dependency(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
     %2 = sair.copy[d0:%1] %0 {
-      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
+      decisions = {loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]}
     } : !sair.value<d0:static_range<8>, f32>
     %3 = sair.proj_last of[d0:%1] %2(d0) : #sair.shape<d0:static_range<8>>, f32
     // expected-error @+1 {{loop "A" must be closed before this operation}}
     %4 = sair.copy %3 {
-      loop_nest = [{name = "A", iter = #sair.mapping_expr<none>}]
+      decisions = {loop_nest = [{name = "A", iter = #sair.mapping_expr<none>}]}
     } : !sair.value<(), f32>
     sair.exit
   }
@@ -899,17 +914,21 @@ func @mapped_dimensions(%arg0: f32) {
     %1 = sair.static_range : !sair.static_range<8>
     // expected-note @+1 {{dependency from this operation}}
     %2 = sair.copy[d0:%1, d1:%1] %0 {
-      loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<d0>},
-        {name = "B", iter = #sair.mapping_expr<d1>}
-      ]
+      decisions = {
+        loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<d0>},
+          {name = "B", iter = #sair.mapping_expr<d1>}
+        ]
+      }
     } : !sair.value<d0:static_range<8> x d1:static_range<8>, f32>
     // expected-error @+1 {{loop nest violates a data dependency}}
     %3 = sair.copy[d0:%1, d1:%1] %2(d1, d0) {
-      loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<d0>},
-        {name = "B", iter = #sair.mapping_expr<d1>}
-      ]
+      decisions = {
+        loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<d0>},
+          {name = "B", iter = #sair.mapping_expr<d1>}
+        ]
+      }
     } : !sair.value<d0:static_range<8> x d1:static_range<8>, f32>
     sair.exit
   }
@@ -925,22 +944,24 @@ func @dimension_size_loop_nest(%arg0: index, %arg1: f32) {
     %2 = sair.static_range : !sair.static_range<8>
 
     %3 = sair.copy %0 {
-      loop_nest = [{name = "A", iter = #sair.mapping_expr<none>}]
+      decisions = {loop_nest = [{name = "A", iter = #sair.mapping_expr<none>}]}
     } : !sair.value<(), index>
     // expected-note @+1 {{dimension defined here}}
     %4 = sair.dyn_range %3 : !sair.dyn_range
 
     // expected-error @+1 {{buffer "bufferA" depends on a dimension that is defined after the buffer is allocated}}
     %5 = sair.copy[d0:%2, d1:%4] %1 {
-      loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<d0>},
-        {name = "B", iter = #sair.mapping_expr<d1>}
-      ],
-      storage = [{
-        name = "bufferA",
-        space = "memory",
-        layout = #sair.named_mapping<[d0:"A", d1:"B"] -> (d0, d1)>
-      }]
+      decisions = {
+        loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<d0>},
+          {name = "B", iter = #sair.mapping_expr<d1>}
+        ],
+        storage = [{
+          name = "bufferA",
+          space = "memory",
+          layout = #sair.named_mapping<[d0:"A", d1:"B"] -> (d0, d1)>
+        }]
+      }
     } : !sair.value<d0:static_range<8> x d1:dyn_range, f32>
     sair.exit
   }
@@ -956,24 +977,11 @@ func @fby_must_fuse(%arg0: f32) {
     %2 = sair.fby %0 then[d0:%1] %4(d0) : !sair.value<d0:static_range<8>, f32>
     // expected-error @+1 {{loop "B" must be open at or before this operation}}
     %3 = sair.copy[d0:%1] %2(d0) {
-      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
+      decisions = {loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]}
     } : !sair.value<d0:static_range<8>, f32>
     %4 = sair.copy[d0:%1] %3(d0) {
-      loop_nest = [{name = "B", iter = #sair.mapping_expr<d0>}]
+      decisions = {loop_nest = [{name = "B", iter = #sair.mapping_expr<d0>}]}
     } : !sair.value<d0:static_range<8>, f32>
-    sair.exit
-  }
-  return
-}
-
-// -----
-
-func @loop_nest_non_compute(%arg0: memref<f32>) {
-  sair.program {
-    %0 = sair.from_scalar %arg0 : !sair.value<(), memref<f32>>
-    // expected-error @+1 {{only compute Sair ops can have the 'loop_nest' attribute}}
-    sair.from_memref %0 memref { buffer_name = "bufferA", loop_nest = [] }
-      : #sair.shape<()>, memref<f32>
     sair.exit
   }
   return
@@ -988,10 +996,12 @@ func @fby_of_proj_dependency(%arg0: f32) {
     // expected-error @+1 {{cannot take the previous value of the operand along 'd0'}}
     %2 = sair.fby %0 then[d0:%1] %4(d0) : !sair.value<d0:static_range<8>, f32>
     %3 = sair.map[d0:%1, d1:%1] %2(d0) attributes {
-      loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<d1>},
-        {name = "B", iter = #sair.mapping_expr<d0>}
-      ]
+      decisions = {
+        loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<d1>},
+          {name = "B", iter = #sair.mapping_expr<d0>}
+        ]
+      }
     } {
       ^bb0(%arg1: index, %arg2: index, %arg3: f32):
         sair.return %arg3 : f32
@@ -1014,10 +1024,12 @@ func @fby_of_fby_dependency(%arg0: f32) {
     %3 = sair.fby[d0:%1] %2(d0) then[d1:%1] %4(d0, d1)
       : !sair.value<d0:static_range<8> x d1:static_range<8>, f32>
     %4 = sair.copy[d0:%1, d1:%1] %3(d0, d1) {
-      loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<d1>},
-        {name = "B", iter = #sair.mapping_expr<d0>}
-      ]
+      decisions = {
+        loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<d1>},
+          {name = "B", iter = #sair.mapping_expr<d0>}
+        ]
+      }
     } : !sair.value<d0:static_range<8> x d1:static_range<8>, f32>
     %5 = sair.proj_last[d0:%1] of[d1:%1] %4(d0, d1)
       : #sair.shape<d0:static_range<8> x d1:static_range<8>>, f32
@@ -1049,12 +1061,12 @@ func @wrong_order_for_remat(%arg0: index) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
     // expected-error @+1 {{rematerialized loop "A" indirectly uses the range before it is defined}}
     %2 = sair.copy %0 {
-      loop_nest = [{name = "A", iter = #sair.mapping_expr<none>}]
+      decisions = {loop_nest = [{name = "A", iter = #sair.mapping_expr<none>}]}
     } : !sair.value<(), index>
     // expected-note @+1 {{range defined here}}
     %1 = sair.dyn_range %2: !sair.dyn_range
     %3 = sair.copy[d0:%1] %2 {
-      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
+      decisions = {loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]}
     } : !sair.value<d0:dyn_range , index>
     sair.exit
   }
@@ -1070,17 +1082,21 @@ func @loop_unification_failed(%arg0: f32) {
     %1 = sair.static_range : !sair.static_range<8>
     // expected-note @+1 {{previous occurence here}}
     %2 = sair.copy[d0:%1] %0 {
-      loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<stripe(d0, [4])>},
-        {name = "B", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
-      ]
+      decisions = {
+        loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<stripe(d0, [4])>},
+          {name = "B", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
+        ]
+      }
     } : !sair.value<d0:static_range<8>, f32>
     // expected-error @+1 {{loop "A" cannot be unified with previous occurence}}
     %3 = sair.copy[d0:%1] %2(d0) {
-      loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<stripe(d0, [2])>},
-        {name = "B", iter = #sair.mapping_expr<stripe(d0, [2, 1])>}
-      ]
+      decisions = {
+        loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<stripe(d0, [2])>},
+          {name = "B", iter = #sair.mapping_expr<stripe(d0, [2, 1])>}
+        ]
+      }
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
@@ -1095,14 +1111,16 @@ func @loop_unification_failed_subexpr(%arg0: f32) {
     %1 = sair.static_range : !sair.static_range<8>
     // expected-note @+1 {{previous occurence here}}
     %2 = sair.copy[d0:%1] %0 {
-      loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<stripe(d0, [2])>},
-        {name = "B", iter = #sair.mapping_expr<stripe(d0, [2, 1])>}
-      ]
+      decisions = {
+        loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<stripe(d0, [2])>},
+          {name = "B", iter = #sair.mapping_expr<stripe(d0, [2, 1])>}
+        ]
+      }
     } : !sair.value<d0:static_range<8>, f32>
     // expected-error @+1 {{use of dimension d0 in loop "A" cannot be unified with previous occurences}}
     %3 = sair.copy[d0:%1] %2(d0) {
-      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
+      decisions = {loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]}
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
@@ -1117,10 +1135,12 @@ func @incompatible_loop_iterators(%arg0: f32) {
     %1 = sair.static_range : !sair.static_range<8>
     // expected-error @+1 {{incompatible loop iterators}}
     %2 = sair.copy[d0:%1] %0 {
-      loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<d0>},
-        {name = "B", iter = #sair.mapping_expr<d0>}
-      ]
+      decisions = {
+        loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<d0>},
+          {name = "B", iter = #sair.mapping_expr<d0>}
+        ]
+      }
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
@@ -1184,9 +1204,11 @@ func @loop_crosses_subdomain_boundaries(%arg0: f32) {
     %1 = sair.dyn_range[d0:%0] %sc4 : !sair.dyn_range<d0:static_range<4, 4>>
     %2 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %3 = sair.copy[d0:%0, d1:%1] %2 {
-      loop_nest = [
-        {name = "loopA", iter = #sair.mapping_expr<unstripe(d0, d1, [4, 1])>}
-      ]
+      decisions = {
+        loop_nest = [
+          {name = "loopA", iter = #sair.mapping_expr<unstripe(d0, d1, [4, 1])>}
+        ]
+      }
     } : !sair.value<d0:static_range<4, 4> x d1:dyn_range(d0), f32>
     // expected-error @+1 {{loop "loopA" crosses sub-domains boundaries}}
     %4 = sair.proj_last[d0:%0] of[d1:%1] %3(d0, d1)
@@ -1203,8 +1225,10 @@ func @storage_wrong_number_of_entries(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{wrong number of storage entries}}
     %1 = sair.copy %0 {
-      loop_nest = [],
-      storage = []
+      decisions = {
+        loop_nest = [],
+        storage = []
+      }
     } : !sair.value<(), f32>
     sair.exit
   }
@@ -1218,8 +1242,10 @@ func @storage_invalid_attr(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{storage attribute must be an array of buffers or unit attributes}}
     %1 = sair.copy %0 {
-      loop_nest = [],
-      storage = [1]
+      decisions = {
+        loop_nest = [],
+        storage = [1]
+      }
     } : !sair.value<(), f32>
     sair.exit
   }
@@ -1233,11 +1259,13 @@ func @invalid_memory_space(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{invalid memory space}}
     %1 = sair.copy %0 {
-      loop_nest = [],
-      storage = [{
-        space = "unknown", name = "bufferA",
-        layout = #sair.named_mapping<[] -> ()>
-      }]
+      decisions = {
+        loop_nest = [],
+        storage = [{
+          space = "unknown", name = "bufferA",
+          layout = #sair.named_mapping<[] -> ()>
+        }]
+      }
     } : !sair.value<(), f32>
     sair.exit
   }
@@ -1251,11 +1279,13 @@ func @index_variable_in_memory(%arg0: index) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
     // expected-error @+1 {{index and memref variables cannot be allocated in memory}}
     %1 = sair.copy %0 {
-      loop_nest = [],
-      storage = [{
-        space = "memory", name = "bufferA",
-        layout = #sair.named_mapping<[] -> ()>
-      }]
+      decisions = {
+        loop_nest = [],
+        storage = [{
+          space = "memory", name = "bufferA",
+          layout = #sair.named_mapping<[] -> ()>
+        }]
+      }
     } : !sair.value<(), index>
     sair.exit
   }
@@ -1269,11 +1299,13 @@ func @buffer_must_have_name_if_in_memory(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{buffers must have a name if and only if they are stored in memory}}
     %2 = sair.copy %0 {
-      loop_nest = [],
-      storage = [{
-        space = "memory",
-        layout = #sair.named_mapping<[] -> ()>
-      }]
+      decisions = {
+        loop_nest = [],
+        storage = [{
+          space = "memory",
+          layout = #sair.named_mapping<[] -> ()>
+        }]
+      }
     } : !sair.value<(), f32>
     sair.exit
   }
@@ -1288,11 +1320,13 @@ func @storage_1D_buffer_register(%arg0: f32) {
     %1 = sair.static_range : !sair.static_range<8>
     // expected-error @+1 {{only 0D buffers can be stored in registers}}
     %2 = sair.copy[d0:%1] %0 {
-      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
-      storage = [{
-        space = "register",
-        layout = #sair.named_mapping<[d0:"loopA"] -> (d0)>
-      }]
+      decisions = {
+        loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
+        storage = [{
+          space = "register",
+          layout = #sair.named_mapping<[d0:"loopA"] -> (d0)>
+        }]
+      }
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
@@ -1306,11 +1340,13 @@ func @storage_unknown_loop_name(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{unknown loop name "loopA"}}
     %1 = sair.copy %0 {
-      loop_nest = [],
-      storage = [{
-        name = "bufferA", space = "memory",
-        layout = #sair.named_mapping<[d0:"loopA"] -> (d0)>
-      }]
+      decisions = {
+        loop_nest = [],
+        storage = [{
+          name = "bufferA", space = "memory",
+          layout = #sair.named_mapping<[d0:"loopA"] -> (d0)>
+        }]
+      }
     } : !sair.value<(), f32>
     sair.exit
   }
@@ -1326,11 +1362,13 @@ func @fby_operand_different_storage(%arg0: f32) {
     %1 = sair.static_range : !sair.static_range<8>
     %2 = sair.fby %0 then[d0:%1] %3(d0) : !sair.value<d0:static_range<8>, f32>
     %3 = sair.copy[d0:%1] %2(d0) {
-      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
-      storage = [{
-        name = "bufferA", space = "memory",
-        layout = #sair.named_mapping<[] -> ()>
-      }]
+      decisions = {
+        loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
+        storage = [{
+          name = "bufferA", space = "memory",
+          layout = #sair.named_mapping<[] -> ()>
+        }]
+      }
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
@@ -1344,17 +1382,21 @@ func @fby_operand_different_storage2(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
     %2 = sair.copy %0 {
-      loop_nest = [],
-      storage = [{space = "register"}]
+      decisions = {
+        loop_nest = [],
+        storage = [{space = "register"}]
+      }
     }: !sair.value<(), f32>
     %3 = sair.fby %2 then[d0:%1] %4(d0) : !sair.value<d0:static_range<8>, f32>
     // expected-error @+1 {{conflicting memory spaces: expected "memory", got "register"}}
     %4 = sair.copy[d0:%1] %3(d0) {
-      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
-      storage = [{
-        name = "bufferA", space = "memory",
-        layout = #sair.named_mapping<[] -> ()>
-      }]
+      decisions = {
+        loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
+        storage = [{
+          name = "bufferA", space = "memory",
+          layout = #sair.named_mapping<[] -> ()>
+        }]
+      }
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
@@ -1369,19 +1411,23 @@ func @buffer_different_element_type(%arg0: f32, %arg1: i32) {
     %1 = sair.from_scalar %arg1 : !sair.value<(), i32>
     // expected-note @+1 {{previous occurence here}}
     %2 = sair.copy %0 {
-      loop_nest = [],
-      storage = [{
-        name = "bufferA", space = "memory",
-        layout = #sair.named_mapping<[] -> ()>
-      }]
+      decisions = {
+        loop_nest = [],
+        storage = [{
+          name = "bufferA", space = "memory",
+          layout = #sair.named_mapping<[] -> ()>
+        }]
+      }
     } : !sair.value<(), f32>
     // expected-error @+1 {{buffer "bufferA" has different element type than in previous occurence}}
     %3 = sair.copy %1 {
-      loop_nest = [],
-      storage = [{
-        name = "bufferA", space = "memory",
-        layout = #sair.named_mapping<[] -> ()>
-      }]
+      decisions = {
+        loop_nest = [],
+        storage = [{
+          name = "bufferA", space = "memory",
+          layout = #sair.named_mapping<[] -> ()>
+        }]
+      }
     } : !sair.value<(), i32>
     sair.exit
   }
@@ -1396,19 +1442,23 @@ func @buffer_layout_incompatible(%arg0: f32) {
     %1 = sair.static_range : !sair.static_range<8>
     // expected-note @+1 {{previous occurence here}}
     %2 = sair.copy[d0:%1] %0 {
-      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
-      storage = [{
-        space = "memory", name = "bufferA",
-        layout = #sair.named_mapping<[d0:"loopA"] -> (d0)>
-      }]
+      decisions = {
+        loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
+        storage = [{
+          space = "memory", name = "bufferA",
+          layout = #sair.named_mapping<[d0:"loopA"] -> (d0)>
+        }]
+      }
     } : !sair.value<d0:static_range<8>, f32>
     // expected-error @+1 {{buffer "bufferA" cannot be unified with previous occurence}}
     %3 = sair.copy[d0:%1] %0 {
-      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
-      storage = [{
-        space = "memory", name = "bufferA",
-        layout = #sair.named_mapping<[d0:"loopA"] -> (stripe(d0, [4, 1]))>
-      }]
+      decisions = {
+        loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
+        storage = [{
+          space = "memory", name = "bufferA",
+          layout = #sair.named_mapping<[d0:"loopA"] -> (stripe(d0, [4, 1]))>
+        }]
+      }
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
@@ -1423,19 +1473,23 @@ func @buffer_rank_differs(%arg0: f32) {
     %1 = sair.static_range : !sair.static_range<8>
     // expected-note @+1 {{previous occurence here}}
     %2 = sair.copy[d0:%1] %0 {
-      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
-      storage = [{
-        space = "memory", name = "bufferA",
-        layout = #sair.named_mapping<[d0:"loopA"] -> (d0)>
-      }]
+      decisions = {
+        loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
+        storage = [{
+          space = "memory", name = "bufferA",
+          layout = #sair.named_mapping<[d0:"loopA"] -> (d0)>
+        }]
+      }
     } : !sair.value<d0:static_range<8>, f32>
     // expected-error @+1 {{buffer "bufferA" rank differs from previous occurence}}
     %3 = sair.copy[d0:%1] %0 {
-      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
-      storage = [{
-        space = "memory", name = "bufferA",
-        layout = #sair.named_mapping<[] -> ()>
-      }]
+      decisions = {
+        loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
+        storage = [{
+          space = "memory", name = "bufferA",
+          layout = #sair.named_mapping<[] -> ()>
+        }]
+      }
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
@@ -1452,25 +1506,29 @@ func @layout_depends_on_loops(%arg0: f32, %arg1: index) {
     %3 = sair.dyn_range[d0:%2] %1 : !sair.dyn_range<d0:static_range<8>>
 
     %4 = sair.copy[d0:%2] %0 {
-      loop_nest = [
-        {name = "loopA", iter = #sair.mapping_expr<d0>}
-      ],
-      storage = [{
-        space = "memory", name = "bufferA",
-        layout = #sair.named_mapping<[d0:"loopA"] -> (d0, none)>
-      }]
+      decisions = {
+        loop_nest = [
+          {name = "loopA", iter = #sair.mapping_expr<d0>}
+        ],
+        storage = [{
+          space = "memory", name = "bufferA",
+          layout = #sair.named_mapping<[d0:"loopA"] -> (d0, none)>
+        }]
+      }
     } : !sair.value<d0:static_range<8>, f32>
 
     // expected-error @+1 {{buffer "bufferA" mapping depends on loops it cannot be nested in}}
     %5 = sair.copy[d0:%2, d1:%3] %0 {
-      loop_nest = [
-        {name = "loopA", iter = #sair.mapping_expr<d0>},
-        {name = "loopB", iter = #sair.mapping_expr<d1>}
-      ],
-      storage = [{
-        space = "memory", name = "bufferA",
-        layout = #sair.named_mapping<[d0:"loopB"] -> (none, d0)>
-      }]
+      decisions = {
+        loop_nest = [
+          {name = "loopA", iter = #sair.mapping_expr<d0>},
+          {name = "loopB", iter = #sair.mapping_expr<d1>}
+        ],
+        storage = [{
+          space = "memory", name = "bufferA",
+          layout = #sair.named_mapping<[d0:"loopB"] -> (none, d0)>
+        }]
+      }
     } : !sair.value<d0:static_range<8> x d1:dyn_range(d0), f32>
 
     sair.exit
@@ -1486,14 +1544,16 @@ func @layout_depends_indexed_loop(%arg0: f32) {
     %1 = sair.static_range : !sair.static_range<8>
     // expected-error @+1 {{in buffer "bufferA": layout depends on loops it cannot be nested in}}
     %2 = sair.copy[d0:%1] %0 {
-      loop_nest = [
-        {name = "loopA", iter = #sair.mapping_expr<stripe(d0, [4])>},
-        {name = "loopB", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
-      ],
-      storage = [{
-        space = "memory", name = "bufferA",
-        layout = #sair.named_mapping<[d0:"loopA", d1:"loopB"] -> (d0, d1)>
-      }]
+      decisions = {
+        loop_nest = [
+          {name = "loopA", iter = #sair.mapping_expr<stripe(d0, [4])>},
+          {name = "loopB", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
+        ],
+        storage = [{
+          space = "memory", name = "bufferA",
+          layout = #sair.named_mapping<[d0:"loopA", d1:"loopB"] -> (d0, d1)>
+        }]
+      }
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
@@ -1509,11 +1569,13 @@ func @buffer_used_before_dimension_def(%arg0: f32, %arg1: index) {
     %2 = sair.static_range : !sair.static_range<8>
     // expected-error @+1 {{buffer "bufferA" is used before one of its dimensions is defined}}
     %3 = sair.copy[d0:%2] %0 {
-      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
-      storage = [{
-        space = "memory", name = "bufferA",
-        layout = #sair.named_mapping<[d0:"loopA"] -> (d0, none)>
-      }]
+      decisions = {
+        loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
+        storage = [{
+          space = "memory", name = "bufferA",
+          layout = #sair.named_mapping<[d0:"loopA"] -> (d0, none)>
+        }]
+      }
     } : !sair.value<d0:static_range<8>, f32>
 
     %dim = sair.from_scalar %arg1 : !sair.value<(), index>
@@ -1521,13 +1583,15 @@ func @buffer_used_before_dimension_def(%arg0: f32, %arg1: index) {
     // expected-note @+1 {{dimension defined here}}
     %4 = sair.dyn_range %copy : !sair.dyn_range
     %5 = sair.copy[d0:%4] %0 {
-      loop_nest = [
-        {name = "loopB", iter = #sair.mapping_expr<d0>}
-      ],
-      storage = [{
-        space = "memory", name = "bufferA",
-        layout = #sair.named_mapping<[d0:"loopB"] -> (none, d0)>
-      }]
+      decisions = {
+        loop_nest = [
+          {name = "loopB", iter = #sair.mapping_expr<d0>}
+        ],
+        storage = [{
+          space = "memory", name = "bufferA",
+          layout = #sair.named_mapping<[d0:"loopB"] -> (none, d0)>
+        }]
+      }
     } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
@@ -1542,28 +1606,34 @@ func @buffer_used_before_dimension_def(%arg0: f32, %arg1: index) {
     %1 = sair.from_scalar %arg1 : !sair.value<(), index>
     %2 = sair.static_range : !sair.static_range<8>
     %3 = sair.copy %1 {
-      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<none>}]
+      decisions = {
+        loop_nest = [{name = "loopA", iter = #sair.mapping_expr<none>}]
+      }
     } : !sair.value<(), index>
     // expected-note @+1 {{dimension defined here}}
     %4 = sair.dyn_range %3 : !sair.dyn_range
 
     // expected-error @+1 {{buffer "bufferA" depends on a dimension that is defined after the buffer is allocated}}
     %5 = sair.copy[d0:%2] %0 {
-      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
-      storage = [{
-        space = "memory", name = "bufferA",
-        layout = #sair.named_mapping<[d0:"loopA"] -> (d0, none)>
-      }]
+      decisions = {
+        loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
+        storage = [{
+          space = "memory", name = "bufferA",
+          layout = #sair.named_mapping<[d0:"loopA"] -> (d0, none)>
+        }]
+      }
     } : !sair.value<d0:static_range<8>, f32>
 
     %6 = sair.copy[d0:%4] %0 {
-      loop_nest = [
-        {name = "loopB", iter = #sair.mapping_expr<d0>}
-      ],
-      storage = [{
-        space = "memory", name = "bufferA",
-        layout = #sair.named_mapping<[d0:"loopB"] -> (none, d0)>
-      }]
+      decisions = {
+        loop_nest = [
+          {name = "loopB", iter = #sair.mapping_expr<d0>}
+        ],
+        storage = [{
+          space = "memory", name = "bufferA",
+          layout = #sair.named_mapping<[d0:"loopB"] -> (none, d0)>
+        }]
+      }
     } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
@@ -1578,7 +1648,9 @@ func @placeholder_loop_nest_unspecified(%arg0: f32) {
     %1 = sair.placeholder : !sair.dyn_range
     // expected-error @+1 {{in loop "loopA": iterator is not fully specified}}
     %2 = sair.copy[d0:%1] %0 {
-      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
+      decisions = {
+        loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
+      }
     } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
@@ -1593,9 +1665,11 @@ func @partial_layout(%arg0: f32) {
     %1 = sair.static_range : !sair.static_range<8>
     // expected-error @+1 {{in buffer "bufferA": layout is not fully specified}}
     %2 = sair.copy[d0:%1] %0 {
-      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
-      storage = [{name = "bufferA", space = "memory",
-                  layout = #sair.named_mapping<[d0:"loopA"] -> (d0, none)>}]
+      decisions = {
+        loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
+        storage = [{name = "bufferA", space = "memory",
+                    layout = #sair.named_mapping<[d0:"loopA"] -> (d0, none)>}]
+      }
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
@@ -1625,8 +1699,13 @@ func @buffer_used_before_def(%arg0: f32, %arg1: memref<f32>) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{buffer "bufferA" used before it is defined}}
     %1 = sair.copy %0 {
-      loop_nest = [],
-      storage = [{name = "bufferA", space = "memory", layout = #sair.named_mapping<[] -> ()>}]
+      decisions = {
+        loop_nest = [],
+        storage = [
+          {name = "bufferA", space = "memory",
+           layout = #sair.named_mapping<[] -> ()>}
+        ]
+      }
     } : !sair.value<(), f32>
     %2 = sair.from_scalar %arg1 : !sair.value<(), memref<f32>>
     // expected-note @+1 {{buffer defined here}}
@@ -1645,7 +1724,9 @@ func @buffer_used_before_def_seq(%arg0: f32, %arg1: memref<f32>) {
   sair.program {
     %2 = sair.from_scalar %arg1 : !sair.value<(), memref<f32>>
     // expected-note @+1 {{buffer defined here}}
-    %copy = sair.copy %2 { sequence = 2 }: !sair.value<(), memref<f32>>
+    %copy = sair.copy %2 {
+      decisions = {sequence = 2}
+    } : !sair.value<(), memref<f32>>
     %3 = sair.from_memref %copy memref {
       buffer_name = "bufferA"
     } : #sair.shape<()>, memref<f32>
@@ -1653,9 +1734,14 @@ func @buffer_used_before_def_seq(%arg0: f32, %arg1: memref<f32>) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{buffer "bufferA" used before it is defined}}
     %1 = sair.copy %0 {
-      loop_nest = [],
-      storage = [{name = "bufferA", space = "memory", layout = #sair.named_mapping<[] -> ()>}],
-      sequence = 1
+      decisions = {
+        loop_nest = [],
+        storage = [
+          {name = "bufferA", space = "memory",
+           layout = #sair.named_mapping<[] -> ()>}
+        ],
+        sequence = 1
+      }
     } : !sair.value<(), f32>
     sair.exit
   }
@@ -1670,8 +1756,13 @@ func @to_memref_buffer_name(%arg0: f32, %arg1: memref<f32>) {
     %1 = sair.from_scalar %arg1 : !sair.value<(), memref<f32>>
     // expected-error @+1 {{conflicting buffer names: expected "bufferB", got "bufferA"}}
     %2 = sair.copy %0 {
-      loop_nest = [],
-      storage = [{name = "bufferA", space = "memory", layout = #sair.named_mapping<[] -> ()>}]
+      decisions = {
+        loop_nest = [],
+        storage = [
+          {name = "bufferA", space = "memory",
+           layout = #sair.named_mapping<[] -> ()>}
+        ]
+      }
     } : !sair.value<(), f32>
     sair.to_memref %1 memref %2 {
       buffer_name = "bufferB"
@@ -1690,14 +1781,16 @@ func @to_memref_layout(%arg0: f32, %arg1: memref<?x?xf32>) {
     %2 = sair.static_range : !sair.static_range<8>
     // expected-error @+1 {{conflicting layouts: expected #sair.mapping<2 : d1, d0>, got #sair.mapping<2 : d0, d1>}}
     %3 = sair.copy[d0:%2, d1:%2] %0 {
-      loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<d0>},
-        {name = "B", iter = #sair.mapping_expr<d1>}
-      ],
-      storage = [{
-        name = "bufferA", space = "memory",
-        layout = #sair.named_mapping<[d0:"A", d1:"B"] -> (d0, d1)>
-      }]
+      decisions = {
+        loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<d0>},
+          {name = "B", iter = #sair.mapping_expr<d1>}
+        ],
+        storage = [{
+          name = "bufferA", space = "memory",
+          layout = #sair.named_mapping<[d0:"A", d1:"B"] -> (d0, d1)>
+        }]
+      }
     } : !sair.value<d0:static_range<8> x d1:static_range<8>, f32>
     sair.to_memref %1 memref[d0:%2, d1:%2] %3(d1, d0) {
       buffer_name = "bufferA"
@@ -1713,11 +1806,13 @@ func @two_results_same_buffer() {
   sair.program {
     // expected-error @+1 {{operation cannot store two results in the same buffer}}
     %0, %1 = sair.map attributes {
-      loop_nest = [],
-      storage = [
-        {name = "A", space = "memory", layout = #sair.named_mapping<[] -> ()>},
-        {name = "A", space = "memory", layout = #sair.named_mapping<[] -> ()>}
-      ]
+      decisions = {
+        loop_nest = [],
+        storage = [
+          {name = "A", space = "memory", layout = #sair.named_mapping<[] -> ()>},
+          {name = "A", space = "memory", layout = #sair.named_mapping<[] -> ()>}
+        ]
+      }
     } {
       ^bb0:
         %c0 = constant 1.0 : f32
@@ -1736,12 +1831,14 @@ func @storage_must_cover_dimensions(%arg0: f32) {
     %1 = sair.static_range : !sair.static_range<8>
     // expected-note @+1 {{operand defined here}}
     %2 = sair.copy[d0:%1] %0 {
-      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
-      storage = [{space = "register", layout = #sair.named_mapping<[] -> ()>}]
+      decisions = {
+        loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
+        storage = [{space = "register", layout = #sair.named_mapping<[] -> ()>}]
+      }
     } : !sair.value<d0:static_range<8>, f32>
     // expected-error @+1 {{operand storage must cover all operand dimensions}}
     %3 = sair.copy[d0:%1] %2(d0) {
-      loop_nest = [{name = "B", iter = #sair.mapping_expr<d0>}]
+      decisions = {loop_nest = [{name = "B", iter = #sair.mapping_expr<d0>}]}
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
@@ -1755,25 +1852,29 @@ func @inplace_update_different_layout(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
     %2 = sair.copy[d0:%1, d1:%1] %0 {
-      loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<d0>},
-        {name = "B", iter = #sair.mapping_expr<d1>}
-      ],
-      storage = [{
-        name = "bufferA", space = "memory",
-        layout = #sair.named_mapping<[d0:"A", d1:"B"] -> (d0, d1)>
-      }]
+      decisions = {
+        loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<d0>},
+          {name = "B", iter = #sair.mapping_expr<d1>}
+        ],
+        storage = [{
+          name = "bufferA", space = "memory",
+          layout = #sair.named_mapping<[d0:"A", d1:"B"] -> (d0, d1)>
+        }]
+      }
     } : !sair.value<d0:static_range<8> x d1:static_range<8>, f32>
     // expected-error @+1 {{in-place update of buffer "bufferA" must use the same layout in input and output}}
     %3 = sair.copy[d0:%1, d1:%1] %2(d0, d1) {
-      loop_nest = [
-        {name = "C", iter = #sair.mapping_expr<d0>},
-        {name = "D", iter = #sair.mapping_expr<d1>}
-      ],
-      storage = [{
-        name = "bufferA", space = "memory",
-        layout = #sair.named_mapping<[d0:"C", d1:"D"] -> (d1, d0)>
-      }]
+      decisions = {
+        loop_nest = [
+          {name = "C", iter = #sair.mapping_expr<d0>},
+          {name = "D", iter = #sair.mapping_expr<d1>}
+        ],
+        storage = [{
+          name = "bufferA", space = "memory",
+          layout = #sair.named_mapping<[d0:"C", d1:"D"] -> (d1, d0)>
+        }]
+      }
     } : !sair.value<d0:static_range<8> x d1:static_range<8>, f32>
     sair.exit
   }
@@ -1801,7 +1902,7 @@ func @unknown_loop_nest(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{loop iterators cannot contain `?` expressions}}
     %2 = sair.copy %0 {
-      loop_nest = [{name = "A", iter = #sair.mapping_expr<?>}]
+      decisions = {loop_nest = [{name = "A", iter = #sair.mapping_expr<?>}]}
     } : !sair.value<(), f32>
     sair.exit
   }
@@ -1815,9 +1916,11 @@ func @unknown_layout(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{layouts cannot contain `?` expressions}}
     %2 = sair.copy %0 {
-      loop_nest = [],
-      storage = [{name = "A", space = "memory",
-                  layout = #sair.named_mapping<[] -> (?)>}]
+      decisions = {
+        loop_nest = [],
+        storage = [{name = "A", space = "memory",
+                    layout = #sair.named_mapping<[] -> (?)>}]
+      }
     } : !sair.value<(), f32>
     sair.exit
   }
@@ -1835,9 +1938,11 @@ func @from_memref_overwrite(%arg0 : memref<f32>) {
     } : #sair.shape<()>, memref<f32>
     // expected-error @+1 {{operation overwrites a value stored in buffer "A" before it is used}}
     %2 = sair.copy %1 {
-      loop_nest = [],
-      storage = [{name = "A", space = "memory",
-                  layout = #sair.named_mapping<[] -> ()>}]
+      decisions = {
+        loop_nest = [],
+        storage = [{name = "A", space = "memory",
+                    layout = #sair.named_mapping<[] -> ()>}]
+      }
     } : !sair.value<(), f32>
     // expected-note @+1 {{value used here}}
     %3 = sair.copy %1 : !sair.value<(), f32>
@@ -1856,8 +1961,9 @@ func @to_memref_overwrite(%arg0: memref<f32>, %arg1: f32) {
     // expected-note @+1 {{value stored here}}
     %2 = sair.copy %1 : !sair.value<(), f32>
     // expected-error @+1 {{operation overwrites a value stored in buffer "A" before it is used}}
-    %3 = sair.copy %1 { storage = [{name = "A", space = "memory"}] }
-      : !sair.value<(), f32>
+    %3 = sair.copy %1 {
+      decisions = {storage = [{name = "A", space = "memory"}]}
+    } : !sair.value<(), f32>
     sair.to_memref %0 memref %2 { buffer_name = "A" }
       : #sair.shape<()>, memref<f32>
     sair.exit
@@ -1873,16 +1979,16 @@ func @fby_init_overwrite(%arg0 : f32) {
     %r = sair.static_range : !sair.static_range<8>
     // expected-note @+1 {{value stored here}}
     %1 = sair.copy %0 {
-      storage = [{name = "A", space = "memory"}]
+      decisions = {storage = [{name = "A", space = "memory"}]}
     } : !sair.value<(), f32>
     // expected-error @+1 {{operation overwrites a value stored in buffer "A" before it is used}}
     %2 = sair.copy %1 {
-      storage = [{name = "A", space = "memory"}]
+      decisions = {storage = [{name = "A", space = "memory"}]}
     } : !sair.value<(), f32>
     %3 = sair.fby %1 then[d0:%r] %4(d0) : !sair.value<d0:static_range<8>, f32>
     // expected-note @+1 {{value used here}}
     %4 = sair.copy[d0:%r] %3(d0) {
-      loop_nest = [{name = "B", iter = #sair.mapping_expr<d0>}]
+      decisions = {loop_nest = [{name = "B", iter = #sair.mapping_expr<d0>}]}
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
@@ -1896,18 +2002,20 @@ func @fby_value_overwrite(%arg0 : f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %r = sair.static_range : !sair.static_range<8>
     %1 = sair.copy %0 {
-      storage = [{name = "A", space = "memory"}]
+      decisions = {storage = [{name = "A", space = "memory"}]}
     } : !sair.value<(), f32>
     %3 = sair.fby %1 then[d0:%r] %4(d0) : !sair.value<d0:static_range<8>, f32>
     // expected-note @+1 {{value stored here}}
     %4 = sair.copy[d0:%r] %3(d0) {
-      loop_nest = [{name = "B", iter = #sair.mapping_expr<d0>}]
+      decisions = {loop_nest = [{name = "B", iter = #sair.mapping_expr<d0>}]}
     } : !sair.value<d0:static_range<8>, f32>
     // expected-error @below {{operation overwrites a value stored in buffer "A" before it is used}}
     // expected-note @below {{value used here}}
     %2 = sair.copy %0 {
-      loop_nest = [{name = "B", iter = #sair.mapping_expr<none>}],
-      storage = [{name = "A", space = "memory"}]
+      decisions = {
+        loop_nest = [{name = "B", iter = #sair.mapping_expr<none>}],
+        storage = [{name = "A", space = "memory"}]
+      }
     } : !sair.value<(), f32>
     sair.exit
   }
@@ -1918,8 +2026,10 @@ func @fby_value_overwrite(%arg0 : f32) {
 
 func @sequence_non_compute(%arg0 : f32) {
   sair.program {
-    // expected-error @below {{unexpected 'sequence' attribute on a non-compute op}}
-    %0 = sair.from_scalar %arg0 { sequence = 1 } : !sair.value<(), f32>
+    // expected-error @below {{only compute Sair ops can have the 'decisions' attribute}}
+    %0 = sair.from_scalar %arg0 {
+      decisions = {sequence = 1}
+    } : !sair.value<(), f32>
     sair.exit
   }
   return
@@ -1931,9 +2041,13 @@ func @sequence_inversion_two_compute() {
   sair.program {
     // expected-error @below {{operation sequencing contradicts use-def chains}}
     // expected-note @below {{sequenceable operation}}
-    %0 = sair.alloc { sequence = 42 } : !sair.value<(), memref<f32>>
+    %0 = sair.alloc {
+      decisions = {sequence = 42}
+    } : !sair.value<(), memref<f32>>
     // expected-note @below {{sequenceable operation sequenced by use-def}}
-    sair.free %0 { sequence = 1 } : !sair.value<(), memref<f32>>
+    sair.free %0 {
+      decisions = {sequence = 1}
+    } : !sair.value<(), memref<f32>>
     sair.exit
   }
   return
@@ -1947,9 +2061,13 @@ func @sequence_inversion_negative_value() {
   sair.program {
     // expected-error @below {{operation sequencing contradicts use-def chains}}
     // expected-note @below {{sequenceable operation}}
-    %0 = sair.alloc { sequence = 1 } : !sair.value<(), memref<f32>>
+    %0 = sair.alloc {
+      decisions = {sequence = 1}
+    } : !sair.value<(), memref<f32>>
     // expected-note @below {{sequenceable operation sequenced by use-def}}
-    sair.free %0 { sequence = -1 } : !sair.value<(), memref<f32>>
+    sair.free %0 {
+      decisions = {sequence = -1}
+    } : !sair.value<(), memref<f32>>
     sair.exit
   }
   return
@@ -1963,11 +2081,15 @@ func @sequence_inversion_proj_any(%arg0: f32) {
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @below {{operation sequencing contradicts use-def chains}}
     // expected-note @below {{sequenceable operation}}
-    %2 = sair.copy[d0:%0] %1 { sequence = 2 } : !sair.value<d0:static_range<42>, f32>
+    %2 = sair.copy[d0:%0] %1 {
+      decisions = {sequence = 2}
+    } : !sair.value<d0:static_range<42>, f32>
     // expected-note @below {{implicitly sequenced operation}}
     %3 = sair.proj_any of[d0:%0] %2(d0) : #sair.shape<d0:static_range<42>>, f32
     // expected-note @below {{sequenceable operation sequenced by use-def}}
-    sair.copy[d0:%0] %3 { sequence = 1 } : !sair.value<d0:static_range<42>, f32>
+    sair.copy[d0:%0] %3 {
+      decisions = {sequence = 1}
+    } : !sair.value<d0:static_range<42>, f32>
     sair.exit
   }
   return
@@ -1981,11 +2103,15 @@ func @sequence_inversion_proj_last(%arg0: f32) {
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @below {{operation sequencing contradicts use-def chains}}
     // expected-note @below {{sequenceable operation}}
-    %2 = sair.copy[d0:%0] %1 { sequence = 2 } : !sair.value<d0:static_range<42>, f32>
+    %2 = sair.copy[d0:%0] %1 {
+      decisions = {sequence = 2}
+    } : !sair.value<d0:static_range<42>, f32>
     // expected-note @below {{implicitly sequenced operation}}
     %3 = sair.proj_last of[d0:%0] %2(d0) : #sair.shape<d0:static_range<42>>, f32
     // expected-note @below {{sequenceable operation sequenced by use-def}}
-    sair.copy[d0:%0] %3 { sequence = 1 } : !sair.value<d0:static_range<42>, f32>
+    sair.copy[d0:%0] %3 {
+      decisions = {sequence = 1}
+    } : !sair.value<d0:static_range<42>, f32>
     sair.exit
   }
   return
@@ -1999,11 +2125,15 @@ func @sequence_inversion_fby(%arg0: f32) {
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @below {{operation sequencing contradicts use-def chains}}
     // expected-note @below {{sequenceable operation}}
-    %2 = sair.copy %1 { sequence = 2 } : !sair.value<(), f32>
+    %2 = sair.copy %1 {
+      decisions = {sequence = 2}
+    } : !sair.value<(), f32>
     // expected-note @below {{implicitly sequenced operation}}
     %3 = sair.fby %2 then[d0:%0] %4(d0) : !sair.value<d0:static_range<42>, f32>
     // expected-note @below {{sequenceable operation sequenced by use-def}}
-    %4 = sair.map[d0:%0] %3(d0) attributes { sequence = 1 } {
+    %4 = sair.map[d0:%0] %3(d0) attributes {
+      decisions = {sequence = 1}
+    } {
     ^bb0(%arg1: index, %arg2: f32):
       sair.return %arg2 : f32
     } : #sair.shape<d0:static_range<42>>, (f32) -> (f32)
@@ -2018,14 +2148,20 @@ func @sequence_inversion_fby_then(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<42>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %2 = sair.copy %1 { sequence = 1 } : !sair.value<(), f32>
+    %2 = sair.copy %1 {
+      decisions = {sequence = 1}
+    } : !sair.value<(), f32>
     // expected-error @below {{operation sequencing contradicts use-def chains}}
     // expected-note @below {{sequenceable operation}}
-    %3 = sair.copy[d0:%0] %1 { sequence = 3 } : !sair.value<d0:static_range<42>, f32>
+    %3 = sair.copy[d0:%0] %1 {
+      decisions = {sequence = 3}
+    } : !sair.value<d0:static_range<42>, f32>
     // expected-note @below {{implicitly sequenced operation}}
     %4 = sair.fby %2 then[d0:%0] %3(d0) : !sair.value<d0:static_range<42>, f32>
     // expected-note @below {{sequenceable operation sequenced by use-def}}
-    sair.map[d0:%0] %4(d0) attributes { sequence = 2 } {
+    sair.map[d0:%0] %4(d0) attributes {
+      decisions = {sequence = 2}
+    } {
     ^bb0(%arg1: index, %arg2: f32):
       sair.return %arg2 : f32
     } : #sair.shape<d0:static_range<42>>, (f32) -> (f32)
@@ -2042,14 +2178,20 @@ func @sequence_same_fby_then_different_source(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<42>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %2 = sair.copy %1 { sequence = 1 } : !sair.value<(), f32>
+    %2 = sair.copy %1 {
+      decisions = {sequence = 1}
+    } : !sair.value<(), f32>
     // expected-error @below {{operation sequencing contradicts use-def chains}}
     // expected-note @below {{sequenceable operation}}
-    %3 = sair.copy[d0:%0] %1 { sequence = 3 } : !sair.value<d0:static_range<42>, f32>
+    %3 = sair.copy[d0:%0] %1 {
+      decisions = {sequence = 3}
+    } : !sair.value<d0:static_range<42>, f32>
     // expected-note @below {{implicitly sequenced operation}}
     %4 = sair.fby %2 then[d0:%0] %3(d0) : !sair.value<d0:static_range<42>, f32>
     // expected-note @below {{sequenceable operation sequenced by use-def}}
-    sair.map[d0:%0] %4(d0) attributes { sequence = 2 } {
+    sair.map[d0:%0] %4(d0) attributes {
+      decisions = {sequence = 2}
+    } {
     ^bb0(%arg1: index, %arg2: f32):
       sair.return %arg2 : f32
     } : #sair.shape<d0:static_range<42>>, (f32) -> (f32)
@@ -2064,11 +2206,15 @@ func @sequence_inversion_from_memref(%arg0: f32) {
   sair.program {
     // expected-error @below {{operation sequencing contradicts use-def chains}}
     // expected-note @below {{sequenceable operation}}
-    %0 = sair.alloc { sequence = 2 } : !sair.value<(), memref<f32>>
+    %0 = sair.alloc {
+      decisions = {sequence = 2}
+    } : !sair.value<(), memref<f32>>
     // expected-note @below {{implicitly sequenced operation}}
     %1 = sair.from_memref %0 memref { buffer_name = "A" } : #sair.shape<()>, memref<f32>
     // expected-note @below {{sequenceable operation sequenced by use-def}}
-    %2 = sair.copy %1 { sequence = 1 } : !sair.value<(), f32>
+    %2 = sair.copy %1 {
+      decisions = {sequence = 1}
+    } : !sair.value<(), f32>
     sair.exit
   }
   return
@@ -2082,12 +2228,16 @@ func @sequence_inversion_domain(%arg0: index) {
     %1 = sair.dyn_range %0 : !sair.dyn_range
     // expected-error @below {{operation sequencing contradicts use-def chains}}
     // expected-note @below {{sequenceable operation}}
-    %2 = sair.copy[d0:%1] %0 { sequence = 2 }: !sair.value<d0:dyn_range, index>
+    %2 = sair.copy[d0:%1] %0 {
+      decisions = {sequence = 2}
+    }: !sair.value<d0:dyn_range, index>
 
     // expected-note @below {{implicitly sequenced operation}}
     %3 = sair.dyn_range[d0:%1] %2(d0) : !sair.dyn_range<d0:dyn_range>
     // expected-note @below {{sequenceable operation sequenced by use-def}}
-    sair.copy[d0:%1, d1:%3] %0 { sequence = 1 } : !sair.value<d0:dyn_range x d1:dyn_range(d0), index>
+    sair.copy[d0:%1, d1:%3] %0 {
+      decisions = {sequence = 1}
+    } : !sair.value<d0:dyn_range x d1:dyn_range(d0), index>
 
     sair.exit
   }
@@ -2102,7 +2252,9 @@ func @sequence_inversion_implicit_sequence_domain(%arg0: index) {
     %1 = sair.dyn_range %0 : !sair.dyn_range
     // expected-error @below {{operation sequencing contradicts use-def chains}}
     // expected-note @below {{sequenceable operation}}
-    %2 = sair.copy[d0:%1] %0 { sequence = 2 }: !sair.value<d0:dyn_range, index>
+    %2 = sair.copy[d0:%1] %0 {
+      decisions = {sequence = 2}
+    }: !sair.value<d0:dyn_range, index>
 
     // expected-note @below {{implicitly sequenced operation}}
     %3 = sair.dyn_range[d0:%1] %2(d0) : !sair.dyn_range<d0:dyn_range>
@@ -2112,7 +2264,9 @@ func @sequence_inversion_implicit_sequence_domain(%arg0: index) {
     // expected-note @below {{implicitly sequenced operation}}
     %5 = sair.proj_any[d0:%1] of[d1:%3] %4(d0, d1) : #sair.shape<d0:dyn_range x d1:dyn_range(d0)>, index
     // expected-note @below {{sequenceable operation sequenced by use-def}}
-    sair.copy[d0:%1] %5(d0) { sequence = 1 } : !sair.value<d0:dyn_range, index>
+    sair.copy[d0:%1] %5(d0) {
+      decisions = {sequence = 1}
+    } : !sair.value<d0:dyn_range, index>
 
     sair.exit
   }
@@ -2129,12 +2283,16 @@ func @sequence_inversion_placeholder(%arg0: index) {
     %1 = sair.dyn_range %0 : !sair.dyn_range
     // expected-error @below {{operation sequencing contradicts use-def chains}}
     // expected-note @below {{sequenceable operation}}
-    %2 = sair.copy[d0:%1] %0 { sequence = 2 }: !sair.value<d0:dyn_range, index>
+    %2 = sair.copy[d0:%1] %0 {
+      decisions = {sequence = 2}
+    }: !sair.value<d0:dyn_range, index>
     // expected-note @below {{implicitly sequenced operation}}
     %3 = sair.dyn_range[d0:%1] %2(d0) : !sair.dyn_range<d0:dyn_range>
     %4 = sair.placeholder[d0:%1, d1:%3] : !sair.dyn_range<d0:dyn_range x d1:dyn_range(d0)>
     // expected-note @below {{sequenceable operation sequenced by use-def}}
-    sair.copy[d0:%1, d1:%3, d2:%4] %0 { sequence = 1 } : !sair.value<d0:dyn_range x d1:dyn_range(d0) x d2:dyn_range(d0, d1), index>
+    sair.copy[d0:%1, d1:%3, d2:%4] %0 {
+      decisions = {sequence = 1}
+    } : !sair.value<d0:dyn_range x d1:dyn_range(d0) x d2:dyn_range(d0, d1), index>
     sair.exit
   }
   return
@@ -2217,11 +2375,15 @@ func @use_def_partial_invalid(%arg0: f32) {
     %1 = sair.copy %0 : !sair.value<(), f32>
     // expected-error @below {{operation sequencing contradicts use-def chains}}
     // expected-note @below {{sequenceable operation}}
-    %2 = sair.copy %1 { sequence = 2 } : !sair.value<(), f32>
+    %2 = sair.copy %1 {
+      decisions = {sequence = 2}
+    } : !sair.value<(), f32>
     // expected-note @below {{sequenceable operation sequenced by use-def}}
     %3 = sair.copy %2 : !sair.value<(), f32>
     // expected-note @below {{sequenceable operation sequenced by use-def}}
-    %4 = sair.copy %3 { sequence = 1 } : !sair.value<(), f32>
+    %4 = sair.copy %3 {
+      decisions = {sequence = 1}
+    } : !sair.value<(), f32>
     sair.exit
   }
   return
@@ -2235,12 +2397,14 @@ func @storage_invalid_shape(%arg0: f32) {
     %1 = sair.static_range : !sair.static_range<8>
     // expected-error @+1 {{in buffer "A": dimension 0 of the mapping depends on dimension 1 of the mapping}}
     %2 = sair.copy[d0:%1] %0 {
-      loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<stripe(d0, [2])>},
-        {name = "B", iter = #sair.mapping_expr<stripe(d0, [2, 1])>}
-      ],
-      storage = [{name = "A", space = "memory",
-                  layout = #sair.named_mapping<[d0:"A", d1:"B"] ->(d1, d0)>}]
+      decisions = {
+        loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<stripe(d0, [2])>},
+          {name = "B", iter = #sair.mapping_expr<stripe(d0, [2, 1])>}
+        ],
+        storage = [{name = "A", space = "memory",
+                    layout = #sair.named_mapping<[d0:"A", d1:"B"] ->(d1, d0)>}]
+      }
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
@@ -2261,26 +2425,32 @@ func @sequence_attr(%arg0: f32) {
 
     // expected-error @+1 {{loop "D" is not nested in the same loops than at previous occurence}}
     %2 = sair.copy[d0:%1, d1:%1] %0 {
-      loop_nest = [
-        {name = "B", iter = #sair.mapping_expr<stripe(d0, [4])>},
-        {name = "C", iter = #sair.mapping_expr<stripe(d0, [4, 1])>},
-        {name = "D", iter = #sair.mapping_expr<d1>}
-      ],
-      sequence = 2
+      decisions = {
+        loop_nest = [
+          {name = "B", iter = #sair.mapping_expr<stripe(d0, [4])>},
+          {name = "C", iter = #sair.mapping_expr<stripe(d0, [4, 1])>},
+          {name = "D", iter = #sair.mapping_expr<d1>}
+        ],
+        sequence = 2
+      }
     } : !sair.value<d0:static_range<16> x d1:static_range<16>, f32>
 
     %3 = sair.copy[d0:%1] %0 {
-      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
-      sequence = 3
+      decisions = {
+        loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
+        sequence = 3
+      }
     } : !sair.value<d0:static_range<16>, f32>
 
     // expected-note @+1 {{previous occurence here}}
     %4 = sair.copy[d0:%1] %0 {
-      loop_nest = [
-        {name = "B", iter = #sair.mapping_expr<none>},
-        {name = "D", iter = #sair.mapping_expr<d0>}
-      ],
-      sequence = 1
+      decisions = {
+        loop_nest = [
+          {name = "B", iter = #sair.mapping_expr<none>},
+          {name = "D", iter = #sair.mapping_expr<d0>}
+        ],
+        sequence = 1
+      }
     } : !sair.value<d0:static_range<16>, f32>
     sair.exit
   }
@@ -2294,9 +2464,11 @@ func @mismatching_unroll() {
     %0 = sair.static_range : !sair.static_range<3>
     // expected-note@below {{previous occurrence here}}
     sair.map[d0:%0] attributes {
-      loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<d0>, unroll = 3}
-      ]
+      decisions = {
+        loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<d0>, unroll = 3}
+        ]
+      }
     } {
     ^bb0(%arg0: index):
       sair.return
@@ -2304,9 +2476,11 @@ func @mismatching_unroll() {
 
     // expected-error@below {{mismatching unroll factors for loop "A" (2 vs 3)}}
     sair.map[d0:%0] attributes {
-      loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<d0>, unroll = 2}
-      ]
+      decisions = {
+        loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<d0>, unroll = 2}
+        ]
+      }
     } {
     ^bb0(%arg0: index):
       sair.return
@@ -2323,9 +2497,11 @@ func @mismatching_unroll_missing() {
     %0 = sair.static_range : !sair.static_range<3>
     // expected-note@below {{previous occurrence here}}
     sair.map[d0:%0] attributes {
-      loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<d0>}
-      ]
+      decisions = {
+        loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<d0>}
+        ]
+      }
     } {
     ^bb0(%arg0: index):
       sair.return
@@ -2333,9 +2509,11 @@ func @mismatching_unroll_missing() {
 
     // expected-error@below {{mismatching unroll factors for loop "A" (2 vs 0)}}
     sair.map[d0:%0] attributes {
-      loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<d0>, unroll = 2}
-      ]
+      decisions = {
+        loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<d0>, unroll = 2}
+        ]
+      }
     } {
     ^bb0(%arg0: index):
       sair.return
@@ -2352,7 +2530,7 @@ func @invalid_expansion_pattern_name(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{invalid expansion pattern name "invalid_name"}}
     %1 = sair.copy %0 {
-      expansion = "invalid_name"
+      decisions = {expansion = "invalid_name"}
     } : !sair.value<(), f32>
     sair.exit
   }
@@ -2366,7 +2544,7 @@ func @invalid_expansion_pattern(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{expansion pattern does not apply to the operation}}
     %1 = sair.copy %0 {
-      expansion = "alloc"
+      decisions = {expansion = "alloc"}
     } : !sair.value<(), f32>
     sair.exit
   }

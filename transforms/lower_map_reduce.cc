@@ -94,9 +94,9 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
       }));
 
   // Keep memory space undefined for the produced value.
-  auto map = builder.create<SairMapOp>(loc, result_types, domain, map_mapping,
-                                       map_operands, op.shape(),
-                                       op.loop_nestAttr(), op.storageAttr());
+  auto map =
+      builder.create<SairMapOp>(loc, result_types, domain, map_mapping,
+                                map_operands, op.shape(), op.decisionsAttr());
   map.getRegion().takeBody(op.getRegion());
 
   // For each original result of sair.map_reduce, create a sair.proj_last that

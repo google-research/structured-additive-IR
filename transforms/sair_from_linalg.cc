@@ -274,8 +274,7 @@ void EmitMemRefToValue(
         {MappingAttr::GetIdentity(context, ranges.size())});
     Value copied_operand = rewriter.create<SairCopyOp>(
         loc, value_type, ranges, copy_mapping, new_operand,
-        /*loop_nest=*/nullptr, /*storage=*/nullptr, /*sequence=*/nullptr,
-        /*expansion=*/nullptr);
+        /*decisions=*/nullptr);
     map_operands.push_back(copied_operand);
 
     // For in/out operands, store the ranges.
@@ -527,8 +526,7 @@ mlir::Operation *CreateMapReduceOp(
   return rewriter.create<SairMapReduceOp>(
       loc, result_types, parallel_domain, reduction_domain, mappings_attr,
       init_operands, input_operands, domain_shape,
-      /*loop_nest=*/nullptr, /*memory_space=*/nullptr, /*sequence=*/nullptr,
-      /*expansion=*/nullptr);
+      /*decisions=*/nullptr);
 }
 
 // Rewrites Linalg generic operation into a semantically equivalent sequence of
@@ -632,10 +630,10 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
   // Construct the main map or map_reduce operation.
   mlir::Operation *map_op;
   if (num_reduction_dims == 0) {
-    map_op = rewriter.create<SairMapOp>(
-        loc, result_types, domain_ranges,
-        rewriter.getArrayAttr(operand_mappings), map_operands, domain_shape,
-        /*loop_nest=*/nullptr, /*memory_space=*/nullptr);
+    map_op = rewriter.create<SairMapOp>(loc, result_types, domain_ranges,
+                                        rewriter.getArrayAttr(operand_mappings),
+                                        map_operands, domain_shape,
+                                        /*decisions=*/nullptr);
   } else {
     map_op = CreateMapReduceOp(
         loc, result_types, domain_ranges, map_operands, operand_mappings,

@@ -206,15 +206,17 @@ func @to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
     %2 = sair.from_scalar %arg1 : !sair.value<(), memref<?x?xf32>>
     // CHECK: %[[V2:.*]] = sair.copy[d0:%{{.*}}] %[[V1]]
     %3 = sair.copy[d0:%0] %2 {
-      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
+      decisions = {loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]}
     } : !sair.value<d0:dyn_range, memref<?x?xf32>>
     // CHECK: %[[V0:.*]] = sair.copy
     %4 = sair.copy[d0:%0, d1:%0, d2:%0] %1 {
-      loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<d0>},
-        {name = "B", iter = #sair.mapping_expr<d1>},
-        {name = "C", iter = #sair.mapping_expr<d2>}
-      ]
+      decisions = {
+        loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<d0>},
+          {name = "B", iter = #sair.mapping_expr<d1>},
+          {name = "C", iter = #sair.mapping_expr<d2>}
+        ]
+      }
     } : !sair.value<d0:dyn_range x d1:dyn_range x d2:dyn_range, f32>
     // CHECK: sair.to_memref[d0:%[[D0]]] %[[V2]]
     // CHECK:  memref[d1:%[[D0]], d2:%[[D0]]] %[[V0]](d0, d1, d2)
@@ -387,17 +389,21 @@ func @loop_nest_attr(%arg0: f32) {
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // CHECK: sair.copy[d0:%{{.*}}, d1:%{{.*}}] %[[V0]] {
     sair.copy[d0:%0, d1:%0] %1 {
-      loop_nest = [
-        // CHECK: {iter = #sair.mapping_expr<none>, name = "loopA"}
-        {name = "loopA", iter = #sair.mapping_expr<none>},
-        // CHECK: {iter = #sair.mapping_expr<d0>, name = "loopB"}
-        {name = "loopB", iter = #sair.mapping_expr<d0>},
-        // CHECK: {iter = #sair.mapping_expr<d1>, name = "loopC"}
-        {name = "loopC", iter = #sair.mapping_expr<d1>}
-      ]
+      decisions = {
+        loop_nest = [
+          // CHECK: {iter = #sair.mapping_expr<none>, name = "loopA"}
+          {name = "loopA", iter = #sair.mapping_expr<none>},
+          // CHECK: {iter = #sair.mapping_expr<d0>, name = "loopB"}
+          {name = "loopB", iter = #sair.mapping_expr<d0>},
+          // CHECK: {iter = #sair.mapping_expr<d1>, name = "loopC"}
+          {name = "loopC", iter = #sair.mapping_expr<d1>}
+        ]
+      }
     } : !sair.value<d0:dyn_range x d1:dyn_range, f32>
     sair.copy[d0:%0] %1 {
-      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
+      decisions = {
+        loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
+      }
     } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
@@ -512,10 +518,12 @@ func @stripe_mined_loop() {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.dyn_range %sn : !sair.dyn_range
     sair.map[d0:%0] attributes {
-      loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<stripe(d0, [4])>},
-        {name = "B", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
-      ]
+      decisions = {
+        loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<stripe(d0, [4])>},
+          {name = "B", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
+        ]
+      }
     } {
       ^bb0(%arg0: index):
         sair.return
@@ -664,14 +672,16 @@ func @storage_stripe(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.dyn_range %sn : !sair.dyn_range
     %2 = sair.copy[d0:%1] %0 {
-      loop_nest = [
-        {name = "A", iter = #sair.mapping_expr<stripe(d0, [4])>},
-        {name = "B", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
-      ],
-      storage = [{
-        name = "B", space = "memory",
-        layout = #sair.named_mapping<[d0:"B"] -> (d0)>
-      }]
+      decisions = {
+        loop_nest = [
+          {name = "A", iter = #sair.mapping_expr<stripe(d0, [4])>},
+          {name = "B", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
+        ],
+        storage = [{
+          name = "B", space = "memory",
+          layout = #sair.named_mapping<[d0:"B"] -> (d0)>
+        }]
+      }
     } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
@@ -686,8 +696,10 @@ func @storage_no_layout(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.dyn_range %sn : !sair.dyn_range
     %2 = sair.copy[d0:%1] %0 {
-      loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
-      storage = [{name = "B", space = "memory"}]
+      decisions = {
+        loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
+        storage = [{name = "B", space = "memory"}]
+      }
     } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
@@ -717,10 +729,14 @@ func @placeholder_with_loop_nest(%arg0: f32) {
     %1 = sair.placeholder : !sair.dyn_range
     %2 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %3 = sair.copy[d0:%0] %2 {
-      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
+      decisions = {
+        loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
+      }
     } : !sair.value<d0:dyn_range, f32>
     %4 = sair.copy[d0:%1] %2 {
-      loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
+      decisions = {
+        loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
+      }
     } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
@@ -756,10 +772,12 @@ func @sequence_attr() {
     %0 = sair.static_range : !sair.static_range<42>
     // CHECK: sair.alloc
     // CHECK-SAME: sequence = 1
-    %1 = sair.alloc[d0:%0] { sequence = 1 } : !sair.value<d0:static_range<42>, memref<f32>>
+    %1 = sair.alloc[d0:%0] { decisions = {sequence = 1}}
+      : !sair.value<d0:static_range<42>, memref<f32>>
     // CHECK: sair.free
     // CHECK-SAME: sequence = 3
-    sair.free[d0:%0] %1(d0) { sequence = 3 } : !sair.value<d0:static_range<42>, memref<f32>>
+    sair.free[d0:%0] %1(d0) { decisions = {sequence = 3}}
+      : !sair.value<d0:static_range<42>, memref<f32>>
     sair.exit
   }
   return
@@ -772,11 +790,11 @@ func @sequence_same_fby_then(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<42>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %2 = sair.copy %1 { sequence = 1 } : !sair.value<(), f32>
+    %2 = sair.copy %1 {decisions = {sequence = 1}} : !sair.value<(), f32>
     %3 = sair.fby %2 then[d0:%0] %4(d0) : !sair.value<d0:static_range<42>, f32>
     // CHECK: sair.map
     // CHECK-SAME: sequence = 2
-    %4 = sair.map[d0:%0] %3(d0) attributes { sequence = 2 } {
+    %4 = sair.map[d0:%0] %3(d0) attributes {decisions={sequence = 2}} {
     ^bb0(%arg1: index, %arg2: f32):
       sair.return %arg2 : f32
     } : #sair.shape<d0:static_range<42>>, (f32) -> (f32)

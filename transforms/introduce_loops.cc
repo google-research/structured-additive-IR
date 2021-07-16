@@ -561,6 +561,12 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
   driver.setInsertionPoint(op);
   mlir::ArrayAttr new_loop_nest = EraseDimensionFromLoopNest(
       loop_nest.drop_back(), dimension, driver.getContext());
+  DecisionsAttr decisions = op.GetDecisions();
+  auto new_decisions = DecisionsAttr::get(
+      /*sequence=*/decisions.sequence(),
+      /*loop_nest=*/new_loop_nest,
+      /*storage=*/decisions.storage(),
+      /*expansion=*/decisions.expansion(), op.getContext());
   SairMapOp new_op = driver.create<SairMapOp>(
       op.getLoc(),
       /*result_types=*/EraseDimension(op.getResultTypes(), dimension),
@@ -568,10 +574,7 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
       /*mappings_array=*/driver.getArrayAttr(mappings),
       /*inputs=*/inputs,
       /*shape=*/EraseDimension(op.shape(), dimension),
-      /*loop_nest=*/new_loop_nest,
-      /*memory_space=*/op.storageAttr(),
-      /*sequence=*/nullptr,
-      /*expansion=*/driver.getStringAttr(kMapExpansionPattern));
+      /*decisions=*/new_decisions);
   new_op.body().takeBody(op.body());
 
   // Position of the sair.map in the results of the scf.for operation.
@@ -726,6 +729,12 @@ void Fuse(SairMapOp first_op, SairMapOp second_op, Driver &driver) {
 
   // Create the operation.
   driver.setInsertionPoint(second_op);
+  DecisionsAttr first_decisions = first_op.GetDecisions();
+  auto new_decisions = DecisionsAttr::get(
+      /*sequence=*/first_decisions.sequence(),
+      /*loop_nest=*/first_decisions.loop_nest(),
+      /*storage=*/driver.getArrayAttr(storages),
+      /*expansion=*/first_decisions.expansion(), context);
   SairMapOp new_op = driver.create<SairMapOp>(
       /*location=*/first_op.getLoc(),
       /*result_types=*/result_types,
@@ -733,10 +742,7 @@ void Fuse(SairMapOp first_op, SairMapOp second_op, Driver &driver) {
       /*mappings_array=*/driver.getArrayAttr(mappings),
       /*inputs=*/inputs,
       /*shape=*/first_op.shape(),
-      /*loop_nest=*/first_op.loop_nestAttr(),
-      /*memory_space=*/driver.getArrayAttr(storages),
-      /*sequence=*/nullptr,
-      /*expansion=*/driver.getStringAttr(kMapExpansionPattern));
+      /*decisions=*/new_decisions);
   new_op.body().takeBody(first_op.body());
   driver.replaceOp(first_op,
                    new_op.getResults().take_front(first_op.getNumResults()));
