@@ -235,7 +235,8 @@ mlir::LogicalResult VerifyLoopNests(
 // Verifies that the loop_nest attribute is correct with regard to the shape of
 // the operation it is attached to.
 mlir::LogicalResult VerifyLoopNestWellFormed(
-    ComputeOp op, llvm::ArrayRef<mlir::Attribute> loop_nest);
+    mlir::Location loc, DomainShapeAttr shape,
+    llvm::ArrayRef<mlir::Attribute> loop_nest);
 
 }  // namespace sair
 

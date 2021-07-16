@@ -70,9 +70,9 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
 
     // Use `init_value` as both arguments temporarily, the second argument will
     // be updated later.
-    auto fby = builder.create<SairFbyOp>(loc, fby_type, parallel_domain,
-                                         reduction_domain, mapping_attr,
-                                         init_value, init_value);
+    auto fby = builder.create<SairFbyOp>(
+        loc, fby_type, parallel_domain, reduction_domain, mapping_attr,
+        init_value, init_value, /*copies=*/nullptr);
     fbys.push_back(fby);
     map_operands.push_back(fby.getResult());
   }
@@ -94,9 +94,9 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
       }));
 
   // Keep memory space undefined for the produced value.
-  auto map =
-      builder.create<SairMapOp>(loc, result_types, domain, map_mapping,
-                                map_operands, op.shape(), op.decisionsAttr());
+  auto map = builder.create<SairMapOp>(loc, result_types, domain, map_mapping,
+                                       map_operands, op.shape(),
+                                       op.decisionsAttr(), /*copies=*/nullptr);
   map.getRegion().takeBody(op.getRegion());
 
   // For each original result of sair.map_reduce, create a sair.proj_last that
@@ -105,10 +105,12 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
     // Close the cycling definition of the sair.fby op.
     fbys[i].Value().set_value(map.getResult(i));
 
+    auto copies = builder.getArrayAttr(op.GetCopies(i));
     auto proj = builder.create<SairProjLastOp>(
         loc, op.getResultTypes()[i], op.parallel_domain(),
         op.reduction_domain(), builder.getArrayAttr(identity_mapping),
-        map.getResult(i), op.shape());
+        map.getResult(i), op.shape(),
+        /*copies=*/builder.getArrayAttr({copies}));
     op.results()[i].replaceAllUsesWith(proj.result());
   }
 

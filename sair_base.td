@@ -215,6 +215,12 @@ def SairDecisionsAttr : SairStructAttr<"DecisionsAttr", [
   StructFieldAttr<"expansion", OptionalAttr<StrAttr>>
 ]>;
 
+// An attribute that species copies of the result of an operation.
+def SairCopiesAttr
+  : TypedArrayAttrBase<
+      TypedArrayAttrBase<SairDecisionsAttr, "array of Sair decisions">,
+      "array of array of Sair decisions">;
+
 //===----------------------------------------------------------------------===//
 // Sair Types
 //===----------------------------------------------------------------------===//
@@ -525,6 +531,44 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
   let extraClassDeclaration = [{
     static constexpr llvm::StringRef kDecisionsAttrName = "decisions";
   }];
+}
+
+def SairValueProducerOp : OpInterface<"ValueProducerOp"> {
+  let description = [{
+    A Sair operation that produces Sair values.
+
+    Value producer operations have a `copies` attribute that lists copy
+    operations to insert to make copies of the operation results. The copy
+    attribute is an array of arrays, with one array for each result of the
+    operation. The array corresponding to a result contains `DecisionAttr`
+    attributes that describes decisions for the copy operation to insert.
+  }];
+
+  let methods = [
+    InterfaceMethod<
+      "List of copies of the given result. This is an array of DecisionAttr.",
+      "llvm::ArrayRef<mlir::Attribute>", "GetCopies", (ins "int":$result), [{}], [{
+          auto all_copies = $_op.copiesAttr();
+          if (all_copies == nullptr) return {};
+          return all_copies.getValue()[result]
+            .template cast<mlir::ArrayAttr>().getValue();
+      }]>,
+    InterfaceMethod<
+      "Indicates if the operation has any copy set in its `copies` attribute`",
+      "bool", "HasCopies", (ins), [{}], [{
+        auto all_copies = $_op.copiesAttr();
+        if (all_copies == nullptr) return false;
+        return llvm::any_of(all_copies.getValue(), [](mlir::Attribute attr) {
+          return !attr.cast<mlir::ArrayAttr>().empty();
+        });
+      }]>
+  ];
+
+  let extraClassDeclaration = [{
+    static constexpr llvm::StringRef kCopiesAttrName = "copies";
+  }];
+
+  let verify = [{return sair::VerifyValueProducerOp(op);}];
 }
 
 def SairInferIterationSpaceOp : OpInterface<"InferIterationSpaceOp"> {

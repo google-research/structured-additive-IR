@@ -138,7 +138,8 @@ def SairPlaceholderOp : SairOp<"placeholder", [NoSideEffect]> {
 def SairCopyOp : SairOp<"copy", [
     NoSideEffect,
     SairComputeOp,
-    SairSameElementType<"value", "result">]> {
+    SairSameElementType<"value", "result">,
+    SairValueProducerOp]> {
   let summary = "Creates a copy of a Sair value in a new iteration domain";
 
   let description = [{
@@ -160,7 +161,8 @@ def SairCopyOp : SairOp<"copy", [
     Variadic<SairDimension>:$domain,
     SairMappingArrayAttr:$mapping_array,
     SairValue:$value,
-    OptionalAttr<SairDecisionsAttr>:$decisions
+    OptionalAttr<SairDecisionsAttr>:$decisions,
+    OptionalAttr<SairCopiesAttr>:$copies
   );
 
   let results = (outs SairValue:$result);
@@ -175,10 +177,15 @@ def SairCopyOp : SairOp<"copy", [
   }];
 }
 
-def SairFromScalarOp : SairOp<"from_scalar", [NoSideEffect]> {
+def SairFromScalarOp : SairOp<"from_scalar", [
+    NoSideEffect,
+    SairValueProducerOp]> {
   let description = [{Converts an SSA value into a 0-dimensional Sair value.}];
 
-  let arguments = (ins AnyType:$value);
+  let arguments = (ins
+    AnyType:$value,
+    OptionalAttr<SairCopiesAttr>:$copies
+  );
   let results = (outs SairValue:$result);
 
   let parser = [{return ParseFromScalarOp(parser, result);}];
@@ -198,9 +205,10 @@ def SairFromScalarOp : SairOp<"from_scalar", [NoSideEffect]> {
 
 def SairFromMemRefOp : SairOp<"from_memref", [
     AttrSizedOperandSegments,
-    SairFromToMemRefOp,
     NoSideEffect,
-    SairInferIterationSpaceOp]> {
+    SairFromToMemRefOp,
+    SairInferIterationSpaceOp,
+    SairValueProducerOp]> {
   let summary = "Interprets a memref as a Sair value";
 
   let description = [{
@@ -234,7 +242,8 @@ def SairFromMemRefOp : SairOp<"from_memref", [
     Variadic<SairDimension>:$memref_domain,
     SairMappingArrayAttr:$mapping_array,
     SairValueOf<AnyMemRef>:$memref,
-    StrAttr:$buffer_name
+    StrAttr:$buffer_name,
+    OptionalAttr<SairCopiesAttr>:$copies
   );
 
   let results = (outs SairValue:$result);
@@ -261,7 +270,9 @@ def SairFromMemRefOp : SairOp<"from_memref", [
   DerivedAttr shape = SairResultDomainShapeAttr;
 }
 
-def SairLoadFromMemRefOp : SairOp<"load_from_memref", [SairComputeOp]> {
+def SairLoadFromMemRefOp : SairOp<"load_from_memref", [
+    SairComputeOp,
+    SairValueProducerOp]> {
   let summary = "Loads data from a memref to a Sair value";
 
   let description = [{
@@ -286,7 +297,8 @@ def SairLoadFromMemRefOp : SairOp<"load_from_memref", [SairComputeOp]> {
     SairMappingArrayAttr:$mapping_array,
     SairValueOf<AnyMemRef>:$memref,
     SairMappingAttr:$layout,
-    OptionalAttr<SairDecisionsAttr>:$decisions
+    OptionalAttr<SairDecisionsAttr>:$decisions,
+    OptionalAttr<SairCopiesAttr>:$copies
   );
 
   let results = (outs SairValue:$result);
@@ -312,7 +324,8 @@ def SairLoadFromMemRefOp : SairOp<"load_from_memref", [SairComputeOp]> {
 def SairToMemRefOp : SairOp<"to_memref", [
     AttrSizedOperandSegments,
     SairFromToMemRefOp,
-    SairInferIterationSpaceOp]> {
+    SairInferIterationSpaceOp,
+    SairValueProducerOp]> {
   let summary = "Interprets a Sair value as a memref";
 
   let description = [{
@@ -342,7 +355,8 @@ def SairToMemRefOp : SairOp<"to_memref", [
     SairValueOf<AnyMemRef>:$memref,
     SairValue:$value,
     SairDomainShapeAttr:$shape,
-    StrAttr:$buffer_name
+    StrAttr:$buffer_name,
+    OptionalAttr<SairCopiesAttr>:$copies
   );
 
   let parser = [{return ParseToMemRef(parser, result);}];
@@ -367,7 +381,9 @@ def SairToMemRefOp : SairOp<"to_memref", [
   }];
 }
 
-def SairStoreToMemRefOp : SairOp<"store_to_memref", [SairComputeOp]> {
+def SairStoreToMemRefOp : SairOp<"store_to_memref", [
+    SairComputeOp,
+    SairValueProducerOp]> {
   let summary = "Storse a Sair value in a memref";
 
   let description = [{
@@ -393,7 +409,8 @@ def SairStoreToMemRefOp : SairOp<"store_to_memref", [SairComputeOp]> {
     SairValue:$value,
     SairMappingAttr:$layout,
     SairDomainShapeAttr:$shape,
-    OptionalAttr<SairDecisionsAttr>:$decisions
+    OptionalAttr<SairDecisionsAttr>:$decisions,
+    OptionalAttr<SairCopiesAttr>:$copies
   );
 
   let parser = [{return ParseStoreToMemRef(parser, result);}];
@@ -436,8 +453,9 @@ def SairReturnOp : Op<SairDialect, "return", [Terminator]> {
 
 def SairMapOp : SairOp<"map", [
     AttrSizedOperandSegments,
+    IsolatedFromAbove,
     SairComputeOp,
-    IsolatedFromAbove]> {
+    SairValueProducerOp]> {
   let summary = "Applies the computation across the given domain";
 
   let description = [{
@@ -466,7 +484,8 @@ def SairMapOp : SairOp<"map", [
     SairMappingArrayAttr:$mapping_array,
     Variadic<SairValue>:$inputs,
     SairDomainShapeAttr:$shape,
-    OptionalAttr<SairDecisionsAttr>:$decisions
+    OptionalAttr<SairDecisionsAttr>:$decisions,
+    OptionalAttr<SairCopiesAttr>:$copies
   );
 
   let results = (outs Variadic<SairValue>:$results);
@@ -479,11 +498,11 @@ def SairMapOp : SairOp<"map", [
     OpBuilder<(ins "mlir::TypeRange":$result_types,
       "mlir::ValueRange":$domain, "mlir::ArrayAttr":$mappings_array,
       "mlir::ValueRange":$inputs, "DomainShapeAttr":$shape,
-      "DecisionsAttr":$decisions)>,
+      "DecisionsAttr":$decisions, "mlir::ArrayAttr":$copies)>,
     OpBuilder<(ins "mlir::TypeRange":$result_types,
       "mlir::ValueRange":$domain, "mlir::ArrayRef<ValueAccess>":$inputs,
-      "DomainShapeAttr":$shape,
-      "DecisionsAttr":$decisions)>
+      "DomainShapeAttr":$shape, "DecisionsAttr":$decisions,
+      "mlir::ArrayAttr":$copies)>
   ];
 
   let extraClassDeclaration = [{
@@ -502,8 +521,9 @@ def SairMapOp : SairOp<"map", [
 
 def SairMapReduceOp : SairOp<"map_reduce", [
     AttrSizedOperandSegments,
+    IsolatedFromAbove,
     SairComputeOp,
-    IsolatedFromAbove]> {
+    SairValueProducerOp]> {
   let summary = "Applies the computation to the domain and reduces the results";
 
   let description = [{
@@ -543,7 +563,8 @@ def SairMapReduceOp : SairOp<"map_reduce", [
     Variadic<SairValue>:$inits,
     Variadic<SairValue>:$inputs,
     SairDomainShapeAttr:$shape,
-    OptionalAttr<SairDecisionsAttr>:$decisions
+    OptionalAttr<SairDecisionsAttr>:$decisions,
+    OptionalAttr<SairCopiesAttr>:$copies
   );
 
   let results = (outs Variadic<SairValue>:$results);
@@ -576,13 +597,15 @@ class SairProjectionOp<string name> : SairOp<name, [
     AttrSizedOperandSegments,
     NoSideEffect,
     SairInferIterationSpaceOp,
-    SairSameElementType<"value", "result">]> {
+    SairSameElementType<"value", "result">,
+    SairValueProducerOp]> {
   let arguments = (ins
     Variadic<SairDimension>:$parallel_domain,
     Variadic<SairDimension>:$projection_domain,
     SairMappingArrayAttr:$mapping_array,
     SairValue:$value,
-    SairDomainShapeAttr:$shape
+    SairDomainShapeAttr:$shape,
+    OptionalAttr<SairCopiesAttr>:$copies
   );
 
   let results = (outs SairValue:$result);
@@ -646,7 +669,8 @@ def SairFbyOp : SairOp<"fby", [
     NoSideEffect,
     SairInferIterationSpaceOp,
     SairSameElementType<"value", "init">,
-    SairSameElementType<"value", "result">]> {
+    SairSameElementType<"value", "result">,
+    SairValueProducerOp]> {
   let summary = "Creates a loop-carried variable.";
 
   let description = [{
@@ -666,7 +690,8 @@ def SairFbyOp : SairOp<"fby", [
     Variadic<SairDimension>:$sequential_domain,
     SairMappingArrayAttr:$mapping_array,
     SairValue:$init,
-    SairValue:$value
+    SairValue:$value,
+    OptionalAttr<SairCopiesAttr>:$copies
   );
 
   let results = (outs SairValue:$result);
@@ -805,7 +830,8 @@ def SairUndefOp : Op<SairDialect, "undef", [NoSideEffect]> {
 
 def SairAllocOp : SairOp<"alloc", [
     AttrSizedOperandSegments,
-    SairComputeOp]> {
+    SairComputeOp,
+    SairValueProducerOp]> {
   let summary = "Creates a Sair value containing allocated memrefs.";
 
   let description = [{
@@ -826,7 +852,8 @@ def SairAllocOp : SairOp<"alloc", [
     Variadic<SairDimension>:$domain,
     SairMappingArrayAttr:$mapping_array,
     Variadic<SairValueOf<Index>>:$dynamic_sizes,
-    OptionalAttr<SairDecisionsAttr>:$decisions
+    OptionalAttr<SairDecisionsAttr>:$decisions,
+    OptionalAttr<SairCopiesAttr>:$copies
   );
 
   let results = (outs SairValueOf<AnyMemRef>:$result);

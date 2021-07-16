@@ -31,3 +31,15 @@ func @memrefs_must_be_introduced(%arg0: f32) {
   return
 }
 
+// -----
+
+func @copies(%arg0: f32) {
+  sair.program {
+    // expected-error @+1 {{copies must be materialized before normalizing loop nests}}
+    sair.from_scalar %arg0 {
+      copies = [[{sequence = 0}]]
+    } : !sair.value<(), f32>
+    sair.exit
+  }
+  return
+}

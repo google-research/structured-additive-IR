@@ -72,3 +72,17 @@ func @cannot_lower(%arg0: f32) {
   }
   return
 }
+
+// -----
+
+func @copies(%arg0: f32) {
+  sair.program {
+    // expected-error @+1 {{copies must be materialized before lowering proj_any operations}}
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.proj_any of %0 {
+      copies = [[{sequence = 0}]]
+    } : #sair.shape<()>, f32
+    sair.exit
+  }
+  return
+}

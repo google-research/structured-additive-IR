@@ -267,14 +267,14 @@ void EmitMemRefToValue(
         rewriter.create<SairFromScalarOp>(loc, memref_value_type, operand);
     Value new_operand = rewriter.create<SairFromMemRefOp>(
         loc, value_type, mlir::ValueRange(), ranges, mappings, from_scalar,
-        storage_analysis.GetFreshBufferName());
+        storage_analysis.GetFreshBufferName(), /*copies=*/nullptr);
     // Insert a copy to avoid storage specification mismatch.
     // TODO(b/181850491): introduce a sair.maybe_copy operation instead.
     auto copy_mapping = rewriter.getArrayAttr(
         {MappingAttr::GetIdentity(context, ranges.size())});
     Value copied_operand = rewriter.create<SairCopyOp>(
         loc, value_type, ranges, copy_mapping, new_operand,
-        /*decisions=*/nullptr);
+        /*decisions=*/nullptr, /*copies=*/nullptr);
     map_operands.push_back(copied_operand);
 
     // For in/out operands, store the ranges.
@@ -319,7 +319,8 @@ void EmitValueToMemRef(mlir::Location loc, SairProgramOp program,
     }
     rewriter.create<SairToMemRefOp>(
         loc, mlir::ValueRange(), ranges[i], mapping_array, from_scalar,
-        sair_values[i], shape, storage_analysis.GetFreshBufferName());
+        sair_values[i], shape, storage_analysis.GetFreshBufferName(),
+        /*copies=*/nullptr);
   }
 }
 
@@ -526,7 +527,7 @@ mlir::Operation *CreateMapReduceOp(
   return rewriter.create<SairMapReduceOp>(
       loc, result_types, parallel_domain, reduction_domain, mappings_attr,
       init_operands, input_operands, domain_shape,
-      /*decisions=*/nullptr);
+      /*decisions=*/nullptr, /*copies=*/nullptr);
 }
 
 // Rewrites Linalg generic operation into a semantically equivalent sequence of
@@ -633,7 +634,8 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
     map_op = rewriter.create<SairMapOp>(loc, result_types, domain_ranges,
                                         rewriter.getArrayAttr(operand_mappings),
                                         map_operands, domain_shape,
-                                        /*decisions=*/nullptr);
+                                        /*decisions=*/nullptr,
+                                        /*copies=*/nullptr);
   } else {
     map_op = CreateMapReduceOp(
         loc, result_types, domain_ranges, map_operands, operand_mappings,

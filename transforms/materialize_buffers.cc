@@ -127,7 +127,7 @@ std::pair<mlir::SmallVector<int64_t>, ValueRange> GetMemRefShape(
     auto map_op = builder.create<SairMapOp>(
         buffer.location(), map_types, /*domain=*/domain,
         /*inputs=*/map_body.sair_values(), /*shape=*/shape,
-        /*decisions=*/decisions);
+        /*decisions=*/decisions, /*copies=*/nullptr);
     map_op.body().takeBody(map_body.region());
     sizes = map_op.getResults();
   } else {
@@ -172,7 +172,7 @@ mlir::Value AllocateBuffer(const Buffer &buffer,
   mlir::Value alloc = builder.create<SairAllocOp>(
       buffer.location(), type, domain,
       /*mapping_array=*/builder.getArrayAttr(size_mappings), sizes,
-      /*decisions=*/alloc_decisions);
+      /*decisions=*/alloc_decisions, /*copies=*/nullptr);
   sequence_analysis.Insert(alloc.getDefiningOp<ComputeOp>(),
                            cast<ComputeOp>(alloc_point.operation),
                            Direction::kBefore);
@@ -232,7 +232,7 @@ void InsertLoad(ComputeOp op, int operand_pos, const Buffer &buffer,
   mlir::Value loaded = builder.create<SairLoadFromMemRefOp>(
       op.getLoc(), loaded_type, load_domain,
       builder.getArrayAttr({memref_mapping}), memref.value,
-      operand_storage.layout(), decisions);
+      operand_storage.layout(), decisions, /*copies=*/nullptr);
   sequence_analysis.Insert(loaded.getDefiningOp<ComputeOp>(), op,
                            Direction::kBefore);
 
@@ -250,7 +250,8 @@ void InsertLoad(ComputeOp op, int operand_pos, const Buffer &buffer,
         op.getLoc(), proj_type,
         llvm::makeArrayRef(proj_domain).take_front(op_domain_size),
         llvm::makeArrayRef(proj_domain).drop_front(op_domain_size),
-        builder.getArrayAttr(proj_mapping), loaded, proj_shape);
+        builder.getArrayAttr(proj_mapping), loaded, proj_shape,
+        /*copies=*/nullptr);
     new_operand.mapping = MappingAttr::GetIdentity(context, op_domain_size);
   } else {
     new_operand.value = loaded;
@@ -298,7 +299,8 @@ void InsertStore(ComputeOp op, int result_pos, const Buffer &buffer,
   auto store_to_memref_op = builder.create<SairStoreToMemRefOp>(
       op.getLoc(), store_domain,
       builder.getArrayAttr({memref_mapping, result_mapping}), memref.value,
-      result, result_storage.layout(), store_shape, decisions);
+      result, result_storage.layout(), store_shape, decisions,
+      /*copies=*/nullptr);
   sequence_analysis.Insert(store_to_memref_op, op, Direction::kAfter);
 
   // Change result storage to register.
@@ -373,6 +375,10 @@ class MaterializeBuffers
     auto result = getFunction().walk([&](SairOp op) -> mlir::WalkResult {
       auto storage_analysis =
           getChildAnalysis<StorageAnalysis>(op->getParentOp());
+      auto value_producer = dyn_cast<ValueProducerOp>(op.getOperation());
+      if (value_producer != nullptr && value_producer.HasCopies()) {
+        return op.emitError() << "copies must be materialized before buffers";
+      }
       for (mlir::Value result : op->getResults()) {
         if (!result.getType().isa<ValueType>()) continue;
         const ValueStorage &storage = storage_analysis.GetStorage(result);

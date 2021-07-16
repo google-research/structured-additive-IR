@@ -75,81 +75,64 @@ std::optional<StorageAnalysis> StorageAnalysis::Create(SairProgramOp program) {
   return analysis;
 }
 
-// Verifies that the storage attribute of the operation is well-formed:
-// - that storage attributes are arrays of buffer or unit attributes,
-// - that the number of entries in the storage array matches the number of,
-//   results of the operation,
-// - that indexes are not stored in memory,
-// - that memory spaces referenced by the attribute exist,
-// - that multi-dimensional buffers are not stored in registers,
-// - that loops referenced by the attribute exist and
-// - that the buffer has a name if and only if the memory space is addressable.
-static mlir::LogicalResult VerifyStorageAttrWellFormed(ComputeOp op) {
-  auto *sair_dialect = static_cast<SairDialect *>(op->getDialect());
-  llvm::Optional<mlir::ArrayAttr> storage_attr = op.storage();
-  if (!op.storage().hasValue()) return mlir::success();
-  llvm::ArrayRef<mlir::Attribute> storage = storage_attr.getValue().getValue();
-
-  if (storage.size() != op->getNumResults()) {
-    return op.emitError() << "wrong number of storage entries";
-  }
-
-  llvm::DenseSet<mlir::Attribute> loop_names;
-  if (op.loop_nest().hasValue()) {
-    for (mlir::Attribute attr : op.LoopNestLoops()) {
-      LoopAttr loop = attr.cast<LoopAttr>();
-      loop_names.insert(loop.name());
-    }
+mlir::LogicalResult VerifyStorageAttrWellFormed(
+    mlir::Location loc, SairDialect *sair_dialect, mlir::TypeRange result_types,
+    llvm::DenseSet<mlir::Attribute> loop_names,
+    llvm::ArrayRef<mlir::Attribute> storage) {
+  if (storage.size() != result_types.size()) {
+    return mlir::emitError(loc) << "wrong number of storage entries";
   }
 
   llvm::DenseSet<mlir::Attribute> buffer_names;
-  for (auto [attr, value] : llvm::zip(storage, op->getResults())) {
+  for (auto [attr, type] : llvm::zip(storage, result_types)) {
     if (attr.isa<UnitAttr>()) continue;
     BufferAttr buffer = attr.dyn_cast<BufferAttr>();
     if (buffer == nullptr) {
-      return op.emitError() << "storage attribute must be an array of buffers "
-                               "or unit attributes";
+      return mlir::emitError(loc)
+             << "storage attribute must be an array of buffers "
+                "or unit attributes";
     }
 
     if (buffer.space() != sair_dialect->register_attr() &&
         buffer.space() != sair_dialect->memory_attr()) {
-      return op.emitError() << "invalid memory space " << buffer.space();
+      return mlir::emitError(loc) << "invalid memory space " << buffer.space();
     }
 
-    ValueType type = value.getType().cast<ValueType>();
+    auto element_type = type.cast<ValueType>().ElementType();
     if (buffer.space() == sair_dialect->memory_attr() &&
-        (type.ElementType().isa<mlir::IndexType>() ||
-         type.ElementType().isa<mlir::MemRefType>())) {
-      return op.emitError()
+        element_type.isa<mlir::IndexType, mlir::MemRefType>()) {
+      return mlir::emitError(loc)
              << "index and memref variables cannot be allocated in memory";
     }
 
     if ((buffer.space() == sair_dialect->memory_attr()) ^
         buffer.name() != nullptr) {
-      return op.emitError() << "buffers must have a name if and only if they "
-                               "are stored in memory";
+      return mlir::emitError(loc)
+             << "buffers must have a name if and only if they "
+                "are stored in memory";
     }
 
     if (buffer.name() != nullptr &&
         !buffer_names.insert(buffer.name()).second) {
-      return op.emitError()
+      return mlir::emitError(loc)
              << "operation cannot store two results in the same buffer";
     }
 
     if (buffer.layout() == nullptr) continue;
 
     if (buffer.layout().mapping().HasUnknownExprs()) {
-      return op.emitError() << "layouts cannot contain `?` expressions";
+      return mlir::emitError(loc) << "layouts cannot contain `?` expressions";
     }
 
     if (buffer.space() == sair_dialect->register_attr() &&
         !buffer.layout().mapping().empty()) {
-      return op.emitError() << "only 0D buffers can be stored in registers";
+      return mlir::emitError(loc)
+             << "only 0D buffers can be stored in registers";
     }
 
     for (mlir::StringAttr loop_name : buffer.layout().names()) {
       if (!loop_names.contains(loop_name)) {
-        return op.emitError() << "unknown loop name " << loop_name;
+        return mlir::emitError(loc) << "unknown loop name " << loop_name;
       }
     }
   }
@@ -1016,12 +999,6 @@ mlir::LogicalResult VerifyStorages(
     SairProgramOp program, const LoopFusionAnalysis &fusion_analysis,
     const IterationSpaceAnalysis &iteration_spaces,
     const SequenceAnalysis &sequence_analysis) {
-  // Check storage attributes are well-formed.
-  mlir::WalkResult result = program.walk([](ComputeOp op) -> mlir::WalkResult {
-    return VerifyStorageAttrWellFormed(op);
-  });
-  if (result.wasInterrupted()) return mlir::failure();
-
   // Ensure storage attributes are compatibles with each other.
   auto analysis_result = StorageAnalysis::Create(program);
   if (!analysis_result.has_value()) return mlir::failure();
@@ -1029,7 +1006,7 @@ mlir::LogicalResult VerifyStorages(
 
   // Ensure that operation updating a buffers in place use the same layout for
   // both inputs and outputs.
-  result = program.walk([&](ComputeOp op) -> mlir::WalkResult {
+  auto result = program.walk([&](ComputeOp op) -> mlir::WalkResult {
     for (mlir::Value result : op->getResults()) {
       const ValueStorage &result_storage = analysis.GetStorage(result);
       if (result_storage.buffer_name() == nullptr) continue;

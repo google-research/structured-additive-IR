@@ -53,6 +53,7 @@ bool SimplifyProjOp(ValueOperand &use, ProjOp op,
 
   ProjOp prev_op = op.value().template getDefiningOp<ProjOp>();
   if (prev_op == nullptr) return false;
+  if (prev_op.GetCopies(0).size() != 0) return false;
 
   llvm::SmallVector<mlir::Value, 4> projection_domain;
   projection_domain.reserve(op.projection_domain().size() +
@@ -78,7 +79,7 @@ bool SimplifyProjOp(ValueOperand &use, ProjOp op,
   rewriter.setInsertionPoint(op);
   ProjOp new_op = rewriter.create<ProjOp>(
       op.getLoc(), op.getType(), op.parallel_domain(), projection_domain,
-      mapping_array, prev_op.value(), shape);
+      mapping_array, prev_op.value(), shape, op.copiesAttr());
   use.set_value(new_op.result());
 
   return true;
@@ -132,13 +133,14 @@ class SimplifySairOperands : public RewritePattern {
 mlir::LogicalResult DeduplicateMapInputsOutputs(
     SairMapOp op, mlir::PatternRewriter &rewriter) {
   int domain_size = op.domain().size();
-  llvm::SmallVector<mlir::Value, 4> new_operands;
-  llvm::SmallVector<mlir::Attribute, 4> new_mappings;
+  llvm::SmallVector<mlir::Value> new_operands;
+  llvm::SmallVector<mlir::Attribute> new_mappings;
 
-  llvm::SmallVector<mlir::Value, 4> old_results_to_keep;
-  llvm::SmallVector<mlir::Value, 4> new_scalar_results;
-  llvm::SmallVector<mlir::Type, 4> new_result_types;
-  llvm::SmallVector<mlir::Attribute, 4> new_storages;
+  llvm::SmallVector<mlir::Value> old_results_to_keep;
+  llvm::SmallVector<mlir::Value> new_scalar_results;
+  llvm::SmallVector<mlir::Type> new_result_types;
+  llvm::SmallVector<mlir::Attribute> new_storages;
+  llvm::SmallVector<mlir::Attribute> new_copies;
 
   std::vector<int> block_args_to_erase;
   for (ValueOperand operand : op.ValueOperands()) {
@@ -187,14 +189,17 @@ mlir::LogicalResult DeduplicateMapInputsOutputs(
     }
 
     // Remove dead results.
-    if (result.use_empty()) continue;
+    if (result.use_empty() && op.GetCopies(i).empty()) continue;
 
+    // Add the result and corresponding attributes to the list of results to
+    // preserve.
     old_results_to_keep.push_back(result);
     new_scalar_results.push_back(scalar_value);
     new_result_types.push_back(result.getType());
     mlir::Attribute new_storage = op.Storage(i);
     new_storages.push_back(new_storage == nullptr ? rewriter.getUnitAttr()
                                                   : new_storage);
+    new_copies.push_back(rewriter.getArrayAttr(op.GetCopies(i)));
   }
 
   // Create the new operation if necessary.
@@ -213,10 +218,10 @@ mlir::LogicalResult DeduplicateMapInputsOutputs(
       DecisionsAttr::get(decisions.sequence(), decisions.loop_nest(),
                          rewriter.getArrayAttr(new_storages),
                          decisions.expansion(), op.getContext());
-  SairMapOp new_op =
-      rewriter.create<SairMapOp>(op.getLoc(), new_result_types, op.domain(),
-                                 rewriter.getArrayAttr(new_mappings),
-                                 new_operands, op.shape(), new_decisions);
+  SairMapOp new_op = rewriter.create<SairMapOp>(
+      op.getLoc(), new_result_types, op.domain(),
+      rewriter.getArrayAttr(new_mappings), new_operands, op.shape(),
+      new_decisions, rewriter.getArrayAttr(new_copies));
   new_op.body().takeBody(op.body());
 
   for (auto [old_res, new_res] :
@@ -254,7 +259,7 @@ class RemoveCyclicFby : public OpRewritePattern<SairFbyOp> {
 // `parallel_domain` and `other_domain`, respectively, that correspond to the
 // domain dimensions that are in use. Assume `other_domain` immediately follows
 // `parallel_domain` in a sequential dimension indexing scheme. Also set
-// `mapping` to be an mapping mapping original (combined) domain
+// `mapping` to be a mapping from original (combined) domain
 // dimensions to the new dimensions.
 void RemoveUnusedDomainDimensions(
     mlir::MLIRContext *context, const llvm::SmallBitVector &used_dimensions,
@@ -294,35 +299,25 @@ class RemoveUnreferencedDims : public OpRewritePattern<OpTy> {
     llvm::SmallBitVector used_dimensions(op.domain().size());
     used_dimensions |= op.Value().Mapping().DependencyMask();
     if (used_dimensions.all()) return mlir::failure();
+    if (op.HasCopies()) return mlir::failure();
 
     // Prepare op components with unused dimensions removed.
     MappingAttr mapping;
-    llvm::SmallVector<mlir::Value, 4> parallel_dimensions,
-        projection_dimensions;
+    llvm::SmallVector<mlir::Value> parallel_dimensions, projection_dimensions;
     RemoveUnusedDomainDimensions(op.getContext(), used_dimensions,
                                  op.parallel_domain(), op.projection_domain(),
                                  parallel_dimensions, projection_dimensions,
                                  mapping);
+    DomainShapeAttr new_shape = op.shape().AccessedShape(mapping);
+    SairOp new_op =
+        op.ReCreateWithNewDomain({parallel_dimensions, projection_dimensions},
+                                 new_shape, mapping.Inverse(), rewriter);
 
-    // The result type has the rank equal to that of the parallel domain. Trim
-    // the mapping accordingly.
+    // Replace the original op. The result type has the rank equal to that of
+    // the parallel domain. Trim the mapping accordingly.
     MappingAttr partial_mapping = mapping.Resize(parallel_dimensions.size());
-
-    // Recreate the op because we may be changing the result type. Mappings
-    // needs to be precomposed with the inverted mapping, i.e. the mapping from
-    // the old iteration space to the new iteration space is applied first.
-    auto new_op = rewriter.create<OpTy>(
-        op.getLoc(),
-        op.getType().template cast<ValueType>().AccessedType(partial_mapping),
-        parallel_dimensions, projection_dimensions,
-        rewriter.getArrayAttr(mapping.Inverse().Compose(op.Value().Mapping())),
-        op.value(), op.shape().AccessedShape(mapping));
-    new_op->setDialectAttrs(op->getDialectAttrs());
-
-    // Replace the original op.
-    UpdateValueUses(op, {new_op, partial_mapping});
+    UpdateValueUses(op, {new_op->getResult(0), partial_mapping});
     rewriter.eraseOp(op);
-
     return mlir::success();
   }
 };
@@ -341,32 +336,23 @@ class RemoveUnreferencedDims<SairFbyOp> : public OpRewritePattern<SairFbyOp> {
     used_dimensions |= op.Value().Mapping().DependencyMask();
     used_dimensions |= op.Init().Mapping().DependencyMask();
     if (used_dimensions.all()) return mlir::failure();
+    if (op.HasCopies()) return mlir::failure();
 
     // Prepare op components with unused dimensions removed.
     MappingAttr direct_mapping;
-    llvm::SmallVector<mlir::Value, 4> parallel_dimensions,
-        sequential_dimensions;
+    llvm::SmallVector<mlir::Value> parallel_dimensions, sequential_dimensions;
     RemoveUnusedDomainDimensions(op.getContext(), used_dimensions,
                                  op.parallel_domain(), op.sequential_domain(),
                                  parallel_dimensions, sequential_dimensions,
                                  direct_mapping);
 
-    MappingAttr inverted_mapping = direct_mapping.Inverse();
-
-    // Recreate the op because we may be changing the result type. Mappings
-    // needs to be precomposed with the inverted mapping, i.e. the mapping from
-    // the old iteration space to the new iteration space is applied first.
-    auto new_op = rewriter.create<SairFbyOp>(
-        op.getLoc(),
-        op.getType().cast<ValueType>().AccessedType(direct_mapping),
-        parallel_dimensions, sequential_dimensions,
-        rewriter.getArrayAttr({inverted_mapping.Compose(op.Init().Mapping()),
-                               inverted_mapping.Compose(op.Value().Mapping())}),
-        op.init(), op.value());
-    new_op->setDialectAttrs(op->getDialectAttrs());
+    DomainShapeAttr new_shape = op.shape().AccessedShape(direct_mapping);
+    SairOp new_op =
+        op.ReCreateWithNewDomain({parallel_dimensions, sequential_dimensions},
+                                 new_shape, direct_mapping.Inverse(), rewriter);
 
     // Replace the original op.
-    UpdateValueUses(op, {new_op, direct_mapping});
+    UpdateValueUses(op, {new_op->getResult(0), direct_mapping});
     rewriter.eraseOp(op);
     return mlir::success();
   }

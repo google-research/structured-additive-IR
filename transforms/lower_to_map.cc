@@ -44,11 +44,15 @@ class LowerToMap : public LowerToMapPassBase<LowerToMap> {
     mlir::MLIRContext *context = &getContext();
     mlir::OpBuilder builder(context);
 
-    getFunction().walk([&](ComputeOp op) -> mlir::WalkResult {
+    auto result = getFunction().walk([&](ComputeOp op) -> mlir::WalkResult {
       auto *sair_dialect = static_cast<SairDialect *>(op->getDialect());
       if (!op.expansion().hasValue()) {
-        signalPassFailure();
         return op.emitError() << "no target expansion pattern specified";
+      }
+      auto value_producer = dyn_cast<ValueProducerOp>(op.getOperation());
+      if (value_producer != nullptr && value_producer.HasCopies()) {
+        return op.emitError()
+               << "copies must be materialized before lowering operations";
       }
 
       auto sair_op = cast<SairOp>(op.getOperation());
@@ -71,7 +75,8 @@ class LowerToMap : public LowerToMapPassBase<LowerToMap> {
           builder.getStringAttr(kMapExpansionPattern), context);
       SairMapOp map_op = builder.create<SairMapOp>(
           op.getLoc(), op->getResultTypes(), sair_op.domain(),
-          map_body.sair_values(), sair_op.shape(), new_decisions);
+          map_body.sair_values(), sair_op.shape(), new_decisions,
+          /*copies=*/nullptr);
       map_op.body().takeBody(map_body.region());
       ForwardAttributes(op, map_op);
 
@@ -79,6 +84,9 @@ class LowerToMap : public LowerToMapPassBase<LowerToMap> {
       op->erase();
       return mlir::success();
     });
+    if (result.wasInterrupted()) {
+      signalPassFailure();
+    }
   }
 };
 

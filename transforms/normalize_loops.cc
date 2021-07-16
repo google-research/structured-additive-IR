@@ -102,7 +102,8 @@ void CreateRange(SairOp op, const LoopNest &loop_nest, int loop,
                                             /*domain=*/range_domain,
                                             /*inputs=*/map_body.sair_values(),
                                             /*shape=*/range_shape,
-                                            /*decisions=*/decisions);
+                                            /*decisions=*/decisions,
+                                            /*copies=*/nullptr);
     sequence_analysis.Insert(cast<ComputeOp>(map_op.getOperation()),
                              cast<SairOp>(insertion_point.operation),
                              Direction::kBefore);
@@ -280,7 +281,8 @@ void NormalizeLoops(SairOp op, const IterationSpace &iteration_space,
         op.getLoc(), old_value.getType(),
         llvm::makeArrayRef(proj_any_domain).take_front(op.results_rank()),
         llvm::makeArrayRef(proj_any_domain).drop_front(op.results_rank()),
-        builder.getArrayAttr({result_mapping}), new_value, proj_any_shape);
+        builder.getArrayAttr({result_mapping}), new_value, proj_any_shape,
+        /*copies=*/nullptr);
     // We can directly replace uses without updating mappings as the mapping is
     // already applied for the proj_any operation.
     old_value.replaceAllUsesWith(proj_any);
@@ -296,53 +298,63 @@ void NormalizeLoops(SairOp op, const IterationSpace &iteration_space,
 // single dimension.
 class NormalizeLoopsPass : public NormalizeLoopsPassBase<NormalizeLoopsPass> {
  public:
-  void runOnFunction() override {
-    mlir::OpBuilder builder(&getContext());
-    getFunction().walk([&](SairProgramOp program) {
-      LoopRangeCache loop_range_cache;
-      auto iteration_spaces = getChildAnalysis<IterationSpaceAnalysis>(program);
-      auto fusion_analysis = getChildAnalysis<LoopFusionAnalysis>(program);
-      auto sequence_analysis = getChildAnalysis<SequenceAnalysis>(program);
+  mlir::LogicalResult RunOpProgram(SairProgramOp program,
+                                   mlir::OpBuilder &builder) {
+    LoopRangeCache loop_range_cache;
+    auto iteration_spaces = getChildAnalysis<IterationSpaceAnalysis>(program);
+    auto fusion_analysis = getChildAnalysis<LoopFusionAnalysis>(program);
+    auto sequence_analysis = getChildAnalysis<SequenceAnalysis>(program);
 
-      llvm::SmallVector<SairOp> ops;
-      program.walk([&](SairOp op) {
-        // Do not normalize range and placeholder operations.
-        if (isa<RangeOp, SairPlaceholderOp>(op.getOperation())) return;
-        ops.push_back(op);
-      });
+    llvm::SmallVector<SairOp> ops;
+    program.walk([&](SairOp op) {
+      // Do not normalize range and placeholder operations.
+      if (isa<RangeOp, SairPlaceholderOp>(op.getOperation())) return;
+      ops.push_back(op);
+    });
 
-      for (SairOp op : ops) {
-        if (isa<SairFromMemRefOp, SairToMemRefOp>(*op)) {
-          op.emitError() << "sair.from_memref and sair.to_memref must be "
-                            "eliminated before loop normalization";
-          signalPassFailure();
-          return;
-        }
-
-        // Do not normalize range operations.
-        const IterationSpace &iteration_space = iteration_spaces.Get(op);
-        if (iteration_space.mapping() != iteration_space.MappingToLoops()) {
-          // This error should only occur if
-          // * memref introduction or canonicalization was not run beforehand or
-          // * some loop-nests are missing.
-          //
-          // Canonicalization will remove unused dimensions from non-compute
-          // operations while memref introduction will remove non-compute
-          // operations are not in the same iteration space than the producers
-          // of their operands
-          op.emitError() << "operation with an incomplete iteration space";
-          signalPassFailure();
-          return;
-        }
-
-        LoopNest loop_nest =
-            fusion_analysis.GetLoopNest(iteration_space.loop_names());
-        NormalizeLoops(op, iteration_space, loop_nest, fusion_analysis,
-                       sequence_analysis, builder, loop_range_cache);
+    for (SairOp op : ops) {
+      if (isa<SairFromMemRefOp, SairToMemRefOp>(*op)) {
+        return op.emitError() << "sair.from_memref and sair.to_memref must be "
+                                 "eliminated before loop normalization";
       }
 
-      sequence_analysis.AssignInferred();
-    });
+      auto value_producer = dyn_cast<ValueProducerOp>(op.getOperation());
+      if (value_producer != nullptr && value_producer.HasCopies()) {
+        return op.emitError()
+               << "copies must be materialized before normalizing loop nests";
+      }
+
+      // Do not normalize range operations.
+      const IterationSpace &iteration_space = iteration_spaces.Get(op);
+      if (iteration_space.mapping() != iteration_space.MappingToLoops()) {
+        // This error should only occur if
+        // * memref introduction or canonicalization was not run beforehand or
+        // * some loop-nests are missing.
+        //
+        // Canonicalization will remove unused dimensions from non-compute
+        // operations while memref introduction will remove non-compute
+        // operations are not in the same iteration space than the producers
+        // of their operands
+        return op.emitError() << "operation with an incomplete iteration space";
+      }
+
+      LoopNest loop_nest =
+          fusion_analysis.GetLoopNest(iteration_space.loop_names());
+      NormalizeLoops(op, iteration_space, loop_nest, fusion_analysis,
+                     sequence_analysis, builder, loop_range_cache);
+    }
+
+    sequence_analysis.AssignInferred();
+    return mlir::success();
+  }
+
+  void runOnFunction() override {
+    mlir::OpBuilder builder(&getContext());
+    auto result =
+        getFunction().walk([&](SairProgramOp program) -> mlir::WalkResult {
+          return RunOpProgram(program, builder);
+        });
+    if (result.wasInterrupted()) signalPassFailure();
   }
 };
 

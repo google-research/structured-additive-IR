@@ -2550,3 +2550,31 @@ func @invalid_expansion_pattern(%arg0: f32) {
   }
   return
 }
+
+// -----
+
+func @copies_arity(%arg0: f32) {
+  sair.program {
+    // expected-error @+1 {{the `copies` attribute must have one entry per operation result}}
+    %0 = sair.from_scalar %arg0 {
+      copies = []
+    } : !sair.value<(), f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @copies_invalid_loop_nest(%arg0: f32) {
+  sair.program {
+    // expected-error @+1 {{dimension 'd0' is out of range of the domain}}
+    %0 = sair.from_scalar %arg0 {
+      copies = [[{
+        loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
+      }]]
+    } : !sair.value<(), f32>
+    sair.exit
+  }
+  return
+}

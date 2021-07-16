@@ -171,3 +171,16 @@ func @placeholder() {
   }
   return
 }
+
+// -----
+
+func @copies(%arg0: f32) {
+  sair.program {
+    // expected-error @+1 {{copies must be materialized before introducing loops}}
+    sair.from_scalar %arg0 {
+      copies = [[{sequence = 0}]]
+    } : !sair.value<(), f32>
+    sair.exit
+  }
+  return
+}

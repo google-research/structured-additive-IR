@@ -31,6 +31,9 @@ constexpr llvm::StringRef kFreeExpansionPattern = "free";
 constexpr llvm::StringRef kLoadExpansionPattern = "load";
 constexpr llvm::StringRef kStoreExpansionPattern = "store";
 
+// Verifies expansion patterns apply to operations where they are specified.
+mlir::LogicalResult VerifyExpansionPatterns(SairProgramOp program);
+
 // An expansion pattern for a Sair compute operation.
 //
 // The pattern is defined by a unique name, a `Match` method that tests if
