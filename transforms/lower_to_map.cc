@@ -46,7 +46,8 @@ class LowerToMap : public LowerToMapPassBase<LowerToMap> {
 
     auto result = getFunction().walk([&](ComputeOp op) -> mlir::WalkResult {
       auto *sair_dialect = static_cast<SairDialect *>(op->getDialect());
-      if (!op.expansion().hasValue()) {
+      DecisionsAttr decisions = op.GetDecisions();
+      if (decisions.expansion() == nullptr) {
         return op.emitError() << "no target expansion pattern specified";
       }
       auto value_producer = dyn_cast<ValueProducerOp>(op.getOperation());
@@ -63,13 +64,12 @@ class LowerToMap : public LowerToMapPassBase<LowerToMap> {
       }
 
       const ExpansionPattern &pattern =
-          *sair_dialect->GetExpansionPattern(*op.expansion());
+          *sair_dialect->GetExpansionPattern(decisions.expansion().getValue());
       llvm::SmallVector<mlir::Value> results =
           pattern.Emit(op, map_body, builder);
       builder.create<SairReturnOp>(op.getLoc(), results);
 
       builder.setInsertionPoint(op);
-      DecisionsAttr decisions = op.GetDecisions();
       auto new_decisions = DecisionsAttr::get(
           decisions.sequence(), decisions.loop_nest(), decisions.storage(),
           builder.getStringAttr(kMapExpansionPattern), context);

@@ -304,6 +304,32 @@ void SetMapping(SairOp op, int position, ::sair::MappingAttr mapping) {
   op->setAttr(SairOp::kMappingAttrName, new_attr);
 }
 
+DecisionsAttr ComputeOpInstance::GetDecisions() {
+  if (auto compute_op = op_.dyn_cast<ComputeOp>()) {
+    return compute_op.GetDecisions();
+  }
+  auto value_producer = op_.get<ValueProducerOp>();
+  llvm::ArrayRef<mlir::Attribute> copies = value_producer.GetCopies(result_);
+  return copies[copy_].cast<DecisionsAttr>();
+}
+
+void ComputeOpInstance::SetDecisions(DecisionsAttr decisions) {
+  if (auto compute_op = op_.dyn_cast<ComputeOp>()) {
+    compute_op.SetDecisions(decisions);
+  } else {
+    op_.get<ValueProducerOp>().SetCopy(result_, copy_, decisions);
+  }
+}
+
+mlir::InFlightDiagnostic ComputeOpInstance::EmitError() {
+  if (auto compute_op = op_.dyn_cast<ComputeOp>()) {
+    return compute_op.emitError();
+  }
+  auto value_producer = op_.get<ValueProducerOp>();
+  return value_producer.emitError()
+         << "in copy " << copy_ << " of result " << result_ << ": ";
+}
+
 #include "sair_op_interfaces.cc.inc"
 
 }  // namespace sair

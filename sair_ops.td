@@ -762,6 +762,11 @@ def SairProgramOp : Op<SairDialect, "program", [RegionKindInterface]> {
     static mlir::RegionKind getRegionKind(unsigned index) {
       return mlir::RegionKind::Graph;
     }
+
+    // Walks other ComputeOp and copies of Sair values specified as attribute to
+    // operations.
+    mlir::WalkResult WalkComputeOpInstances(
+        llvm::function_ref<mlir::WalkResult(ComputeOpInstance)> walker);
   }];
 }
 

@@ -1563,6 +1563,31 @@ void SairProgramOp::build(mlir::OpBuilder &builder,
   result.addRegion()->push_back(new Block());
 }
 
+mlir::WalkResult SairProgramOp::WalkComputeOpInstances(
+    llvm::function_ref<mlir::WalkResult(ComputeOpInstance)> walker) {
+  for (mlir::Operation &operation : body().front()) {
+    auto compute_op = dyn_cast<ComputeOp>(&operation);
+    if (compute_op != nullptr) {
+      if (walker(ComputeOpInstance(compute_op)).wasInterrupted()) {
+        return mlir::WalkResult::interrupt();
+      }
+    }
+
+    auto value_producer = dyn_cast<ValueProducerOp>(&operation);
+    if (value_producer == nullptr) continue;
+    for (int i = 0, e = operation.getNumResults(); i < e; ++i) {
+      int num_copies = value_producer.GetCopies(i).size();
+      for (int j = 0; j < num_copies; ++j) {
+        if (walker(ComputeOpInstance(value_producer, i, j)).wasInterrupted()) {
+          return mlir::WalkResult::interrupt();
+        }
+      }
+    }
+  }
+
+  return mlir::WalkResult::advance();
+}
+
 // Builds a sair.exit operation with empty mappings. This is the
 // implementation of an MLIR generated class.
 void SairExitOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,

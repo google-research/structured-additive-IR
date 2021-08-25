@@ -506,24 +506,6 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
           $_op.getContext()));
       }]
     >,
-    InterfaceMethod<
-      "Returns the name of the expansion pattern for the operation.",
-      "::llvm::Optional<llvm::StringRef>", "expansion", (ins), [{}], [{
-        if (!$_op.decisions().hasValue()) return llvm::None;
-        if ($_op.decisions()->expansion() == nullptr) return llvm::None;
-        return $_op.decisions()->expansion().getValue();
-      }]
-    >,
-    InterfaceMethod<
-      "Sets the expansion attribute of the operation",
-      "void", "SetExpansion", (ins "llvm::StringRef":$expansion), [{}], [{
-        DecisionsAttr decisions = $_op.GetDecisions();
-        ::mlir::Builder builder($_op->getContext());
-        $_op.SetDecisions(DecisionsAttr::get(
-          decisions.sequence(), decisions.loop_nest(), decisions.storage(),
-          builder.getStringAttr(expansion), $_op.getContext()));
-      }]
-    >
   ];
 
   let verify = [{return sair::VerifyComputeOp(op);}];
@@ -561,6 +543,19 @@ def SairValueProducerOp : OpInterface<"ValueProducerOp"> {
         return llvm::any_of(all_copies.getValue(), [](mlir::Attribute attr) {
           return !attr.cast<mlir::ArrayAttr>().empty();
         });
+      }]>,
+    InterfaceMethod<
+      "Set decisions for the given copy of the given result.",
+      "void", "SetCopy",
+      (ins "int":$result, "int":$copy, "DecisionsAttr":$decisions), [{}], [{
+        auto all_copies = llvm::to_vector<4>($_op.copies().getValue());
+        auto result_copies_attr = all_copies[result].template cast<mlir::ArrayAttr>();
+        auto result_copies = llvm::to_vector<4>(result_copies_attr.getValue());
+
+        result_copies[copy] = decisions;
+        mlir::MLIRContext *context = $_op.getContext();
+        all_copies[result] = mlir::ArrayAttr::get(context, result_copies);
+        $_op.copiesAttr(mlir::ArrayAttr::get(context, all_copies));
       }]>
   ];
 

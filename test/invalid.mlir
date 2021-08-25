@@ -2578,3 +2578,16 @@ func @copies_invalid_loop_nest(%arg0: f32) {
   }
   return
 }
+
+// -----
+
+func @copies_invalid_expansion(%arg0: f32) {
+  sair.program {
+    // expected-error @+1 {{in copy 0 of result 0: expansion pattern does not apply to the operation}}
+    %0 = sair.from_scalar %arg0 {
+      copies = [[{expansion = "map"}]]
+    } : !sair.value<(), f32>
+    sair.exit
+  }
+  return
+}

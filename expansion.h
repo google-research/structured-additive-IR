@@ -49,7 +49,7 @@ class ExpansionPattern {
   virtual ~ExpansionPattern() = default;
 
   // Indicates if `op` can be implemented by the pattern.
-  virtual mlir::LogicalResult Match(ComputeOp op) const = 0;
+  virtual mlir::LogicalResult Match(ComputeOpInstance op) const = 0;
 
   // Emits the pattern in `map_body`. Returns non-sair values that should be
   // returned from the map body.
@@ -64,8 +64,9 @@ class TypedExpansionPattern : public ExpansionPattern {
  public:
   virtual mlir::LogicalResult Match(OpTy op) const = 0;
 
-  mlir::LogicalResult Match(ComputeOp op) const final {
-    auto cast_op = dyn_cast<OpTy>(*op);
+  mlir::LogicalResult Match(ComputeOpInstance op) const final {
+    if (op.is_copy()) return mlir::failure();
+    auto cast_op = dyn_cast<OpTy>(*op.AsComputeOp());
     if (cast_op == nullptr) return mlir::failure();
     return Match(cast_op);
   }

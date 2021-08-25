@@ -22,18 +22,20 @@ namespace sair {
 
 mlir::LogicalResult VerifyExpansionPatterns(SairProgramOp program) {
   auto *sair_dialect = static_cast<SairDialect *>(program->getDialect());
-  auto result = program.walk([&](ComputeOp op) -> mlir::WalkResult {
-    llvm::Optional<mlir::StringRef> pattern_name = op.expansion();
-    if (!pattern_name.hasValue()) return mlir::success();
-    const ExpansionPattern *pattern =
-        sair_dialect->GetExpansionPattern(pattern_name.getValue());
-    assert(pattern != nullptr);
-    if (mlir::failed(pattern->Match(op))) {
-      return op.emitError()
-             << "expansion pattern does not apply to the operation";
-    }
-    return mlir::success();
-  });
+  auto result = program.WalkComputeOpInstances(
+      [&](ComputeOpInstance op) -> mlir::WalkResult {
+        DecisionsAttr decisions = op.GetDecisions();
+        mlir::StringAttr pattern_name = decisions.expansion();
+        if (pattern_name == nullptr) return mlir::success();
+        const ExpansionPattern *pattern =
+            sair_dialect->GetExpansionPattern(pattern_name.getValue());
+        assert(pattern != nullptr);
+        if (mlir::failed(pattern->Match(op))) {
+          return op.EmitError()
+                 << "expansion pattern does not apply to the operation";
+        }
+        return mlir::success();
+      });
   return mlir::failure(result.wasInterrupted());
 }
 
@@ -76,22 +78,25 @@ llvm::SmallVector<mlir::Value> MapExpansionPattern::Emit(
 }
 
 // Expansion pattern that implements a sair.copy operation by a no-op.
-class CopyExpansionPattern : public TypedExpansionPattern<SairCopyOp> {
+class CopyExpansionPattern : public ExpansionPattern {
  public:
   constexpr static llvm::StringRef kName = kCopyExpansionPattern;
 
-  mlir::LogicalResult Match(SairCopyOp op) const override;
+  mlir::LogicalResult Match(ComputeOpInstance op) const override;
 
-  llvm::SmallVector<mlir::Value> Emit(SairCopyOp op, MapBodyBuilder &map_body,
+  llvm::SmallVector<mlir::Value> Emit(ComputeOp op, MapBodyBuilder &map_body,
                                       mlir::OpBuilder &builder) const override;
 };
 
-mlir::LogicalResult CopyExpansionPattern::Match(SairCopyOp op) const {
-  return mlir::success();
+mlir::LogicalResult CopyExpansionPattern::Match(ComputeOpInstance op) const {
+  if (op.is_copy()) return mlir::success();
+  ComputeOp compute_op = op.AsComputeOp();
+  return mlir::success(isa<SairCopyOp>(compute_op.getOperation()));
 }
 
 llvm::SmallVector<mlir::Value> CopyExpansionPattern::Emit(
-    SairCopyOp op, MapBodyBuilder &map_body, mlir::OpBuilder &builder) const {
+    ComputeOp op, MapBodyBuilder &map_body, mlir::OpBuilder &builder) const {
+  assert(isa<SairCopyOp>(op.getOperation()));
   return {map_body.block_input(0)};
 }
 
