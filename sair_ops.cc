@@ -668,7 +668,6 @@ static void PrintValueAccessList(const ValueOperandRange operands,
 
 // Prints the range operation.
 void Print(SairDynRangeOp op, OpAsmPrinter &printer) {
-  printer << SairDynRangeOp::getOperationName();
   PrintDomain(op.domain(), printer);
   printer << " ";
   if (op.LowerBound().is_value()) {
@@ -684,18 +683,16 @@ void Print(SairDynRangeOp op, OpAsmPrinter &printer) {
 
 // Prints the sair.static_range operation.
 void Print(SairStaticRangeOp op, OpAsmPrinter &printer) {
-  printer << SairStaticRangeOp::getOperationName() << " : " << op.getType();
+  printer << " : " << op.getType();
 }
 
 static void Print(SairPlaceholderOp op, mlir::OpAsmPrinter &printer) {
-  printer << SairPlaceholderOp::getOperationName();
   PrintDomain(op.domain(), printer);
   printer << " : " << op.range().getType();
 }
 
 // Prints the copy operation.
 void Print(SairCopyOp op, OpAsmPrinter &printer) {
-  printer << SairCopyOp::getOperationName();
   PrintDomain(op.domain(), printer);
   printer << " ";
   PrintValueAccess(op.Value(), printer);
@@ -705,14 +702,13 @@ void Print(SairCopyOp op, OpAsmPrinter &printer) {
 
 // Prints the sair.from_scalar operation.
 void Print(SairFromScalarOp op, OpAsmPrinter &printer) {
-  printer << SairFromScalarOp::getOperationName() << " " << op.value();
+  printer << " " << op.value();
   printer.printOptionalAttrDict(op->getAttrs());
   printer << " : " << op.getType();
 }
 
 // Prints the from_memref operation.
 void Print(SairFromMemRefOp op, OpAsmPrinter &printer) {
-  printer << SairFromMemRefOp::getOperationName();
   PrintDomain(op.parallel_domain(), printer);
   printer << " ";
   PrintValueAccess(op.MemRef(), printer);
@@ -728,7 +724,6 @@ void Print(SairFromMemRefOp op, OpAsmPrinter &printer) {
 
 // Prints the load_from_memref operation.
 void Print(SairLoadFromMemRefOp op, OpAsmPrinter &printer) {
-  printer << SairLoadFromMemRefOp::getOperationName();
   PrintDomain(op.domain(), printer);
   printer << " ";
   PrintValueAccess(op.MemRef(), printer);
@@ -738,7 +733,6 @@ void Print(SairLoadFromMemRefOp op, OpAsmPrinter &printer) {
 
 // Prints the to_memref operation.
 void Print(SairToMemRefOp op, OpAsmPrinter &printer) {
-  printer << SairToMemRefOp::getOperationName();
   PrintDomain(op.parallel_domain(), printer);
   printer << " ";
   PrintValueAccess(op.MemRef(), printer);
@@ -756,7 +750,6 @@ void Print(SairToMemRefOp op, OpAsmPrinter &printer) {
 
 // Prints the store_to_memref operation.
 void Print(SairStoreToMemRefOp op, OpAsmPrinter &printer) {
-  printer << SairStoreToMemRefOp::getOperationName();
   PrintDomain(op.domain(), printer);
   printer << " ";
   PrintValueAccess(op.MemRef(), printer);
@@ -770,7 +763,6 @@ void Print(SairStoreToMemRefOp op, OpAsmPrinter &printer) {
 // Prints a projection operation.
 template<typename Op>
 void PrintProjectionOp(Op op, OpAsmPrinter &printer) {
-  printer << Op::getOperationName();
   PrintDomain(op.parallel_domain(), printer);
   printer << " " << kOfKeyword;
   PrintDomain(op.projection_domain(), printer, op.parallel_domain().size());
@@ -792,7 +784,7 @@ void Print(SairProjLastOp op, OpAsmPrinter &printer) {
 
 // Prints the sair.return operation.
 void Print(SairReturnOp op, OpAsmPrinter &printer) {
-  printer << SairReturnOp::getOperationName() << " ";
+  printer << " ";
   printer.printOperands(op.operands());
   printer.printOptionalAttrDict(op->getAttrs());
   if (op.operands().empty()) return;
@@ -803,7 +795,7 @@ void Print(SairReturnOp op, OpAsmPrinter &printer) {
 
 // Prints the sair.exit operation.
 void Print(SairExitOp op, OpAsmPrinter &printer) {
-  printer << SairExitOp::getOperationName() << " ";
+  printer << " ";
   PrintValueAccessList(op.ValueOperands(), printer);
   printer.printOptionalAttrDict(op->getAttrs(), {SairOp::kMappingAttrName});
   if (op.inputs().empty()) return;
@@ -816,7 +808,6 @@ void Print(SairExitOp op, OpAsmPrinter &printer) {
 
 // Prints the sair.fby operation.
 void Print(SairFbyOp op, OpAsmPrinter &printer) {
-  printer << SairFbyOp::getOperationName();
   PrintDomain(op.parallel_domain(), printer);
   printer << " ";
   PrintValueAccess(op.Init(), printer);
@@ -835,7 +826,6 @@ void Print(SairFbyOp op, OpAsmPrinter &printer) {
 }
 
 static void Print(SairAllocOp op, mlir::OpAsmPrinter &printer) {
-  printer << SairAllocOp::getOperationName();
   PrintDomain(op.domain(), printer);
   if (!op.ValueOperands().empty()) printer << " ";
   llvm::interleaveComma(op.ValueOperands(), printer, [&](ValueOperand value) {
@@ -848,7 +838,6 @@ static void Print(SairAllocOp op, mlir::OpAsmPrinter &printer) {
 }
 
 static void Print(SairFreeOp op, mlir::OpAsmPrinter &printer) {
-  printer << SairFreeOp::getOperationName();
   PrintDomain(op.domain(), printer);
   printer << " ";
   PrintValueAccess(op.Value(), printer);
@@ -1185,7 +1174,6 @@ void ExtractElementTypes(mlir::ValueRange values,
 
 // Prints a Sair MapOp using the 'printer' provided.
 void Print(SairMapOp op, OpAsmPrinter &printer) {
-  printer << SairMapOp::getOperationName();
   PrintDomain(op.domain(), printer);
   printer << " ";
 
@@ -1416,7 +1404,6 @@ ParseResult ParseMapReduceOp(mlir::OpAsmParser &parser,
 // Prints a Sair MapReduce operation using the "printer" provided.
 void Print(SairMapReduceOp op, mlir::OpAsmPrinter &printer) {
   // Print the parallel part of the domain.
-  printer << SairMapReduceOp::getOperationName();
   PrintDomain(op.parallel_domain(), printer);
   printer << " ";
   int num_inits = op.inits().size();
@@ -1500,7 +1487,7 @@ mlir::ParseResult ParseProgramOp(mlir::OpAsmParser &parser,
 
 // Prints the given SairProgramOp using "printer".
 void Print(SairProgramOp op, mlir::OpAsmPrinter &printer) {
-  printer << SairProgramOp::getOperationName() << " ";
+  printer << " ";
   printer.printOptionalAttrDictWithKeyword(op->getAttrs());
   printer.printRegion(op.body(), /*printEntryBlockArgs=*/false,
                       /*printBlockTerminators=*/true);
