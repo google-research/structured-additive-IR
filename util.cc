@@ -158,15 +158,6 @@ void InsertionPoint::Set(mlir::OpBuilder &builder) const {
   }
 }
 
-void ForwardAttributes(mlir::Operation *old_op, mlir::Operation *new_op,
-                       llvm::ArrayRef<llvm::StringRef> ignore) {
-  for (auto [name, attr] : old_op->getAttrs()) {
-    if (new_op->hasAttr(name) || llvm::find(ignore, name) != ignore.end())
-      continue;
-    new_op->setAttr(name, attr);
-  }
-}
-
 mlir::Value Materialize(mlir::Location loc, mlir::OpFoldResult value,
                         mlir::OpBuilder &builder) {
   if (value.is<mlir::Value>()) return value.get<mlir::Value>();
@@ -190,6 +181,19 @@ llvm::SmallVector<RangeParameters> GetRangeParameters(
     range_parameters.push_back(param_builder.Get(expr));
   }
   return range_parameters;
+}
+
+std::function<mlir::ArrayAttr(mlir::ArrayAttr)> MkArrayAttrFilter(
+    llvm::SmallBitVector mask) {
+  return [mask](mlir::ArrayAttr array) {
+    if (array == nullptr) return array;
+    llvm::SmallVector<mlir::Attribute> output;
+    output.reserve(mask.count());
+    for (int i : mask.set_bits()) {
+      output.push_back(array[i]);
+    }
+    return mlir::ArrayAttr::get(array.getContext(), output);
+  };
 }
 
 //===----------------------------------------------------------------------===//

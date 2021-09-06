@@ -161,7 +161,7 @@ def SairCopyOp : SairOp<"copy", [
     Variadic<SairDimension>:$domain,
     SairMappingArrayAttr:$mapping_array,
     SairValue:$value,
-    OptionalAttr<SairDecisionsAttr>:$decisions,
+    OptionalAttr<SairInstancesAttr>:$instances,
     OptionalAttr<SairCopiesAttr>:$copies
   );
 
@@ -297,7 +297,7 @@ def SairLoadFromMemRefOp : SairOp<"load_from_memref", [
     SairMappingArrayAttr:$mapping_array,
     SairValueOf<AnyMemRef>:$memref,
     SairMappingAttr:$layout,
-    OptionalAttr<SairDecisionsAttr>:$decisions,
+    OptionalAttr<SairInstancesAttr>:$instances,
     OptionalAttr<SairCopiesAttr>:$copies
   );
 
@@ -409,7 +409,7 @@ def SairStoreToMemRefOp : SairOp<"store_to_memref", [
     SairValue:$value,
     SairMappingAttr:$layout,
     SairDomainShapeAttr:$shape,
-    OptionalAttr<SairDecisionsAttr>:$decisions,
+    OptionalAttr<SairInstancesAttr>:$instances,
     OptionalAttr<SairCopiesAttr>:$copies
   );
 
@@ -484,7 +484,7 @@ def SairMapOp : SairOp<"map", [
     SairMappingArrayAttr:$mapping_array,
     Variadic<SairValue>:$inputs,
     SairDomainShapeAttr:$shape,
-    OptionalAttr<SairDecisionsAttr>:$decisions,
+    OptionalAttr<SairInstancesAttr>:$instances,
     OptionalAttr<SairCopiesAttr>:$copies
   );
 
@@ -498,10 +498,10 @@ def SairMapOp : SairOp<"map", [
     OpBuilder<(ins "mlir::TypeRange":$result_types,
       "mlir::ValueRange":$domain, "mlir::ArrayAttr":$mappings_array,
       "mlir::ValueRange":$inputs, "DomainShapeAttr":$shape,
-      "DecisionsAttr":$decisions, "mlir::ArrayAttr":$copies)>,
+      "mlir::ArrayAttr":$instances, "mlir::ArrayAttr":$copies)>,
     OpBuilder<(ins "mlir::TypeRange":$result_types,
       "mlir::ValueRange":$domain, "mlir::ArrayRef<ValueAccess>":$inputs,
-      "DomainShapeAttr":$shape, "DecisionsAttr":$decisions,
+      "DomainShapeAttr":$shape, "mlir::ArrayAttr":$instances,
       "mlir::ArrayAttr":$copies)>
   ];
 
@@ -563,7 +563,7 @@ def SairMapReduceOp : SairOp<"map_reduce", [
     Variadic<SairValue>:$inits,
     Variadic<SairValue>:$inputs,
     SairDomainShapeAttr:$shape,
-    OptionalAttr<SairDecisionsAttr>:$decisions,
+    OptionalAttr<SairInstancesAttr>:$instances,
     OptionalAttr<SairCopiesAttr>:$copies
   );
 
@@ -857,7 +857,7 @@ def SairAllocOp : SairOp<"alloc", [
     Variadic<SairDimension>:$domain,
     SairMappingArrayAttr:$mapping_array,
     Variadic<SairValueOf<Index>>:$dynamic_sizes,
-    OptionalAttr<SairDecisionsAttr>:$decisions,
+    OptionalAttr<SairInstancesAttr>:$instances,
     OptionalAttr<SairCopiesAttr>:$copies
   );
 
@@ -894,7 +894,7 @@ def SairFreeOp : SairOp<"free", [
     Variadic<SairDimension>:$domain,
     SairMappingArrayAttr:$mapping_array,
     SairValueOf<AnyMemRef>:$value,
-    OptionalAttr<SairDecisionsAttr>:$decisions
+    OptionalAttr<SairInstancesAttr>:$instances
   );
 
   let parser = [{return ParseFreeOp(parser, result); }];

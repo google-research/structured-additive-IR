@@ -11,14 +11,14 @@ func @map(%arg0: index) {
     %1 = sair.dyn_range %0 : !sair.dyn_range
     %2 = sair.static_range : !sair.static_range<8>
     // CHECK: sair.map %[[V0]] attributes
-    // CHECK-SAME: {decisions = {loop_nest = []}} {
+    // CHECK-SAME: {instances = [{loop_nest = []}]} {
     sair.map[d0: %1, d1: %2] attributes {
-      decisions = {
+      instances = [{
         loop_nest = [
           {name = "A", iter = #sair.mapping_expr<d1>},
           {name = "B", iter = #sair.mapping_expr<d0>}
         ]
-      }
+      }]
     } {
       // CHECK: ^{{.*}}(%[[ARG1:.*]]: index):
       ^bb0(%arg1: index, %arg2: index):
@@ -49,9 +49,9 @@ func @proj_last(%arg0: f32) {
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // CHECK: %[[V0:.*]] = sair.map %{{.*}}
     %2 = sair.map[d0:%0] %1 attributes {
-      decisions = {
+      instances = [{
         loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
-      }
+      }]
     } {
       ^bb0(%arg1: index, %arg2: f32):
         sair.return %arg2: f32
@@ -76,10 +76,10 @@ func @fby(%arg0: f32) {
     %2 = sair.fby %1 then[d0:%0] %3(d0) : !sair.value<d0:static_range<8>, f32>
     // CHECK: %[[V1:.*]] = sair.map %[[V0]] attributes
     %3 = sair.map[d0: %0] %2(d0) attributes {
-      decisions = {
+      instances = [{
         loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
         storage = [{space = "register", layout = #sair.named_mapping<[] -> ()>}]
-      }
+      }]
     } {
     // CHECK: ^bb0(%[[V2:.*]]: f32):
       ^bb0(%arg1: index, %5: f32):
@@ -101,12 +101,12 @@ func @fuse(%arg0: f32) {
     %2 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // CHECK: sair.map %[[V0]] attributes
     %3 = sair.map[d0:%0, d1:%1] attributes {
-      decisions = {
+      instances = [{
         loop_nest = [
           {name = "A", iter = #sair.mapping_expr<d0>},
           {name = "B", iter = #sair.mapping_expr<d1>}
         ]
-      }
+      }]
     } {
     // CHECK: ^{{.*}}(%[[ARG0:.*]]: f32):
       ^bb0(%arg1: index, %arg2: index):
@@ -120,12 +120,12 @@ func @fuse(%arg0: f32) {
     } : #sair.shape<d0:static_range<4> x d1:static_range<8>>, () -> (f32)
     // CHECK-NOT: sair.map
     sair.map[d0:%1, d1:%0] %2, %3(d1, d0) attributes {
-      decisions = {
+      instances = [{
         loop_nest = [
           {name = "A", iter = #sair.mapping_expr<d1>},
           {name = "B", iter = #sair.mapping_expr<d0>}
         ]
-      }
+      }]
     } {
       ^bb0(%arg1:index, %arg2: index, %arg3: f32, %arg4: f32):
         // CHECK: call @foo(%[[I1]], %[[I0]])
@@ -169,13 +169,13 @@ func @fuse_reorder(%arg0: f32) {
     // CHECK:     }
     // CHECK:   }
     %3 = sair.map[d0:%0, d1:%1] %2 attributes {
-      decisions = {
+      instances = [{
         loop_nest = [
           {name = "A", iter = #sair.mapping_expr<d0>},
           {name = "C", iter = #sair.mapping_expr<d1>}
         ],
         sequence = 2
-      }
+      }]
     } {
     ^bb0(%arg1: index, %arg2: index, %arg3: f32):
       call @foo(%arg1, %arg2) : (index, index) -> ()
@@ -184,26 +184,26 @@ func @fuse_reorder(%arg0: f32) {
       sair.return %5 : f32
     } : #sair.shape<d0:static_range<8> x d1:static_range<16>>, (f32) -> (f32)
     %6 = sair.map[d0:%0, d1:%1] %2 attributes {
-      decisions = {
+      instances = [{
         loop_nest = [
           {name = "A", iter = #sair.mapping_expr<d0>},
           {name = "B", iter = #sair.mapping_expr<d1>}
         ],
         sequence = 1
-      }
+      }]
     } {
     ^bb0(%arg1: index, %arg2: index, %arg3: f32):
       %7 = call @bar(%arg3) : (f32) -> f32
       sair.return %7 : f32
     } : #sair.shape<d0:static_range<8> x d1:static_range<16>>, (f32) -> (f32)
     sair.map[d0:%0, d1:%1] attributes {
-      decisions = {
+      instances = [{
         loop_nest = [
           {name = "A", iter = #sair.mapping_expr<d0>},
           {name = "C", iter = #sair.mapping_expr<d1>}
         ],
         sequence = 3
-      }
+      }]
     } {
     ^bb0(%arg1: index, %arg2: index):
       %9 = index_cast %arg1 : index to i32
@@ -226,13 +226,13 @@ func @dependent_dims() {
       // CHECK: scf.for %[[V3:.*]] = %[[V0]] to %[[V1]] step %[[V2]] {
     %0 = sair.static_range : !sair.static_range<64, 8>
     %1, %2 = sair.map[d0:%0] attributes {
-      decisions = {
+      instances = [{
         loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
         storage = [
           {space = "register", layout = #sair.named_mapping<[] -> ()>},
           {space = "register", layout = #sair.named_mapping<[] -> ()>}
         ]
-      }
+      }]
     } {
       ^bb0(%arg0: index):
         // CHECK: %[[V4:.*]] = constant 8
@@ -245,12 +245,12 @@ func @dependent_dims() {
     %3 = sair.dyn_range[d0:%0] %1(d0), %2(d0) : !sair.dyn_range<d0:static_range<64, 8>>
         // CHECK: scf.for %[[V7:.*]] = %[[V3]] to %[[V5]] step %[[V6]] {
     sair.map[d0:%0, d1:%3] attributes {
-      decisions = {
+      instances = [{
         loop_nest = [
           {name = "A", iter = #sair.mapping_expr<d0>},
           {name = "B", iter = #sair.mapping_expr<d1>}
         ]
-      }
+      }]
     } {
       ^bb0(%arg0: index, %arg1: index):
           // CHECK: call @foo(%[[V3]], %[[V7]])
@@ -278,11 +278,11 @@ func @full_unroll() {
     // CHECK-NOT: scf.for
     // CHECK-COUNT-3: call @baz()
     sair.map[d0:%0] attributes {
-      decisions = {
+      instances = [{
         loop_nest = [
           {name = "A", iter = #sair.mapping_expr<d0>, unroll = 3}
         ]
-      }
+      }]
     } {
     ^bb0(%arg0: index):
       call @baz() : () -> ()
@@ -307,11 +307,11 @@ func @partial_unroll() {
     // CHECK-NOT: scf.for
     // CHECK: call @baz()
     sair.map[d0:%0] attributes {
-      decisions = {
+      instances = [{
         loop_nest = [
           {name = "A", iter = #sair.mapping_expr<d0>, unroll = 2}
         ]
-      }
+      }]
     } {
     ^bb0(%arg0: index):
       call @baz() : () -> ()
@@ -337,11 +337,11 @@ func @dyn_range_unroll(%sz: index) {
     // CHECK: call @baz()
     // CHECK: }
     sair.map[d0:%1] attributes {
-      decisions = {
+      instances = [{
         loop_nest = [
           {name = "A", iter = #sair.mapping_expr<d0>, unroll = 2}
         ]
-      }
+      }]
     } {
     ^bb0(%arg0: index):
       call @baz() : () -> ()
@@ -361,13 +361,13 @@ func @nested_unroll() {
     // CHECK-NOT: scf.for
     // CHECK-COUNT-8: call @baz()
     sair.map[d0:%0, d1:%0, d2:%0] attributes {
-      decisions = {
+      instances = [{
         loop_nest = [
           {name = "A", iter = #sair.mapping_expr<d0>, unroll = 2},
           {name = "B", iter = #sair.mapping_expr<d1>, unroll = 2},
           {name = "C", iter = #sair.mapping_expr<d2>, unroll = 2}
         ]
-      }
+      }]
     } {
     ^bb0(%arg0: index, %arg1: index, %arg2: index):
       call @baz() : () -> ()

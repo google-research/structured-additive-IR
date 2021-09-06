@@ -9,7 +9,7 @@ func @deduplicate_map_input(%arg0: f32) {
   sair.program {
     // CHECK: %[[V0:.*]] = sair.from_scalar
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    // CHECK: sair.map %[[V0]] attributes {copies = [], decisions = {storage = []}} {
+    // CHECK: sair.map %[[V0]] {
     sair.map %0, %0 {
       // CHECK: ^bb0(%[[V1:.*]]: f32):
       ^bb0(%arg1: f32, %arg2: f32):
@@ -131,9 +131,8 @@ func @remove_useless_dims_fby(%arg0: f32) {
     %3 = sair.copy[d0:%1, d1:%1] %0 : !sair.value<d0:dyn_range x d1:dyn_range, f32>
     // CHECK: %[[FBY:.*]] = sair.fby[d0:%[[R]], d1:%[[R]]] %{{.*}}(d1)
     // CHECK:                   then[d2:%[[R]]] %{{.*}}(d0, d2)
-    // CHECK:                   {test.foo = "bar"}
     // CHECK:                   !sair.value<d0:dyn_range x d1:dyn_range x d2:dyn_range, f32>
-    %4 = sair.fby[d0:%1, d1:%1, d2:%1] %2(d2) then[d3:%1, d4:%1] %3(d0, d4) {test.foo="bar"} : !sair.value<d0:dyn_range x d1:dyn_range x d2:dyn_range x d3:dyn_range x d4:dyn_range, f32>
+    %4 = sair.fby[d0:%1, d1:%1, d2:%1] %2(d2) then[d3:%1, d4:%1] %3(d0, d4) : !sair.value<d0:dyn_range x d1:dyn_range x d2:dyn_range x d3:dyn_range x d4:dyn_range, f32>
     // CHECK: sair.proj_last of[d0:%[[R]], d1:%[[R]], d2:%[[R]]] %[[FBY]](d2, d1, d0)
     %5 = sair.proj_last of[d0:%1, d1:%1, d2:%1, d3:%1, d4:%1] %4(d4, d3, d2, d1, d0)
       : #sair.shape<d0:dyn_range x d1:dyn_range x d2:dyn_range x d3:dyn_range x d4:dyn_range>, f32
@@ -218,17 +217,17 @@ func @sequence(%arg0 : f32, %arg1 : index) {
     %2 = sair.dyn_range %1 : !sair.dyn_range
     // CHECK: sair.copy
     // CHECK-SAME: sequence = 0
-    %3 = sair.copy[d0:%2] %1 {decisions = {sequence = -42}}
+    %3 = sair.copy[d0:%2] %1 {instances = [{sequence = -42}]}
       : !sair.value<d0:dyn_range, index>
     %4 = sair.dyn_range[d0:%2] %3(d0) : !sair.dyn_range<d0:dyn_range>
     // CHECK: sair.copy
     // CHECK-SAME: sequence = 1
-    %5 = sair.copy[d0:%2, d1:%4] %0 {decisions = {sequence = -1}}
+    %5 = sair.copy[d0:%2, d1:%4] %0 {instances = [{sequence = -1}]}
       : !sair.value<d0:dyn_range x d1:dyn_range(d0), f32>
     // CHECK: sair.map
     // CHECK-SAME: sequence = 2
     %6 = sair.map[d0:%2, d1:%4] %5(d0, d1) attributes {
-      decisions = {sequence = 10}
+      instances = [{sequence = 10}]
     } {
     ^bb0(%arg2: index, %arg3: index, %arg4: f32):
       sair.return %arg4 : f32

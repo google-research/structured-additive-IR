@@ -5,7 +5,7 @@ func @map() {
   sair.program {
     // CHECK: sair.map
     // CHECK-SAME: expansion = "map"
-    %0 = sair.map {
+    %0 = sair.map attributes {instances = [{}]} {
       ^bb0:
         %c0 = constant 1.0 : f32
         sair.return %c0 : f32

@@ -132,6 +132,8 @@ class SimplifySairOperands : public RewritePattern {
 // Remove duplicate inputs and duplicate outputs of sair.map operations.
 mlir::LogicalResult DeduplicateMapInputsOutputs(
     SairMapOp op, mlir::PatternRewriter &rewriter) {
+  if (op.HasCopies()) return mlir::failure();
+
   int domain_size = op.domain().size();
   llvm::SmallVector<mlir::Value> new_operands;
   llvm::SmallVector<mlir::Attribute> new_mappings;
@@ -139,8 +141,7 @@ mlir::LogicalResult DeduplicateMapInputsOutputs(
   llvm::SmallVector<mlir::Value> old_results_to_keep;
   llvm::SmallVector<mlir::Value> new_scalar_results;
   llvm::SmallVector<mlir::Type> new_result_types;
-  llvm::SmallVector<mlir::Attribute> new_storages;
-  llvm::SmallVector<mlir::Attribute> new_copies;
+  llvm::SmallBitVector remaining_outputs(op->getNumResults());
 
   std::vector<int> block_args_to_erase;
   for (ValueOperand operand : op.ValueOperands()) {
@@ -181,7 +182,15 @@ mlir::LogicalResult DeduplicateMapInputsOutputs(
     // Deduplicate results.
     for (int j = 0; j < i; ++j) {
       if (scalar_value != return_op.getOperand(j)) continue;
-      if (op.Storage(i) != op.Storage(j)) continue;
+      bool same_storage = true;
+      for (int k = 0, e = op.NumInstances(); k < e; ++k) {
+        if (op.GetDecisions(k).storage() != op.GetDecisions(j).storage()) {
+          same_storage = false;
+          break;
+        }
+      }
+      if (!same_storage) continue;
+
       // Don't deduplicate with dead results that will be removed.
       if (op.getResult(j).use_empty()) continue;
       result.replaceAllUsesWith(op.getResult(j));
@@ -196,10 +205,7 @@ mlir::LogicalResult DeduplicateMapInputsOutputs(
     old_results_to_keep.push_back(result);
     new_scalar_results.push_back(scalar_value);
     new_result_types.push_back(result.getType());
-    mlir::Attribute new_storage = op.Storage(i);
-    new_storages.push_back(new_storage == nullptr ? rewriter.getUnitAttr()
-                                                  : new_storage);
-    new_copies.push_back(rewriter.getArrayAttr(op.GetCopies(i)));
+    remaining_outputs.set(i);
   }
 
   // Create the new operation if necessary.
@@ -213,15 +219,14 @@ mlir::LogicalResult DeduplicateMapInputsOutputs(
   rewriter.eraseOp(return_op);
 
   rewriter.setInsertionPoint(op);
-  DecisionsAttr decisions = op.GetDecisions();
-  auto new_decisions =
-      DecisionsAttr::get(decisions.sequence(), decisions.loop_nest(),
-                         rewriter.getArrayAttr(new_storages),
-                         decisions.expansion(), op.getContext());
+  mlir::ArrayAttr new_instances = MkArrayAttrMapper<DecisionsAttr>(
+      MapStorage(MkArrayAttrFilter(remaining_outputs)))(op.instancesAttr());
+  mlir::ArrayAttr new_copies =
+      MkArrayAttrFilter(remaining_outputs)(op.copiesAttr());
   SairMapOp new_op = rewriter.create<SairMapOp>(
       op.getLoc(), new_result_types, op.domain(),
       rewriter.getArrayAttr(new_mappings), new_operands, op.shape(),
-      new_decisions, rewriter.getArrayAttr(new_copies));
+      new_instances, new_copies);
   new_op.body().takeBody(op.body());
 
   for (auto [old_res, new_res] :

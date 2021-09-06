@@ -46,6 +46,18 @@ namespace {
 #define GEN_PASS_CLASSES
 #include "transforms/default_lowering_attributes.h.inc"
 
+// Creates a blank instance for ComputeOp with no instances.
+class DefaultInstance : public DefaultInstancePassBase<DefaultInstance> {
+ public:
+  void runOnFunction() {
+    getFunction().walk([](ComputeOp op) {
+      if (op.NumInstances() > 0) return;
+      op.AddInstance(DecisionsAttr::get(nullptr, nullptr, nullptr, nullptr,
+                                        op.getContext()));
+    });
+  }
+};
+
 // Writes the storage information infered by the storage analysis pass to
 // Compute operations.
 mlir::LogicalResult CommitStorage(
@@ -53,6 +65,9 @@ mlir::LogicalResult CommitStorage(
     const StorageAnalysis &storage_analysis) {
   mlir::MLIRContext *context = op.getContext();
   const IterationSpace &iter_space = iteration_spaces.Get(op.getOperation());
+
+  // TODO(ulysse): handle cases with more than one instance.
+  if (op.NumInstances() == 0) return mlir::success();
 
   for (int i = 0, e = op->getNumResults(); i < e; ++i) {
     const ValueStorage &storage = storage_analysis.GetStorage(op->getResult(i));
@@ -254,6 +269,7 @@ class DefaultStorage : public DefaultStoragePassBase<DefaultStorage> {
 
  private:
   mlir::LogicalResult RunOnProgram(SairProgramOp program) {
+    // TODO: update
     auto &iteration_spaces = getChildAnalysis<IterationSpaceAnalysis>(program);
     auto &fusion_analysis = getChildAnalysis<LoopFusionAnalysis>(program);
     auto &storage_analysis = getChildAnalysis<StorageAnalysis>(program);
@@ -363,6 +379,8 @@ class DefaultLoopNest : public DefaultLoopNestPassBase<DefaultLoopNest> {
  public:
   void runOnFunction() override {
     getFunction().walk([&](ComputeOp op) {
+      // TODO(ulysse): handle cases with more than one instance
+      if (op.NumInstances() == 0) return;
       if (op.loop_nest().hasValue()) return;
       SairOp sair_op = cast<SairOp>(op.getOperation());
       SairProgramOp program_op = cast<SairProgramOp>(op->getParentOp());
@@ -387,6 +405,17 @@ class DefaultSequencePass
     : public DefaultSequencePassBase<DefaultSequencePass> {
  public:
   void runOnFunction() override {
+    // TODO(ulysse): support cases with more than one instance.
+    auto result = getFunction().walk([](SairOp op) -> mlir::WalkResult {
+      if (op.HasExactlyOneInstance()) return mlir::success();
+      return op.emitError() << "Sair operations must have a single instance to "
+                               "assign a default sequence";
+    });
+    if (result.wasInterrupted()) {
+      signalPassFailure();
+      return;
+    }
+
     getFunction().walk(
         [](SairProgramOp program_op) { UpdateSequence(program_op); });
   }
@@ -402,7 +431,7 @@ static mlir::LogicalResult SetDefaultExpansion(ComputeOpInstance op) {
   if (op.is_copy()) {
     pattern_name = kCopyExpansionPattern;
   } else {
-    mlir::Operation *operation = op.AsComputeOp().getOperation();
+    mlir::Operation *operation = op.GetComputeOp().getOperation();
     if (isa<SairMapReduceOp>(operation)) {
       return op.EmitError()
              << "map_reduce is not supported by sair-assign-default-expansion";
@@ -446,6 +475,10 @@ class DefaultExpansion : public DefaultExpansionPassBase<DefaultExpansion> {
 
 }  // namespace
 
+std::unique_ptr<mlir::Pass> CreateDefaultInstancePass() {
+  return std::make_unique<DefaultInstance>();
+}
+
 std::unique_ptr<mlir::Pass> CreateDefaultLoopNestPass() {
   return std::make_unique<DefaultLoopNest>();
 }
@@ -463,6 +496,7 @@ std::unique_ptr<mlir::Pass> CreateDefaultExpansionPass() {
 }
 
 void CreateDefaultLoweringAttributesPipeline(mlir::OpPassManager *pm) {
+  pm->addPass(CreateDefaultInstancePass());
   pm->addPass(CreateDefaultSequencePass());
   pm->addPass(CreateDefaultLoopNestPass());
   pm->addPass(CreateDefaultStoragePass());

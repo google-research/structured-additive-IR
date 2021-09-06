@@ -313,6 +313,8 @@ SequenceAnalysis::RangeType SequenceAnalysis::Ops() const {
 void SequenceAnalysis::AssignInferred() const {
   int64_t number = 0;
   for (ComputeOp op : Ops()) {
+    // TODO(ulysse): handle more than one instance
+    assert(op.NumInstances() == 1);
     op.SetSequence(number++);
   }
 }

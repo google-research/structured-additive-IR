@@ -41,11 +41,6 @@ struct InsertionPoint {
   void Set(mlir::OpBuilder &builder) const;
 };
 
-// Forwards attributes of old_op to new_op. Skips attributes already set in
-// `new_op`.
-void ForwardAttributes(mlir::Operation *old_op, mlir::Operation *new_op,
-                       llvm::ArrayRef<llvm::StringRef> ignore = {});
-
 // Materializes `value` as an mlir value.
 mlir::Value Materialize(mlir::Location loc, mlir::OpFoldResult value,
                         mlir::OpBuilder &builder);
@@ -102,6 +97,34 @@ struct RangeParameters {
   // Step of the range.
   int step;
 };
+
+// Returns a function that applies a function to each element of an array
+// attribute with elements of type T. Returns nullptr if the input is null.
+//
+// This returns a function rather that directly taking the array as argument in
+// order to make it easier to nest function combinators.
+template <typename T>
+std::function<mlir::ArrayAttr(mlir::ArrayAttr)> MkArrayAttrMapper(
+    std::function<T(T)> scalar_fn) {
+  return [scalar_fn](mlir::ArrayAttr array) {
+    if (array == nullptr) return array;
+    llvm::SmallVector<mlir::Attribute> output;
+    output.reserve(array.size());
+    for (mlir::Attribute attr : array.getValue()) {
+      output.push_back(scalar_fn(attr.cast<T>()));
+    }
+    return mlir::ArrayAttr::get(array.getContext(), output);
+  };
+}
+
+// Returns a function that filters out elements of an array attribute based on a
+// mask. Element `i` is kept if and only if `mask[i]` is true. Returns `nullptr`
+// if the input is null.
+//
+// This returns a function rather that directly taking the array as argument in
+// order to make it easier to nest function combinators.
+std::function<mlir::ArrayAttr(mlir::ArrayAttr)> MkArrayAttrFilter(
+    llvm::SmallBitVector mask);
 
 // Returns the parameters (start index, end index and step) of the ranges
 // obtained by applying mapping to `source_domain`. Populates `current_body`

@@ -29,6 +29,10 @@ namespace sair {
 // manager.
 void CreateDefaultLoweringAttributesPipeline(mlir::OpPassManager *pm);
 
+// Returns a pass that creates a blank instance for ComputeOp without any
+// instance.
+std::unique_ptr<mlir::Pass> CreateDefaultInstancePass();
+
 // Returns a pass that sets the `loop_nest` attribute of Sair operations to its
 // default value. Leaves the attribute untouched if already present.
 std::unique_ptr<mlir::Pass> CreateDefaultLoopNestPass();

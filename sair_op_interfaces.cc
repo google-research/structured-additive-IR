@@ -214,9 +214,9 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
   }
 
   if (!isa<ComputeOp>(sair_op.getOperation())) {
-    if (sair_op->hasAttr(ComputeOp::kDecisionsAttrName)) {
+    if (sair_op->hasAttr(ComputeOp::kInstancesAttrName)) {
       return op->emitError() << "only compute Sair ops can have the '"
-                             << ComputeOp::kDecisionsAttrName << "' attribute";
+                             << ComputeOp::kInstancesAttrName << "' attribute";
     }
   }
 
@@ -268,8 +268,26 @@ static mlir::LogicalResult VerifyDecisionsWellFormed(mlir::Location loc,
 mlir::LogicalResult VerifyComputeOp(mlir::Operation *operation) {
   auto op = llvm::cast<ComputeOp>(operation);
   auto sair_op = llvm::cast<SairOp>(operation);
-  return VerifyDecisionsWellFormed(op.getLoc(), sair_op.shape(),
-                                   op->getResultTypes(), op.GetDecisions());
+  // Ensure that the instances attribute has the right type. Otherwise, return
+  // success and let the op verifier raise an error. The op verifier will raise
+  // an error as the attribute type is specified in the op definition.
+  auto instances =
+      operation->getAttrOfType<mlir::ArrayAttr>(ComputeOp::kInstancesAttrName);
+  if (instances == nullptr) return mlir::success();
+  if (llvm::any_of(instances.getValue(), [](mlir::Attribute attr) {
+        return !attr.isa<DecisionsAttr>();
+      })) {
+    return mlir::success();
+  }
+
+  for (int i = 0, e = op.NumInstances(); i < e; ++i) {
+    if (mlir::failed(VerifyDecisionsWellFormed(op.getLoc(), sair_op.shape(),
+                                               op->getResultTypes(),
+                                               op.GetDecisions(i)))) {
+      return mlir::failure();
+    }
+  }
+  return mlir::success();
 }
 
 mlir::LogicalResult VerifyValueProducerOp(mlir::Operation *operation) {
@@ -304,30 +322,38 @@ void SetMapping(SairOp op, int position, ::sair::MappingAttr mapping) {
   op->setAttr(SairOp::kMappingAttrName, new_attr);
 }
 
+bool HasExactlyOneInstance(SairOp op) {
+  auto compute_op = dyn_cast<ComputeOp>(op.getOperation());
+  if (compute_op != nullptr && compute_op.NumInstances() != 1) return false;
+  auto value_producer = dyn_cast<ValueProducerOp>(op.getOperation());
+  if (value_producer != nullptr && value_producer.HasCopies()) return false;
+  return true;
+}
+
 DecisionsAttr ComputeOpInstance::GetDecisions() {
   if (auto compute_op = op_.dyn_cast<ComputeOp>()) {
-    return compute_op.GetDecisions();
+    return compute_op.GetDecisions(index_);
   }
   auto value_producer = op_.get<ValueProducerOp>();
   llvm::ArrayRef<mlir::Attribute> copies = value_producer.GetCopies(result_);
-  return copies[copy_].cast<DecisionsAttr>();
+  return copies[index_].cast<DecisionsAttr>();
 }
 
 void ComputeOpInstance::SetDecisions(DecisionsAttr decisions) {
   if (auto compute_op = op_.dyn_cast<ComputeOp>()) {
-    compute_op.SetDecisions(decisions);
+    compute_op.SetDecisions(index_, decisions);
   } else {
-    op_.get<ValueProducerOp>().SetCopy(result_, copy_, decisions);
+    op_.get<ValueProducerOp>().SetCopy(result_, index_, decisions);
   }
 }
 
 mlir::InFlightDiagnostic ComputeOpInstance::EmitError() {
   if (auto compute_op = op_.dyn_cast<ComputeOp>()) {
-    return compute_op.emitError();
+    return compute_op.emitError() << "in instance " << index_;
   }
   auto value_producer = op_.get<ValueProducerOp>();
   return value_producer.emitError()
-         << "in copy " << copy_ << " of result " << result_ << ": ";
+         << "in copy " << index_ << " of result " << result_ << ": ";
 }
 
 #include "sair_op_interfaces.cc.inc"

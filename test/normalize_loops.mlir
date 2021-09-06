@@ -18,7 +18,7 @@ func @identity(%arg0: index, %arg1: f32) {
       : !sair.value<d0:static_range<8> x d1:dyn_range, f32>
     // CHECK: %[[V3]] = sair.copy[d0:%[[D0]], d1:%[[D1]]]
     %5 = sair.copy[d0:%2, d1:%3] %4(d0, d1) {
-      decisions = {
+      instances = [{
         loop_nest = [
           // CHECK: iter = #sair.mapping_expr<d0>, name = "loopA"
           {name = "loopA", iter = #sair.mapping_expr<d0>},
@@ -26,7 +26,7 @@ func @identity(%arg0: index, %arg1: f32) {
           {name = "loopB", iter = #sair.mapping_expr<d1>}
         ],
         storage = [{space = "register", layout = #sair.named_mapping<[] -> ()>}]
-      }
+      }]
     } : !sair.value<d0:static_range<8> x d1:dyn_range, f32>
     // CHECK: %[[V4:.*]] = sair.proj_last of[d0:%[[D0]], d1:%[[D1]]] %[[V3]](d0, d1)
     %6 = sair.proj_last of[d0:%2, d1:%3] %5(d0, d1)
@@ -59,14 +59,14 @@ func @stripe() {
 
     // CHECK: %[[V7:.*]] = sair.map[d0:%[[D0]], d1:%[[D1]]]
     %1 = sair.map[d0: %0] attributes {
-      decisions = {
+      instances = [{
         loop_nest = [
           // CHECK: iter = #sair.mapping_expr<d0>, name = "loopA"
           {name = "loopA", iter = #sair.mapping_expr<stripe(d0, [4])>},
           // CHECK: iter = #sair.mapping_expr<d1>, name = "loopB"
           {name = "loopB", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
         ]
-      }
+      }]
     } {
       // CHECK: ^bb0(%[[ARG0:.*]]: index, %[[ARG1:.*]]: index):
       ^bb0(%arg0: index):
@@ -97,10 +97,10 @@ func @unstripe(%arg0: f32) {
     // CHECK: %[[V1:.*]] = sair.map_reduce %[[V0]] reduce[d0:%[[D0]]] attributes
     // CHECK: loop_nest = [{iter = #sair.mapping_expr<d0>, name = "loopA"}]
     %3 = sair.map_reduce %2 reduce[d0:%0, d1:%1] attributes {
-      decisions = {
+      instances = [{
         loop_nest = [{name = "loopA", iter = #sair.mapping_expr<unstripe(d0, d1, [4, 1])>}],
         storage = [{space = "register", layout = #sair.named_mapping<[] -> ()>}]
-      }
+      }]
     } {
       // CHECK: ^bb0(%[[V2:.*]]: index, %[[V3:.*]]: f32):
       ^bb0(%arg1: index, %arg2: index, %arg3: f32):
@@ -130,12 +130,12 @@ func @load_store_memref(%arg0: index) {
     // CHECK:   {iter = #sair.mapping_expr<d0>, name = "A"}
     // CHECK:   {iter = #sair.mapping_expr<d1>, name = "B"}
     %memref = sair.alloc[d0:%0] %size {
-      decisions = {
+      instances = [{
         loop_nest = [
           {name = "A", iter = #sair.mapping_expr<stripe(d0, [4])>},
           {name = "B", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
         ]
-      }
+      }]
     } : !sair.value<d0:static_range<4>, memref<?xf32>>
     // CHECK: sair.load_from_memref[d0:%[[D0]], d1:%[[D1]], d2:%[[D2]]] %{{.*}}(d0, d1)
     // CHECK: loop_nest = [
@@ -146,13 +146,13 @@ func @load_store_memref(%arg0: index) {
     // CHECK: memref<?xf32> -> !sair.value<d0:static_range<4, 4> x d1:dyn_range(d0) x d2:dyn_range, f32>
     %2 = sair.load_from_memref[d0:%0, d1:%1] %memref(d0) {
       layout = #sair.mapping<2 : d1>,
-      decisions = {
+      instances = [{
         loop_nest = [
           {name = "A", iter = #sair.mapping_expr<stripe(d0, [4])>},
           {name = "B", iter = #sair.mapping_expr<stripe(d0, [4, 1])>},
           {name = "C", iter = #sair.mapping_expr<d1>}
         ]
-      }
+      }]
     } : memref<?xf32> -> !sair.value<d0:static_range<4> x d1:dyn_range, f32>
     // CHECK: sair.store_to_memref[d0:%[[D0]], d1:%[[D1]], d2:%[[D2]]] %{{.*}}(d0, d1), %{{.*}}(d0, d1, d2)
     // CHECK: loop_nest = [
@@ -163,21 +163,21 @@ func @load_store_memref(%arg0: index) {
     // CHECK: #sair.shape<d0:static_range<4, 4> x d1:dyn_range(d0) x d2:dyn_range>
     sair.store_to_memref[d0:%0, d1:%1] %memref(d0), %2(d0, d1) {
       layout = #sair.mapping<2 : d1>,
-      decisions = {
+      instances = [{
         loop_nest = [
           {name = "A", iter = #sair.mapping_expr<stripe(d0, [4])>},
           {name = "B", iter = #sair.mapping_expr<stripe(d0, [4, 1])>},
           {name = "C", iter = #sair.mapping_expr<d1>}
         ]
-      }
+      }]
     } : #sair.shape<d0:static_range<4> x d1:dyn_range>, memref<?xf32>
     sair.free[d0:%0] %memref(d0) {
-      decisions = {
+      instances = [{
         loop_nest = [
           {name = "A", iter = #sair.mapping_expr<stripe(d0, [4])>},
           {name = "B", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
         ]
-      }
+      }]
     } : !sair.value<d0:static_range<4>, memref<?xf32>>
     sair.exit
   }
@@ -210,15 +210,15 @@ func @remat(%arg0: f32) {
     // GENERIC-SAME: mapping_array = [#sair.mapping<1>]
     // GENERIC-SAME: (!sair.static_range<8>, !sair.value<(), f32>) -> !sair.value<d0:static_range<8>, f32>
     %2 = sair.copy %0 {
-      decisions = {
+      instances = [{
         loop_nest = [{name = "A", iter = #sair.mapping_expr<none>}]
-      }
+      }]
     } : !sair.value<(), f32>
     // CHECK: sair.copy[d0:%[[RANGE]]] %[[VALUE]]
     %3 = sair.copy[d0:%1] %2 {
-      decisions = {
+      instances = [{
         loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
-      }
+      }]
     } : !sair.value<d0:static_range<8>, f32>
     %4 = sair.proj_last of[d0:%1] %3(d0) : #sair.shape<d0:static_range<8>>, f32
     sair.exit %4 : f32
@@ -254,13 +254,13 @@ func @sequence_attr(%arg0: f32) {
     // CHECK: sair.map[d0:%[[STATIC]], d1:%[[DYN]]]
     // CHECK-SAME: sequence = 1
     sair.map[d0:%1] %0 attributes {
-      decisions = {
+      instances = [{
         loop_nest = [
           {name = "B", iter = #sair.mapping_expr<stripe(d0, [4])>},
           {name = "C", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
         ],
         sequence = 1
-      }
+      }]
     } {
     ^bb0(%arg1: index, %arg2: f32):
       call @foo(%arg1, %arg2) : (index, f32) -> ()
@@ -271,10 +271,10 @@ func @sequence_attr(%arg0: f32) {
     // CHECK: sair.map[d0:%[[OTHER_STATIC]]]
     // CHECK-SAME: sequence = 3
     sair.map[d0:%1] %0 attributes {
-      decisions = {
+      instances = [{
         loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
         sequence = 3
-      }
+      }]
     } {
     ^bb0(%arg1: index, %arg2: f32):
       call @foo(%arg1, %arg2) : (index, f32) -> ()
@@ -284,13 +284,13 @@ func @sequence_attr(%arg0: f32) {
     // CHECK: sair.map[d0:%[[STATIC]], d1:%[[DYN]]]
     // CHECK-SAME: sequence = 2
     sair.map[d0:%1] %0 attributes {
-      decisions = {
+      instances = [{
         loop_nest = [
           {name = "B", iter = #sair.mapping_expr<stripe(d0, [4])>},
           {name = "C", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
         ],
         sequence = 2
-      }
+      }]
     } {
     ^bb0(%arg1: index, %arg2: f32):
       call @foo(%arg1, %arg2) : (index, f32) -> ()
@@ -313,13 +313,13 @@ func @sequence_attr_inversion(%arg0: f32) {
     // CHECK: sair.map[d0:%[[STATIC:.*]], d1:%[[DYN:.*]]] %{{.*}} attributes
     // CHECK-SAME: sequence = 2
     sair.map[d0:%1] %0 attributes {
-      decisions = {
+      instances = [{
         loop_nest = [
           {name = "B", iter = #sair.mapping_expr<stripe(d0, [4])>},
           {name = "C", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
         ],
         sequence = 2
-      }
+      }]
     } {
     ^bb0(%arg1: index, %arg2: f32):
       call @foo(%arg1, %arg2) : (index, f32) -> ()
@@ -330,10 +330,10 @@ func @sequence_attr_inversion(%arg0: f32) {
     // CHECK: sair.map[d0:%[[OTHER_STATIC]]]
     // CHECK-SAME: sequence = 3
     sair.map[d0:%1] %0 attributes {
-      decisions = {
+      instances = [{
         loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
         sequence = 3
-      }
+      }]
     } {
     ^bb0(%arg1: index, %arg2: f32):
       call @foo(%arg1, %arg2) : (index, f32) -> ()
@@ -356,13 +356,13 @@ func @sequence_attr_inversion(%arg0: f32) {
     // CHECK: sair.map[d0:%[[STATIC]], d1:%[[DYN]]]
     // CHECK-SAME: sequence = 1
     sair.map[d0:%1] %0 attributes {
-      decisions = {
+      instances = [{
         loop_nest = [
           {name = "B", iter = #sair.mapping_expr<stripe(d0, [4])>},
           {name = "C", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
         ],
         sequence = 1
-      }
+      }]
     } {
     ^bb0(%arg1: index, %arg2: f32):
       call @foo(%arg1, %arg2) : (index, f32) -> ()
@@ -383,7 +383,7 @@ func @unroll_preserved(%arg0: index, %arg1: f32) {
     %4 = sair.fby[d0:%2] %1 then[d1:%3] %5(d0, d1)
       : !sair.value<d0:static_range<8> x d1:dyn_range, f32>
     %5 = sair.copy[d0:%2, d1:%3] %4(d0, d1) {
-      decisions = {
+      instances = [{
         loop_nest = [
           // CHECK: name = "loopA"
           // CHECK-SAME: unroll = 42
@@ -393,7 +393,7 @@ func @unroll_preserved(%arg0: index, %arg1: f32) {
           {name = "loopB", iter = #sair.mapping_expr<d1>, unroll = 10}
         ],
         storage = [{space = "register", layout = #sair.named_mapping<[] -> ()>}]
-      }
+      }]
     } : !sair.value<d0:static_range<8> x d1:dyn_range, f32>
     %6 = sair.proj_last of[d0:%2, d1:%3] %5(d0, d1)
       : #sair.shape<d0:static_range<8> x d1:dyn_range>, f32
@@ -414,7 +414,7 @@ func @unroll_propagated() {
 
     // CHECK: sair.map[d0:%[[D0]], d1:%{{.*}}] attributes
     %1 = sair.map[d0: %0] attributes {
-      decisions = {
+      instances = [{
         loop_nest = [
           // CHECK: name = "loopA"
           // CHECK-SAME: unroll = 10
@@ -423,7 +423,7 @@ func @unroll_propagated() {
           // CHECK-NOT: unroll
           {name = "loopB", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
         ]
-      }
+      }]
     } {
       ^bb0(%arg0: index):
         sair.return %arg0 : index

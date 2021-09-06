@@ -5,9 +5,9 @@ func @must_lower_to_map() {
     %0 = sair.static_range : !sair.static_range<8>
     // expected-error @+1 {{operation must be lowered to sair.map}}
     sair.map_reduce reduce[d0: %0] attributes {
-      decisions = {
+      instances = [{
         loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
-      }
+      }]
     } {
       ^bb0(%arg0: index):
         sair.return
@@ -38,7 +38,7 @@ func @proj_any_must_be_eliminated() {
   sair.program {
     %0 = sair.static_range : !sair.static_range<8>
     %1 = sair.map[d0:%0] attributes {
-      decisions = {loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]}
+      instances = [{loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]}]
     } {
       ^bb0(%arg0: index):
         %2 = constant 1.0 : f32
@@ -58,12 +58,12 @@ func @strip_mined_loop() {
     %0 = sair.static_range : !sair.static_range<8>
     // expected-error @+1 {{loop must not rematerialize or be strip-mined}}
     sair.map[d0:%0] attributes {
-      decisions = {
+      instances = [{
         loop_nest = [
           {name = "A", iter = #sair.mapping_expr<stripe(d0, [4])>},
           {name = "B", iter = #sair.mapping_expr<stripe(d0, [4, 1])>}
         ]
-      }
+      }]
     } {
       ^bb0(%arg0: index):
         sair.return
@@ -80,9 +80,9 @@ func @unable_to_create_default_value() {
     %1 = sair.static_range : !sair.static_range<8>
     // expected-error @+1 {{unable to create a default value of type 'memref<f32>'}}
     %2 = sair.map[d0:%1] attributes {
-      decisions = {
+      instances = [{
         loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]
-      }
+      }]
     } {
       ^bbo(%arg0: index):
         %3 = memref.alloc() : memref<f32>
@@ -102,10 +102,10 @@ func @proj_of_fby(%arg0: f32) {
     %1 = sair.static_range : !sair.static_range<8>
     %2 = sair.fby %0 then[d0:%1] %3(d0) : !sair.value<d0:static_range<8>, f32>
     %3 = sair.map[d0:%1] %2(d0) attributes {
-      decisions = {
+      instances = [{
         loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
         storage = [{space = "register", layout = #sair.named_mapping<[] -> ()>}]
-      }
+      }]
     } {
       ^bb0(%arg1: index, %arg2: f32):
         sair.return %arg2 : f32
@@ -125,7 +125,7 @@ func @size_not_in_register(%arg0: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
     %1 = sair.map %0 attributes {
-      decisions = {loop_nest = []}
+      instances = [{loop_nest = []}]
     } {
       ^bb0(%arg1: index):
         sair.return %arg1 : index
@@ -133,7 +133,7 @@ func @size_not_in_register(%arg0: index) {
     // expected-error @+1 {{range bounds must be stored in registers}}
     %2 = sair.dyn_range %1 : !sair.dyn_range
     sair.map[d0:%2] attributes {
-      decisions = {loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]}
+      instances = [{loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]}]
     } {
       ^bb0(%arg1: index):
         call @foo() : () -> ()
@@ -152,17 +152,17 @@ func @placeholder() {
     // expected-error @+1 {{placeholders must be replaced by actual dimensions before introducing loops}}
     %1 = sair.placeholder : !sair.static_range<8>
     sair.map[d0:%1] attributes {
-      decisions = {
+      instances = [{
         loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
-      }
+      }]
     } {
       ^bb0(%arg1: index):
         sair.return
     } : #sair.shape<d0:static_range<8>>, () -> ()
     sair.map[d0:%0] attributes {
-      decisions = {
+      instances = [{
         loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}]
-      }
+      }]
     } {
       ^bb0(%arg1: index):
         sair.return
@@ -176,7 +176,7 @@ func @placeholder() {
 
 func @copies(%arg0: f32) {
   sair.program {
-    // expected-error @+1 {{copies must be materialized before introducing loops}}
+    // expected-error @+1 {{operations must have exactly one instance when introducing loops}}
     sair.from_scalar %arg0 {
       copies = [[{sequence = 0}]]
     } : !sair.value<(), f32>

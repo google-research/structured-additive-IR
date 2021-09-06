@@ -215,11 +215,13 @@ def SairDecisionsAttr : SairStructAttr<"DecisionsAttr", [
   StructFieldAttr<"expansion", OptionalAttr<StrAttr>>
 ]>;
 
-// An attribute that species copies of the result of an operation.
+// An attribute that specifies instances of an operation.
+def SairInstancesAttr
+  : TypedArrayAttrBase<SairDecisionsAttr, "array of Sair decisions">;
+
+// An attribute that specifies copies of the result of an operation.
 def SairCopiesAttr
-  : TypedArrayAttrBase<
-      TypedArrayAttrBase<SairDecisionsAttr, "array of Sair decisions">,
-      "array of array of Sair decisions">;
+  : TypedArrayAttrBase<SairInstancesAttr, "array of array of Sair decisions">;
 
 //===----------------------------------------------------------------------===//
 // Sair Types
@@ -352,8 +354,7 @@ def SairOpInterface : OpInterface<"SairOp"> {
         dependencies accross iterations for the given !sair.value operand}],
       "llvm::SmallBitVector", "CarryingDimensions",
       (ins "int":$sair_operand), [{}], [{
-        int size = cast<ConcreteOp>(this->getOperation()).domain().size();
-        return llvm::SmallBitVector(size);
+        return llvm::SmallBitVector($_op.domain().size());
       }]
     >,
     InterfaceMethod<
@@ -370,7 +371,12 @@ def SairOpInterface : OpInterface<"SairOp"> {
       [{Indicates the size of each sub-domain. The first sub-domain is always
         the parallel domain}],
       "llvm::SmallVector<int, 2>", "SubDomains", (ins), [{}]
-    >
+    >,
+    InterfaceMethod<
+      [{Indicates if the operation has exactly one instance and no copy.}],
+      "bool", "HasExactlyOneInstance", (ins), [{}], [{
+        return sair::HasExactlyOneInstance(this->getOperation());
+      }]>
   ];
 
   let verify = [{return VerifySairOp(op);}];
@@ -410,34 +416,59 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
 
   let methods = [
     InterfaceMethod<
-      "Returns lowering decisions for the operation",
-      "DecisionsAttr", "GetDecisions", (ins), [{}], [{
-        if (!$_op.decisions().hasValue()) {
-          return DecisionsAttr::get(
-            nullptr, nullptr, nullptr, nullptr, $_op.getContext());
-        }
-        return *$_op.decisions();
+      "Returns the number of instances of the operation",
+      "int", "NumInstances", (ins), [{}], [{
+        llvm::Optional<mlir::ArrayAttr> instances = $_op.instances();
+        if (!instances.hasValue()) return 0;
+        return instances.getValue().size();
+      }]>,
+    InterfaceMethod<
+      "Returns lowering decisions for the given operation instance",
+      "DecisionsAttr", "GetDecisions", (ins "int":$instance), [{}], [{
+        mlir::ArrayAttr instances = $_op.instances().getValue();
+        return instances.getValue()[instance].cast<DecisionsAttr>();
       }]
     >,
     InterfaceMethod<
       "Sets lowering decisions for the operation",
-      "void", "SetDecisions", (ins "DecisionsAttr":$value), [{}], [{
-        $_op.decisionsAttr(value);
+      "void", "SetDecisions", (ins "int":$instance, "DecisionsAttr":$value),
+      [{}], [{
+        auto instances = llvm::to_vector<4>(
+          $_op.instances().getValue().getValue());
+        instances[instance] = value;
+        $_op.instancesAttr(mlir::ArrayAttr::get($_op.getContext(), instances));
       }]
     >,
     InterfaceMethod<
+      "Appends an instance to the list of instances",
+      "void", "AddInstance", (ins "DecisionsAttr":$value),
+      [{}], [{
+        llvm::SmallVector<mlir::Attribute> instances;
+        if ($_op.instances().hasValue()) {
+          instances = llvm::to_vector<4>(
+            $_op.instances().getValue().getValue());
+        }
+        instances.push_back(value);
+        $_op.instancesAttr(mlir::ArrayAttr::get($_op.getContext(), instances));
+      }]
+    >,
+
+    // TODO(ulysse): Legacy interface that returns decisions for the first
+    // instance. This will be removed.
+    InterfaceMethod<
       "Returns the loop nest to generate when lowering the operation",
       "llvm::Optional<mlir::ArrayAttr>", "loop_nest", (ins), [{}], [{
-        if (!$_op.decisions().hasValue()) return llvm::None;
-        if ($_op.decisions()->loop_nest() == nullptr) return llvm::None;
-        return $_op.decisions()->loop_nest();
+        if ($_op.NumInstances() < 1) return llvm::None;
+        DecisionsAttr decisions = $_op.GetDecisions(0);
+        if (decisions.loop_nest() == nullptr) return llvm::None;
+        return decisions.loop_nest();
       }]
     >,
     InterfaceMethod<
       "Sets the loop nest to generate when lowering the operation",
       "void", "setLoopNest", (ins "mlir::ArrayAttr":$loop_nest), [{
-        DecisionsAttr decisions = $_op.GetDecisions();
-        $_op.SetDecisions(DecisionsAttr::get(
+        DecisionsAttr decisions = $_op.GetDecisions(0);
+        $_op.SetDecisions(0, DecisionsAttr::get(
           decisions.sequence(), loop_nest, decisions.storage(),
           decisions.expansion(), $_op.getContext()));
       }]
@@ -455,9 +486,10 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
     InterfaceMethod<
       "Returns the storage of the values produced by the operation",
       "Optional<mlir::ArrayAttr>", "storage", (ins), [{}], [{
-        if (!$_op.decisions().hasValue()) return llvm::None;
-        if ($_op.decisions()->storage() == nullptr) return llvm::None;
-        return $_op.decisions()->storage();
+        if ($_op.NumInstances() < 1) return llvm::None;
+        DecisionsAttr decisions = $_op.GetDecisions(0);
+        if (decisions.storage() == nullptr) return llvm::None;
+        return decisions.storage();
       }]
     >,
     InterfaceMethod<
@@ -472,7 +504,7 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
     InterfaceMethod<
       "Sets the storage of the values produced by the operation",
       "void", "SetStorage", (ins "int":$result, "BufferAttr":$buffer), [{}], [{
-        DecisionsAttr decisions = $_op.GetDecisions();
+        DecisionsAttr decisions = $_op.GetDecisions(0);
         llvm::SmallVector<mlir::Attribute> values;
         int num_results = $_op->getNumResults();
         if (decisions.storage() == nullptr) {
@@ -482,7 +514,7 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
         }
         values[result] = buffer;
         auto new_storage = mlir::ArrayAttr::get($_op.getContext(), values);
-        $_op.SetDecisions(DecisionsAttr::get(
+        $_op.SetDecisions(0, DecisionsAttr::get(
           decisions.sequence(), decisions.loop_nest(), new_storage,
           decisions.expansion(), $_op.getContext()));
       }]
@@ -490,17 +522,18 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
     InterfaceMethod<
       "Returns the sequence number of this operation as signed integer.",
       "::llvm::Optional<int64_t>", "Sequence", (ins), [{}], [{
-        if (!$_op.decisions().hasValue()) return llvm::None;
-        if ($_op.decisions()->sequence() == nullptr) return llvm::None;
-        return $_op.decisions()->sequence().getInt();
+        if ($_op.NumInstances() < 1) return llvm::None;
+        DecisionsAttr decisions = $_op.GetDecisions(0);
+        if (decisions.sequence() == nullptr) return ::llvm::None;
+        return decisions.sequence().getInt();
       }]
     >,
     InterfaceMethod<
       "Sets the sequence number of the operation to the given value.",
       "void", "SetSequence", (ins "int64_t":$seq), [{}], [{
         ::mlir::Builder builder($_op->getContext());
-        DecisionsAttr decisions = GetDecisions();
-        $_op.SetDecisions(DecisionsAttr::get(
+        DecisionsAttr decisions = GetDecisions(0);
+        $_op.SetDecisions(0, DecisionsAttr::get(
           builder.getI64IntegerAttr(seq), decisions.loop_nest(),
           decisions.storage(), decisions.expansion(),
           $_op.getContext()));
@@ -511,7 +544,7 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
   let verify = [{return sair::VerifyComputeOp(op);}];
 
   let extraClassDeclaration = [{
-    static constexpr llvm::StringRef kDecisionsAttrName = "decisions";
+    static constexpr llvm::StringRef kInstancesAttrName = "instances";
   }];
 }
 

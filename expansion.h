@@ -66,7 +66,7 @@ class TypedExpansionPattern : public ExpansionPattern {
 
   mlir::LogicalResult Match(ComputeOpInstance op) const final {
     if (op.is_copy()) return mlir::failure();
-    auto cast_op = dyn_cast<OpTy>(*op.AsComputeOp());
+    auto cast_op = dyn_cast<OpTy>(*op.GetComputeOp());
     if (cast_op == nullptr) return mlir::failure();
     return Match(cast_op);
   }

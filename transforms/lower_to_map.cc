@@ -46,17 +46,17 @@ class LowerToMap : public LowerToMapPassBase<LowerToMap> {
 
     auto result = getFunction().walk([&](ComputeOp op) -> mlir::WalkResult {
       auto *sair_dialect = static_cast<SairDialect *>(op->getDialect());
-      DecisionsAttr decisions = op.GetDecisions();
+      auto sair_op = cast<SairOp>(op.getOperation());
+      if (!sair_op.HasExactlyOneInstance()) {
+        return op.emitError()
+               << "operations must have exactly one instance during expansion";
+      }
+
+      DecisionsAttr decisions = op.GetDecisions(0);
       if (decisions.expansion() == nullptr) {
         return op.emitError() << "no target expansion pattern specified";
       }
-      auto value_producer = dyn_cast<ValueProducerOp>(op.getOperation());
-      if (value_producer != nullptr && value_producer.HasCopies()) {
-        return op.emitError()
-               << "copies must be materialized before lowering operations";
-      }
 
-      auto sair_op = cast<SairOp>(op.getOperation());
       MapBodyBuilder map_body(sair_op.domain().size(), op->getContext());
       builder.setInsertionPointToStart(&map_body.block());
       for (ValueOperand operand : sair_op.ValueOperands()) {
@@ -75,10 +75,10 @@ class LowerToMap : public LowerToMapPassBase<LowerToMap> {
           builder.getStringAttr(kMapExpansionPattern), context);
       SairMapOp map_op = builder.create<SairMapOp>(
           op.getLoc(), op->getResultTypes(), sair_op.domain(),
-          map_body.sair_values(), sair_op.shape(), new_decisions,
+          map_body.sair_values(), sair_op.shape(),
+          /*instances=*/builder.getArrayAttr({new_decisions}),
           /*copies=*/nullptr);
       map_op.body().takeBody(map_body.region());
-      ForwardAttributes(op, map_op);
 
       op->replaceAllUsesWith(map_op);
       op->erase();

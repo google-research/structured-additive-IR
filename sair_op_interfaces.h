@@ -179,6 +179,9 @@ class SairOp;
 // Sets the mapping at the given position.
 void SetMapping(SairOp op, int position, ::sair::MappingAttr mapping);
 
+// Indicates if the Sair operation has exactly one instance and no copy.
+bool HasExactlyOneInstance(SairOp op);
+
 using namespace mlir;  // NOLINT
 #include "sair_op_interfaces.h.inc"
 
@@ -187,17 +190,19 @@ using namespace mlir;  // NOLINT
 class ComputeOpInstance {
  public:
   // Creates an operation instance that points to a ComputeOp.
-  ComputeOpInstance(ComputeOp op) : op_(op) {}
+  ComputeOpInstance(ComputeOp op, int index) : op_(op), index_(index) {}
   // Creates an operation instance that points to a value copy.
-  ComputeOpInstance(ValueProducerOp op, int result, int copy)
-      : op_(op), result_(result), copy_(copy) {}
+  ComputeOpInstance(ValueProducerOp op, int result, int index)
+      : op_(op), result_(result), index_(index) {}
 
   // Indicates if the instance is the copy of a value.
   bool is_copy() { return op_.is<ValueProducerOp>(); }
+  // Indicates if the instance is a duplicate of compute op.
+  bool is_duplicate() { return op_.is<ComputeOp>(); }
 
   // Returns the ComputeOp pointed to by the instance. Fails if the instance is
   // a copy.
-  ComputeOp AsComputeOp() { return op_.get<ComputeOp>(); }
+  ComputeOp GetComputeOp() { return op_.get<ComputeOp>(); }
 
   // Returns lowering decisions for the operation instance.
   DecisionsAttr GetDecisions();
@@ -217,7 +222,7 @@ class ComputeOpInstance {
   // is both a ComputeOp and a ValueProducerOp.
   llvm::PointerUnion<ComputeOp, ValueProducerOp> op_;
   int result_;
-  int copy_;
+  int index_;
 };
 
 }  // namespace sair

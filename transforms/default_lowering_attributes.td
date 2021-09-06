@@ -14,6 +14,11 @@
 
 include "mlir/Pass/PassBase.td"
 
+def DefaultInstancePass : FunctionPass<"sair-create-default-instance"> {
+  let summary = "Creates a blank instance for ComputeOp without instances";
+  let constructor = [{ ::sair::CreateDefaultInstancePass(); }];
+}
+
 def DefaultLoopNestPass : FunctionPass<"sair-assign-default-loop-nest"> {
   let summary = "Assigns the default loop nest to Sair operations";
   let constructor = [{ ::sair::CreateDefaultLoopNestPass(); }];

@@ -267,10 +267,9 @@ mlir::LogicalResult RegisterOperations(
       return operation.emitError() << "sair.proj_any operations must be "
                                       "eliminated before introducing loops";
     }
-    auto value_producer = dyn_cast<ValueProducerOp>(&operation);
-    if (value_producer != nullptr && value_producer.HasCopies()) {
-      return operation.emitError()
-             << "copies must be materialized before introducing loops";
+    if (!SairOp(&operation).HasExactlyOneInstance()) {
+      return operation.emitError() << "operations must have exactly one "
+                                      "instance when introducing loops";
     }
     // Compute ops have been added above.
     if (isa<ComputeOp>(operation)) continue;
@@ -567,7 +566,7 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
   driver.setInsertionPoint(op);
   mlir::ArrayAttr new_loop_nest = EraseDimensionFromLoopNest(
       loop_nest.drop_back(), dimension, driver.getContext());
-  DecisionsAttr decisions = op.GetDecisions();
+  DecisionsAttr decisions = op.GetDecisions(0);
   auto new_decisions = DecisionsAttr::get(
       /*sequence=*/decisions.sequence(),
       /*loop_nest=*/new_loop_nest,
@@ -580,7 +579,7 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
       /*mappings_array=*/driver.getArrayAttr(mappings),
       /*inputs=*/inputs,
       /*shape=*/EraseDimension(op.shape(), dimension),
-      /*decisions=*/new_decisions,
+      /*instances=*/driver.getArrayAttr({new_decisions}),
       /*copies=*/nullptr);
   new_op.body().takeBody(op.body());
 
@@ -736,7 +735,7 @@ void Fuse(SairMapOp first_op, SairMapOp second_op, Driver &driver) {
 
   // Create the operation.
   driver.setInsertionPoint(second_op);
-  DecisionsAttr first_decisions = first_op.GetDecisions();
+  DecisionsAttr first_decisions = first_op.GetDecisions(0);
   auto new_decisions = DecisionsAttr::get(
       /*sequence=*/first_decisions.sequence(),
       /*loop_nest=*/first_decisions.loop_nest(),
@@ -749,7 +748,7 @@ void Fuse(SairMapOp first_op, SairMapOp second_op, Driver &driver) {
       /*mappings_array=*/driver.getArrayAttr(mappings),
       /*inputs=*/inputs,
       /*shape=*/first_op.shape(),
-      /*decisions=*/new_decisions,
+      /*instances=*/driver.getArrayAttr({new_decisions}),
       /*copies=*/nullptr);
   new_op.body().takeBody(first_op.body());
   driver.replaceOp(first_op,

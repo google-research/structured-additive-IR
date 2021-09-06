@@ -1337,6 +1337,30 @@ mlir::LogicalResult VerifyMappingShape(const AttrLocation &loc,
   return mlir::success();
 }
 
+//===----------------------------------------------------------------------===//
+// DecisionsAttr
+//===----------------------------------------------------------------------===//
+
+std::function<DecisionsAttr(DecisionsAttr)> MapLoopNest(
+    std::function<mlir::ArrayAttr(mlir::ArrayAttr)> loop_nest_fn) {
+  return [loop_nest_fn](DecisionsAttr decisions) -> DecisionsAttr {
+    if (decisions == nullptr) return nullptr;
+    return DecisionsAttr::get(
+        decisions.sequence(), loop_nest_fn(decisions.loop_nest()),
+        decisions.storage(), decisions.expansion(), decisions.getContext());
+  };
+}
+
+std::function<DecisionsAttr(DecisionsAttr)> MapStorage(
+    std::function<mlir::ArrayAttr(mlir::ArrayAttr)> storage_fn) {
+  return [storage_fn](DecisionsAttr decisions) -> DecisionsAttr {
+    if (decisions == nullptr) return nullptr;
+    return DecisionsAttr::get(decisions.sequence(), decisions.loop_nest(),
+                              storage_fn(decisions.storage()),
+                              decisions.expansion(), decisions.getContext());
+  };
+}
+
 }  // namespace sair
 
 #include "sair_structs.cc.inc"

@@ -556,4 +556,23 @@ class MappingUnStripeExpr
 using namespace mlir;  // NOLINT
 #include "sair_structs.h.inc"
 
+namespace sair {
+
+// Below are helper functions to manipulate DecisionsAttr. Each helper takes a
+// function and returns a function that applies the first function to a field of
+// a DecisionsAttr. Helpers return functions rather than directly applying the
+// transformation so that it is easier to combine transformations.
+
+// Takes a function that updates a loop nest and returns a function that updates
+// the loop nest field of a DecisionsAttr.
+std::function<DecisionsAttr(DecisionsAttr)> MapLoopNest(
+    std::function<mlir::ArrayAttr(mlir::ArrayAttr)> loop_nest_fn);
+
+// Takes a function that updates a list of storages and returns a function that
+// updates the storage field of a DecisionsAttr.
+std::function<DecisionsAttr(DecisionsAttr)> MapStorage(
+    std::function<mlir::ArrayAttr(mlir::ArrayAttr)> storage_fn);
+
+}  // namespace sair
+
 #endif  // SAIR_SAIR_ATTRIBUTES_H_

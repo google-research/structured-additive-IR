@@ -66,7 +66,7 @@ func @matmul(%arg0: memref<8x8xf32>,
     // CHECK:   scf.for %[[J:.*]] = %[[C0]] to %[[C8]] step %[[C1]] {
     // CHECK:     memref.store %[[CF0]], %[[C]][%[[I]], %[[J]]] : memref<8x8xf32>
     %7 = sair.copy[d0:%3, d1:%3] %6 {
-      decisions = {
+      instances = [{
         loop_nest = [
           {name = "loopI", iter = #sair.mapping_expr<d0>},
           {name = "loopJ", iter = #sair.mapping_expr<d1>}
@@ -75,7 +75,7 @@ func @matmul(%arg0: memref<8x8xf32>,
           space = "memory", name = "C",
           layout = #sair.named_mapping<[d0:"loopI", d1:"loopJ"] -> (d0, d1)>
         }]
-      }
+      }]
     } : !sair.value<d0:static_range<8> x d1:static_range<8>, f32>
 
     %8 = sair.fby[d0:%3, d1:%3] %7(d0, d1) then[d2:%3] %9(d0, d1, d2)
@@ -88,7 +88,7 @@ func @matmul(%arg0: memref<8x8xf32>,
     // CHECK:       %[[V4:.*]] = addf %[[V0]], %[[V3]] : f32
     // CHECK:       memref.store %[[V4]], %[[C]][%[[I]], %[[J]]] : memref<8x8xf32>
     %9 = sair.map[d0:%3, d1:%3, d2:%3] %8(d0, d1, d2), %4(d0, d2), %5(d1, d2) attributes {
-      decisions = {
+      instances = [{
         loop_nest = [
           {name = "loopI", iter = #sair.mapping_expr<d0>},
           {name = "loopJ", iter = #sair.mapping_expr<d1>},
@@ -98,7 +98,7 @@ func @matmul(%arg0: memref<8x8xf32>,
           space = "memory", name = "C",
           layout = #sair.named_mapping<[d0:"loopI", d1:"loopJ"] -> (d0, d1)>
         }]
-      }
+      }]
     } {
       ^bb0(%i: index, %j: index, %k : index, %c0: f32, %a: f32, %b: f32):
         %c1 = mulf %a, %b : f32

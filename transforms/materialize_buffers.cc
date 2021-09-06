@@ -127,7 +127,7 @@ std::pair<mlir::SmallVector<int64_t>, ValueRange> GetMemRefShape(
     auto map_op = builder.create<SairMapOp>(
         buffer.location(), map_types, /*domain=*/domain,
         /*inputs=*/map_body.sair_values(), /*shape=*/shape,
-        /*decisions=*/decisions, /*copies=*/nullptr);
+        /*instances=*/builder.getArrayAttr({decisions}), /*copies=*/nullptr);
     map_op.body().takeBody(map_body.region());
     sizes = map_op.getResults();
   } else {
@@ -172,7 +172,8 @@ mlir::Value AllocateBuffer(const Buffer &buffer,
   mlir::Value alloc = builder.create<SairAllocOp>(
       buffer.location(), type, domain,
       /*mapping_array=*/builder.getArrayAttr(size_mappings), sizes,
-      /*decisions=*/alloc_decisions, /*copies=*/nullptr);
+      /*decisions=*/builder.getArrayAttr({alloc_decisions}),
+      /*copies=*/nullptr);
   sequence_analysis.Insert(alloc.getDefiningOp<ComputeOp>(),
                            cast<ComputeOp>(alloc_point.operation),
                            Direction::kBefore);
@@ -185,7 +186,7 @@ mlir::Value AllocateBuffer(const Buffer &buffer,
   auto free_op = builder.create<SairFreeOp>(
       buffer.location(), domain,
       /*mapping_array=*/builder.getArrayAttr(identity_mapping), alloc,
-      /*decisions=*/free_decisions);
+      /*instances=*/builder.getArrayAttr({free_decisions}));
   sequence_analysis.Insert(free_op, cast<ComputeOp>(free_point.operation),
                            Direction::kAfter);
 
@@ -232,7 +233,8 @@ void InsertLoad(ComputeOp op, int operand_pos, const Buffer &buffer,
   mlir::Value loaded = builder.create<SairLoadFromMemRefOp>(
       op.getLoc(), loaded_type, load_domain,
       builder.getArrayAttr({memref_mapping}), memref.value,
-      operand_storage.layout(), decisions, /*copies=*/nullptr);
+      operand_storage.layout(), /*instances=*/builder.getArrayAttr({decisions}),
+      /*copies=*/nullptr);
   sequence_analysis.Insert(loaded.getDefiningOp<ComputeOp>(), op,
                            Direction::kBefore);
 
@@ -299,7 +301,8 @@ void InsertStore(ComputeOp op, int result_pos, const Buffer &buffer,
   auto store_to_memref_op = builder.create<SairStoreToMemRefOp>(
       op.getLoc(), store_domain,
       builder.getArrayAttr({memref_mapping, result_mapping}), memref.value,
-      result, result_storage.layout(), store_shape, decisions,
+      result, result_storage.layout(), store_shape,
+      /*instances=*/builder.getArrayAttr({decisions}),
       /*copies=*/nullptr);
   sequence_analysis.Insert(store_to_memref_op, op, Direction::kAfter);
 
@@ -375,9 +378,9 @@ class MaterializeBuffers
     auto result = getFunction().walk([&](SairOp op) -> mlir::WalkResult {
       auto storage_analysis =
           getChildAnalysis<StorageAnalysis>(op->getParentOp());
-      auto value_producer = dyn_cast<ValueProducerOp>(op.getOperation());
-      if (value_producer != nullptr && value_producer.HasCopies()) {
-        return op.emitError() << "copies must be materialized before buffers";
+      if (!op.HasExactlyOneInstance()) {
+        return op.emitError() << "operations must have exactly one instance "
+                                 "when materializing buffers";
       }
       for (mlir::Value result : op->getResults()) {
         if (!result.getType().isa<ValueType>()) continue;

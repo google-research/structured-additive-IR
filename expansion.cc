@@ -90,7 +90,7 @@ class CopyExpansionPattern : public ExpansionPattern {
 
 mlir::LogicalResult CopyExpansionPattern::Match(ComputeOpInstance op) const {
   if (op.is_copy()) return mlir::success();
-  ComputeOp compute_op = op.AsComputeOp();
+  ComputeOp compute_op = op.GetComputeOp();
   return mlir::success(isa<SairCopyOp>(compute_op.getOperation()));
 }
 

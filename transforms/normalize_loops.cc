@@ -98,12 +98,13 @@ void CreateRange(SairOp op, const LoopNest &loop_nest, int loop,
         /*loop_nest=*/map_loop_nest,
         /*storage=*/builder.getArrayAttr(map_buffers),
         /*expansion=*/builder.getStringAttr(kMapExpansionPattern), context);
-    auto map_op = builder.create<SairMapOp>(op.getLoc(), map_result_types,
-                                            /*domain=*/range_domain,
-                                            /*inputs=*/map_body.sair_values(),
-                                            /*shape=*/range_shape,
-                                            /*decisions=*/decisions,
-                                            /*copies=*/nullptr);
+    auto map_op = builder.create<SairMapOp>(
+        op.getLoc(), map_result_types,
+        /*domain=*/range_domain,
+        /*inputs=*/map_body.sair_values(),
+        /*shape=*/range_shape,
+        /*instances=*/builder.getArrayAttr({decisions}),
+        /*copies=*/nullptr);
     sequence_analysis.Insert(cast<ComputeOp>(map_op.getOperation()),
                              cast<SairOp>(insertion_point.operation),
                              Direction::kBefore);
@@ -318,10 +319,9 @@ class NormalizeLoopsPass : public NormalizeLoopsPassBase<NormalizeLoopsPass> {
                                  "eliminated before loop normalization";
       }
 
-      auto value_producer = dyn_cast<ValueProducerOp>(op.getOperation());
-      if (value_producer != nullptr && value_producer.HasCopies()) {
-        return op.emitError()
-               << "copies must be materialized before normalizing loop nests";
+      if (!op.HasExactlyOneInstance()) {
+        return op.emitError() << "operations must have exactly one instance "
+                                 "when normalizing loop nests";
       }
 
       // Do not normalize range operations.
