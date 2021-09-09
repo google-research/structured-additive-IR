@@ -235,13 +235,13 @@ func @dependent_dims() {
       }]
     } {
       ^bb0(%arg0: index):
-        // CHECK: %[[V4:.*]] = constant 8
+        // CHECK-DAG: %[[V4:.*]] = constant 8
         %4 = constant 8 : index
         // CHECK: %[[V5:.*]] = addi %[[V3]], %[[V4]]
         %5 = addi %arg0, %4 : index
         sair.return %arg0, %5 : index, index
     } : #sair.shape<d0:static_range<64, 8>>, () -> (index, index)
-        // CHECK: %[[V6:.*]] = constant 1
+        // CHECK-DAG: %[[V6:.*]] = constant 1
     %3 = sair.dyn_range[d0:%0] %1(d0), %2(d0) : !sair.dyn_range<d0:static_range<64, 8>>
         // CHECK: scf.for %[[V7:.*]] = %[[V3]] to %[[V5]] step %[[V6]] {
     sair.map[d0:%0, d1:%3] attributes {
@@ -299,7 +299,7 @@ func @partial_unroll() {
     %0 = sair.static_range : !sair.static_range<5>
     // CHECK: sair.map
     // CHECK-SAME: loop_nest = []
-    // CHECK: %[[STEP:.*]] = constant 2 : index
+    // CHECK-DAG: %[[STEP:.*]] = constant 2 : index
     // CHECK: scf.for %{{.*}} = %{{.*}} to %{{.*}} step %[[STEP]] {
     // CHECK-COUNT-2: call @baz()
     // CHECK: }

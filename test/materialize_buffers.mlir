@@ -126,9 +126,9 @@ func @loop_nest(%arg0: f32) {
     // CHECK: } {
     // CHECK:   ^{{.*}}(%[[ARG0:.*]]: index):
     // CHECK:     %[[V1:.*]] = affine.apply affine_map<(d0) -> (d0)>(%[[ARG0]])
-    // CHECK:     %[[C4:.*]] = constant 4
+    // CHECK-DAG: %[[C4:.*]] = constant 4
     // CHECK:     %[[V2:.*]] = addi %[[V1]], %[[C4]]
-    // CHECK:     %[[C16:.*]] = constant 16
+    // CHECK-DAG: %[[C16:.*]] = constant 16
     // CHECK:     %[[V3:.*]] = cmpi ult, %[[C16]], %[[V2]]
     // CHECK:     %[[V4:.*]] = select %[[V3]], %[[C16]], %[[V2]]
     // CHECK:     %[[V5:.*]] = affine.apply affine_map<(d0, d1) -> (d1 - d0)>
