@@ -369,7 +369,7 @@ func @map_reduce(%arg0 : f32, %arg1 : i32, %arg2 : f64) {
 
 // CHECK-LABEL: @from_scalar
 func @from_scalar() {
-  // CHECK: %[[V0:.*]] = constant 1 : index
+  // CHECK-DAG: %[[V0:.*]] = constant 1 : index
   %0 = constant 1 : index
   sair.program {
     // CHECK: %{{.*}} sair.from_scalar %[[V0]] : !sair.value<(), index>

@@ -105,7 +105,7 @@ func @load_from_memref(%arg0 : memref<?x?xf32>) {
     // CHECK: = sair.map[d0:%{{.*}}, d1:%{{.*}}, d2:%{{.*}}] %{{.*}}, %{{.*}}#0(d0), %{{.*}}#1(d0)
     // CHECK: ^{{.*}}(%[[ARG1:.*]]: index, %[[ARG2:.*]]: index, %[[ARG3:.*]]: index, %[[MEMREF:.*]]: memref<?x?xf32>, %[[ARG4:.*]]: index, %[[ARG5:.*]]: index):
     // CHECK:   %[[I0:.*]] = affine.apply affine_map<(d0, d1, d2)[s0] -> (d2 - s0)>(%[[ARG1]], %[[ARG2]], %[[ARG3]])[%[[ARG4]]]
-    // CHECK:   %[[C0:.*]] = constant 0
+    // CHECK-DAG:   %[[C0:.*]] = constant 0
     // CHECK:   %[[I1:.*]] = affine.apply affine_map<(d0, d1, d2)[s0] -> ((d1 - s0) floordiv 2)>(%[[ARG1]], %[[ARG2]], %[[ARG3]])[%[[C0]]]
     // CHECK:   %[[VALUE:.*]] = memref.load %[[MEMREF]][%[[I0]], %[[I1]]] : memref<?x?xf32>
     // CHECK:   sair.return %[[VALUE]] : f32
@@ -132,9 +132,9 @@ func @store_to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
 
     // CHECK: sair.map[d0:%{{.*}}, d1:%{{.*}}, d2:%{{.*}}] %{{.*}}, %{{.*}}(d0, d1, d2)
     // CHECK: ^{{.*}}(%[[ARG1:.*]]: index, %[[ARG2:.*]]: index, %[[ARG3:.*]]: index, %[[MEMREF:.*]]: memref<?x?xf32>, %[[VALUE:.*]]: f32):
-    // CHECK:   %[[C0_0:.*]] = constant 0
+    // CHECK-DAG:   %[[C0_0:.*]] = constant 0
     // CHECK:   %[[I0:.*]] = affine.apply affine_map<(d0, d1, d2)[s0] -> (d2 - s0)>(%[[ARG1]], %[[ARG2]], %[[ARG3]])[%[[C0_0]]]
-    // CHECK:   %[[C0_1:.*]] = constant 0
+    // CHECK-DAG:   %[[C0_1:.*]] = constant 0
     // CHECK:   %[[I1:.*]] = affine.apply affine_map<(d0, d1, d2)[s0] -> (d1 - s0)>(%[[ARG1]], %[[ARG2]], %[[ARG3]])[%[[C0_1]]]
     // CHECK:   memref.store %[[VALUE]], %[[MEMREF]][%[[I0]], %[[I1]]]
     // CHECK:   sair.return

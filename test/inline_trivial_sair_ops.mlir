@@ -2,7 +2,7 @@
 
 // CHECK-LABEL: @one_map
 func @one_map() -> f32 {
-  // CHECK: %[[v0:.*]] = constant 1.0
+  // CHECK-DAG: %[[v0:.*]] = constant 1.0
   %0 = constant 1.0 : f32
   // CHECK-NOT: sair.program
   %1 = sair.program {
@@ -25,7 +25,7 @@ func @one_map() -> f32 {
 
 // CHECK-LABEL: @sequence
 func @sequence() -> f32 {
-  // CHECK: %[[v0:.*]] = constant 1.0
+  // CHECK-DAG: %[[v0:.*]] = constant 1.0
   %0 = constant 1.0 : f32
   // CHECK-NOT: sair.program
   %6 = sair.program {
