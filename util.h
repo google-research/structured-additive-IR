@@ -25,22 +25,6 @@ class ValueAccess;
 class ComputeOp;
 class SairOp;
 
-// Position of an operation relative to another.
-enum class Direction { kBefore, kAfter };
-
-// Specifies where to insert an operation in the generated code. The operation
-// is inserted before or after 'operation', depending on `direction` and
-// is nested in 'loop_nest'.
-// TODO(ulysse): merge with program point.
-struct InsertionPoint {
-  mlir::Operation *operation;
-  Direction direction;
-  mlir::ArrayAttr loop_nest;
-
-  // Sets the insertion point of the builder.
-  void Set(mlir::OpBuilder &builder) const;
-};
-
 // Materializes `value` as an mlir value.
 mlir::Value Materialize(mlir::Location loc, mlir::OpFoldResult value,
                         mlir::OpBuilder &builder);

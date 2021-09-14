@@ -21,6 +21,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/Support/Debug.h"
+#include "loop_nest.h"
 #include "sair_ops.h"
 #include "util.h"
 
@@ -349,17 +350,21 @@ bool SequenceAnalysis::IsAfter(ProgramPoint point, ComputeOp op) const {
   return IsBefore(op, point.operation());
 }
 
-void SequenceAnalysis::Insert(ComputeOp op, ComputeOp reference,
-                              Direction direction) {
-  Insert(op, cast<SairOp>(reference.getOperation()), direction);
+void SequenceAnalysis::Insert(ComputeOp op, ProgramPoint point) {
+  auto reference = cast_or_null<SairOp>(point.operation().getOperation());
+  Insert(op, reference, point.direction());
 }
 
 void SequenceAnalysis::Insert(ComputeOp op, SairOp reference,
                               Direction direction) {
-  auto reference_compute_op = dyn_cast<ComputeOp>(reference.getOperation());
-  int64_t sequence_number = reference_compute_op
-                                ? ExplicitSequenceNumber(reference_compute_op)
-                                : ImplicitSequenceNumber(reference);
+  int64_t sequence_number = -1;
+  if (reference != nullptr) {
+    auto reference_compute_op = dyn_cast<ComputeOp>(reference.getOperation());
+    sequence_number = reference_compute_op
+                          ? ExplicitSequenceNumber(reference_compute_op)
+                          : ImplicitSequenceNumber(reference);
+  }
+
   // Implicit sequence number can be -1 if the reference operation doesn't
   // depend on any explicitly sequenced operation. In this case, insert the
   // operation at the beginning of the program for the "before" direction and at
@@ -413,49 +418,53 @@ std::pair<ComputeOp, ComputeOp> SequenceAnalysis::GetSpan(
   return std::make_pair(compute_ops_[min], compute_ops_[max]);
 }
 
-InsertionPoint SequenceAnalysis::FindInsertionPoint(
-    SairOp start, llvm::ArrayRef<mlir::Attribute> current_loop_nest,
-    int num_loops, Direction direction) const {
-  mlir::Operation *point = start;
-  ComputeOp current_op = [&]() {
-    if (auto compute_op = dyn_cast<ComputeOp>(start.getOperation())) {
-      return compute_op;
-    }
-    int64_t sequence_number = ImplicitSequenceNumber(start);
-    if (sequence_number == -1) return ComputeOp();
-    return compute_ops_[sequence_number];
-  }();
-  if (current_op != nullptr) point = current_op;
-  auto target_loop_nest = mlir::ArrayAttr::get(
-      start.getContext(), current_loop_nest.take_front(num_loops));
-
-  // Look for a point where only the first `num_loops` of the current loop nest
-  // are open.
-  while (current_loop_nest.size() > num_loops) {
-    // Look for the adjacent in sequence compute op.
-    current_op = direction == Direction::kAfter ? NextOp(current_op)
-                                                : PrevOp(current_op);
-    if (current_op == nullptr) break;
-
-    assert(current_op.loop_nest().hasValue() &&
-           "expected loop nests to have been set");
-
-    // Trim current_loop_nest of dimensions that are not open in current_op.
-    llvm::ArrayRef<mlir::Attribute> new_loop_nest = current_op.LoopNestLoops();
-    int size = std::min(current_loop_nest.size(), new_loop_nest.size());
-    for (; size > num_loops; --size) {
-      if (current_loop_nest[size - 1].cast<LoopAttr>().name() ==
-          new_loop_nest[size - 1].cast<LoopAttr>().name()) {
-        break;
-      }
-    }
-    current_loop_nest = current_loop_nest.take_front(std::max(size, num_loops));
-    if (size > num_loops) {
-      point = current_op;
+ProgramPoint SequenceAnalysis::FindInsertionPoint(
+    const IterationSpaceAnalysis &iter_spaces, SairOp start, int num_loops,
+    Direction direction) const {
+  // Compute initial sequence number.
+  int sequence_number;
+  if (auto compute_op = dyn_cast<ComputeOp>(start.getOperation())) {
+    sequence_number = ExplicitSequenceNumber(compute_op);
+  } else {
+    sequence_number = ImplicitSequenceNumber(start);
+    // If the operation is not a ComputeOp and we want to schedule before the
+    // operation, then any point that is before the next ComputeOp is fine as
+    // the current operation is implicitly scheduled.
+    if (sequence_number >= 0 && direction == Direction::kBefore) {
+      ++sequence_number;
     }
   }
 
-  return {point, direction, target_loop_nest};
+  llvm::ArrayRef<mlir::StringAttr> start_loop_nest =
+      iter_spaces.Get(start).loop_names();
+  int num_common_loops = start_loop_nest.size();
+  int delta = direction == Direction::kBefore ? -1 : 1;
+
+  sequence_number += delta;
+  while (sequence_number >= 0 && sequence_number < compute_ops_.size()) {
+    ComputeOp new_op = compute_ops_[sequence_number];
+    llvm::ArrayRef<mlir::Attribute> new_loops = new_op.LoopNestLoops();
+    num_common_loops = std::min<int>(new_loops.size(), num_common_loops);
+    for (; num_common_loops > 0; --num_common_loops) {
+      auto loop = new_loops[num_common_loops - 1].cast<LoopAttr>();
+      if (loop.name() == start_loop_nest[num_common_loops - 1]) break;
+    }
+    if (num_common_loops <= num_loops) break;
+    sequence_number += delta;
+  }
+
+  sequence_number -= delta;
+
+  auto target_loop_nest = start_loop_nest.take_front(num_loops);
+  auto program = cast<SairProgramOp>(start->getParentOp());
+  if (sequence_number < 0) {
+    return ProgramPoint(program, Direction::kBefore, target_loop_nest);
+  } else if (sequence_number >= compute_ops_.size()) {
+    return ProgramPoint(program, Direction::kAfter, target_loop_nest);
+  } else {
+    return ProgramPoint(compute_ops_[sequence_number], direction,
+                        target_loop_nest);
+  }
 }
 
 // Detects use-def cycles in the program and if they can be cut by removing the

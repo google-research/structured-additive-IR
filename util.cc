@@ -150,14 +150,6 @@ RangeParameters RangeParameterBuilder::Get(MappingUnStripeExpr expr) {
 
 }  // namespace
 
-void InsertionPoint::Set(mlir::OpBuilder &builder) const {
-  if (direction == Direction::kAfter) {
-    builder.setInsertionPointAfter(operation);
-  } else {
-    builder.setInsertionPoint(operation);
-  }
-}
-
 mlir::Value Materialize(mlir::Location loc, mlir::OpFoldResult value,
                         mlir::OpBuilder &builder) {
   if (value.is<mlir::Value>()) return value.get<mlir::Value>();

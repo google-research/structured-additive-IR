@@ -25,6 +25,9 @@
 
 namespace sair {
 
+// Position of an operation relative to another.
+enum class Direction { kBefore, kAfter };
+
 // A set of ops of OpTy that preserves the insertion order. Practically, this is
 // an llvm::SetVector with additional casting to OpTy since llvm::SetVector
 // (precisely, llvm::DenseSet inside it) cannot be constructed for op interface
@@ -83,13 +86,14 @@ using ComputeOpSet = ConcreteOpSet<ComputeOp>;
 class ProgramPoint {
  public:
   // Constructs a program point that is before or after the whole program.
-  ProgramPoint(SairProgramOp program, Direction direction)
-      : program_(program), direction_(direction) {}
+  ProgramPoint(SairProgramOp program, Direction direction,
+               llvm::ArrayRef<mlir::StringAttr> loop_nest = {})
+      : program_(program), direction_(direction), loop_nest_(loop_nest) {}
 
   // Constructs a program point that is before or after `op`. Saves a reference
   // to `loop_nest`.
   ProgramPoint(ComputeOp op, Direction direction,
-               llvm::ArrayRef<mlir::StringAttr> loop_nest);
+               llvm::ArrayRef<mlir::StringAttr> loop_nest = {});
 
   // If null, the point is outside of the sair program. If non-null the point is
   // immediately before or after this operation.
@@ -114,6 +118,8 @@ class ProgramPoint {
   Direction direction_;
   llvm::ArrayRef<mlir::StringAttr> loop_nest_;
 };
+
+class IterationSpaceAnalysis;
 
 // An analysis of the relative positions of Sair operations indicated by their
 // sequence attributes.
@@ -160,7 +166,7 @@ class SequenceAnalysis {
 
   // Inserts the given `op` into the analysis, sequencing before or after the
   // `reference` op, depending on `direction`.
-  void Insert(ComputeOp op, ComputeOp reference, Direction direction);
+  void Insert(ComputeOp op, ProgramPoint point);
   void Insert(ComputeOp op, SairOp reference, Direction direction);
 
   // Erases the given `op` from the analysis.
@@ -194,9 +200,9 @@ class SequenceAnalysis {
   // Finds the first point in the program where it is possible to insert an
   // operation nested in the first `num_loops` of `current_loop_nest`, when
   // starting from `start`.
-  InsertionPoint FindInsertionPoint(
-      SairOp start, llvm::ArrayRef<mlir::Attribute> current_loop_nest,
-      int num_loops, Direction direction = Direction::kBefore) const;
+  ProgramPoint FindInsertionPoint(
+      const IterationSpaceAnalysis &iter_spaces, SairOp start, int num_loops,
+      Direction direction = Direction::kBefore) const;
 
  private:
   // Default noop constructor. Init must be called separately.

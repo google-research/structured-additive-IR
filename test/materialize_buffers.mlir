@@ -41,9 +41,12 @@ func @static_shape(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<16, 2>
     // CHECK: %[[V0:.*]] = sair.alloc
-    // CHECK-SAME: expansion = "alloc", loop_nest = [],
+    // CHECK-SAME: expansion = "alloc", loop_nest = [], sequence = 0
     // CHECK-SAME: storage = [{layout = #sair.named_mapping<[] -> ()>, space = "register"}]
     // CHECK-SAME: : !sair.value<(), memref<8xf32>>
+    // CHECK: sair.free %[[V0]] {
+    // CHECK-SAME:   loop_nest = [], sequence = 5
+    // CHECK-SAME: } : !sair.value<(), memref<8xf32>>
     // CHECK: %[[V1:.*]] = sair.copy[d0:%{{.*}}]
     %2 = sair.copy[d0:%1] %0 {
       instances = [{
@@ -70,9 +73,6 @@ func @static_shape(%arg0: f32) {
         storage = [{space = "register", layout = #sair.named_mapping<[] -> ()>}]
       }]
     } : !sair.value<d0:static_range<16, 2>, f32>
-    // CHECK: sair.free %[[V0]] {
-    // CHECK:   loop_nest = []
-    // CHECK: } : !sair.value<(), memref<8xf32>>
     %4 = sair.proj_last of[d0:%1] %3(d0) : #sair.shape<d0:static_range<16, 2>>, f32
     sair.exit %4 : f32
   } : f32
@@ -82,13 +82,7 @@ func @static_shape(%arg0: f32) {
 // CHECK-LABEL: @dynamic_shape
 func @dynamic_shape(%arg0: f32, %arg1: index, %arg2: index) {
   sair.program {
-    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    // CHECK: %[[V1:.*]] = sair.from_scalar %{{.*}} : !sair.value<(), index>
-    %1 = sair.from_scalar %arg1 : !sair.value<(), index>
-    // CHECK: %[[V2:.*]] = sair.from_scalar %{{.*}} : !sair.value<(), index>
-    %2 = sair.from_scalar %arg2 : !sair.value<(), index>
-    %3 = sair.dyn_range %1, %2 step 4 : !sair.dyn_range
-    // CHECK: %[[V3:.*]] = sair.map %[[V1]], %[[V2]] attributes {
+    // CHECK: %[[V3:.*]] = sair.map %[[V1:.*]], %[[V2:.*]] attributes {
     // CHECK:   loop_nest = []
     // CHECK:   storage = [{layout = #sair.named_mapping<[] -> ()>, space = "register"}]
     // CHECK: } {
@@ -100,6 +94,13 @@ func @dynamic_shape(%arg0: f32, %arg1: index, %arg2: index) {
 
     // CHECK: %[[V5:.*]] = sair.alloc %[[V3]]
     // CHECK:   : !sair.value<(), memref<?xf32>>
+
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    // CHECK: %[[V1]] = sair.from_scalar %{{.*}} : !sair.value<(), index>
+    %1 = sair.from_scalar %arg1 : !sair.value<(), index>
+    // CHECK: %[[V2]] = sair.from_scalar %{{.*}} : !sair.value<(), index>
+    %2 = sair.from_scalar %arg2 : !sair.value<(), index>
+    %3 = sair.dyn_range %1, %2 step 4 : !sair.dyn_range
     %4 = sair.copy[d0:%3] %0 {
       instances = [{
         loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
@@ -117,8 +118,6 @@ func @dynamic_shape(%arg0: f32, %arg1: index, %arg2: index) {
 // CHECK-LABEL: @loop_nest
 func @loop_nest(%arg0: f32) {
   sair.program {
-    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %1 = sair.static_range : !sair.static_range<16>
     // CHECK: %[[D0:.*]] = sair.placeholder : !sair.static_range<16, 4>
 
     // CHECK: %[[V0:.*]] = sair.map[d0:%[[D0]]] attributes {
@@ -138,6 +137,14 @@ func @loop_nest(%arg0: f32) {
     // CHECK: %[[V6:.*]] = sair.alloc[d0:%[[D0]]] %[[V0]](d0) {
     // CHECK:   loop_nest = [{iter = #sair.mapping_expr<d0>, name = "A"}]
     // CHECK: }  : !sair.value<d0:static_range<16, 4>, memref<?xf32>>
+
+    // CHECK: sair.free[d0:%[[D0]]] %[[V6]](d0) {
+    // CHECK:   loop_nest = [{iter = #sair.mapping_expr<d0>, name = "A"}]
+    // CHECK: } : !sair.value<d0:static_range<16, 4>, memref<?xf32>>
+
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.static_range : !sair.static_range<16>
+
     // CHECK: %[[V7:.*]] = sair.copy
     %2 = sair.copy[d0:%1] %0 {
       instances = [{
@@ -196,9 +203,6 @@ func @loop_nest(%arg0: f32) {
     // CHECK:       {iter = #sair.mapping_expr<d2>, name = "D"}]
     // CHECK:   layout = #sair.mapping<3 : d1>
     // CHECK:   : #sair.shape<d0:static_range<16, 4> x d1:dyn_range(d0) x d2:static_range<16>>, memref<?xf32>
-    // CHECK: sair.free[d0:%[[D0]]] %[[V6]](d0) {
-    // CHECK:   loop_nest = [{iter = #sair.mapping_expr<d0>, name = "A"}]
-    // CHECK: } : !sair.value<d0:static_range<16, 4>, memref<?xf32>>
     sair.exit
   }
   return
@@ -210,8 +214,11 @@ func @sequence_attr(%arg0: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<16>
 
-    // CHECK: sair.alloc
-    // CHECK-SAME: sequence = 4
+    // CHECK-DAG: sair.alloc{{.*}}sequence = 4
+    // CHECK-DAG: sair.free{{.*}}sequence = 10
+    // CHECK-DAG: sair.alloc{{.*}}sequence = 0
+    // CHECK-DAG: sair.free{{.*}}sequence = 3
+
     // CHECK: sair.copy
     // CHECK-SAME: sequence = 5
     %2 = sair.copy[d0:%1] %0 {
@@ -227,8 +234,6 @@ func @sequence_attr(%arg0: f32) {
     // CHECK: sair.store_to_memref
     // CHECK-SAME: sequence = 6
 
-    // CHECK: sair.alloc
-    // CHECK-SAME: sequence = 0
     // CHECK: sair.copy
     // CHECK-SAME: sequence = 1
     %3 = sair.copy[d0:%1] %0 {
@@ -243,8 +248,6 @@ func @sequence_attr(%arg0: f32) {
     } : !sair.value<d0:static_range<16>, f32>
     // CHECK: sair.store_to_memref
     // CHECK-SAME: sequence = 2
-    // CHECK: sair.free
-    // CHECK-SAME: sequence = 3
 
     // CHECK: sair.load_from_memref
     // CHECK-SAME: sequence = 7
@@ -262,53 +265,6 @@ func @sequence_attr(%arg0: f32) {
     } : !sair.value<d0:static_range<16>, f32>
     // CHECK: sair.store_to_memref
     // CHECK-SAME: sequence = 9
-    // CHECK: sair.free
-    // CHECK-SAME: sequence = 10
-    sair.exit
-  }
-  return
-}
-
-// Allocation will be inserted textually after the use and the deallocation,
-// but this is totally fine since Sair doesn't rely on textual order.
-func @sequence_attr_inversion(%arg0: f32) {
-  sair.program {
-    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %1 = sair.static_range : !sair.static_range<16>
-
-    // CHECK: sair.copy
-    // CHECK-SAME: sequence = 3
-    %2 = sair.copy[d0:%1] %0 {
-      instances = [{
-        loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
-        storage = [{
-          name = "buf2", space = "memory",
-          layout = #sair.named_mapping<[d0:"A"] -> (d0)>
-        }],
-        sequence = 2
-      }]
-    } : !sair.value<d0:static_range<16>, f32>
-    // CHECK: sair.store_to_memref
-    // CHECK-SAME: sequence = 4
-    // CHECK: sair.free
-    // CHECK-SAME: sequence = 5
-
-    // CHECK: sair.alloc
-    // CHECK-SAME: sequence = 0
-    // CHECK: sair.copy
-    // CHECK-SAME: sequence = 1
-    %4 = sair.copy[d0:%1] %0 {
-      instances = [{
-        loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
-        storage = [{
-          name = "buf2", space = "memory",
-          layout = #sair.named_mapping<[d0:"A"] -> (d0)>
-        }],
-        sequence = 1
-      }]
-    } : !sair.value<d0:static_range<16>, f32>
-    // CHECK: sair.store_to_memref
-    // CHECK-SAME: sequence = 2
     sair.exit
   }
   return
