@@ -185,45 +185,357 @@ bool HasExactlyOneInstance(SairOp op);
 using namespace mlir;  // NOLINT
 #include "sair_op_interfaces.h.inc"
 
-// Abstraction around either a ComputeOp or a copy of a Sair value specified by
-// the `copies` attribute of a ValueProducerOp.
-class ComputeOpInstance {
+class SairProgramOp;
+class SairDialect;
+class ResultInstance;
+class OperandInstance;
+class ValueAccessInstance;
+class ComputeOpInstance;
+
+// A SairOp that will appear in the code after copies and operation instances
+// are materialized.
+class OpInstance {
  public:
-  // Creates an operation instance that points to a ComputeOp.
-  ComputeOpInstance(ComputeOp op, int index) : op_(op), index_(index) {}
-  // Creates an operation instance that points to a value copy.
-  ComputeOpInstance(ValueProducerOp op, int result, int index)
-      : op_(op), result_(result), index_(index) {}
+  OpInstance() {}
+  OpInstance(nullptr_t) : op_(nullptr) {}
+
+  // Create an instance of a SairOp. The SairOp must have a single instance.
+  // TODO(ulysse): support having multiple instance of non-compute operations.
+  explicit OpInstance(SairOp op);
+
+  // Creates an OpInstance representing the unique instance of `op`. Fails
+  // if `op` has more than one instance. Unlike the function above, this is not
+  // meant to evlove once we support multiple instance of non-compute
+  // operations.
+  static OpInstance Unique(SairOp op);
 
   // Indicates if the instance is the copy of a value.
-  bool is_copy() { return op_.is<ValueProducerOp>(); }
+  bool is_copy() const { return op_.is<ValueProducerOp>(); }
   // Indicates if the instance is a duplicate of compute op.
-  bool is_duplicate() { return op_.is<ComputeOp>(); }
+  bool is_duplicate() const { return op_.is<SairOp>(); }
 
-  // Returns the ComputeOp pointed to by the instance. Fails if the instance is
-  // a copy.
-  ComputeOp GetComputeOp() { return op_.get<ComputeOp>(); }
+  // OpInstance converts to true if it is != nullptr.
+  operator bool() const;
 
-  // Returns lowering decisions for the operation instance.
-  DecisionsAttr GetDecisions();
+  // Returns the duplicated SairOp. `is_duplicate` must be true.
+  mlir::Operation *GetDuplicatedOp() const;
 
-  // Sets lowering decisions for the operation instance.
-  void SetDecisions(DecisionsAttr decisions);
+  // Returns the value copied by the operation. `is_copy` must be true.
+  mlir::Value GetCopiedValue() const;
+
+  // Returns the operation that defines the instance.
+  mlir::Operation *getOperation() const;
+
+  // Provides a hash for the instance.
+  unsigned HashValue() const;
 
   // Emits an error at the location of the operation instance.
-  mlir::InFlightDiagnostic EmitError();
+  mlir::InFlightDiagnostic EmitError() const;
+
+  // Attach a note at the location of the operation instance.
+  mlir::Diagnostic &AttachNote(mlir::InFlightDiagnostic &diag) const;
+
+  // Returns the location of the original operation. EmitError and AttachNote
+  // should be prefered as they provide more precise error messages.
+  mlir::Location getLoc() const;
+
+  // Returns the underlying operation context. The instance must not be null.
+  mlir::MLIRContext *context() const;
+
+  // Returns the Sair program this operation belongs to.
+  SairProgramOp program() const;
+
+  // Returns a pointer to the Sair dialect.
+  SairDialect *GetSairDialect() const;
+
+  // Returns the Shape of the operation.
+  DomainShapeAttr GetShape() const;
+
+  // Returns the rank of the operation domain.
+  int domain_size() const;
+
+  // Returns the i-th dimension of the operation.
+  ResultInstance domain(int i) const;
+
+  // Returns the domain of the operation as an iterator of ResultInstance.
+  auto domain() const;
+
+  // Returns the domain of the operation as an iterator of ValueAccessInstance.
+  auto DomainWithDependencies() const;
+
+  // Returns the operand of the operation at the given position.
+  OperandInstance Operand(int position) const;
+
+  // Returns the operands of the operation as a range of OperandInstance.
+  auto Operands() const;
+
+  // Number of results for the operation as a range of ResultInstance.
+  int num_results() const;
+
+  // Returns the result of the operation at the given position.
+  ResultInstance Result(int result) const;
+
+  // Returns the results of the operation.
+  auto Results() const;
+
+  // Size of each sub-domain of the operation.
+  llvm::SmallVector<int> SubDomains() const;
+
+  // Returns a mask of the dimensions that must exit before using the result.
+  llvm::SmallBitVector ResultsDimDependencies() const;
+
+  // LLVM-style RTTI infrastructure.
+  static bool classof(const OpInstance &op) { return true; }
+
+  template <typename U>
+  bool isa() const {
+    assert(!op_.isNull() && "isa<> used on a null OpInstance");
+    return U::classof(*this);
+  }
+
+  template <typename U>
+  U dyn_cast() const {
+    return isa<U>() ? U(*this) : U();
+  }
+
+  template <typename U>
+  U dyn_cast_or_null() const {
+    return op_.isNull() ? U() : dyn_cast<U>();
+  }
+
+  template <typename U>
+  U cast() const {
+    assert(isa<U>());
+    return U(*this);
+  }
+
+ protected:
+  friend ResultInstance;
+
+  OpInstance(llvm::PointerUnion<SairOp, ValueProducerOp> op, int result,
+             int index)
+      : op_(op), index_(index), result_(result) {}
+
+  // If the instance is a copy of a value, returns the operation producing the
+  // value.
+  ValueProducerOp GetValueProducer() const;
+
+  // Index of the instance or index of the copy.
+  int index() const { return index_; }
+
+  // In the case where the instance is a copy, index of the result the copy
+  // applies to.
+  int result() const { return result_; }
 
  private:
-  // Points to a ComputeOp if the operation is an actual operation. Point to a
-  // ValueProducerOp if the operation is a copy.
+  friend bool operator==(const OpInstance &lhs, const OpInstance &rhs);
+  friend llvm::DenseMapInfo<ComputeOpInstance>;
+
+  // Returns the operation domain as MLIR values.
+  ValueRange GetDomainValues() const;
+
+  // An instance is either a duplicate of an existing SairOp or sair.copy
+  // operation that will be introduced to copy a value produced by a
+  // ValueProducerOp.
   //
   // Internally, the pointer union is a tagged union. In practice, this means
   // that the union will return the type with which it was created, even if op_
   // is both a ComputeOp and a ValueProducerOp.
-  llvm::PointerUnion<ComputeOp, ValueProducerOp> op_;
-  int result_;
-  int index_;
+  llvm::PointerUnion<SairOp, ValueProducerOp> op_;
+
+  int index_ = 0;
+  int result_ = 0;
 };
+
+bool operator==(const OpInstance &lhs, const OpInstance &rhs);
+bool operator!=(const OpInstance &lhs, const OpInstance &rhs);
+
+// Abstraction around either a ComputeOp or a copy of a Sair value specified by
+// the `copies` attribute of a ValueProducerOp.
+class ComputeOpInstance : public OpInstance {
+ public:
+  // Converts `op` into a ComputeOpInstance.
+  ComputeOpInstance(const OpInstance &op);
+  // Creates an null instance.
+  ComputeOpInstance() {}
+  // Creates an operation instance that points to a ComputeOp.
+  ComputeOpInstance(ComputeOp op, int index)
+      : OpInstance(llvm::cast<SairOp>(op.getOperation()), 0, index) {}
+  // Creates an operation instance that points to a value copy.
+  ComputeOpInstance(ValueProducerOp op, int result, int index)
+      : OpInstance(op, result, index) {
+    assert(op != nullptr);
+  }
+
+  // Creates a ComputeOpInstance representing the unique instance of `op`. Fails
+  // if `op` has more than one instance.
+  static ComputeOpInstance Unique(ComputeOp op);
+
+  // Creates a ComputeOpInstance that does not represent any operation and that
+  // will only be equal to other markers created with the same id.
+  //
+  // This is a static method rather than a public constructor in order to make
+  // clear that this create a special instance of the class, that should not be
+  // used to represent an operation but only when a marker is needed, such as in
+  // llvm::DenseMapInfo.
+  static ComputeOpInstance Marker(int id) { return ComputeOpInstance(id); }
+
+  // Returns lowering decisions for the operation instance.
+  DecisionsAttr GetDecisions() const;
+
+  // Sets lowering decisions for the operation instance.
+  void SetDecisions(DecisionsAttr decisions);
+
+  // Returns the loop nest of the operation. Returns an empty array if the loop
+  // nest is unspecified.
+  llvm::ArrayRef<mlir::Attribute> Loops() const;
+
+  // Sets the loop_nest field of decisions.
+  void SetLoopNest(mlir::ArrayAttr loop_nest);
+
+  // Returns storage information for the i-th result of the operation.
+  BufferAttr Storage(int result) const;
+
+  // Set storage information for the given result.
+  void SetStorage(int result, BufferAttr storage);
+
+  // LLVM-style RTTI infrastructure.
+  static bool classof(const OpInstance &op) {
+    return op.is_copy() || llvm::isa<ComputeOp>(op.getOperation());
+  }
+
+ private:
+  // Internal constructor for this::Marker.
+  ComputeOpInstance(int id) : OpInstance(nullptr, 0, id) {}
+
+  // Returns the ComputeOp pointed to by the instance. Fails if the instance is
+  // a copy.
+  ComputeOp GetComputeOp() const;
+};
+
+// An value produced by an instance of a Sair operation. This can either be a
+// dimension or a Sair value.
+class ResultInstance {
+ public:
+  ResultInstance(OpInstance op, int result) : op_(op), result_(result) {}
+
+  // Create a ResultInstance representing the unique instance of value. Fails if
+  // value has zero or more than one instance.
+  static ResultInstance Unique(mlir::Value value);
+
+  // Returns the instance of the operation that defines the result.
+  const OpInstance &defining_op() const { return op_; }
+
+  // Returns the position of the result.
+  int result_number() const { return result_; }
+
+  // Returns the value type.
+  ShapedType GetType() const;
+
+  // Returns the original value.
+  mlir::Value GetValue() const;
+
+  // Returns operations that use the instance, along with the position of the
+  // operand that use the instance. The position is the MLIR position, not the
+  // position in Sair value operands. It includes domain operands.
+  llvm::SmallVector<std::pair<OpInstance, int>> GetUses() const;
+
+  // Provides a hash for the instance.
+  unsigned HashValue() const;
+
+ private:
+  friend bool operator==(const ResultInstance &lhs, const ResultInstance &rhs);
+
+  OpInstance op_;
+  int result_;
+};
+
+bool operator==(const ResultInstance &lhs, const ResultInstance &rhs);
+bool operator!=(const ResultInstance &lhs, const ResultInstance &rhs);
+
+// An instance of a Sair value accessed by a mapping.
+struct ValueAccessInstance {
+  ResultInstance value;
+  MappingAttr mapping;
+};
+
+// A !sair.value operand of an OpInstance.
+class OperandInstance {
+ public:
+  // Creates the operand of `op` at the given position. The position ignore
+  // non-!sair.value operands of the operation (such as the domain of the
+  // operation).
+  OperandInstance(OpInstance op, int operand_position)
+      : op_(op), operand_position_(operand_position) {}
+
+  // Creates the operand of `op` that corresponds to `operand` in the
+  // original operation.
+  OperandInstance(ValueOperand operand, OpInstance op)
+      : OperandInstance(op, operand.position()) {}
+
+  // Returns the operation that owns the operand.
+  OpInstance owner() const { return op_; }
+
+  // Returns the accessed value. Returns std::nullopt if the result instance is
+  // not yet specified.
+  std::optional<ResultInstance> GetValue() const;
+
+  // Returns the mapping used to access the value.
+  MappingAttr Mapping() const;
+
+  // Returns the value access performed by the operand.
+  std::optional<ValueAccessInstance> Get() const;
+
+  // Returns a mask of dimensions that must execute after the operand is
+  // computed.
+  llvm::SmallBitVector DependingDims() const;
+
+  // Indicates if the operand can be used before it is defined.
+  bool AllowUseBeforeDef() const;
+
+  // If the operand is a loop-carried dependency, indicates along which
+  // dimensions it is carried.
+  llvm::SmallBitVector CarryingDims() const;
+
+ private:
+  OpInstance op_;
+  int operand_position_;
+
+  // Returns the original operand. Fails if op_ is a copy of a value.
+  ValueOperand GetOriginalOperand() const;
+};
+
+inline auto OpInstance::domain() const {
+  return llvm::map_range(GetDomainValues(), [](mlir::Value v) {
+    OpInstance dim_op = OpInstance(llvm::cast<SairOp>(v.getDefiningOp()));
+    return ResultInstance(dim_op, v.cast<OpResult>().getResultNumber());
+  });
+}
+
+inline auto OpInstance::DomainWithDependencies() const {
+  DomainShapeAttr shape = GetShape();
+  return llvm::map_range(llvm::enumerate(GetDomainValues()), [=](auto p) {
+    auto value = p.value().template cast<mlir::OpResult>();
+    OpInstance dim_op = OpInstance(llvm::cast<SairOp>(value.getOwner()));
+    ValueAccessInstance access = {
+        .value = ResultInstance(dim_op, value.getResultNumber()),
+        .mapping = shape.Dimension(p.index()).dependency_mapping()};
+    return access;
+  });
+}
+
+inline auto OpInstance::Operands() const {
+  int num_operands =
+      is_copy() ? 1
+                : llvm::cast<SairOp>(GetDuplicatedOp()).ValueOperands().size();
+  return llvm::map_range(llvm::seq<int>(0, num_operands),
+                         [this](int i) { return OperandInstance(*this, i); });
+}
+
+inline auto OpInstance::Results() const {
+  return llvm::map_range(llvm::seq<int>(0, num_results()),
+                         [this](int i) { return ResultInstance(*this, i); });
+}
 
 }  // namespace sair
 
@@ -231,12 +543,12 @@ class ComputeOpInstance {
 namespace llvm {
 
 template <>
-struct llvm::PointerLikeTypeTraits<sair::ComputeOp> {
-  static inline void *getAsVoidPointer(sair::ComputeOp val) {
+struct llvm::PointerLikeTypeTraits<sair::SairOp> {
+  static inline void *getAsVoidPointer(sair::SairOp val) {
     return const_cast<void *>(val.getAsOpaquePointer());
   }
-  static inline sair::ComputeOp getFromVoidPointer(void *p) {
-    return sair::ComputeOp::getFromOpaquePointer(p);
+  static inline sair::SairOp getFromVoidPointer(void *p) {
+    return sair::SairOp::getFromOpaquePointer(p);
   }
   static constexpr int NumLowBitsAvailable =
       llvm::PointerLikeTypeTraits<Operation *>::NumLowBitsAvailable;
@@ -252,6 +564,71 @@ struct llvm::PointerLikeTypeTraits<sair::ValueProducerOp> {
   }
   static constexpr int NumLowBitsAvailable =
       llvm::PointerLikeTypeTraits<Operation *>::NumLowBitsAvailable;
+};
+
+// Allow using ComputeOpInstance in llvm::DenseMap.
+template <>
+struct DenseMapInfo<sair::ComputeOpInstance> {
+  static sair::ComputeOpInstance getEmptyKey() {
+    return sair::ComputeOpInstance::Marker(1);
+  }
+
+  static sair::ComputeOpInstance getTombstoneKey() {
+    return sair::ComputeOpInstance::Marker(2);
+  }
+
+  static unsigned getHashValue(const sair::ComputeOpInstance &op) {
+    return op.HashValue();
+  }
+
+  static bool isEqual(const sair::ComputeOpInstance &lhs,
+                      const sair::ComputeOpInstance &rhs) {
+    return lhs == rhs;
+  }
+};
+
+// Allow using OpInstance in llvm::DenseMap.
+template <>
+struct DenseMapInfo<sair::OpInstance> {
+  static sair::OpInstance getEmptyKey() {
+    return DenseMapInfo<sair::ComputeOpInstance>::getEmptyKey();
+  }
+
+  static sair::OpInstance getTombstoneKey() {
+    return DenseMapInfo<sair::ComputeOpInstance>::getTombstoneKey();
+  }
+
+  static unsigned getHashValue(const sair::OpInstance &op) {
+    return op.HashValue();
+  }
+
+  static bool isEqual(const sair::OpInstance &lhs,
+                      const sair::OpInstance &rhs) {
+    return lhs == rhs;
+  }
+};
+
+// Allow using ResultInstance in llvm::DenseMap.
+template <>
+struct DenseMapInfo<sair::ResultInstance> {
+  static sair::ResultInstance getEmptyKey() {
+    auto op = DenseMapInfo<sair::OpInstance>::getEmptyKey();
+    return sair::ResultInstance(op, 0);
+  }
+
+  static sair::ResultInstance getTombstoneKey() {
+    auto op = DenseMapInfo<sair::OpInstance>::getTombstoneKey();
+    return sair::ResultInstance(op, 0);
+  }
+
+  static unsigned getHashValue(const sair::ResultInstance &value) {
+    return value.HashValue();
+  }
+
+  static bool isEqual(const sair::ResultInstance &lhs,
+                      const sair::ResultInstance &rhs) {
+    return lhs == rhs;
+  }
 };
 
 }  // namespace llvm

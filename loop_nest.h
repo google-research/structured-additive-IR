@@ -85,7 +85,7 @@ class IterationSpaceAnalysis {
 
   // Computes or retrieves the loops `op` is nested in. Returns the empty
   // iteration space if the loop nest is left unspecified.
-  const IterationSpace &Get(SairOp op) const;
+  const IterationSpace &Get(const OpInstance &op) const;
 
   // Translates a mapping from the domain of `from` to the domain of `to` into a
   // mapping from the iteration space of `from` to the iteration space of `to`.
@@ -93,26 +93,28 @@ class IterationSpaceAnalysis {
   //
   // The try version returns nullptr if common loops cannot be mapped with
   // identity while the non-try version fails.
-  MappingAttr TranslateMapping(SairOp from, SairOp to, MappingAttr map) const;
-  MappingAttr TryTranslateMapping(SairOp from, SairOp to,
+  MappingAttr TranslateMapping(const OpInstance &from, const OpInstance &to,
+                               MappingAttr map) const;
+  MappingAttr TryTranslateMapping(const OpInstance &from, const OpInstance &to,
                                   MappingAttr map) const;
 
  private:
   // Computes the iteration space for the given operation.
-  const IterationSpace &ComputeIterationSpace(mlir::Operation *operation);
+  const IterationSpace &ComputeIterationSpace(const OpInstance &op);
 
-  llvm::DenseMap<mlir::Operation *, IterationSpace> iteration_space_;
+  llvm::DenseMap<OpInstance, IterationSpace> iteration_space_;
 };
 
 // A class of fused loops.
 class LoopFusionClass : public MappedDomain {
  public:
   // Builds an empty loop fusion class for the inner-most loop of loop_nest.
-  LoopFusionClass(mlir::StringAttr name, ComputeOp op,
+  LoopFusionClass(mlir::StringAttr name, const ComputeOpInstance &op,
                   const LoopNest &loop_nest);
 
   // Registers an operation nested in the loop.
-  void AddUse(ComputeOp op, const SequenceAnalysis &sequence_analysis);
+  void AddUse(const ComputeOpInstance &op,
+              const SequenceAnalysis &sequence_analysis);
 
   // Program point at which the loop ends.
   ProgramPoint EndPoint() const;
@@ -132,7 +134,7 @@ class LoopFusionClass : public MappedDomain {
   int num_dependencies_;
   llvm::SmallVector<ValueAccess> domain_;
 
-  ComputeOp last_op_;
+  ComputeOpInstance last_op_;
 
   // Unroll factor of the (current) loop.
   unsigned unroll_factor_;
@@ -156,7 +158,7 @@ class LoopNest {
   bool empty() const { return fusion_class_ == nullptr; }
 
   // Domain used to define loop ranges.
-  llvm::ArrayRef<ValueAccess> domain() const;
+  llvm::ArrayRef<ValueAccessInstance> domain() const;
 
   // Mapping from domain to loops.
   MappingAttr DomainToLoops() const;
@@ -215,13 +217,13 @@ class LoopFusionAnalysis {
 
   // Registers loop at position `loop_pos` of `op` as a new fusion class or
   // merges it in an existing fusion class.
-  mlir::LogicalResult RegisterLoop(ComputeOp op, int loop_pos,
+  mlir::LogicalResult RegisterLoop(const ComputeOpInstance &op, int loop_pos,
                                    const SequenceAnalysis &sequence_analysis);
 
   int next_loop_id_ = 0;
   mlir::MLIRContext *context_;
   llvm::DenseMap<mlir::Attribute, LoopFusionClass> fusion_classes_;
-  llvm::DenseMap<mlir::Operation *, llvm::SmallVector<MappingExpr, 4>>
+  llvm::DenseMap<ComputeOpInstance, llvm::SmallVector<MappingExpr, 4>>
       op_domain_mappings_;
 };
 

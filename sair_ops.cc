@@ -1550,13 +1550,14 @@ void SairProgramOp::build(mlir::OpBuilder &builder,
   result.addRegion()->push_back(new Block());
 }
 
-mlir::WalkResult SairProgramOp::WalkComputeOpInstances(
-    llvm::function_ref<mlir::WalkResult(ComputeOpInstance)> walker) {
+mlir::WalkResult SairProgramOp::TryWalkComputeOpInstances(
+    llvm::function_ref<mlir::WalkResult(ComputeOpInstance &)> walker) {
   for (mlir::Operation &operation : body().front()) {
     auto compute_op = dyn_cast<ComputeOp>(&operation);
     if (compute_op != nullptr) {
       for (int i = 0, e = compute_op.NumInstances(); i < e; ++i) {
-        if (walker(ComputeOpInstance(compute_op, i)).wasInterrupted()) {
+        ComputeOpInstance instance(compute_op, i);
+        if (walker(instance).wasInterrupted()) {
           return mlir::WalkResult::interrupt();
         }
       }
@@ -1567,7 +1568,8 @@ mlir::WalkResult SairProgramOp::WalkComputeOpInstances(
     for (int i = 0, e = operation.getNumResults(); i < e; ++i) {
       int num_copies = value_producer.GetCopies(i).size();
       for (int j = 0; j < num_copies; ++j) {
-        if (walker(ComputeOpInstance(value_producer, i, j)).wasInterrupted()) {
+        ComputeOpInstance instance(value_producer, i, j);
+        if (walker(instance).wasInterrupted()) {
           return mlir::WalkResult::interrupt();
         }
       }
@@ -1575,6 +1577,56 @@ mlir::WalkResult SairProgramOp::WalkComputeOpInstances(
   }
 
   return mlir::WalkResult::advance();
+}
+
+void SairProgramOp::WalkComputeOpInstances(
+    llvm::function_ref<void(ComputeOpInstance &)> walker) {
+  TryWalkComputeOpInstances([=](ComputeOpInstance &op) {
+    walker(op);
+    return mlir::WalkResult::advance();
+  });
+}
+
+mlir::WalkResult SairProgramOp::TryWalkOpInstances(
+    llvm::function_ref<mlir::WalkResult(OpInstance &)> walker) {
+  for (mlir::Operation &operation : body().front()) {
+    auto compute_op = dyn_cast<ComputeOp>(&operation);
+    if (compute_op != nullptr) {
+      for (int i = 0, e = compute_op.NumInstances(); i < e; ++i) {
+        ComputeOpInstance instance(compute_op, i);
+        if (walker(instance).wasInterrupted()) {
+          return mlir::WalkResult::interrupt();
+        }
+      }
+    } else {
+      OpInstance instance(cast<SairOp>(&operation));
+      if (walker(instance).wasInterrupted()) {
+        return mlir::WalkResult::interrupt();
+      }
+    }
+
+    auto value_producer = dyn_cast<ValueProducerOp>(&operation);
+    if (value_producer == nullptr) continue;
+    for (int i = 0, e = operation.getNumResults(); i < e; ++i) {
+      int num_copies = value_producer.GetCopies(i).size();
+      for (int j = 0; j < num_copies; ++j) {
+        ComputeOpInstance instance(value_producer, i, j);
+        if (walker(instance).wasInterrupted()) {
+          return mlir::WalkResult::interrupt();
+        }
+      }
+    }
+  }
+
+  return mlir::WalkResult::advance();
+}
+
+void SairProgramOp::WalkOpInstances(
+    llvm::function_ref<void(OpInstance &)> walker) {
+  TryWalkOpInstances([=](OpInstance &op) {
+    walker(op);
+    return mlir::WalkResult::advance();
+  });
 }
 
 // Builds a sair.exit operation with empty mappings. This is the

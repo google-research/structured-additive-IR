@@ -376,12 +376,14 @@ class NormalizeSequenceNumbers : public mlir::OpRewritePattern<SairProgramOp> {
     bool changed = false;
     rewriter.updateRootInPlace(op, [&] {
       for (auto en : llvm::enumerate(sequence_analysis.Ops())) {
-        ComputeOp nested_op = en.value();
+        ComputeOpInstance nested_op = en.value();
         int64_t inferred_sequence_number = en.index();
-        llvm::Optional<int64_t> current_sequence_number = nested_op.Sequence();
-        if (!current_sequence_number) continue;
+        DecisionsAttr decisions = nested_op.GetDecisions();
+        if (decisions.sequence() == nullptr) continue;
+        int64_t current_sequence_number = decisions.sequence().getInt();
         if (current_sequence_number != inferred_sequence_number) {
-          nested_op.SetSequence(inferred_sequence_number);
+          nested_op.SetDecisions(
+              UpdateSequence(decisions, inferred_sequence_number));
           changed = true;
         }
       }

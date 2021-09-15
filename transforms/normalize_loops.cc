@@ -41,15 +41,20 @@ void CreateRange(const IterationSpaceAnalysis &iter_spaces, SairOp op,
   // Find the loop nest and domain of the new operation.
   int range_rank = loop_shape.dependency_mapping().MinDomainSize();
   auto range_domain = llvm::makeArrayRef(new_domain).take_front(range_rank);
-  ProgramPoint insertion_point =
-      sequence_analysis.FindInsertionPoint(iter_spaces, op, range_rank);
+  ProgramPoint insertion_point = sequence_analysis.FindInsertionPoint(
+      iter_spaces, OpInstance::Unique(op), range_rank);
 
   // Populate a new map operation body with computations for the bounds of the
   // new range.
   MapBodyBuilder map_body(range_rank, context);
   builder.setInsertionPointToStart(&map_body.block());
+  auto loops_domain = llvm::to_vector<4>(llvm::map_range(
+      loop_nest.domain(), [](ValueAccessInstance instance) -> ValueAccess {
+        return {.value = instance.value.GetValue(),
+                .mapping = instance.mapping};
+      }));
   RangeParameters range_parameters = GetRangeParameters(
-      op.getLoc(), loop_nest.DomainToLoops().Slice(loop, 1), loop_nest.domain(),
+      op.getLoc(), loop_nest.DomainToLoops().Slice(loop, 1), loops_domain,
       inverse_mapping.ResizeUseDomain(range_rank), map_body, builder)[0];
 
   // Create a sair.map operation with `block` as body and add a sair.return
@@ -106,8 +111,9 @@ void CreateRange(const IterationSpaceAnalysis &iter_spaces, SairOp op,
         /*shape=*/range_shape,
         /*instances=*/builder.getArrayAttr({decisions}),
         /*copies=*/nullptr);
-    sequence_analysis.Insert(cast<ComputeOp>(map_op.getOperation()),
-                             insertion_point);
+    sequence_analysis.Insert(
+        ComputeOpInstance::Unique(cast<ComputeOp>(map_op.getOperation())),
+        insertion_point);
     map_op.body().takeBody(map_body.region());
     auto identity_mapping = MappingAttr::GetIdentity(context, range_rank);
     llvm::SmallVector<mlir::Attribute> range_mappings(scalar_results.size(),
@@ -244,8 +250,10 @@ void NormalizeLoops(SairOp op, const IterationSpace &iteration_space,
   SairOp new_op = op.ReCreateWithNewDomain(partitioned_domain, new_shape,
                                            mapping.Inverse(), builder);
   if (auto compute_op = dyn_cast<ComputeOp>(*new_op)) {
-    sequence_analysis.Insert(compute_op, op, Direction::kBefore);
-    compute_op.setLoopNest(builder.getArrayAttr(normalized_loops));
+    auto instance = ComputeOpInstance::Unique(compute_op);
+    sequence_analysis.Insert(instance, OpInstance::Unique(op),
+                             Direction::kBefore);
+    instance.SetLoopNest(builder.getArrayAttr(normalized_loops));
   }
 
   MappingAttr result_mapping =
@@ -262,7 +270,7 @@ void NormalizeLoops(SairOp op, const IterationSpace &iteration_space,
                       {new_value, mapping.Resize(new_op.results_rank())});
     }
     if (auto compute_op = dyn_cast<ComputeOp>(op.getOperation())) {
-      sequence_analysis.Erase(compute_op);
+      sequence_analysis.Erase(ComputeOpInstance::Unique(compute_op));
     }
     op.erase();
     return;
@@ -292,7 +300,7 @@ void NormalizeLoops(SairOp op, const IterationSpace &iteration_space,
   }
 
   if (auto compute_op = dyn_cast<ComputeOp>(op.getOperation())) {
-    sequence_analysis.Erase(compute_op);
+    sequence_analysis.Erase(ComputeOpInstance::Unique(compute_op));
   }
   op.erase();
 }
@@ -327,7 +335,8 @@ class NormalizeLoopsPass : public NormalizeLoopsPassBase<NormalizeLoopsPass> {
       }
 
       // Do not normalize range operations.
-      const IterationSpace &iteration_space = iteration_spaces.Get(op);
+      const IterationSpace &iteration_space =
+          iteration_spaces.Get(OpInstance::Unique(op));
       if (iteration_space.mapping() != iteration_space.MappingToLoops()) {
         // This error should only occur if
         // * memref introduction or canonicalization was not run beforehand or

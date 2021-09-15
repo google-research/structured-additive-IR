@@ -573,6 +573,10 @@ std::function<DecisionsAttr(DecisionsAttr)> MapLoopNest(
 std::function<DecisionsAttr(DecisionsAttr)> MapStorage(
     std::function<mlir::ArrayAttr(mlir::ArrayAttr)> storage_fn);
 
+// Updates the sequence field of a DecisionAttr and returns the new
+// DecisionAttr.
+DecisionsAttr UpdateSequence(DecisionsAttr decisions, int new_sequence);
+
 }  // namespace sair
 
 #endif  // SAIR_SAIR_ATTRIBUTES_H_

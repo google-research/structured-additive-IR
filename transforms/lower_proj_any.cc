@@ -32,7 +32,8 @@ class LowerProjAny : public LowerProjAnyPassBase<LowerProjAny> {
           getChildAnalysis<IterationSpaceAnalysis>(op->getParentOp());
 
       auto source = cast<SairOp>(op.value().getDefiningOp());
-      const IterationSpace &source_space = iteration_spaces.Get(source);
+      const IterationSpace &source_space =
+          iteration_spaces.Get(OpInstance::Unique(source));
       if (!source_space.mapping().IsIdentity()) {
         return source.emitError() << "operation iteration space not normalized";
       }
@@ -45,7 +46,8 @@ class LowerProjAny : public LowerProjAnyPassBase<LowerProjAny> {
       for (OpOperand &use : llvm::make_early_inc_range(op.result().getUses())) {
         SairOp user = cast<SairOp>(use.getOwner());
         ValueOperand operand(&use);
-        const IterationSpace &user_space = iteration_spaces.Get(user);
+        const IterationSpace &user_space =
+            iteration_spaces.Get(OpInstance::Unique(user));
         if (!user_space.mapping().IsIdentity()) {
           return use.getOwner()->emitError()
                  << "operation iteration space not normalized";

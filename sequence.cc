@@ -18,10 +18,10 @@
 #include <limits>
 #include <map>
 
-#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/Support/Debug.h"
 #include "loop_nest.h"
+#include "sair_op_interfaces.h"
 #include "sair_ops.h"
 #include "util.h"
 
@@ -40,21 +40,21 @@ class ConcreteOpGraph {
 
   // Insert a new node into the graph.
   bool insert(OpTy key) {
-    if (adjacency_.count(key.getOperation())) return false;
+    if (adjacency_.count(key)) return false;
     keys_.push_back(key);
-    adjacency_.try_emplace(key.getOperation());
+    adjacency_.try_emplace(key);
     return true;
   }
 
   // Returns a mutable reference to the adjacency list of the given node.
-  ConcreteOpSet<OpTy> &operator[](OpTy key) {
+  llvm::SetVector<OpTy> &operator[](OpTy key) {
     (void)insert(key);
-    return adjacency_[key.getOperation()];
+    return adjacency_[key];
   }
 
   // Returns the adjacency list of the given node.
-  ConcreteOpSet<OpTy> lookup(OpTy key) const {
-    return adjacency_.lookup(key.getOperation());
+  llvm::SetVector<OpTy> lookup(OpTy key) const {
+    return adjacency_.lookup(key);
   }
 
   // Returns `true` if the graph has no nodes.
@@ -65,11 +65,11 @@ class ConcreteOpGraph {
 
  private:
   llvm::SmallVector<OpTy> keys_;
-  llvm::SmallDenseMap<Operation *, ConcreteOpSet<OpTy>> adjacency_;
+  llvm::SmallDenseMap<OpTy, llvm::SetVector<OpTy>> adjacency_;
 };
 
-using ComputeOpGraph = ConcreteOpGraph<ComputeOp>;
-using SairOpGraph = ConcreteOpGraph<SairOp>;
+using ComputeOpGraph = ConcreteOpGraph<ComputeOpInstance>;
+using OpGraph = ConcreteOpGraph<OpInstance>;
 
 // A pseudo-container class implementing a DFS postorder iterator of a graph of
 // compute ops. Provides traversal iterators through the customary begin/end.
@@ -79,8 +79,8 @@ class DFSPostorderTraversal {
   // DFS traversal state. Maintains an explicit stack to avoid recursive
   // functions on a potentially large number of IR elements.
   struct DFSState {
-    llvm::SmallPtrSet<Operation *, 8> visited;
-    ConcreteOpSet<OpTy> stack;
+    llvm::DenseSet<OpTy> visited;
+    llvm::SetVector<OpTy> stack;
   };
 
  public:
@@ -95,8 +95,8 @@ class DFSPostorderTraversal {
    public:
     using iterator_category = std::input_iterator_tag;
     using value_type = OpTy;
-    using pointer = OpTy;
-    using reference = OpTy;
+    using pointer = const OpTy *;
+    using reference = const OpTy &;
     using difference_type = ptrdiff_t;
 
     // Constructs a null (end) iterator.
@@ -108,7 +108,7 @@ class DFSPostorderTraversal {
     // Increments the iterator to point to the next DFS postorder element.
     iterator &operator++() {
       // Null iterator does not need to be incremented.
-      if (!container_ || !current_) return *this;
+      if (!container_ || current_ == nullptr) return *this;
 
       // If we haven't circled back to the root operation, continue the DFS.
       if (current_ != root_) {
@@ -144,16 +144,15 @@ class DFSPostorderTraversal {
 
     // Returns the range of ops that form a cycle in the graph. Only callable
     // if the iterator has hit the cycle (dereferences to nullptr).
-    decltype(std::declval<ConcreteOpSet<OpTy>>().Ops()) FindCycleOnStack()
-        const {
+    const llvm::iterator_range<typename llvm::SetVector<OpTy>::iterator>
+    FindCycleOnStack() const {
       assert(current_ == nullptr && "the iterator hasn't hit the cycle (yet)");
       OpTy pre_cycle_op = state_.stack.back();
-      ConcreteOpSet<OpTy> children = container_->graph_.lookup(pre_cycle_op);
-      auto stack_range = state_.stack.Ops();
-      for (OpTy child : children.Ops()) {
-        auto first_occurrence = llvm::find(stack_range, child);
-        if (first_occurrence != stack_range.end()) {
-          return llvm::make_range(first_occurrence, stack_range.end());
+      llvm::SetVector<OpTy> children = container_->graph_.lookup(pre_cycle_op);
+      for (OpTy child : children) {
+        auto first_occurrence = llvm::find(state_.stack, child);
+        if (first_occurrence != state_.stack.end()) {
+          return llvm::make_range(first_occurrence, state_.stack.end());
         }
       }
       llvm_unreachable("no cycle found");
@@ -187,12 +186,12 @@ class DFSPostorderTraversal {
         // Next iterations will visit the child and get back to this op.
         OpTy current = state.stack.pop_back_val();
         bool all_children_visited = true;
-        ConcreteOpSet<OpTy> predecessors = graph.lookup(current);
-        for (OpTy child : predecessors.Ops()) {
+        llvm::SetVector<OpTy> predecessors = graph.lookup(current);
+        for (OpTy child : predecessors) {
           if (state.visited.contains(child)) continue;
           state.stack.insert(current);
           // If `child` is already on the stack, we've hit a cycle.
-          if (!state.stack.insert(child)) return nullptr;
+          if (!state.stack.insert(child)) return OpTy();
           all_children_visited = false;
           break;
         }
@@ -208,14 +207,12 @@ class DFSPostorderTraversal {
 
     // Sets the iterator to empty (end) state.
     void SetEmpty() {
-      current_ = nullptr;
+      current_ = OpTy();
       container_ = nullptr;
     }
 
     // Checks if the iterator is in the empty (end) state.
-    bool IsEmpty() const {
-      return current_ == nullptr && container_ == nullptr;
-    }
+    bool IsEmpty() const { return current_ == OpTy() && container_ == nullptr; }
 
     const DFSPostorderTraversal *container_;
     DFSState state_;
@@ -233,37 +230,41 @@ class DFSPostorderTraversal {
 
 // Updates `graph` to remove self-dependencies.
 void RemoveSelfDependencies(ComputeOpGraph &graph) {
-  llvm::ArrayRef<ComputeOp> all_ops = graph.keys();
+  llvm::ArrayRef<ComputeOpInstance> all_ops = graph.keys();
 
   // Since we are working with predecessor graphs, drop self-links because the
   // op is not expected to be its own predecessor.
-  for (ComputeOp op : all_ops) {
-    graph[op].erase(op);
+  for (const ComputeOpInstance &op : all_ops) {
+    graph[op].remove(op);
   }
 }
 
-ComputeOpSet ComputeOpFrontier(SairOp op, ArrayRef<SairFbyOp> ignore = {}) {
+llvm::SetVector<ComputeOpInstance> ComputeOpFrontier(
+    const OpInstance &op, ArrayRef<OpInstance> ignore = {}) {
   // The frontier is computed recursively as we don't expect long chains of
   // non-compute operations between compute operations, particularly in
   // canonicalized form that would have folded projection operations.
-  ComputeOpSet frontier;
-  auto add_and_recurse = [&](mlir::Value value) {
-    auto defining_op = value.getDefiningOp<SairOp>();
-    if (auto defining_compute_op =
-            dyn_cast<ComputeOp>(defining_op.getOperation())) {
+  llvm::SetVector<ComputeOpInstance> frontier;
+  auto add_and_recurse = [&](std::optional<ResultInstance> value) {
+    if (!value.has_value()) return;
+    OpInstance defining_op = value->defining_op();
+    if (auto defining_compute_op = defining_op.dyn_cast<ComputeOpInstance>()) {
       frontier.insert(defining_compute_op);
       return;
     }
-    frontier.merge(ComputeOpFrontier(defining_op, ignore));
+    llvm::SetVector<ComputeOpInstance> def_frontier =
+        ComputeOpFrontier(defining_op, ignore);
+    frontier.insert(def_frontier.begin(), def_frontier.end());
   };
   if (llvm::find(ignore, op) != ignore.end()) {
-    add_and_recurse(cast<SairFbyOp>(op.getOperation()).init());
+    auto fby_op = cast<SairFbyOp>(op.GetDuplicatedOp());
+    add_and_recurse(OperandInstance(fby_op.Init(), op).GetValue());
   } else {
-    for (ValueOperand value_operand : op.ValueOperands()) {
-      add_and_recurse(value_operand.value());
+    for (OperandInstance operand : op.Operands()) {
+      add_and_recurse(operand.GetValue());
     }
   }
-  for (mlir::Value operand : op.domain()) {
+  for (ResultInstance operand : op.domain()) {
     add_and_recurse(operand);
   }
   return frontier;
@@ -271,9 +272,9 @@ ComputeOpSet ComputeOpFrontier(SairOp op, ArrayRef<SairFbyOp> ignore = {}) {
 
 }  // end namespace
 
-ProgramPoint::ProgramPoint(ComputeOp op, Direction direction,
+ProgramPoint::ProgramPoint(ComputeOpInstance op, Direction direction,
                            llvm::ArrayRef<mlir::StringAttr> loop_nest)
-    : program_(op->getParentOp()),
+    : program_(op.program()),
       op_(op),
       direction_(direction),
       loop_nest_(loop_nest) {}
@@ -313,19 +314,19 @@ SequenceAnalysis::RangeType SequenceAnalysis::Ops() const {
 
 void SequenceAnalysis::AssignInferred() const {
   int64_t number = 0;
-  for (ComputeOp op : Ops()) {
-    // TODO(ulysse): handle more than one instance
-    assert(op.NumInstances() == 1);
-    op.SetSequence(number++);
+  for (ComputeOpInstance op : Ops()) {
+    op.SetDecisions(UpdateSequence(op.GetDecisions(), number++));
   }
 }
 
-bool SequenceAnalysis::IsBefore(ComputeOp first, SairOp second) const {
-  if (first.getOperation() == second.getOperation()) return false;
+bool SequenceAnalysis::IsBefore(const ComputeOpInstance &first,
+                                const OpInstance &second) const {
+  if (first == second) return false;
   int64_t first_number = ExplicitSequenceNumber(first);
+
   // If both ops are ComputeOps, just check the sequence numbers.
-  if (auto second_compute = dyn_cast<ComputeOp>(second.getOperation())) {
-    return first_number < ExplicitSequenceNumber(second_compute);
+  if (auto second_as_compute = second.dyn_cast<ComputeOpInstance>()) {
+    return first_number < ExplicitSequenceNumber(second_as_compute);
   }
   // If the second op is a non-compute, its implicit sequence number is equal to
   // the largest explicit sequence number of its operands; so equal numbers mean
@@ -336,33 +337,36 @@ bool SequenceAnalysis::IsBefore(ComputeOp first, SairOp second) const {
   return first_number <= ImplicitSequenceNumber(second);
 }
 
-bool SequenceAnalysis::IsBefore(ProgramPoint point, ComputeOp op) const {
+bool SequenceAnalysis::IsBefore(ProgramPoint point,
+                                const ComputeOpInstance &op) const {
   if (point.operation() == nullptr || point.operation() == op) {
     return point.direction() == Direction::kBefore;
   }
   return IsBefore(point.operation(), op);
 }
 
-bool SequenceAnalysis::IsAfter(ProgramPoint point, ComputeOp op) const {
+bool SequenceAnalysis::IsAfter(ProgramPoint point,
+                               const ComputeOpInstance &op) const {
   if (point.operation() == nullptr || point.operation() == op) {
     return point.direction() == Direction::kAfter;
   }
   return IsBefore(op, point.operation());
 }
 
-void SequenceAnalysis::Insert(ComputeOp op, ProgramPoint point) {
-  auto reference = cast_or_null<SairOp>(point.operation().getOperation());
-  Insert(op, reference, point.direction());
+void SequenceAnalysis::Insert(const ComputeOpInstance &op, ProgramPoint point) {
+  Insert(op, point.operation(), point.direction());
 }
 
-void SequenceAnalysis::Insert(ComputeOp op, SairOp reference,
+void SequenceAnalysis::Insert(const ComputeOpInstance &op,
+                              const OpInstance &reference,
                               Direction direction) {
   int64_t sequence_number = -1;
   if (reference != nullptr) {
-    auto reference_compute_op = dyn_cast<ComputeOp>(reference.getOperation());
-    sequence_number = reference_compute_op
-                          ? ExplicitSequenceNumber(reference_compute_op)
-                          : ImplicitSequenceNumber(reference);
+    if (auto compute_op = reference.dyn_cast<ComputeOpInstance>()) {
+      sequence_number = ExplicitSequenceNumber(compute_op);
+    } else {
+      sequence_number = ImplicitSequenceNumber(reference);
+    }
   }
 
   // Implicit sequence number can be -1 if the reference operation doesn't
@@ -379,39 +383,43 @@ void SequenceAnalysis::Insert(ComputeOp op, SairOp reference,
        ++number) {
     op_to_sequence_number_[compute_ops_[number]] = number + 1;
   }
-  op_to_sequence_number_.try_emplace(op.getOperation(), sequence_number);
+  op_to_sequence_number_.try_emplace(op, sequence_number);
   compute_ops_.insert(compute_ops_.begin() + sequence_number, op);
 }
 
-void SequenceAnalysis::Erase(ComputeOp op) {
+void SequenceAnalysis::Erase(const ComputeOpInstance &op) {
   int64_t sequence_number = ExplicitSequenceNumber(op);
   for (int64_t number = sequence_number + 1, e = compute_ops_.size();
        number < e; ++number) {
     op_to_sequence_number_[compute_ops_[number]] = number - 1;
   }
-  op_to_sequence_number_.erase(op.getOperation());
+  op_to_sequence_number_.erase(op);
   compute_ops_.erase(compute_ops_.begin() + sequence_number);
 }
 
-int64_t SequenceAnalysis::ImplicitSequenceNumber(SairOp op) const {
-  assert(!isa<ComputeOp>(op.getOperation()) &&
+int64_t SequenceAnalysis::ImplicitSequenceNumber(const OpInstance &op) const {
+  assert(!op.isa<ComputeOpInstance>() &&
          "only non-compute ops have implicit sequence numbers");
-  ComputeOpSet frontier = ComputeOpFrontier(op, fby_ops_to_cut_);
-  auto range = llvm::map_range(frontier.Ops(), [this](ComputeOp compute_op) {
+  llvm::SetVector<ComputeOpInstance> frontier =
+      ComputeOpFrontier(op, fby_ops_to_cut_);
+  auto get_explicit_number = [this](ComputeOpInstance compute_op) {
     return ExplicitSequenceNumber(compute_op);
-  });
+  };
+  auto range = llvm::map_range(frontier, get_explicit_number);
   int64_t number = -1;
   for (int64_t sequence : range) number = std::max(number, sequence);
   return number;
 }
 
-std::pair<ComputeOp, ComputeOp> SequenceAnalysis::GetSpan(
-    llvm::ArrayRef<ComputeOp> ops) const {
+std::pair<ComputeOpInstance, ComputeOpInstance> SequenceAnalysis::GetSpan(
+    llvm::ArrayRef<ComputeOpInstance> ops) const {
   assert(!ops.empty());
   int64_t min = std::numeric_limits<int64_t>::max();
   int64_t max = std::numeric_limits<int64_t>::min();
-  for (int64_t sequence_number : llvm::map_range(
-           ops, [&](ComputeOp op) { return ExplicitSequenceNumber(op); })) {
+  auto get_sequence_number = [&](ComputeOpInstance op) {
+    return ExplicitSequenceNumber(op);
+  };
+  for (int64_t sequence_number : llvm::map_range(ops, get_sequence_number)) {
     min = std::min(sequence_number, min);
     max = std::max(sequence_number, max);
   }
@@ -419,11 +427,11 @@ std::pair<ComputeOp, ComputeOp> SequenceAnalysis::GetSpan(
 }
 
 ProgramPoint SequenceAnalysis::FindInsertionPoint(
-    const IterationSpaceAnalysis &iter_spaces, SairOp start, int num_loops,
-    Direction direction) const {
+    const IterationSpaceAnalysis &iter_spaces, const OpInstance &start,
+    int num_loops, Direction direction) const {
   // Compute initial sequence number.
   int sequence_number;
-  if (auto compute_op = dyn_cast<ComputeOp>(start.getOperation())) {
+  if (auto compute_op = start.dyn_cast<ComputeOpInstance>()) {
     sequence_number = ExplicitSequenceNumber(compute_op);
   } else {
     sequence_number = ImplicitSequenceNumber(start);
@@ -442,8 +450,8 @@ ProgramPoint SequenceAnalysis::FindInsertionPoint(
 
   sequence_number += delta;
   while (sequence_number >= 0 && sequence_number < compute_ops_.size()) {
-    ComputeOp new_op = compute_ops_[sequence_number];
-    llvm::ArrayRef<mlir::Attribute> new_loops = new_op.LoopNestLoops();
+    ComputeOpInstance new_op = compute_ops_[sequence_number];
+    llvm::ArrayRef<mlir::Attribute> new_loops = new_op.Loops();
     num_common_loops = std::min<int>(new_loops.size(), num_common_loops);
     for (; num_common_loops > 0; --num_common_loops) {
       auto loop = new_loops[num_common_loops - 1].cast<LoopAttr>();
@@ -456,11 +464,10 @@ ProgramPoint SequenceAnalysis::FindInsertionPoint(
   sequence_number -= delta;
 
   auto target_loop_nest = start_loop_nest.take_front(num_loops);
-  auto program = cast<SairProgramOp>(start->getParentOp());
   if (sequence_number < 0) {
-    return ProgramPoint(program, Direction::kBefore, target_loop_nest);
+    return ProgramPoint(start.program(), Direction::kBefore, target_loop_nest);
   } else if (sequence_number >= compute_ops_.size()) {
-    return ProgramPoint(program, Direction::kAfter, target_loop_nest);
+    return ProgramPoint(start.program(), Direction::kAfter, target_loop_nest);
   } else {
     return ProgramPoint(compute_ops_[sequence_number], direction,
                         target_loop_nest);
@@ -471,19 +478,19 @@ ProgramPoint SequenceAnalysis::FindInsertionPoint(
 // use-def edge of the "value" operand of a "fby" op, adds such ops into
 // `fby_ops_to_cut`. Otherwise, returns failure.
 static mlir::LogicalResult FindEdgesToCut(
-    SairProgramOp program, llvm::SmallVectorImpl<SairFbyOp> &fby_ops_to_cut,
+    SairProgramOp program, llvm::SmallVectorImpl<OpInstance> &fby_ops_to_cut,
     bool report_errors) {
   // Create a graph of Sair predecessor ops.
-  SairOpGraph predecessors;
-  program.walk([&](SairOp op) {
+  OpGraph predecessors;
+  program.WalkOpInstances([&](const OpInstance &op) {
     predecessors.insert(op);
-    for (mlir::Value operand : op.domain()) {
-      if (auto defining_op = operand.getDefiningOp<SairOp>()) {
-        predecessors[op].insert(defining_op);
-      }
+    for (ResultInstance operand : op.domain()) {
+      predecessors[op].insert(operand.defining_op());
     }
-    for (ValueOperand operand : op.ValueOperands()) {
-      predecessors[op].insert(operand.value().getDefiningOp<SairOp>());
+    for (OperandInstance operand : op.Operands()) {
+      auto value = operand.GetValue();
+      if (!value.has_value()) continue;
+      predecessors[op].insert(value->defining_op());
     }
   });
 
@@ -493,7 +500,7 @@ static mlir::LogicalResult FindEdgesToCut(
   // until all cycles are resolved.
   bool found = false;
   do {
-    DFSPostorderTraversal<SairOp> traversal(predecessors);
+    DFSPostorderTraversal<OpInstance> traversal(predecessors);
     found = false;
 
     for (auto it = traversal.begin(), eit = traversal.end(); it != eit; ++it) {
@@ -502,28 +509,36 @@ static mlir::LogicalResult FindEdgesToCut(
       auto cycle = llvm::to_vector<4>(it.FindCycleOnStack());
       cycle.push_back(cycle.front());
       for (int i = 0, e = cycle.size() - 1; i < e; ++i) {
-        if (auto fby_op = dyn_cast<SairFbyOp>(cycle[i].getOperation())) {
-          // If the cycle is not caused by the "then" edge of an "fby", we are
-          // not interested in cutting it here.
-          if (fby_op.Value().value().getDefiningOp() != cycle[i + 1]) continue;
-          assert(predecessors[fby_op].contains(cycle[i + 1]));
-          predecessors[fby_op].erase(cycle[i + 1]);
-          found = true;
+        // Filter out operations that are not fby operations.
+        if (cycle[i].is_copy()) continue;
+        mlir::Operation *concrete_op = cycle[i].GetDuplicatedOp();
+        auto fby_op = dyn_cast<SairFbyOp>(concrete_op);
+        if (fby_op == nullptr) continue;
 
-          // This is the edge to cut and not consider when computing the
-          // backward slice.
-          fby_ops_to_cut.push_back(fby_op);
-          break;
-        }
+        OperandInstance operand(fby_op.Value(), cycle[i]);
+        auto value = operand.GetValue();
+        if (!value.has_value()) continue;
+
+        // If the cycle is not caused by the "then" edge of an "fby", we are
+        // not interested in cutting it here.
+        if (value->defining_op() != cycle[i + 1]) continue;
+        assert(predecessors[cycle[i]].contains(cycle[i + 1]));
+        predecessors[cycle[i]].remove(cycle[i + 1]);
+        found = true;
+
+        // This is the edge to cut and not consider when computing the
+        // backward slice.
+        fby_ops_to_cut.push_back(cycle[i]);
+        break;
       }
       // If there is no edge in the cycle that connects an operation to "fby"
       // through its "then" operand, the cycle is invalid in the program.
       if (found) break;
       if (!report_errors) return mlir::failure();
-      mlir::InFlightDiagnostic diag = cycle.front().emitError()
+      mlir::InFlightDiagnostic diag = cycle.front().EmitError()
                                       << "unexpected use-def cycle";
-      for (SairOp cycle_op : llvm::drop_begin(cycle)) {
-        diag.attachNote(cycle_op->getLoc()) << "operation in the cycle";
+      for (OpInstance cycle_op : llvm::drop_begin(cycle)) {
+        cycle_op.AttachNote(diag) << "operation in the cycle";
       }
       return diag;
     }
@@ -531,23 +546,25 @@ static mlir::LogicalResult FindEdgesToCut(
   return mlir::success();
 }
 
-bool FindImplicitlySequencedUseDefChain(ComputeOp from, ComputeOp to,
-                                        llvm::SmallVectorImpl<SairOp> &stack) {
-  llvm::SmallPtrSet<Operation *, 8> visited;
-  stack.push_back(cast<SairOp>(from.getOperation()));
+bool FindImplicitlySequencedUseDefChain(
+    const ComputeOpInstance &from, const ComputeOpInstance &to,
+    llvm::SmallVectorImpl<OpInstance> &stack) {
+  llvm::DenseSet<OpInstance> visited;
+  stack.push_back(from);
   do {
-    SairOp current = stack.back();
+    OpInstance current = stack.back();
     bool all_users_visited = true;
-    for (mlir::Operation *user : current->getUsers()) {
-      if (!visited.insert(user).second) continue;
-      auto sair_user = dyn_cast<SairOp>(user);
-      if (!sair_user) continue;
-      if (user == to) return true;
-      if (isa<ComputeOp>(user)) continue;
-
-      stack.push_back(sair_user);
-      all_users_visited = false;
-      break;
+    for (ResultInstance result : current.Results()) {
+      for (auto &[user, pos] : result.GetUses()) {
+        (void)pos;
+        if (!visited.insert(user).second) continue;
+        if (user == to) return true;
+        if (user.isa<ComputeOpInstance>()) continue;
+        stack.push_back(user);
+        all_users_visited = false;
+        break;
+      }
+      if (!all_users_visited) break;
     }
     if (all_users_visited) stack.pop_back();
   } while (!stack.empty());
@@ -559,16 +576,18 @@ bool FindImplicitlySequencedUseDefChain(ComputeOp from, ComputeOp to,
 // given a relative order even if they don't have a sequence attribute attached.
 // The sequence number returned in this iteration may differ from that of the
 // sequence attribute if the Sair program hasn't been canonicalized.
-static llvm::iterator_range<std::multimap<int64_t, ComputeOp>::const_iterator>
-OpsBefore(const std::multimap<int64_t, ComputeOp> &sequenced_ops,
-          ComputeOp op) {
-  llvm::Optional<int64_t> sequence_number = op.Sequence();
-  if (!sequence_number) {
+static llvm::iterator_range<
+    std::multimap<int64_t, ComputeOpInstance>::const_iterator>
+OpsBefore(const std::multimap<int64_t, ComputeOpInstance> &sequenced_ops,
+          ComputeOpInstance op) {
+  DecisionsAttr decisions = op.GetDecisions();
+  if (decisions.sequence() == nullptr) {
     return llvm::make_range(sequenced_ops.end(), sequenced_ops.end());
   }
 
+  int64_t sequence_number = decisions.sequence().getInt();
   return llvm::make_range(sequenced_ops.begin(),
-                          sequenced_ops.lower_bound(*sequence_number));
+                          sequenced_ops.lower_bound(sequence_number));
 }
 
 mlir::LogicalResult SequenceAnalysis::ComputeDefaultSequence(
@@ -576,11 +595,11 @@ mlir::LogicalResult SequenceAnalysis::ComputeDefaultSequence(
   // We use a standard multimap because (a) the sequence numbers can be shared
   // and (b) we need a deterministic increasing order that is provided by this
   // map and not provided by hash table-based maps.
-  std::multimap<int64_t, ComputeOp> initial_sequence;
-  program->walk([&](ComputeOp op) {
-    if (llvm::Optional<int64_t> sequence_number = op.Sequence()) {
-      initial_sequence.emplace(*sequence_number, op);
-    }
+  std::multimap<int64_t, ComputeOpInstance> initial_sequence;
+  program.WalkComputeOpInstances([&](const ComputeOpInstance &op) {
+    DecisionsAttr decisions = op.GetDecisions();
+    if (decisions.sequence() == nullptr) return;
+    initial_sequence.emplace(decisions.sequence().getInt(), op);
   });
 
   // This shouldn't fail as long as we control use-def chain order in the input
@@ -592,15 +611,14 @@ mlir::LogicalResult SequenceAnalysis::ComputeDefaultSequence(
   }
 
   ComputeOpGraph predecessors;
-  program.walk([&](ComputeOp op) {
+  program.WalkComputeOpInstances([&](const ComputeOpInstance &op) {
     // Put the op in the adjacency list even if it has no predecessors.
     predecessors.insert(op);
 
     // Add all predecessor compute ops due to use-def chains. Note that we add
     // only the frontier since we will traverse the entire graph in DFS manner,
     // so there's no need to compute the entire slice here.
-    predecessors[op] =
-        ComputeOpFrontier(cast<SairOp>(op.getOperation()), fby_ops_to_cut_);
+    predecessors[op] = ComputeOpFrontier(op, fby_ops_to_cut_);
 
     // Add all ops with smaller sequence numbers as known predecessors.
     auto range = llvm::make_second_range(OpsBefore(initial_sequence, op));
@@ -612,7 +630,7 @@ mlir::LogicalResult SequenceAnalysis::ComputeDefaultSequence(
   // Walk the predecessor graph in DFS post-order, meaning that we will visit a
   // compute op after visiting all of its predecessors, and assign new sequence
   // numbers.
-  DFSPostorderTraversal<ComputeOp> traversal(predecessors);
+  DFSPostorderTraversal<ComputeOpInstance> traversal(predecessors);
   compute_ops_.reserve(predecessors.keys().size());
   for (auto it = traversal.begin(), eit = traversal.end(); it != eit; ++it) {
     if (*it != nullptr) {
@@ -629,25 +647,25 @@ mlir::LogicalResult SequenceAnalysis::ComputeDefaultSequence(
     auto cycle = llvm::to_vector<4>(it.FindCycleOnStack());
     LLVM_DEBUG({
       DBGS() << "unexpected cycle detected\n";
-      for (ComputeOp cycle_op : cycle) DBGS() << cycle_op << "\n";
+      for (const ComputeOpInstance &cycle_op : cycle)
+        DBGS() << cycle_op.getOperation() << "\n";
     });
 
     if (!report_errors) return mlir::failure();
     cycle.push_back(cycle.front());
     mlir::InFlightDiagnostic diag =
-        cycle.back().emitError()
+        cycle.back().EmitError()
         << "operation sequencing contradicts use-def chains";
     for (int i = cycle.size() - 2; i >= 0; --i) {
-      llvm::SmallVector<SairOp> stack;
+      llvm::SmallVector<OpInstance> stack;
       if (FindImplicitlySequencedUseDefChain(cycle[i + 1], cycle[i], stack)) {
-        for (SairOp stack_op : llvm::drop_begin(stack)) {
-          diag.attachNote(stack_op->getLoc())
-              << "implicitly sequenced operation";
+        for (OpInstance stack_op : llvm::drop_begin(stack)) {
+          stack_op.AttachNote(diag) << "implicitly sequenced operation";
         }
-        diag.attachNote(cycle[i]->getLoc())
+        cycle[i].AttachNote(diag)
             << "sequenceable operation sequenced by use-def";
       } else {
-        diag.attachNote(cycle[i]->getLoc()) << "sequenceable operation";
+        cycle[i].AttachNote(diag) << "sequenceable operation";
       }
     }
 

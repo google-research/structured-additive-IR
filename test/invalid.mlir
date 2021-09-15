@@ -154,15 +154,15 @@ func @copy_cycle(%arg0: f32) {
     // expected-note @below {{operation in the cycle}}
     %1 = sair.proj_any of[d0:%0] %6(d0) : #sair.shape<d0:static_range<8>>, f32
     // expected-note @below {{operation in the cycle}}
-    %2 = sair.copy[d0:%0] %1 : !sair.value<d0:static_range<8>, f32>
+    %2 = sair.copy[d0:%0] %1 {instances = [{}]}: !sair.value<d0:static_range<8>, f32>
     // expected-note @below {{operation in the cycle}}
-    %3 = sair.copy[d0:%0] %2(d0) : !sair.value<d0:static_range<8>, f32>
+    %3 = sair.copy[d0:%0] %2(d0) {instances = [{}]} : !sair.value<d0:static_range<8>, f32>
     // expected-note @below {{operation in the cycle}}
-    %4 = sair.copy[d0:%0] %3(d0) : !sair.value<d0:static_range<8>, f32>
+    %4 = sair.copy[d0:%0] %3(d0) {instances = [{}]} : !sair.value<d0:static_range<8>, f32>
     // expected-note @below {{operation in the cycle}}
-    %5 = sair.copy[d0:%0] %4(d0) : !sair.value<d0:static_range<8>, f32>
+    %5 = sair.copy[d0:%0] %4(d0) {instances = [{}]} : !sair.value<d0:static_range<8>, f32>
     // expected-note @below {{operation in the cycle}}
-    %6 = sair.copy[d0:%0] %5(d0) : !sair.value<d0:static_range<8>, f32>
+    %6 = sair.copy[d0:%0] %5(d0) {instances = [{}]} : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
   return
@@ -797,12 +797,20 @@ func @loop_fusion_not_contiguous(%arg0: f32) {
     %0 = sair.static_range : !sair.static_range<8>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     sair.copy[d0: %0] %1 {
-      instances = [{loop_nest = [{name = "A", iter=#sair.mapping_expr<d0>}]}]
+      instances = [{
+        loop_nest = [{name = "A", iter=#sair.mapping_expr<d0>}],
+        sequence = 0
+      }]
     } : !sair.value<d0:static_range<8>, f32>
-    sair.copy %1 : !sair.value<(), f32>
+    sair.copy %1 {
+      instances = [{sequence = 1}]
+    } : !sair.value<(), f32>
     // expected-error @+1 {{occurrences of loop "A" must be contiguous}}
     sair.copy[d0: %0] %1 {
-      instances = [{loop_nest = [{name = "A", iter=#sair.mapping_expr<d0>}]}]
+      instances = [{
+        loop_nest = [{name = "A", iter=#sair.mapping_expr<d0>}],
+        sequence = 2
+      }]
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
@@ -1574,6 +1582,7 @@ func @buffer_used_before_dimension_def(%arg0: f32, %arg1: index) {
     // expected-error @+1 {{buffer "bufferA" is used before one of its dimensions is defined}}
     %3 = sair.copy[d0:%2] %0 {
       instances = [{
+        sequence = 0,
         loop_nest = [{name = "loopA", iter = #sair.mapping_expr<d0>}],
         storage = [{
           space = "memory", name = "bufferA",
@@ -1583,11 +1592,13 @@ func @buffer_used_before_dimension_def(%arg0: f32, %arg1: index) {
     } : !sair.value<d0:static_range<8>, f32>
 
     %dim = sair.from_scalar %arg1 : !sair.value<(), index>
-    %copy = sair.copy %dim { sequence = 1 } : !sair.value<(), index>
+    %copy = sair.copy %dim { instances = [{sequence = 1}] }
+      : !sair.value<(), index>
     // expected-note @+1 {{dimension defined here}}
     %4 = sair.dyn_range %copy : !sair.dyn_range
     %5 = sair.copy[d0:%4] %0 {
       instances = [{
+        sequence = 2,
         loop_nest = [
           {name = "loopB", iter = #sair.mapping_expr<d0>}
         ],
@@ -1704,6 +1715,7 @@ func @buffer_used_before_def(%arg0: f32, %arg1: memref<f32>) {
     // expected-error @+1 {{buffer "bufferA" used before it is defined}}
     %1 = sair.copy %0 {
       instances = [{
+        sequence = 0,
         loop_nest = [],
         storage = [
           {name = "bufferA", space = "memory",
@@ -1713,7 +1725,9 @@ func @buffer_used_before_def(%arg0: f32, %arg1: memref<f32>) {
     } : !sair.value<(), f32>
     %2 = sair.from_scalar %arg1 : !sair.value<(), memref<f32>>
     // expected-note @+1 {{buffer defined here}}
-    %copy = sair.copy %2 : !sair.value<(), memref<f32>>
+    %copy = sair.copy %2 {
+      instances = [{sequence = 1}]
+    } : !sair.value<(), memref<f32>>
     %3 = sair.from_memref %copy memref {
       buffer_name = "bufferA"
     } : #sair.shape<()>, memref<f32>
@@ -1947,13 +1961,16 @@ func @from_memref_overwrite(%arg0 : memref<f32>) {
     // expected-error @+1 {{operation overwrites a value stored in buffer "A" before it is used}}
     %2 = sair.copy %1 {
       instances = [{
+        sequence = 0,
         loop_nest = [],
         storage = [{name = "A", space = "memory",
                     layout = #sair.named_mapping<[] -> ()>}]
       }]
     } : !sair.value<(), f32>
     // expected-note @+1 {{value used here}}
-    %3 = sair.copy %1 : !sair.value<(), f32>
+    %3 = sair.copy %1 {
+      instances = [{sequence = 2}]
+    } : !sair.value<(), f32>
     sair.exit
   }
   return
@@ -1967,7 +1984,9 @@ func @to_memref_overwrite(%arg0: memref<f32>, %arg1: f32) {
     %0 = sair.from_scalar %arg0 : !sair.value<(), memref<f32>>
     %1 = sair.from_scalar %arg1 : !sair.value<(), f32>
     // expected-note @+1 {{value stored here}}
-    %2 = sair.copy %1 : !sair.value<(), f32>
+    %2 = sair.copy %1 {
+      instances = [{}]
+    } : !sair.value<(), f32>
     // expected-error @+1 {{operation overwrites a value stored in buffer "A" before it is used}}
     %3 = sair.copy %1 {
       instances = [{storage = [{name = "A", space = "memory"}]}]
@@ -2271,7 +2290,9 @@ func @sequence_inversion_implicit_sequence_domain(%arg0: index) {
     // expected-note @below {{implicitly sequenced operation}}
     %3 = sair.dyn_range[d0:%1] %2(d0) : !sair.dyn_range<d0:dyn_range>
     // expected-note @below {{sequenceable operation sequenced by use-def}}
-    %4 = sair.copy[d0:%1, d1:%3] %0 : !sair.value<d0:dyn_range x d1:dyn_range(d0), index>
+    %4 = sair.copy[d0:%1, d1:%3] %0 {
+      instances = [{}]
+    } : !sair.value<d0:dyn_range x d1:dyn_range(d0), index>
 
     // expected-note @below {{implicitly sequenced operation}}
     %5 = sair.proj_any[d0:%1] of[d1:%3] %4(d0, d1) : #sair.shape<d0:dyn_range x d1:dyn_range(d0)>, index
@@ -2384,14 +2405,18 @@ func @invalid_operand_shape(%arg0: f32) {
 func @use_def_partial_invalid(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %1 = sair.copy %0 : !sair.value<(), f32>
+    %1 = sair.copy %0 {
+      instances = [{}]
+    } : !sair.value<(), f32>
     // expected-error @below {{operation sequencing contradicts use-def chains}}
     // expected-note @below {{sequenceable operation}}
     %2 = sair.copy %1 {
       instances = [{sequence = 2}]
     } : !sair.value<(), f32>
     // expected-note @below {{sequenceable operation sequenced by use-def}}
-    %3 = sair.copy %2 : !sair.value<(), f32>
+    %3 = sair.copy %2 {
+      instances = [{}]
+    } : !sair.value<(), f32>
     // expected-note @below {{sequenceable operation sequenced by use-def}}
     %4 = sair.copy %3 {
       instances = [{sequence = 1}]

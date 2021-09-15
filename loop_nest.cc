@@ -84,76 +84,73 @@ static IterationSpace InferIterationSpace(
 
 IterationSpaceAnalysis::IterationSpaceAnalysis(SairProgramOp program_op) {
   if (program_op == nullptr) return;
-  for (mlir::Operation &op : program_op.body().front()) {
-    ComputeIterationSpace(&op);
-  }
+  program_op.WalkOpInstances(
+      [&](const OpInstance &op) { ComputeIterationSpace(op); });
 }
 
-const IterationSpace &IterationSpaceAnalysis::Get(SairOp op) const {
-  return iteration_space_.find(op.getOperation())->second;
+const IterationSpace &IterationSpaceAnalysis::Get(const OpInstance &op) const {
+  return iteration_space_.find(op)->second;
 }
 
 const IterationSpace &IterationSpaceAnalysis::ComputeIterationSpace(
-    mlir::Operation *operation) {
-  if (auto it = iteration_space_.find(operation);
-      it != iteration_space_.end()) {
+    const OpInstance &op) {
+  if (auto it = iteration_space_.find(op); it != iteration_space_.end()) {
     return it->second;
   }
 
-  mlir::MLIRContext *context = operation->getContext();
-  SairOp sair_op = cast<SairOp>(operation);
-  int domain_size = sair_op.domain().size();
-
-  // Handle ComputeOp case.
-  if (auto compute_op = dyn_cast<ComputeOp>(operation)) {
-    int num_loops = compute_op.LoopNestLoops().size();
+  if (auto compute_op = op.dyn_cast<ComputeOpInstance>()) {
+    int num_loops = compute_op.Loops().size();
     llvm::SmallVector<MappingExpr> exprs;
     exprs.reserve(num_loops);
     llvm::SmallVector<mlir::StringAttr> loop_names;
     loop_names.reserve(num_loops);
 
-    for (mlir::Attribute attr : compute_op.LoopNestLoops()) {
+    for (mlir::Attribute attr : compute_op.Loops()) {
       LoopAttr loop = attr.cast<LoopAttr>();
       loop_names.push_back(loop.name());
       exprs.push_back(loop.iter());
     }
 
-    bool fully_specified = compute_op.loop_nest().hasValue();
-    auto mapping = MappingAttr::get(context, domain_size, exprs);
+    DecisionsAttr decisions = compute_op.GetDecisions();
+    bool fully_specified = decisions.loop_nest() != nullptr;
+    auto mapping = MappingAttr::get(op.context(), op.domain_size(), exprs);
     return iteration_space_
-        .try_emplace(operation, loop_names, mapping, fully_specified)
+        .try_emplace(op, loop_names, mapping, fully_specified)
         .first->second;
   }
 
   // Temporarily set an empty iteration space to avoid infinite recursion.
-  auto empty_mapping = MappingAttr::get(context, domain_size, {});
+  auto empty_mapping = MappingAttr::get(op.context(), op.domain_size(), {});
   llvm::SmallVector<mlir::StringAttr> empty_names;
   auto it =
-      iteration_space_.try_emplace(operation, empty_names, empty_mapping, false)
-          .first;
+      iteration_space_.try_emplace(op, empty_names, empty_mapping, false).first;
 
+  // If `op` is not a ComputeOpInstance, it is a SairOp.
+  mlir::Operation *operation = op.GetDuplicatedOp();
   auto infer_iteration_space = dyn_cast<InferIterationSpaceOp>(operation);
   if (infer_iteration_space == nullptr) return it->second;
-
   int operand_pos = infer_iteration_space.infer_iteration_space_operand();
-  ValueOperand operand = sair_op.ValueOperands()[operand_pos];
-  mlir::Operation *defining_op = operand.value().getDefiningOp();
+
+  auto operand_value = op.Operand(operand_pos).GetValue();
+  if (!operand_value.has_value()) return it->second;
+
+  ValueOperand operand = cast<SairOp>(operation).ValueOperands()[operand_pos];
   const IterationSpace &parent_iteration_space =
-      ComputeIterationSpace(defining_op);
-  it = iteration_space_.find(operation);
+      ComputeIterationSpace(operand_value->defining_op());
+  it = iteration_space_.find(op);
   it->second = InferIterationSpace(parent_iteration_space, operand);
   return it->second;
 }
 
 MappingAttr IterationSpaceAnalysis::TranslateMapping(
-    SairOp from, SairOp to, MappingAttr mapping) const {
+    const OpInstance &from, const OpInstance &to, MappingAttr mapping) const {
   MappingAttr result = TryTranslateMapping(from, to, mapping);
   assert(result != nullptr);
   return result;
 }
 
 MappingAttr IterationSpaceAnalysis::TryTranslateMapping(
-    SairOp from, SairOp to, MappingAttr mapping) const {
+    const OpInstance &from, const OpInstance &to, MappingAttr mapping) const {
   const IterationSpace &from_space = Get(from);
   const IterationSpace &to_space = Get(to);
   MappingAttr space_mapping = from_space.mapping()
@@ -187,38 +184,29 @@ class LoopNestConstraintsAnalysis {
 
   explicit LoopNestConstraintsAnalysis(
       SairProgramOp program, const IterationSpaceAnalysis &loop_nests) {
-    for (mlir::Operation &operation : program.body().front()) {
-      ComputeConstraints(&operation, loop_nests);
-    }
+    program.WalkOpInstances(
+        [&](const OpInstance &op) { ComputeConstraints(op, loop_nests); });
   }
 
   // Returns the constraints for using the given value.
-  const Constraints &GetConstraints(mlir::Value value) const {
-    mlir::Operation *defining_op = value.getDefiningOp();
-    // The sair.program verifier ensures that operation operands are defined
-    // within the same block. This is done before calling the loop nest
-    // constraints analysis.
-    assert(defining_op != nullptr);
-    return constraints_.find(defining_op)->second;
+  const Constraints &GetConstraints(ResultInstance value) const {
+    return constraints_.find(value.defining_op())->second;
   }
 
  private:
   // Compute constraints for using values produced by the given operation.
   const Constraints &ComputeConstraints(
-      mlir::Operation *operation,
-      const IterationSpaceAnalysis &iteration_spaces) {
-    if (auto it = constraints_.find(operation); it != constraints_.end()) {
+      const OpInstance &op, const IterationSpaceAnalysis &iteration_spaces) {
+    if (auto it = constraints_.find(op); it != constraints_.end()) {
       return it->second;
     }
 
-    SairOp op = cast<SairOp>(operation);
-    int domain_size = op.domain().size();
-    Constraints constraints(domain_size);
+    Constraints constraints(op.domain_size());
 
-    auto inherit_constraints = [&](mlir::Value value, MappingAttr mapping,
+    auto inherit_constraints = [&](ResultInstance value, MappingAttr mapping,
                                    bool loop_carried = false) {
       const Constraints &parent_constraint =
-          ComputeConstraints(value.getDefiningOp(), iteration_spaces);
+          ComputeConstraints(value.defining_op(), iteration_spaces);
       for (int closed_dim : parent_constraint.closed_dimensions.set_bits()) {
         if (closed_dim >= mapping.size()) break;
         mapping.Dimension(closed_dim)
@@ -229,26 +217,30 @@ class LoopNestConstraintsAnalysis {
       constraints.closed_loops.set_union(parent_constraint.closed_loops);
     };
 
-    if (!isa<ComputeOp>(operation)) {
+    if (!op.isa<ComputeOpInstance>()) {
       // Store empty constraints to avoid infinite recursion.
-      constraints_.try_emplace(operation, domain_size);
-      for (int i = 0, e = domain_size; i < e; ++i) {
-        MappingAttr mapping = op.shape().Dimension(i).dependency_mapping();
-        inherit_constraints(op.domain()[i], mapping);
+      constraints_.try_emplace(op, op.domain_size());
+      DomainShapeAttr shape = op.GetShape();
+      for (int i = 0, e = op.domain_size(); i < e; ++i) {
+        MappingAttr mapping = shape.Dimension(i).dependency_mapping();
+        inherit_constraints(op.domain(i), mapping);
       }
-      for (ValueOperand operand : op.ValueOperands()) {
-        inherit_constraints(operand.value(), operand.Mapping(),
+      for (OperandInstance operand : op.Operands()) {
+        auto value = operand.GetValue();
+        if (!value.has_value()) continue;
+        inherit_constraints(*value, operand.Mapping(),
                             operand.AllowUseBeforeDef());
       }
     }
 
-    const IterationSpace &iteration_space = iteration_spaces.Get(operation);
+    const IterationSpace &iteration_space = iteration_spaces.Get(op);
+
     llvm::SmallBitVector closed_dims = op.ResultsDimDependencies();
     bool closed_dims_seen = false;
     for (int i = 0, e = iteration_space.num_loops(); i < e; ++i) {
       constraints.open_loops.insert(iteration_space.loop_names()[i]);
       MappingExpr expr = iteration_space.mapping().Dimension(i);
-      llvm::SmallBitVector iter_dims = expr.DependencyMask(op.domain().size());
+      llvm::SmallBitVector iter_dims = expr.DependencyMask(op.domain_size());
       if (iter_dims.anyCommon(closed_dims)) {
         constraints.closed_loops.insert(iteration_space.loop_names()[i]);
         closed_dims_seen = true;
@@ -258,12 +250,11 @@ class LoopNestConstraintsAnalysis {
       }
     }
 
-    constraints_.erase(operation);
-    return constraints_.insert({operation, std::move(constraints)})
-        .first->second;
+    constraints_.erase(op);
+    return constraints_.insert({op, std::move(constraints)}).first->second;
   }
 
-  llvm::DenseMap<mlir::Operation *, Constraints> constraints_;
+  llvm::DenseMap<OpInstance, Constraints> constraints_;
 };
 
 mlir::LogicalResult VerifyLoopNestWellFormed(
@@ -320,7 +311,7 @@ class LoopNestState {
   // Updates the list of loops currently open and closed to accomodate the
   // loop nest `loop_nest` of `op`. Returns a failure if the loop structure does
   // not form a tree or if a loop is used before its range is defined.
-  mlir::LogicalResult Update(SairOp op,
+  mlir::LogicalResult Update(const OpInstance &op,
                              mlir::ArrayRef<mlir::Attribute> loop_nest) {
     // Find the number of common loops.
     int common_prefix_size = 0;
@@ -338,7 +329,7 @@ class LoopNestState {
       LoopAttr loop = attribute.cast<LoopAttr>();
 
       if (closed_loops_.count(loop.name()) > 0) {
-        return op.emitError() << "occurrences of loop " << loop.name()
+        return op.EmitError() << "occurrences of loop " << loop.name()
                               << " must be contiguous";
       }
 
@@ -358,13 +349,13 @@ class LoopNestState {
 
   // Verifies that the given loops have been open before.
   mlir::LogicalResult VerifyLoopsOpen(
-      const llvm::SetVector<mlir::Attribute> &loops, mlir::Location loc) const {
+      const OpInstance &op,
+      const llvm::SetVector<mlir::Attribute> &loops) const {
     for (mlir::Attribute loop : loops) {
       if (llvm::count(open_loops_, loop) == 0 &&
           !closed_loops_.contains(loop)) {
-        return mlir::emitError(loc)
-               << "loop " << loop
-               << " must be open at or before this operation";
+        return op.EmitError() << "loop " << loop
+                              << " must be open at or before this operation";
       }
     }
     return mlir::success();
@@ -380,21 +371,22 @@ class LoopNestState {
 // Verifies that dimensions that must be open before executing `op` are indeed
 // open in the loop nest state.
 static mlir::LogicalResult VerifyLoopsOpen(
-    SairOp op, const LoopNestState &loop_nest_state,
+    const OpInstance &op, const LoopNestState &loop_nest_state,
     const LoopNestConstraintsAnalysis &loop_constaints_analysis) {
-  for (mlir::Value dimension : op.domain()) {
+  for (ResultInstance dimension : op.domain()) {
     const auto &constraints =
         loop_constaints_analysis.GetConstraints(dimension);
-    if (mlir::failed(loop_nest_state.VerifyLoopsOpen(constraints.open_loops,
-                                                     op.getLoc()))) {
+    if (mlir::failed(
+            loop_nest_state.VerifyLoopsOpen(op, constraints.open_loops))) {
       return mlir::failure();
     }
   }
-  for (ValueOperand operand : op.ValueOperands()) {
-    const auto &constraints =
-        loop_constaints_analysis.GetConstraints(operand.value());
-    if (mlir::failed(loop_nest_state.VerifyLoopsOpen(constraints.open_loops,
-                                                     op.getLoc()))) {
+  for (OperandInstance operand : op.Operands()) {
+    auto value = operand.GetValue();
+    if (!value.has_value()) continue;
+    const auto &constraints = loop_constaints_analysis.GetConstraints(*value);
+    if (mlir::failed(
+            loop_nest_state.VerifyLoopsOpen(op, constraints.open_loops))) {
       return mlir::failure();
     }
   }
@@ -408,21 +400,24 @@ static mlir::LogicalResult VerifyLoopsOpen(
 // * `carrying_dims`: if `dependency` is a loop-carried operand, lists
 //    dimensions carrying the value of `dependency` across iterations.
 static mlir::LogicalResult VerifyDependency(
-    SairOp op, const IterationSpace &op_loop_nest, ValueAccess dependency,
+    const OpInstance &op, const IterationSpace &op_loop_nest,
+    ValueAccessInstance dependency,
     const llvm::SmallBitVector &dim_dependencies,
     const llvm::SmallBitVector &carrying_dims,
     const IterationSpaceAnalysis &iteration_space_analysis,
     const LoopNestConstraintsAnalysis &loop_constraints_analysis) {
-  auto dependency_op = cast<SairOp>(dependency.value.getDefiningOp());
+  OpInstance dependency_op = dependency.value.defining_op();
 
   MappingAttr domain_mapping =
-      dependency.mapping.Resize(dependency_op.domain().size())
-          .ResizeUseDomain(op.domain().size());
+      dependency.mapping.Resize(dependency_op.domain_size())
+          .ResizeUseDomain(op.domain_size());
   if (iteration_space_analysis.TryTranslateMapping(op, dependency_op,
                                                    domain_mapping) == nullptr) {
-    return (op.emitError() << "loop nest violates a data dependency")
-               .attachNote(dependency.value.getLoc())
-           << "dependency from this operation";
+    mlir::InFlightDiagnostic diag = op.EmitError()
+                                    << "loop nest violates a data dependency";
+    dependency.value.defining_op().AttachNote(diag)
+        << "dependency from this operation";
+    return diag;
   }
 
   const LoopNestConstraintsAnalysis::Constraints &constraints =
@@ -430,19 +425,19 @@ static mlir::LogicalResult VerifyDependency(
   for (int i = 0, e = op_loop_nest.num_loops(); i < e; ++i) {
     mlir::StringAttr name = op_loop_nest.loop_names()[i];
     if (constraints.closed_loops.contains(name)) {
-      return op.emitError()
+      return op.EmitError()
              << "loop " << name << " must be closed before this operation";
     }
 
     if (!constraints.open_loops.contains(name)) continue;
     MappingExpr expr = op_loop_nest.mapping().Dimension(i);
-    llvm::SmallBitVector iter_dims = expr.DependencyMask(op.domain().size());
+    llvm::SmallBitVector iter_dims = expr.DependencyMask(op.domain_size());
     if (!dim_dependencies.anyCommon(iter_dims)) continue;
-
-    return (dependency.value.getDefiningOp()->emitError()
-            << "operation cannot be nested in loop " << name)
-               .attachNote(op.getLoc())
-           << "because of this operation";
+    mlir::InFlightDiagnostic diag = dependency.value.defining_op().EmitError()
+                                    << "operation cannot be nested in loop "
+                                    << name;
+    op.AttachNote(diag) << "because of this operation";
+    return diag;
   }
 
   for (int dep_dimension : constraints.closed_dimensions.set_bits()) {
@@ -452,7 +447,7 @@ static mlir::LogicalResult VerifyDependency(
         dependency.mapping.Dimension(dep_dimension).DependencyMask(domain_size);
     if (carrying_dims.anyCommon(mapped_dims)) {
       int dim = (carrying_dims & mapped_dims).find_first();
-      return op.emitError()
+      return op.EmitError()
              << "cannot take the previous value of the operand along 'd" << dim
              << "' because of the operand loop nest";
     }
@@ -464,17 +459,19 @@ static mlir::LogicalResult VerifyDependency(
 // Verifies that the loop nest of `op` is compatible with the constraints
 // imposed by its dependencies.
 static mlir::LogicalResult VerifyDependencies(
-    SairOp op, const IterationSpaceAnalysis &iteration_space_analysis,
+    const OpInstance &op,
+    const IterationSpaceAnalysis &iteration_space_analysis,
     LoopNestConstraintsAnalysis &loop_constaints_analysis) {
   const IterationSpace &loop_nest = iteration_space_analysis.Get(op);
 
-  int domain_size = op.domain().size();
+  int domain_size = op.domain_size();
+  DomainShapeAttr shape = op.GetShape();
   for (int i = 0; i < domain_size; ++i) {
-    llvm::SmallBitVector dim_dependencies(op.domain().size());
-    llvm::SmallBitVector carrying_dims(op.domain().size());
+    llvm::SmallBitVector dim_dependencies(domain_size);
+    llvm::SmallBitVector carrying_dims(domain_size);
     dim_dependencies.set(i);
-    MappingAttr mapping = op.shape().Dimensions()[i].dependency_mapping();
-    if (mlir::failed(VerifyDependency(op, loop_nest, {op.domain()[i], mapping},
+    MappingAttr mapping = shape.Dimensions()[i].dependency_mapping();
+    if (mlir::failed(VerifyDependency(op, loop_nest, {op.domain(i), mapping},
                                       dim_dependencies, carrying_dims,
                                       iteration_space_analysis,
                                       loop_constaints_analysis))) {
@@ -482,9 +479,11 @@ static mlir::LogicalResult VerifyDependencies(
     }
   }
 
-  for (ValueOperand operand : op.ValueOperands()) {
+  for (OperandInstance operand : op.Operands()) {
+    auto value_access = operand.Get();
+    if (!value_access.has_value()) continue;
     if (mlir::failed(VerifyDependency(
-            op, loop_nest, operand.Get(), operand.DependingDims(),
+            op, loop_nest, *value_access, operand.DependingDims(),
             operand.CarryingDims(), iteration_space_analysis,
             loop_constaints_analysis))) {
       return mlir::failure();
@@ -497,20 +496,19 @@ static mlir::LogicalResult VerifyDependencies(
 // Verifies that it is possible to compute the range of loops and that the
 // range is defined before it is used.
 static mlir::LogicalResult VerifyLoopRanges(
-    ComputeOp op, llvm::ArrayRef<mlir::Attribute> loop_nest,
+    const ComputeOpInstance &op, llvm::ArrayRef<mlir::Attribute> loop_nest,
     const LoopFusionAnalysis &fusion_analysis,
     const SequenceAnalysis &sequence_analysis) {
   for (mlir::Attribute attr : loop_nest) {
     LoopAttr loop = attr.cast<LoopAttr>();
     const LoopFusionClass &fusion_class = fusion_analysis.GetClass(loop.name());
     for (const auto &dimension : fusion_class.domain()) {
-      if (sequence_analysis.IsBefore(op,
-                                     dimension.value.getDefiningOp<SairOp>())) {
-        return (op.emitError()
-                << "rematerialized loop " << loop.name()
-                << " indirectly uses the range before it is defined")
-                   .attachNote(dimension.value.getLoc())
-               << "range defined here";
+      if (sequence_analysis.IsBefore(op, dimension.value.defining_op())) {
+        mlir::InFlightDiagnostic diag =
+            op.EmitError() << "rematerialized loop " << loop.name()
+                           << " indirectly uses the range before it is defined";
+        dimension.value.defining_op().AttachNote(diag) << "range defined here";
+        return diag;
       }
     }
   }
@@ -520,13 +518,13 @@ static mlir::LogicalResult VerifyLoopRanges(
 
 // Ensure that each loop only iterate along a single sub-domain.
 static mlir::LogicalResult VerifySubDomains(
-    SairOp op, const IterationSpace &iteration_space) {
+    const OpInstance &op, const IterationSpace &iteration_space) {
   llvm::SmallVector<int> sub_domains = op.SubDomains();
   assert(!sub_domains.empty() || iteration_space.num_loops() == 0);
 
   for (int i = 0, e = iteration_space.num_loops(); i < e; ++i) {
     MappingExpr expr = iteration_space.mapping().Dimension(i);
-    llvm::SmallBitVector dimensions = expr.DependencyMask(op.domain().size());
+    llvm::SmallBitVector dimensions = expr.DependencyMask(op.domain_size());
     if (!dimensions.any()) continue;
 
     // Compute the sub-domain the loop belongs to. If the iterator is not fully
@@ -548,7 +546,7 @@ static mlir::LogicalResult VerifySubDomains(
     // sub-domain.
     if (dimensions.find_first() < min_dim_index ||
         dimensions.find_last() >= max_dim_index) {
-      return op.emitError() << "loop " << iteration_space.loop_names()[i]
+      return op.EmitError() << "loop " << iteration_space.loop_names()[i]
                             << " crosses sub-domains boundaries";
     }
   }
@@ -564,34 +562,35 @@ mlir::LogicalResult VerifyLoopNests(
   LoopNestState loop_nest_state;
   LoopNestConstraintsAnalysis loop_constraints_analysis(program,
                                                         iteration_spaces);
-  for (ComputeOp compute_op : sequence_analysis.Ops()) {
-    auto sair_op = cast<SairOp>(compute_op.getOperation());
-    if (compute_op.loop_nest().hasValue()) {
-      if (mlir::failed(
-              loop_nest_state.Update(sair_op, compute_op.LoopNestLoops()))) {
+  for (ComputeOpInstance op : sequence_analysis.Ops()) {
+    DecisionsAttr decisions = op.GetDecisions();
+    if (decisions.loop_nest() != nullptr) {
+      if (mlir::failed(loop_nest_state.Update(op, op.Loops()))) {
         return mlir::failure();
       }
-      if (mlir::failed(VerifyLoopRanges(compute_op, compute_op.LoopNestLoops(),
-                                        fusion_analysis, sequence_analysis))) {
+      if (mlir::failed(VerifyLoopRanges(op, op.Loops(), fusion_analysis,
+                                        sequence_analysis))) {
         return mlir::failure();
       }
     } else if (mlir::failed(loop_nest_state.CloseLoops())) {
       return mlir::failure();
     }
-    if (mlir::failed(VerifyLoopsOpen(sair_op, loop_nest_state,
-                                     loop_constraints_analysis))) {
+    if (mlir::failed(
+            VerifyLoopsOpen(op, loop_nest_state, loop_constraints_analysis))) {
       return mlir::failure();
     }
   }
   if (mlir::failed(loop_nest_state.CloseLoops())) return mlir::failure();
 
   // Verify dependencies.
-  mlir::WalkResult result = program.walk([&](SairOp op) -> mlir::WalkResult {
-    if (mlir::failed(VerifySubDomains(op, iteration_spaces.Get(op)))) {
-      return mlir::failure();
-    }
-    return VerifyDependencies(op, iteration_spaces, loop_constraints_analysis);
-  });
+  mlir::WalkResult result =
+      program.TryWalkOpInstances([&](const OpInstance &op) -> mlir::WalkResult {
+        if (mlir::failed(VerifySubDomains(op, iteration_spaces.Get(op)))) {
+          return mlir::failure();
+        }
+        return VerifyDependencies(op, iteration_spaces,
+                                  loop_constraints_analysis);
+      });
   if (result.wasInterrupted()) return mlir::failure();
 
   return mlir::success();
@@ -620,24 +619,22 @@ std::optional<LoopFusionAnalysis> LoopFusionAnalysis::Create(
 
 mlir::LogicalResult LoopFusionAnalysis::Init(
     SairProgramOp program_op, const SequenceAnalysis &sequence_analysis) {
-  llvm::SmallVector<ComputeOp> work_list;
-  program_op.walk([&](ComputeOp op) {
-    auto sair_op = cast<SairOp>(op.getOperation());
-    int domain_size = sair_op.domain().size();
+  llvm::SmallVector<ComputeOpInstance> work_list;
+  program_op.WalkComputeOpInstances([&](const ComputeOpInstance &compute_op) {
     auto none_expr = MappingNoneExpr::get(context_);
-    op_domain_mappings_[op.getOperation()].resize(domain_size, none_expr);
-    if (!op.loop_nest().hasValue()) return;
-    work_list.push_back(op);
+    int domain_size = compute_op.domain_size();
+    op_domain_mappings_[compute_op].resize(domain_size, none_expr);
+    work_list.push_back(compute_op);
   });
 
   // Handle loops by nesting levels. This ensures that we visited all occurences
   // of a loop before moving to inner loops.
   for (int level = 0; !work_list.empty(); ++level) {
     for (int i = 0; i < work_list.size(); ++i) {
-      ComputeOp op = work_list[i];
+      ComputeOpInstance op = work_list[i];
 
       // Remove operations from the list once their loop-nest is handled.
-      if (op.LoopNestLoops().size() <= level) {
+      if (op.Loops().size() <= level) {
         work_list[i] = work_list.back();
         work_list.pop_back();
         --i;
@@ -672,8 +669,8 @@ mlir::LogicalResult LoopFusionAnalysis::Init(
 
 // Returns the unroll factor of the `pos`-th loop in the given compute op.
 // Expects the op to have a well-formed loop nest attribute.
-static unsigned ExtractUnrollFactor(ComputeOp op, unsigned pos) {
-  auto loop = op.LoopNestLoops()[pos].cast<LoopAttr>();
+static unsigned ExtractUnrollFactor(const ComputeOpInstance &op, unsigned pos) {
+  auto loop = op.Loops()[pos].cast<LoopAttr>();
   if (mlir::IntegerAttr unroll_factor = loop.unroll()) {
     return unroll_factor.getInt();
   }
@@ -681,17 +678,15 @@ static unsigned ExtractUnrollFactor(ComputeOp op, unsigned pos) {
 }
 
 mlir::LogicalResult LoopFusionAnalysis::RegisterLoop(
-    ComputeOp op, int loop_pos, const SequenceAnalysis &sequence_analysis) {
-  auto sair_op = cast<SairOp>(op.getOperation());
-  int domain_size = sair_op.domain().size();
-
+    const ComputeOpInstance &op, int loop_pos,
+    const SequenceAnalysis &sequence_analysis) {
   // Retrieve outer loops information.
   llvm::SmallVector<mlir::StringAttr> loop_names;
   llvm::SmallVector<MappingExpr> iter_exprs;
   loop_names.reserve(loop_pos);
   iter_exprs.reserve(loop_pos);
   for (int i = 0; i < loop_pos; ++i) {
-    LoopAttr loop = op.LoopNestLoops()[i].cast<LoopAttr>();
+    LoopAttr loop = op.Loops()[i].cast<LoopAttr>();
     loop_names.push_back(loop.name());
     iter_exprs.push_back(loop.iter());
   }
@@ -701,16 +696,16 @@ mlir::LogicalResult LoopFusionAnalysis::RegisterLoop(
   fusion_classes_.reserve(fusion_classes_.size() + 1);
   LoopNest loop_nest = GetLoopNest(loop_names);
   auto loop_nest_mapping =
-      MappingAttr::get(op.getContext(), domain_size, iter_exprs);
+      MappingAttr::get(op.context(), op.domain_size(), iter_exprs);
 
-  LoopAttr loop = op.LoopNestLoops()[loop_pos].cast<LoopAttr>();
+  LoopAttr loop = op.Loops()[loop_pos].cast<LoopAttr>();
   auto [it, was_inserted] =
       fusion_classes_.try_emplace(loop.name(), loop.name(), op, loop_nest);
   LoopFusionClass &fusion_class = it->second;
 
   if (loop_names != fusion_class.loop_nest()) {
     mlir::InFlightDiagnostic diag =
-        op.emitError()
+        op.EmitError()
         << "loop " << loop.name()
         << " is not nested in the same loops than at previous occurence";
     diag.attachNote(fusion_class.location()) << "previous occurence here";
@@ -718,11 +713,11 @@ mlir::LogicalResult LoopFusionAnalysis::RegisterLoop(
   }
 
   if (!was_inserted) {
-    if (ExtractUnrollFactor(op, loop_pos) != fusion_class.unroll_factor()) {
+    int unroll_factor = ExtractUnrollFactor(op, loop_pos);
+    if (unroll_factor != fusion_class.unroll_factor()) {
       mlir::InFlightDiagnostic diag =
-          op.emitError() << "mismatching unroll factors for loop "
-                         << loop.name() << " ("
-                         << ExtractUnrollFactor(op, loop_pos) << " vs "
+          op.EmitError() << "mismatching unroll factors for loop "
+                         << loop.name() << " (" << unroll_factor << " vs "
                          << fusion_class.unroll_factor() << ")";
       diag.attachNote(fusion_class.location()) << "previous occurrence here";
       return diag;
@@ -730,10 +725,12 @@ mlir::LogicalResult LoopFusionAnalysis::RegisterLoop(
     fusion_class.AddUse(op, sequence_analysis);
   }
 
-  auto mapping = MappingAttr::get(context_, domain_size, {loop.iter()});
+  auto mapping = MappingAttr::get(context_, op.domain_size(), {loop.iter()});
+  auto domain_with_dependencies =
+      llvm::to_vector<4>(op.DomainWithDependencies());
   assert(fusion_class.loop_nest().size() == loop_nest_mapping.size());
-  return fusion_class.UnifyMapping(op.getLoc(), loop_nest_mapping, mapping,
-                                   sair_op.DomainWithDependencies());
+  return fusion_class.UnifyMapping(op, loop_nest_mapping, mapping,
+                                   domain_with_dependencies);
 }
 
 LoopNest LoopFusionAnalysis::GetLoopNest(
@@ -754,7 +751,8 @@ mlir::StringAttr LoopFusionAnalysis::GetFreshLoopName() {
   return attr;
 }
 
-LoopFusionClass::LoopFusionClass(mlir::StringAttr name, ComputeOp op,
+LoopFusionClass::LoopFusionClass(mlir::StringAttr name,
+                                 const ComputeOpInstance &op,
                                  const LoopNest &loop_nest)
     : MappedDomain(op.getLoc(), "loop", name, loop_nest),
       last_op_(op),
@@ -763,7 +761,7 @@ LoopFusionClass::LoopFusionClass(mlir::StringAttr name, ComputeOp op,
   AddNonePrefixToMapping(1);
 }
 
-void LoopFusionClass::AddUse(ComputeOp op,
+void LoopFusionClass::AddUse(const ComputeOpInstance &op,
                              const SequenceAnalysis &sequence_analysis) {
   if (sequence_analysis.IsBefore(last_op_, op)) last_op_ = op;
 }
@@ -790,7 +788,7 @@ int LoopNest::size() const {
   return fusion_class_->loop_nest().size() + 1;
 }
 
-llvm::ArrayRef<ValueAccess> LoopNest::domain() const {
+llvm::ArrayRef<ValueAccessInstance> LoopNest::domain() const {
   if (empty()) return {};
   return fusion_class_->domain();
 }

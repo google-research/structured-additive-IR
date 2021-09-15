@@ -30,8 +30,8 @@ MappedDomain::MappedDomain(mlir::Location loc, llvm::StringRef kind,
 DomainShapeAttr MappedDomain::DomainShape() const {
   llvm::SmallVector<DomainShapeDim> shape_dims;
   shape_dims.reserve(domain_.size());
-  for (const ValueAccess &access : domain_) {
-    auto type = access.value.getType().cast<DimensionType>();
+  for (const ValueAccessInstance &access : domain_) {
+    auto type = access.value.GetType().cast<DimensionType>();
     shape_dims.emplace_back(type, access.mapping);
   }
   return DomainShapeAttr::get(context(), shape_dims);
@@ -53,11 +53,11 @@ void MappedDomain::AddNonePrefixToMapping(int new_dimensions) {
 }
 
 mlir::LogicalResult MappedDomain::ResolveUnification(
-    mlir::Location unification_loc, int dimension_id,
-    const ValueAccess &dimension, MappingExpr &constraint) {
+    const OpInstance &op, int dimension_id,
+    const ValueAccessInstance &dimension, MappingExpr &constraint) {
   // Ignore placeholders.
-  mlir::Operation *defining_op = dimension.value.getDefiningOp();
-  if (isa<SairPlaceholderOp>(defining_op)) return mlir::success();
+  mlir::Operation *dim_op = dimension.value.defining_op().GetDuplicatedOp();
+  if (isa<SairPlaceholderOp>(dim_op)) return mlir::success();
 
   if (constraint.isa<MappingNoneExpr, MappingUnknownExpr>()) {
     // If the dimension is new, extend the domain.
@@ -67,22 +67,21 @@ mlir::LogicalResult MappedDomain::ResolveUnification(
   } else if (auto dim_expr = constraint.dyn_cast<MappingDimExpr>()) {
     // If the dimension must be unified with an existing dimension, ensure that
     // they match.
-    const ValueAccess &old_dimension = domain_[dim_expr.dimension()];
+    const ValueAccessInstance &old_dimension = domain_[dim_expr.dimension()];
     if (dimension.value != old_dimension.value ||
         dimension.mapping.Dimensions() != old_dimension.mapping.Dimensions()) {
-      mlir::InFlightDiagnostic diag = mlir::emitError(unification_loc)
-                                      << "use of dimension d" << dimension_id
-                                      << " in " << *this
-                                      << " does not match previous occurrences";
+      mlir::InFlightDiagnostic diag =
+          op.EmitError() << "use of dimension d" << dimension_id << " in "
+                         << *this << " does not match previous occurrences";
       diag.attachNote(location()) << "previous occurence here";
       return mlir::failure();
     }
   } else {
     // Only allow unification between plain dimensions.
     mlir::InFlightDiagnostic diag =
-        mlir::emitError(unification_loc)
-        << "use of dimension d" << dimension_id << " in " << *this
-        << " cannot be unified with previous occurences";
+        op.EmitError() << "use of dimension d" << dimension_id << " in "
+                       << *this
+                       << " cannot be unified with previous occurences";
     diag.attachNote(location()) << "previous occurence here";
     return mlir::failure();
   }
@@ -91,8 +90,9 @@ mlir::LogicalResult MappedDomain::ResolveUnification(
 }
 
 mlir::LogicalResult MappedDomain::UnifyMapping(
-    mlir::Location new_mapping_loc, MappingAttr loop_nest_mapping,
-    MappingAttr new_mapping, llvm::ArrayRef<ValueAccess> new_mapping_domain) {
+    const OpInstance &op, MappingAttr loop_nest_mapping,
+    MappingAttr new_mapping,
+    llvm::ArrayRef<ValueAccessInstance> new_mapping_domain) {
   // Compute unification constraints.
   auto none = MappingNoneExpr::get(context());
   llvm::SmallVector<MappingExpr> constraints(new_mapping_domain.size(), none);
@@ -101,8 +101,7 @@ mlir::LogicalResult MappedDomain::UnifyMapping(
   if (mlir::failed(
           UnificationConstraints(new_mapping, mapping_, constraints))) {
     mlir::InFlightDiagnostic diag =
-        mlir::emitError(new_mapping_loc)
-        << *this << " cannot be unified with previous occurence";
+        op.EmitError() << *this << " cannot be unified with previous occurence";
     diag.attachNote(location()) << "previous occurence here";
     return mlir::failure();
   }
@@ -110,18 +109,17 @@ mlir::LogicalResult MappedDomain::UnifyMapping(
   // Resolve unification constraints and extend the domain.
   llvm::SmallBitVector new_mapping_dims = new_mapping.DependencyMask();
   for (int dimension_id : new_mapping_dims.set_bits()) {
-    ValueAccess dimension = new_mapping_domain[dimension_id];
+    ValueAccessInstance dimension = new_mapping_domain[dimension_id];
     auto constraints_mapping = MappingAttr::get(
         context(), domain_.size(),
         llvm::makeArrayRef(constraints).take_front(dimension_id));
     dimension.mapping = constraints_mapping.Compose(dimension.mapping);
     if (!dimension.mapping.IsSurjective()) {
-      return mlir::emitError(new_mapping_loc)
+      return op.EmitError()
              << *this << " mapping depends on loops it cannot be nested in";
     }
 
-    if (mlir::failed(ResolveUnification(new_mapping_loc, dimension_id,
-                                        dimension,
+    if (mlir::failed(ResolveUnification(op, dimension_id, dimension,
                                         constraints[dimension_id]))) {
       return mlir::failure();
     }
@@ -152,10 +150,10 @@ void MappedDomain::SetLoopNest(const LoopNest &new_loop_nest) {
   llvm::SmallVector<MappingExpr> renaming(domain_.size(), none);
 
   // Remove dimensions that were only used by the old loop nest from the domain.
-  llvm::SmallVector<ValueAccess> new_domain;
+  llvm::SmallVector<ValueAccessInstance> new_domain;
   for (int dimension_id : to_keep.set_bits()) {
     renaming[dimension_id] = MappingDimExpr::get(new_domain.size(), context());
-    ValueAccess dimension = domain_[dimension_id];
+    ValueAccessInstance dimension = domain_[dimension_id];
 
     auto renaming_mapping =
         MappingAttr::get(context(), new_domain.size(),

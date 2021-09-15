@@ -128,7 +128,9 @@ class Driver : public mlir::PatternRewriter {
     // allowed in a SairProgram.
     if (auto compute_op = dyn_cast<ComputeOp>(op)) {
       SairOp next_op = cast<SairOp>(op->getNextNode());
-      sequence_analysis_.Insert(compute_op, next_op, Direction::kBefore);
+      sequence_analysis_.Insert(ComputeOpInstance::Unique(compute_op),
+                                OpInstance::Unique(next_op),
+                                Direction::kBefore);
     }
   }
 
@@ -154,7 +156,7 @@ class Driver : public mlir::PatternRewriter {
     }
 
     if (auto compute_op = dyn_cast<ComputeOp>(op)) {
-      sequence_analysis_.Erase(compute_op);
+      sequence_analysis_.Erase(ComputeOpInstance::Unique(compute_op));
     }
   }
 
@@ -235,31 +237,6 @@ bool IsPrefix(mlir::ArrayAttr prefix, mlir::ArrayAttr array) {
 mlir::LogicalResult RegisterOperations(
     SairProgramOp program, const SequenceAnalysis &sequence_analysis,
     Driver &driver) {
-  // First, add compute operations is their sequence order. The order is
-  // crucially important because Sair ops may be sequenced differently from
-  // their "natural" order in the block, but the loops must be created in the
-  // proper order in the block. The order of non-compute ops doesn't matter
-  // because they don't result in any executable code at this stage.
-  for (ComputeOp op : sequence_analysis.Ops()) {
-    mlir::Operation &operation = *op;
-    driver.AddOperation(&operation);
-    SairMapOp map_op = dyn_cast<SairMapOp>(operation);
-    if (map_op == nullptr) {
-      return operation.emitError() << "operation must be lowered to sair.map";
-    }
-
-    if (!map_op.loop_nest().hasValue()) {
-      return map_op.emitError() << "missing loop_nest attribute";
-    }
-
-    for (mlir::Attribute attr : map_op.LoopNestLoops()) {
-      LoopAttr loop = attr.cast<LoopAttr>();
-      if (!loop.iter().isa<MappingDimExpr>()) {
-        return map_op.emitError()
-               << "loop must not rematerialize or be strip-mined";
-      }
-    }
-  }
   // Add non-compute ops. These will be canonicalized by the driver and their
   // relative order doesn't matter.
   for (mlir::Operation &operation : program.body().front()) {
@@ -274,6 +251,33 @@ mlir::LogicalResult RegisterOperations(
     // Compute ops have been added above.
     if (isa<ComputeOp>(operation)) continue;
     driver.AddOperation(&operation);
+  }
+
+  // Then add compute operations is their sequence order. The order is
+  // crucially important because Sair ops may be sequenced differently from
+  // their "natural" order in the block, but the loops must be created in the
+  // proper order in the block. The order of non-compute ops doesn't matter
+  // because they don't result in any executable code at this stage.
+  for (ComputeOpInstance op : sequence_analysis.Ops()) {
+    mlir::Operation *operation = op.GetDuplicatedOp();
+    driver.AddOperation(operation);
+    SairMapOp map_op = dyn_cast<SairMapOp>(operation);
+    if (map_op == nullptr) {
+      return operation->emitError() << "operation must be lowered to sair.map";
+    }
+
+    DecisionsAttr decisions = op.GetDecisions();
+    if (decisions.loop_nest() == nullptr) {
+      return map_op.emitError() << "missing loop_nest attribute";
+    }
+
+    for (mlir::Attribute attr : op.Loops()) {
+      LoopAttr loop = attr.cast<LoopAttr>();
+      if (!loop.iter().isa<MappingDimExpr>()) {
+        return map_op.emitError()
+               << "loop must not rematerialize or be strip-mined";
+      }
+    }
   }
 
   return mlir::success();
@@ -511,7 +515,8 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
                                   const StorageAnalysis &storage_analysis,
                                   Driver &driver) {
   auto *sair_dialect = static_cast<SairDialect *>(op->getDialect());
-  llvm::ArrayRef<mlir::Attribute> loop_nest = op.LoopNestLoops();
+  llvm::ArrayRef<mlir::Attribute> loop_nest =
+      ComputeOpInstance::Unique(cast<ComputeOp>(op.getOperation())).Loops();
   LoopAttr loop = loop_nest.back().cast<LoopAttr>();
 
   int dimension = loop.iter().cast<MappingDimExpr>().dimension();
@@ -543,7 +548,8 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
       return driver.create<ConstantOp>(op.getLoc(), bound.constant());
     }
     // Check that the value is stored in registers.
-    if (storage_analysis.GetStorage(bound.value().value).space() !=
+    auto bound_instance = ResultInstance::Unique(bound.value().value);
+    if (storage_analysis.GetStorage(bound_instance).space() !=
         sair_dialect->register_attr()) {
       // TODO(b/174127497): ensure that value stored in registers are produced
       // in the same loop nest.
@@ -653,7 +659,9 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
 
 // Fuses two sair.map operations. They must have the same loops in the loop_nest
 // attribute.
-void Fuse(SairMapOp first_op, SairMapOp second_op, Driver &driver) {
+void Fuse(SairMapOp first_op, llvm::ArrayRef<mlir::Attribute> first_loop_nest,
+          SairMapOp second_op, llvm::ArrayRef<mlir::Attribute> second_loop_nest,
+          Driver &driver) {
   mlir::OpBuilder::InsertionGuard insertion_guard(driver);
   mlir::MLIRContext *context = driver.getContext();
 
@@ -670,7 +678,7 @@ void Fuse(SairMapOp first_op, SairMapOp second_op, Driver &driver) {
                                  MappingNoneExpr::get(context));
   second_block_args.append(second_op.domain().size(), nullptr);
   for (auto [first_attr, second_attr] :
-       llvm::zip(first_op.LoopNestLoops(), second_op.LoopNestLoops())) {
+       llvm::zip(first_loop_nest, second_loop_nest)) {
     MappingExpr first_iter = first_attr.cast<LoopAttr>().iter();
     int first_dimension = first_iter.cast<MappingDimExpr>().dimension();
     int second_dimension =
@@ -715,19 +723,20 @@ void Fuse(SairMapOp first_op, SairMapOp second_op, Driver &driver) {
   driver.mergeBlocks(&second_op.block(), &first_op.block(), second_block_args);
 
   // Gather return types for the new sair.map operation.
-  llvm::SmallVector<mlir::Type, 4> result_types;
+  llvm::SmallVector<mlir::Type> result_types;
   result_types.reserve(num_results);
   llvm::append_range(result_types, first_op.getResultTypes());
   llvm::append_range(result_types, second_op.getResultTypes());
 
   // Gather memory space attributes for the new sair.map operation.
-  llvm::SmallVector<mlir::Attribute, 4> storages;
+  llvm::SmallVector<mlir::Attribute> storages;
   storages.reserve(num_results);
   auto append_storages = [&](SairMapOp op) {
-    if (op.storage().hasValue()) {
-      llvm::append_range(storages, op.storage().getValue().getValue());
-    } else {
+    DecisionsAttr decisions = op.GetDecisions(0);
+    if (decisions.storage() == nullptr) {
       storages.append(op.getNumResults(), driver.getUnitAttr());
+    } else {
+      llvm::append_range(storages, decisions.storage().getValue());
     }
   };
   append_storages(first_op);
@@ -771,22 +780,24 @@ bool CanFuse(mlir::ArrayAttr lhs, mlir::ArrayAttr rhs) {
 mlir::LogicalResult IntroduceLoopOrFuse(
     SairMapOp op, const StorageAnalysis &storage_analysis,
     const SequenceAnalysis &sequence_analysis, Driver &driver) {
-  ComputeOp prev_compute_op =
-      sequence_analysis.PrevOp(cast<ComputeOp>(op.getOperation()));
-  ComputeOp next_compute_op =
-      sequence_analysis.NextOp(cast<ComputeOp>(op.getOperation()));
-  auto prev_op = cast_or_null<SairMapOp>(prev_compute_op.getOperation());
-  auto next_op = cast_or_null<SairMapOp>(next_compute_op.getOperation());
-  mlir::ArrayAttr curr_loop_nest = op.loop_nest().getValue();
+  auto op_instance =
+      ComputeOpInstance::Unique(cast<ComputeOp>(op.getOperation()));
+  ComputeOpInstance prev_op = sequence_analysis.PrevOp(op_instance);
+  ComputeOpInstance next_op = sequence_analysis.NextOp(op_instance);
+  mlir::ArrayAttr curr_loop_nest = op_instance.GetDecisions().loop_nest();
   mlir::ArrayAttr prev_loop_nest =
-      prev_op == nullptr ? nullptr : prev_op.loop_nest().getValue();
+      prev_op == nullptr ? nullptr : prev_op.GetDecisions().loop_nest();
   mlir::ArrayAttr next_loop_nest =
-      next_op == nullptr ? nullptr : next_op.loop_nest().getValue();
+      next_op == nullptr ? nullptr : next_op.GetDecisions().loop_nest();
 
   if (CanFuse(prev_loop_nest, curr_loop_nest)) {
-    Fuse(prev_op, op, driver);
+    auto prev_map_op = cast<SairMapOp>(prev_op.GetDuplicatedOp());
+    Fuse(prev_map_op, prev_loop_nest.getValue(), op, curr_loop_nest.getValue(),
+         driver);
   } else if (CanFuse(curr_loop_nest, next_loop_nest)) {
-    Fuse(op, next_op, driver);
+    auto next_map_op = cast<SairMapOp>(next_op.GetDuplicatedOp());
+    Fuse(op, curr_loop_nest.getValue(), next_map_op, next_loop_nest.getValue(),
+         driver);
   } else if (!curr_loop_nest.empty() &&
              !IsPrefix(curr_loop_nest, prev_loop_nest) &&
              !IsPrefix(curr_loop_nest, next_loop_nest)) {

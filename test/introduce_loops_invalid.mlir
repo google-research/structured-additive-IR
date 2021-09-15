@@ -23,7 +23,9 @@ func @missing_loop_nest_attribute() {
   sair.program {
     %0 = sair.static_range : !sair.static_range<8>
     // expected-error @+1 {{missing loop_nest attribute}}
-    sair.map[d0: %0] {
+    sair.map[d0: %0] attributes {
+      instances = [{}]
+    } {
       ^bb0(%arg0: index):
         sair.return
     } : #sair.shape<d0:static_range<8>>, () -> ()

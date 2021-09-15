@@ -1361,6 +1361,15 @@ std::function<DecisionsAttr(DecisionsAttr)> MapStorage(
   };
 }
 
+DecisionsAttr UpdateSequence(DecisionsAttr decisions, int new_sequence) {
+  mlir::MLIRContext *context = decisions.getContext();
+  mlir::IntegerAttr new_sequence_attr =
+      OpBuilder(context).getI64IntegerAttr(new_sequence);
+  return DecisionsAttr::get(new_sequence_attr, decisions.loop_nest(),
+                            decisions.storage(), decisions.expansion(),
+                            context);
+}
+
 }  // namespace sair
 
 #include "sair_structs.cc.inc"

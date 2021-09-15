@@ -62,25 +62,29 @@ class Buffer : public MappedDomain {
   // List of operations that write to the buffer, with the position of the
   // result stored in the buffer. Non-external buffers must have at least one
   // write.
-  llvm::ArrayRef<std::pair<ComputeOp, int>> writes() const { return writes_; }
+  llvm::ArrayRef<std::pair<ComputeOpInstance, int>> writes() const {
+    return writes_;
+  }
 
   // List of operations that read from the buffer, with the position of the Sair
   // value operand.
-  llvm::ArrayRef<std::pair<ComputeOp, int>> reads() const { return reads_; }
+  llvm::ArrayRef<std::pair<ComputeOpInstance, int>> reads() const {
+    return reads_;
+  }
 
   // List of values stored in the buffer.
-  llvm::ArrayRef<mlir::Value> values() const { return values_; }
+  llvm::ArrayRef<ResultInstance> values() const { return values_; }
 
   // Registers a value stored in the buffer.
-  void AddValue(mlir::Value value);
+  void AddValue(ResultInstance value);
 
  private:
   mlir::Type element_type_;
   FromToMemRefOp import_op_ = nullptr;
 
-  llvm::SmallVector<std::pair<ComputeOp, int>> writes_;
-  llvm::SmallVector<std::pair<ComputeOp, int>> reads_;
-  llvm::SmallVector<mlir::Value> values_;
+  llvm::SmallVector<std::pair<ComputeOpInstance, int>> writes_;
+  llvm::SmallVector<std::pair<ComputeOpInstance, int>> reads_;
+  llvm::SmallVector<ResultInstance> values_;
 };
 
 // Describes how a value is stored. Attributes may be null if the buffer is not
@@ -112,12 +116,14 @@ class ValueStorage {
   void AddUnknownPrefixToLayout(int num_new_dims);
 
   // Converts a value storage from the domain of the value to the domain of the
-  // operand.
-  ValueStorage Map(const ValueOperand &operand,
-                   const IterationSpaceAnalysis &iteration_spaces) const;
+  // operand. Returns nullopt if the operand value is not yet specified.
+  std::optional<ValueStorage> Map(
+      const OperandInstance &operand,
+      const IterationSpaceAnalysis &iteration_spaces) const;
   // Converts a value storage from the domain of `from` to the domain of `to`
   // given a mapping from the domain of `to` to the domain of `from`.
-  ValueStorage Map(SairOp from, SairOp to, MappingAttr mapping,
+  ValueStorage Map(const OpInstance &from, const OpInstance &to,
+                   MappingAttr mapping,
                    const IterationSpaceAnalysis &iteration_spaces) const;
 
  private:
@@ -158,21 +164,20 @@ class StorageAnalysis {
   }
 
   // Retrieves the storage of a value.
-  const ValueStorage &GetStorage(mlir::Value value) const {
+  const ValueStorage &GetStorage(ResultInstance value) const {
     return value_storages_.find(value)->second;
   }
 
   // Creates a new memory buffer, assigns it to the value storage and propagates
   // the information. This does not modify the IR, only the analysis.
-  void CreateBuffer(mlir::Value value,
+  void CreateBuffer(ResultInstance value,
                     llvm::ArrayRef<mlir::StringAttr> loop_names,
                     const LoopFusionAnalysis &fusion_analysis,
                     const IterationSpaceAnalysis &iteration_spaces);
 
   // Updates the storage of a value with new information and propagates to other
   // values. The new information must be compatible with existing information.
-  // This does not modify the IR, only the analysis.
-  void MergeStorage(mlir::Value value, const ValueStorage &new_storage,
+  void MergeStorage(ResultInstance value, const ValueStorage &new_storage,
                     const LoopFusionAnalysis &fusion_analysis,
                     const IterationSpaceAnalysis &iteration_spaces);
 
@@ -192,7 +197,7 @@ class StorageAnalysis {
   // Extends the layout of a value by adding dimensions at the front of the
   // buffer layout. The previous layout must be a suffix of the new one. The
   // layout is given as a mapping from op_iter_space to buffer dimensions.
-  void AddDimensionsToBuffer(mlir::StringAttr buffer_name, SairOp op,
+  void AddDimensionsToBuffer(mlir::StringAttr buffer_name, const OpInstance &op,
                              const IterationSpace &op_iter_space,
                              const LoopFusionAnalysis &fusion_analysis,
                              MappingAttr new_layout);
@@ -212,14 +217,14 @@ class StorageAnalysis {
   // Sets the storage of a value and propagates the information to other values.
   // Emits an error if the new storage conflicts with existing storage.
   mlir::LogicalResult SetStorage(
-      mlir::Value value, ValueStorage storage,
+      ResultInstance value, ValueStorage storage,
       const LoopFusionAnalysis &fusion_analysis,
       const IterationSpaceAnalysis &iteration_spaces);
 
   mlir::MLIRContext *context_;
   int next_buffer_id_ = 0;
   llvm::DenseMap<mlir::Attribute, Buffer> buffers_;
-  llvm::DenseMap<mlir::Value, ValueStorage> value_storages_;
+  llvm::DenseMap<ResultInstance, ValueStorage> value_storages_;
 };
 
 // Verifies that values are not overwritten by another operation before they are

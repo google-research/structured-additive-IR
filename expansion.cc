@@ -22,8 +22,8 @@ namespace sair {
 
 mlir::LogicalResult VerifyExpansionPatterns(SairProgramOp program) {
   auto *sair_dialect = static_cast<SairDialect *>(program->getDialect());
-  auto result = program.WalkComputeOpInstances(
-      [&](ComputeOpInstance op) -> mlir::WalkResult {
+  auto result = program.TryWalkComputeOpInstances(
+      [&](const ComputeOpInstance &op) -> mlir::WalkResult {
         DecisionsAttr decisions = op.GetDecisions();
         mlir::StringAttr pattern_name = decisions.expansion();
         if (pattern_name == nullptr) return mlir::success();
@@ -82,16 +82,16 @@ class CopyExpansionPattern : public ExpansionPattern {
  public:
   constexpr static llvm::StringRef kName = kCopyExpansionPattern;
 
-  mlir::LogicalResult Match(ComputeOpInstance op) const override;
+  mlir::LogicalResult Match(const ComputeOpInstance &op) const override;
 
   llvm::SmallVector<mlir::Value> Emit(ComputeOp op, MapBodyBuilder &map_body,
                                       mlir::OpBuilder &builder) const override;
 };
 
-mlir::LogicalResult CopyExpansionPattern::Match(ComputeOpInstance op) const {
+mlir::LogicalResult CopyExpansionPattern::Match(
+    const ComputeOpInstance &op) const {
   if (op.is_copy()) return mlir::success();
-  ComputeOp compute_op = op.GetComputeOp();
-  return mlir::success(isa<SairCopyOp>(compute_op.getOperation()));
+  return mlir::success(isa<SairCopyOp>(op.GetDuplicatedOp()));
 }
 
 llvm::SmallVector<mlir::Value> CopyExpansionPattern::Emit(

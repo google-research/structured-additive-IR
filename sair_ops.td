@@ -765,8 +765,15 @@ def SairProgramOp : Op<SairDialect, "program", [RegionKindInterface]> {
 
     // Walks other ComputeOp and copies of Sair values specified as attribute to
     // operations.
-    mlir::WalkResult WalkComputeOpInstances(
-        llvm::function_ref<mlir::WalkResult(ComputeOpInstance)> walker);
+    mlir::WalkResult TryWalkComputeOpInstances(
+        llvm::function_ref<mlir::WalkResult(ComputeOpInstance &)> walker);
+    void WalkComputeOpInstances(
+        llvm::function_ref<void(ComputeOpInstance &)> walker);
+
+    // Walks instances of SairOp.
+    mlir::WalkResult TryWalkOpInstances(
+        llvm::function_ref<mlir::WalkResult(OpInstance &)> walker);
+    void WalkOpInstances(llvm::function_ref<void(OpInstance &)> walker);
   }];
 }
 

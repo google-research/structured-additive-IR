@@ -45,18 +45,18 @@ Buffer::Buffer(FromToMemRefOp import_op, mlir::StringAttr name,
   import_op_ = import_op;
 }
 
-void Buffer::AddValue(mlir::Value value) {
+void Buffer::AddValue(ResultInstance value) {
   values_.push_back(value);
-  auto defining_op = dyn_cast<ComputeOp>(value.getDefiningOp());
-  if (defining_op != nullptr) {
-    int position = value.cast<OpResult>().getResultNumber();
+  if (auto defining_op = value.defining_op().dyn_cast<ComputeOpInstance>()) {
+    int position = value.result_number();
     writes_.emplace_back(defining_op, position);
   }
-  for (mlir::OpOperand &use : value.getUses()) {
-    auto user = dyn_cast<ComputeOp>(use.getOwner());
-    if (user == nullptr) continue;
-    ValueOperand sair_operand(&use);
-    reads_.emplace_back(user, sair_operand.position());
+  for (auto [user, pos] : value.GetUses()) {
+    auto compute_op_user = user.dyn_cast<ComputeOpInstance>();
+    if (compute_op_user == nullptr) continue;
+    // Position includes the domain. Shift the position to get ValueOperand
+    // position.
+    reads_.emplace_back(compute_op_user, pos - user.domain_size());
   }
 }
 
@@ -143,13 +143,13 @@ mlir::LogicalResult VerifyStorageAttrWellFormed(
 // Returns the layout of `buffer` as a mapping from the iteration space of
 // `op` to buffer dimensions.
 static MappingAttr GetBufferLayout(
-    ComputeOp op, BufferAttr buffer,
+    const OpInstance &op, BufferAttr buffer,
     const IterationSpaceAnalysis &iteration_spaces) {
   if (buffer.layout() == nullptr) return nullptr;
 
-  mlir::MLIRContext *context = op.getContext();
+  mlir::MLIRContext *context = op.context();
   auto none_expr = MappingNoneExpr::get(context);
-  const IterationSpace &iter_space = iteration_spaces.Get(op.getOperation());
+  const IterationSpace &iter_space = iteration_spaces.Get(op);
   MappingAttr mapping = buffer.layout().mapping();
 
   llvm::SmallVector<MappingExpr> loops_to_indexed_loops_exprs(
@@ -169,10 +169,10 @@ static MappingAttr GetBufferLayout(
 // Unifies the shape of `buffer` with the shape specified by attribute
 // `buffer_attr` of `op`. Raises an error if shapes cannot be unified.
 static mlir::LogicalResult UnifyBufferShape(
-    mlir::StringAttr buffer_name, SairOp op, MappingAttr layout,
+    mlir::StringAttr buffer_name, const OpInstance &op, MappingAttr layout,
     const IterationSpace &op_iter_space,
     const LoopFusionAnalysis &loop_analysis, Buffer &buffer) {
-  mlir::MLIRContext *context = op.getContext();
+  mlir::MLIRContext *context = op.context();
   int iter_space_size = op_iter_space.mapping().size();
   LoopNest op_loop_nest = loop_analysis.GetLoopNest(op_iter_space.loop_names());
   MappingAttr loop_nest_mapping =
@@ -181,20 +181,21 @@ static mlir::LogicalResult UnifyBufferShape(
   // The operation loop nest might not cover all operation dimensions. We thus
   // define a new domain that maps to loop nest dimensions when possible and
   // directly to operation dimensions otherwise.
-  llvm::SmallVector<ValueAccess> domain;
+  llvm::SmallVector<ValueAccessInstance> domain;
   llvm::append_range(domain, op_loop_nest.domain());
 
   auto none = MappingNoneExpr::get(context);
-  llvm::SmallVector<MappingExpr> constraints(op.domain().size(), none);
+  llvm::SmallVector<MappingExpr> constraints(op.domain_size(), none);
   AssertSuccess(UnificationConstraints(
       op_iter_space.mapping(), loop_nest_mapping.Resize(iter_space_size),
       constraints));
-  for (int i = 0, e = op.domain().size(); i < e; ++i) {
+  DomainShapeAttr shape = op.GetShape();
+  for (int i = 0, e = op.domain_size(); i < e; ++i) {
     if (!constraints[i].isa<MappingNoneExpr>()) continue;
     auto renaming = MappingAttr::get(context, domain.size(), constraints);
-    auto mapping = op.shape().Dimension(i).dependency_mapping();
+    auto mapping = shape.Dimension(i).dependency_mapping();
     constraints[i] = MappingDimExpr::get(domain.size(), context);
-    domain.push_back({op.domain()[i], renaming.Compose(mapping)});
+    domain.push_back({op.domain(i), renaming.Compose(mapping)});
   }
 
   auto renaming = MappingAttr::get(context, domain.size(), constraints);
@@ -203,8 +204,7 @@ static mlir::LogicalResult UnifyBufferShape(
       renaming.Compose(op_iter_space.mapping())
           .Unify(domain_to_loops.Resize(iter_space_size));
   auto domain_to_layout = domain_to_iter_space.Compose(layout).Canonicalize();
-  return buffer.UnifyMapping(op.getLoc(), domain_to_loops, domain_to_layout,
-                             domain);
+  return buffer.UnifyMapping(op, domain_to_loops, domain_to_layout, domain);
 }
 
 // Trims `buffer` loop nest so that it can be accessed from the given iteration
@@ -232,16 +232,15 @@ static void TrimBufferLoopNestForAccess(
 // buffer is already present, ensure that rank and element type are coherent and
 // trims the buffer loop nest to the common prefix with `op` loop nest.
 static mlir::LogicalResult DeclareBuffer(
-    ComputeOp op, int result, BufferAttr attr,
+    const OpInstance &op, int result, BufferAttr attr,
     const LoopFusionAnalysis &loop_analysis,
     const IterationSpaceAnalysis &iteration_spaces,
     llvm::DenseMap<mlir::Attribute, Buffer> &buffer_map,
     llvm::DenseSet<mlir::Attribute> &buffers_with_rank_set) {
   if (attr == nullptr || attr.name() == nullptr) return mlir::success();
   mlir::Type element_type =
-      op->getResult(result).getType().cast<ValueType>().ElementType();
-  auto sair_op = cast<SairOp>(op.getOperation());
-  const IterationSpace &iter_space = iteration_spaces.Get(sair_op);
+      op.Result(result).GetType().cast<ValueType>().ElementType();
+  const IterationSpace &iter_space = iteration_spaces.Get(op);
   const LoopNest &loop_nest =
       loop_analysis.GetLoopNest(iter_space.loop_names());
   auto it = buffer_map.try_emplace(attr.name(), op.getLoc(), attr.name(),
@@ -251,7 +250,7 @@ static mlir::LogicalResult DeclareBuffer(
   // Check that element types match.
   if (buffer.element_type() != element_type) {
     mlir::InFlightDiagnostic diag =
-        op.emitError()
+        op.EmitError()
         << "buffer " << attr.name()
         << " has different element type than in previous occurence";
     diag.attachNote(buffer.location()) << "previous occurence here";
@@ -266,7 +265,7 @@ static mlir::LogicalResult DeclareBuffer(
   if (!buffers_with_rank_set.insert(attr.name()).second) {
     if (buffer.rank() != layout.size()) {
       mlir::InFlightDiagnostic diag =
-          op.emitError() << "buffer " << attr.name()
+          op.EmitError() << "buffer " << attr.name()
                          << " rank differs from previous occurence";
       diag.attachNote(buffer.location()) << "previous occurence here";
       return mlir::failure();
@@ -275,8 +274,8 @@ static mlir::LogicalResult DeclareBuffer(
     buffer.AddNonePrefixToMapping(layout.size());
   }
 
-  return UnifyBufferShape(attr.name(), sair_op, layout, iter_space,
-                          loop_analysis, buffer);
+  return UnifyBufferShape(attr.name(), op, layout, iter_space, loop_analysis,
+                          buffer);
 }
 
 // Declare buffers used by `program` in `buffers`. If a buffer has multiple
@@ -291,8 +290,9 @@ static mlir::LogicalResult DeclareBuffers(
   mlir::WalkResult result =
       program.walk([&](FromToMemRefOp op) -> mlir::WalkResult {
         auto sair_op = cast<SairOp>(op.getOperation());
+        OpInstance op_instance(sair_op);
         auto name = mlir::StringAttr::get(op.getContext(), op.buffer_name());
-        const IterationSpace &iter_space = iteration_spaces.Get(sair_op);
+        const IterationSpace &iter_space = iteration_spaces.Get(op_instance);
         const LoopNest &loop_nest =
             fusion_analysis.GetLoopNest(iter_space.loop_names());
         auto [buffer_it, was_inserted] =
@@ -302,23 +302,24 @@ static mlir::LogicalResult DeclareBuffers(
         MappingAttr layout = FromToMemRefLayout(op, iter_space);
         buffers_with_rank_set.insert(name);
         buffer_it->second.AddNonePrefixToMapping(layout.size());
-        return UnifyBufferShape(name, sair_op, layout, iter_space,
+        return UnifyBufferShape(name, op_instance, layout, iter_space,
                                 fusion_analysis, buffer_it->second);
       });
   if (result.wasInterrupted()) return mlir::failure();
 
   // Declare internal buffers.
-  result = program.walk([&](ComputeOp op) -> mlir::WalkResult {
-    for (int i = 0, e = op->getNumResults(); i < e; ++i) {
-      BufferAttr buffer_attr = op.Storage(i);
-      if (mlir::failed(DeclareBuffer(op, i, buffer_attr, fusion_analysis,
-                                     iteration_spaces, buffers,
-                                     buffers_with_rank_set))) {
-        return mlir::failure();
-      }
-    }
-    return mlir::success();
-  });
+  result = program.TryWalkComputeOpInstances(
+      [&](const ComputeOpInstance &op) -> mlir::WalkResult {
+        for (int i = 0, e = op.num_results(); i < e; ++i) {
+          BufferAttr buffer_attr = op.Storage(i);
+          if (mlir::failed(DeclareBuffer(op, i, buffer_attr, fusion_analysis,
+                                         iteration_spaces, buffers,
+                                         buffers_with_rank_set))) {
+            return mlir::failure();
+          }
+        }
+        return mlir::success();
+      });
   if (result.wasInterrupted()) return mlir::failure();
 
   // Ensure all buffers layout is fully specified.
@@ -340,27 +341,30 @@ mlir::LogicalResult StorageAnalysis::ComputeValueStorages(
   mlir::StringAttr memory_space = sair_dialect->memory_attr();
 
   // Initialize storage information from compute operations.
-  auto result = program.walk([&](ComputeOp op) -> mlir::WalkResult {
-    for (int i = 0, e = op->getNumResults(); i < e; ++i) {
-      BufferAttr buffer = op.Storage(i);
-      if (buffer == nullptr) continue;
-      MappingAttr layout = GetBufferLayout(op, buffer, iteration_spaces);
-      ValueStorage storage(buffer.space(), buffer.name(), layout);
-      if (mlir::failed(SetStorage(op->getResult(i), storage, fusion_analysis,
-                                  iteration_spaces))) {
-        return mlir::failure();
-      }
-    }
-    return mlir::success();
-  });
+  auto result = program.TryWalkComputeOpInstances(
+      [&](const ComputeOpInstance &op) -> mlir::WalkResult {
+        for (int i = 0, e = op.num_results(); i < e; ++i) {
+          BufferAttr buffer = op.Storage(i);
+          if (buffer == nullptr) continue;
+          MappingAttr layout = GetBufferLayout(op, buffer, iteration_spaces);
+          ValueStorage storage(buffer.space(), buffer.name(), layout);
+          if (mlir::failed(SetStorage(op.Result(i), storage, fusion_analysis,
+                                      iteration_spaces))) {
+            return mlir::failure();
+          }
+        }
+        return mlir::success();
+      });
   if (result.wasInterrupted()) return mlir::failure();
 
   // Initialize from from_memref operations.
   result = program.walk([&](SairFromMemRefOp op) -> mlir::WalkResult {
-    const IterationSpace &iter_space = iteration_spaces.Get(op);
+    OpInstance op_instance(cast<SairOp>(op.getOperation()));
+    const IterationSpace &iter_space = iteration_spaces.Get(op_instance);
     MappingAttr layout = iter_space.mapping().Inverse().Compose(op.Layout());
     ValueStorage storage(memory_space, op.buffer_nameAttr(), layout);
-    return SetStorage(op.result(), storage, fusion_analysis, iteration_spaces);
+    return SetStorage(op_instance.Result(0), storage, fusion_analysis,
+                      iteration_spaces);
   });
   if (result.wasInterrupted()) return mlir::failure();
 
@@ -368,25 +372,30 @@ mlir::LogicalResult StorageAnalysis::ComputeValueStorages(
   result = program.walk([&](SairFromScalarOp op) -> mlir::WalkResult {
     auto layout = MappingAttr::get(context, 0, {});
     ValueStorage storage(sair_dialect->register_attr(), nullptr, layout);
-    return SetStorage(op.result(), storage, fusion_analysis, iteration_spaces);
+    OpInstance op_instance(cast<SairOp>(op.getOperation()));
+    return SetStorage(op_instance.Result(0), storage, fusion_analysis,
+                      iteration_spaces);
   });
   if (result.wasInterrupted()) return mlir::failure();
 
   // Initialize from to_memref operations.
   result = program.walk([&](SairToMemRefOp op) -> mlir::WalkResult {
-    const IterationSpace &iter_space = iteration_spaces.Get(op);
+    OpInstance op_instance(cast<SairOp>(op.getOperation()));
+    const IterationSpace &iter_space = iteration_spaces.Get(op_instance);
     MappingAttr layout = iter_space.mapping().Inverse().Compose(op.Layout());
     ValueStorage operand_storage(memory_space, op.buffer_nameAttr(), layout);
-    mlir::Operation *defining_op = op.value().getDefiningOp();
-    ValueStorage storage = operand_storage.Map(
-        op, defining_op, op.Value().Mapping().Inverse(), iteration_spaces);
-    return SetStorage(op.value(), storage, fusion_analysis, iteration_spaces);
+    auto value = OperandInstance(op.Value(), op_instance).GetValue();
+    if (!value.has_value()) return mlir::success();
+    ValueStorage storage =
+        operand_storage.Map(op_instance, value->defining_op(),
+                            op.Value().Mapping().Inverse(), iteration_spaces);
+    return SetStorage(*value, storage, fusion_analysis, iteration_spaces);
   });
   if (result.wasInterrupted()) return mlir::failure();
 
   // Ensure all sair values have an entry.
-  program.walk([&](SairOp op) {
-    for (mlir::Value result : op->getResults()) {
+  program.WalkOpInstances([&](const OpInstance &op) {
+    for (ResultInstance result : op.Results()) {
       value_storages_.FindAndConstruct(result);
     }
   });
@@ -418,15 +427,19 @@ mlir::LogicalResult StorageAnalysis::Init(SairProgramOp program) {
   // Ensure that writes to external buffers occure after the buffer is defined.
   for (auto &[name, buffer] : buffers_) {
     if (!buffer.is_external()) continue;
-    auto defining_op =
-        buffer.import_op().MemRef().value().getDefiningOp<SairOp>();
+    OperandInstance memref(
+        buffer.import_op().MemRef(),
+        OpInstance(cast<SairOp>(buffer.import_op().getOperation())));
+    auto memref_value = memref.GetValue();
+    if (!memref_value.has_value()) continue;
+    OpInstance defining_op = memref_value->defining_op();
     // We only need to check writes as reads always occure after writes.
     for (auto write : buffer.writes()) {
       if (sequence_analysis.IsBefore(write.first, defining_op)) {
-        mlir::InFlightDiagnostic diag = write.first.emitError()
+        mlir::InFlightDiagnostic diag = write.first.EmitError()
                                         << "buffer " << name
                                         << " used before it is defined";
-        diag.attachNote(defining_op->getLoc()) << "buffer defined here";
+        defining_op.AttachNote(diag) << "buffer defined here";
         return mlir::failure();
       }
     }
@@ -436,7 +449,7 @@ mlir::LogicalResult StorageAnalysis::Init(SairProgramOp program) {
 }
 
 void StorageAnalysis::MergeStorage(
-    mlir::Value value, const ValueStorage &new_storage,
+    ResultInstance value, const ValueStorage &new_storage,
     const LoopFusionAnalysis &fusion_analysis,
     const IterationSpaceAnalysis &iteration_spaces) {
   AssertSuccess(
@@ -456,7 +469,7 @@ mlir::StringAttr StorageAnalysis::GetFreshBufferName() {
 }
 
 void StorageAnalysis::AddDimensionsToBuffer(
-    mlir::StringAttr buffer_name, SairOp op,
+    mlir::StringAttr buffer_name, const OpInstance &op,
     const IterationSpace &op_iter_space,
     const LoopFusionAnalysis &fusion_analysis, MappingAttr new_layout) {
   Buffer &buffer = buffers_.find(buffer_name)->second;
@@ -473,7 +486,7 @@ void StorageAnalysis::AddDimensionsToBuffer(
                                  fusion_analysis, buffer));
 
   // Add a dimension to values layout.
-  for (mlir::Value value : buffer.values()) {
+  for (ResultInstance value : buffer.values()) {
     ValueStorage &storage = value_storages_.find(value)->second;
     storage.AddUnknownPrefixToLayout(new_layout.size() - old_size);
   }
@@ -482,7 +495,7 @@ void StorageAnalysis::AddDimensionsToBuffer(
 // Update the storage information for value. Updates buffers to register new
 // buffer uses.
 static mlir::LogicalResult UpdateStorage(
-    mlir::Value value, const ValueStorage &new_storage,
+    ResultInstance value, const ValueStorage &new_storage,
     const LoopFusionAnalysis &fusion_analysis,
     const IterationSpaceAnalysis &iteration_spaces, ValueStorage &storage,
     llvm::DenseMap<mlir::Attribute, Buffer> &buffers) {
@@ -492,23 +505,23 @@ static mlir::LogicalResult UpdateStorage(
     buffer.AddValue(value);
     // Trim buffer loop nest to ensure it can be used from value def and uses
     // iteration spaces.
-    SairOp defining_op = value.getDefiningOp();
-    assert(defining_op != nullptr);
+    OpInstance defining_op = value.defining_op();
     TrimBufferLoopNestForAccess(iteration_spaces.Get(defining_op), nullptr,
                                 fusion_analysis, buffer);
-    for (mlir::Operation *user : value.getUsers()) {
+    for (auto &[user, pos] : value.GetUses()) {
+      (void)pos;
       TrimBufferLoopNestForAccess(iteration_spaces.Get(user), nullptr,
                                   fusion_analysis, buffer);
     }
   }
 
   if (mlir::failed(storage.MergeSpace(new_storage.space()))) {
-    return value.getDefiningOp()->emitError()
+    return value.defining_op().EmitError()
            << "conflicting memory spaces: expected " << new_storage.space()
            << ", got " << storage.space();
   }
   if (mlir::failed(storage.MergeBufferName(new_storage.buffer_name()))) {
-    return value.getDefiningOp()->emitError()
+    return value.defining_op().EmitError()
            << "conflicting buffer names: expected " << new_storage.buffer_name()
            << ", got " << storage.buffer_name();
   }
@@ -517,7 +530,7 @@ static mlir::LogicalResult UpdateStorage(
     canonical_layout = new_storage.layout().Canonicalize();
   }
   if (mlir::failed(storage.MergeLayout(canonical_layout))) {
-    return value.getDefiningOp()->emitError()
+    return value.defining_op().EmitError()
            << "conflicting layouts: expected " << canonical_layout << ", got "
            << storage.layout();
   }
@@ -526,14 +539,14 @@ static mlir::LogicalResult UpdateStorage(
 }
 
 mlir::LogicalResult StorageAnalysis::SetStorage(
-    mlir::Value value, ValueStorage storage,
+    ResultInstance value, ValueStorage storage,
     const LoopFusionAnalysis &fusion_analysis,
     const IterationSpaceAnalysis &iteration_spaces) {
-  llvm::SmallVector<mlir::Value> work_list;
+  llvm::SmallVector<ResultInstance> work_list;
 
   // Merge storage information for a value with existing information. Fails and
   // emits an error in case of conflicts.
-  auto update_storage = [&](mlir::Value value,
+  auto update_storage = [&](ResultInstance value,
                             ValueStorage new_storage) -> mlir::LogicalResult {
     ValueStorage &storage = value_storages_[value];
     if (new_storage == storage) return mlir::success();
@@ -547,50 +560,61 @@ mlir::LogicalResult StorageAnalysis::SetStorage(
 
   // Propagate storage information.
   while (!work_list.empty()) {
-    mlir::Value value = work_list.pop_back_val();
+    ResultInstance value = work_list.pop_back_val();
     ValueStorage storage = value_storages_[value];
 
     // Forward propagation.
-    for (mlir::OpOperand &mlir_operand : value.getUses()) {
-      mlir::Operation *user = mlir_operand.getOwner();
-      ValueOperand operand(&mlir_operand);
+    for (auto &[user, use_pos] : value.GetUses()) {
+      if (user.is_copy()) continue;
+      mlir::Operation *sair_op = user.GetDuplicatedOp();
+      // Get the position relative the SairValue operands.
+      int operand_pos = use_pos - user.domain_size();
+
       int result;
-      if (isa<SairProjAnyOp, SairProjLastOp, SairFbyOp>(user)) {
+      if (isa<SairProjAnyOp, SairProjLastOp, SairFbyOp>(sair_op)) {
         result = 0;
-      } else if (auto map_reduce = dyn_cast<SairMapReduceOp>(user)) {
-        if (operand.position() >= map_reduce.Inits().size()) continue;
-        result = operand.position();
+      } else if (auto map_reduce = dyn_cast<SairMapReduceOp>(sair_op)) {
+        if (use_pos >= map_reduce.Inits().size()) continue;
+        result = operand_pos;
       } else {
         continue;
       }
-      ValueStorage new_storage = storage.Map(operand, iteration_spaces);
-      if (mlir::failed(update_storage(user->getResult(result), new_storage))) {
+
+      ValueStorage new_storage =
+          *storage.Map(user.Operand(operand_pos), iteration_spaces);
+      if (mlir::failed(update_storage(user.Result(result), new_storage))) {
         return mlir::failure();
       }
     }
 
     // Backward propagation.
-    mlir::Operation *defining_op = value.getDefiningOp();
+    OpInstance defining_op = value.defining_op();
+    if (defining_op.is_copy()) continue;
+    mlir::Operation *mlir_def_op = defining_op.GetDuplicatedOp();
 
     // Handle map-reduce separately.
-    if (auto map_reduce = dyn_cast<SairMapReduceOp>(defining_op)) {
-      int pos = value.cast<OpResult>().getResultNumber();
-      ValueOperand operand = map_reduce.Inits()[pos];
+    if (auto map_reduce = dyn_cast<SairMapReduceOp>(mlir_def_op)) {
+      int pos = value.result_number();
+      OperandInstance operand(map_reduce.Inits()[pos], defining_op);
+      auto operand_value = operand.GetValue();
+      if (!operand_value.has_value()) continue;
       ValueStorage new_storage =
-          storage.Map(defining_op, operand.value().getDefiningOp(),
+          storage.Map(defining_op, operand_value->defining_op(),
                       operand.Mapping().Inverse(), iteration_spaces);
-      if (mlir::failed(update_storage(operand.value(), new_storage))) {
+      if (mlir::failed(update_storage(*operand_value, new_storage))) {
         return mlir::failure();
       }
       continue;
     }
 
-    if (!isa<SairProjAnyOp, SairProjLastOp, SairFbyOp>(defining_op)) continue;
-    for (ValueOperand operand : cast<SairOp>(defining_op).ValueOperands()) {
+    if (!isa<SairProjAnyOp, SairProjLastOp, SairFbyOp>(mlir_def_op)) continue;
+    for (OperandInstance operand : defining_op.Operands()) {
+      auto value = operand.GetValue();
+      if (!value.has_value()) continue;
       ValueStorage new_storage =
-          storage.Map(defining_op, operand.value().getDefiningOp(),
+          storage.Map(defining_op, value->defining_op(),
                       operand.Mapping().Inverse(), iteration_spaces);
-      if (mlir::failed(update_storage(operand.value(), new_storage))) {
+      if (mlir::failed(update_storage(*value, new_storage))) {
         return mlir::failure();
       }
     }
@@ -608,7 +632,7 @@ static mlir::LogicalResult CheckMallocInsertionPoint(
     const IterationSpaceAnalysis &iteration_spaces,
     const SequenceAnalysis &sequence_analysis, int &min_num_loops) {
   // Find the first compute op writting to the buffer.
-  ComputeOp first_write = buffer.writes().front().first;
+  ComputeOpInstance first_write = buffer.writes().front().first;
   for (auto p : buffer.writes()) {
     if (sequence_analysis.IsBefore(p.first, first_write)) {
       first_write = p.first;
@@ -616,22 +640,22 @@ static mlir::LogicalResult CheckMallocInsertionPoint(
   }
 
   llvm::ArrayRef<mlir::StringAttr> write_loops =
-      iteration_spaces.Get(cast<SairOp>(first_write.getOperation()))
-          .loop_names();
+      iteration_spaces.Get(first_write).loop_names();
   for (int dim : used_dimensions.set_bits()) {
-    auto dimension_op =
-        cast<SairOp>(buffer.domain()[dim].value.getDefiningOp());
+    OpInstance dimension_op = buffer.domain()[dim].value.defining_op();
     if (sequence_analysis.IsBefore(first_write, dimension_op)) {
       mlir::InFlightDiagnostic diag =
-          first_write.emitError()
+          first_write.EmitError()
           << "buffer " << buffer_name
           << " is used before one of its dimensions is defined";
-      diag.attachNote(dimension_op.getLoc()) << "dimension defined here";
+      dimension_op.AttachNote(diag) << "dimension defined here";
       return mlir::failure();
     }
 
-    for (ValueOperand operand : dimension_op.ValueOperands()) {
-      auto defining_op = cast<SairOp>(operand.value().getDefiningOp());
+    for (OperandInstance operand : dimension_op.Operands()) {
+      auto value = operand.GetValue();
+      if (!value.has_value()) continue;
+      OpInstance defining_op = value->defining_op();
       llvm::ArrayRef<mlir::StringAttr> operand_loops =
           iteration_spaces.Get(defining_op).loop_names();
       int new_min = std::min(write_loops.size(), operand_loops.size());
@@ -641,11 +665,11 @@ static mlir::LogicalResult CheckMallocInsertionPoint(
 
       if (new_min > buffer.loop_nest().size()) {
         mlir::InFlightDiagnostic diag =
-            first_write.emitError()
+            first_write.EmitError()
             << "buffer " << buffer_name
             << " depends on a dimension that is defined after the buffer "
                "is allocated";
-        diag.attachNote(dimension_op.getLoc()) << "dimension defined here";
+        dimension_op.AttachNote(diag) << "dimension defined here";
         return mlir::failure();
       }
 
@@ -702,17 +726,16 @@ mlir::LogicalResult StorageAnalysis::VerifyAndMinimizeBufferLoopNests(
 }
 
 void StorageAnalysis::CreateBuffer(
-    mlir::Value value, llvm::ArrayRef<mlir::StringAttr> loop_names,
+    ResultInstance value, llvm::ArrayRef<mlir::StringAttr> loop_names,
     const LoopFusionAnalysis &fusion_analysis,
     const IterationSpaceAnalysis &iteration_spaces) {
   mlir::StringAttr buffer_name = GetFreshBufferName();
-  mlir::Type element_type = value.getType().cast<ValueType>().ElementType();
+  mlir::Type element_type = value.GetType().cast<ValueType>().ElementType();
   LoopNest loop_nest = fusion_analysis.GetLoopNest(loop_names);
-  buffers_.try_emplace(buffer_name, value.getLoc(), buffer_name, element_type,
-                       loop_nest);
+  buffers_.try_emplace(buffer_name, value.defining_op().getLoc(), buffer_name,
+                       element_type, loop_nest);
 
-  auto *sair_dialect =
-      static_cast<SairDialect *>(value.getDefiningOp()->getDialect());
+  auto *sair_dialect = value.defining_op().GetSairDialect();
   ValueStorage storage = GetStorage(value);
   AssertSuccess(storage.MergeBufferName(buffer_name));
   AssertSuccess(storage.MergeSpace(sair_dialect->memory_attr()));
@@ -723,11 +746,12 @@ void StorageAnalysis::CreateBuffer(
 // occurs within the same loop iteration or along dimensions that are
 // materialized in memory.
 static mlir::LogicalResult VerifyCommunicationVolume(
-    mlir::Location loc, const IterationSpace &use_iter_space,
-    const ValueAccess &operand, const IterationSpaceAnalysis &iteration_spaces,
+    const OpInstance &op, const IterationSpace &use_iter_space,
+    const ValueAccessInstance &operand,
+    const IterationSpaceAnalysis &iteration_spaces,
     const StorageAnalysis &storage_analysis) {
   const IterationSpace &def_iter_space =
-      iteration_spaces.Get(operand.value.getDefiningOp());
+      iteration_spaces.Get(operand.value.defining_op());
   // Only check if loop nest are specified.
   if (!use_iter_space.fully_specified() || !def_iter_space.fully_specified()) {
     return mlir::success();
@@ -748,11 +772,10 @@ static mlir::LogicalResult VerifyCommunicationVolume(
   // covered by common dimensions.
   if (layout_to_communication_volume.HasNoneExprs()) {
     mlir::InFlightDiagnostic diag =
-        mlir::emitError(loc)
+        op.EmitError()
         << "operand storage must cover all operand dimensions "
            "that are not covered by loops common to both operand and user";
-    diag.attachNote(operand.value.getDefiningOp()->getLoc())
-        << "operand defined here";
+    operand.value.defining_op().AttachNote(diag) << "operand defined here";
     return mlir::failure();
   }
 
@@ -778,13 +801,13 @@ static mlir::LogicalResult VerifyCommunicationVolume(
 static mlir::LogicalResult VerifyNoWriteBetween(
     mlir::StringAttr buffer_name, const Buffer &buffer,
     const ProgramPoint &from, const ProgramPoint &to, MappingAttr layout,
-    ComputeOp allowed_write, const IterationSpaceAnalysis &iteration_spaces,
+    const ComputeOpInstance &allowed_write,
+    const IterationSpaceAnalysis &iteration_spaces,
     const StorageAnalysis &storage_analysis,
     const SequenceAnalysis &sequence_analysis) {
   int num_common_loops = from.NumCommonLoops(to);
   for (auto [write_op, write_pos] : buffer.writes()) {
-    const IterationSpace &iter_space =
-        iteration_spaces.Get(cast<SairOp>(write_op.getOperation()));
+    const IterationSpace &iter_space = iteration_spaces.Get(write_op);
     if (write_op == allowed_write) continue;
 
     // Check if the write occurs before `from`.
@@ -792,7 +815,7 @@ static mlir::LogicalResult VerifyNoWriteBetween(
       int write_common_loops = iter_space.NumCommonLoops(from.loop_nest());
       if (write_common_loops <= num_common_loops) continue;
       const ValueStorage &value_storage =
-          storage_analysis.GetStorage(write_op->getResult(write_pos));
+          storage_analysis.GetStorage(write_op.Result(write_pos));
       // We consider that there is no overwrite if the write if before `from`
       // and layouts are the same.
       if (layout == nullptr || value_storage.layout() == nullptr ||
@@ -806,21 +829,20 @@ static mlir::LogicalResult VerifyNoWriteBetween(
     }
 
     mlir::InFlightDiagnostic diag =
-        write_op->emitError()
-        << "operation overwrites a value stored in buffer " << buffer_name
-        << " before it is used";
+        write_op.EmitError() << "operation overwrites a value stored in buffer "
+                             << buffer_name << " before it is used";
     if (from.operation() == nullptr) {
-      diag.attachNote(write_op->getParentOp()->getLoc())
+      diag.attachNote(write_op.program()->getLoc())
           << "value stored before entering sair program";
     } else {
-      diag.attachNote(from.operation()->getLoc()) << "value stored here";
+      from.operation().AttachNote(diag) << "value stored here";
     }
 
     if (to.operation() == nullptr) {
-      diag.attachNote(write_op->getParentOp()->getLoc())
+      diag.attachNote(write_op.program()->getLoc())
           << "value used after exiting sair program";
     } else {
-      diag.attachNote(to.operation()->getLoc()) << "value used here";
+      to.operation().AttachNote(diag) << "value used here";
     }
     return mlir::failure();
   }
@@ -830,29 +852,29 @@ static mlir::LogicalResult VerifyNoWriteBetween(
 // Verifies that `value` storage is not overwritten by an operation between the
 // operation that stores the value in `buffer` and `use`.
 static mlir::LogicalResult VerifyValueNotOverwritten(
-    mlir::StringAttr buffer_name, const Buffer &buffer, mlir::Value value,
+    mlir::StringAttr buffer_name, const Buffer &buffer, ResultInstance value,
     ProgramPoint use, const LoopFusionAnalysis &fusion_analysis,
     const IterationSpaceAnalysis &iteration_spaces,
     const StorageAnalysis &storage_analysis,
     const SequenceAnalysis &sequence_analysis) {
   // Mark visited fby operations to avoid infinite loops.
-  llvm::DenseSet<mlir::Operation *> visited_fby;
+  llvm::DenseSet<OpInstance> visited_fby;
   // Allow the use to overwritte the buffer in order to support in-place
   // updates.
-  ComputeOp allowed_write = use.operation();
+  ComputeOpInstance allowed_write = use.operation();
 
   // Walk producers of `value` to find program points where it is stored in its
   // buffer. Maintain a work list of producers to process. For each, {value,
   // use} in the work-list, we must verify that there is no write to `buffer`
   // between `value` and `use`.
-  llvm::SmallVector<std::pair<mlir::Value, ProgramPoint>> work_list;
+  llvm::SmallVector<std::pair<ResultInstance, ProgramPoint>> work_list;
   work_list.push_back({value, use});
   while (!work_list.empty()) {
     auto [value, use_point] = work_list.pop_back_val();
-    mlir::Operation *defining_op = value.getDefiningOp();
+    OpInstance defining_op = value.defining_op();
     const IterationSpace &iter_space = iteration_spaces.Get(defining_op);
 
-    if (auto producer = dyn_cast<ComputeOp>(defining_op)) {
+    if (auto producer = defining_op.dyn_cast<ComputeOpInstance>()) {
       ProgramPoint def_point(producer, Direction::kAfter,
                              iter_space.loop_names());
       const ValueStorage &storage = storage_analysis.GetStorage(value);
@@ -862,21 +884,30 @@ static mlir::LogicalResult VerifyValueNotOverwritten(
               sequence_analysis))) {
         return mlir::failure();
       }
-    } else if (auto proj = dyn_cast<SairProjLastOp>(defining_op)) {
-      work_list.emplace_back(proj.value(), use_point);
-    } else if (auto proj = dyn_cast<SairProjAnyOp>(defining_op)) {
-      work_list.emplace_back(proj.value(), use_point);
-    } else if (auto from_memref = dyn_cast<SairFromMemRefOp>(defining_op)) {
+      continue;
+    }
+
+    mlir::Operation *concrete_op = defining_op.GetDuplicatedOp();
+    if (auto proj = dyn_cast<SairProjLastOp>(concrete_op)) {
+      auto value = OperandInstance(proj.Value(), defining_op).GetValue();
+      if (value.has_value()) {
+        work_list.emplace_back(*value, use_point);
+      }
+    } else if (auto proj = dyn_cast<SairProjAnyOp>(concrete_op)) {
+      auto value = OperandInstance(proj.Value(), defining_op).GetValue();
+      if (value.has_value()) {
+        work_list.emplace_back(*value, use_point);
+      }
+    } else if (auto from_memref = dyn_cast<SairFromMemRefOp>(concrete_op)) {
       MappingAttr layout = FromToMemRefLayout(from_memref, iter_space);
-      ProgramPoint before_program(
-          cast<SairProgramOp>(defining_op->getParentOp()), Direction::kBefore);
+      ProgramPoint before_program(defining_op.program(), Direction::kBefore);
       if (mlir::failed(VerifyNoWriteBetween(buffer_name, buffer, before_program,
                                             use_point, layout, allowed_write,
                                             iteration_spaces, storage_analysis,
                                             sequence_analysis))) {
         return mlir::failure();
       }
-    } else if (auto fby = dyn_cast<SairFbyOp>(defining_op)) {
+    } else if (auto fby = dyn_cast<SairFbyOp>(concrete_op)) {
       // Find outermost loop that iterate along fby dimensions.
       MappingAttr mapping_to_loops = iter_space.MappingToLoops();
       auto it = llvm::find_if(mapping_to_loops, [&](MappingExpr expr) {
@@ -893,7 +924,10 @@ static mlir::LogicalResult VerifyValueNotOverwritten(
               iter_space.loop_names()[first_carry_loop]) {
         init_use_point.TrimLoopNest(first_carry_loop);
       }
-      work_list.emplace_back(fby.init(), init_use_point);
+      auto init = OperandInstance(fby.Init(), defining_op).GetValue();
+      if (init.has_value()) {
+        work_list.emplace_back(*init, init_use_point);
+      }
 
       // Ensure that there is no write between the value produced at the last
       // iteration of the loop nest and the end of the loop nest.
@@ -908,7 +942,10 @@ static mlir::LogicalResult VerifyValueNotOverwritten(
           iter_space.loop_names()[first_carry_loop];
       const LoopFusionClass &carry_loop_class =
           fusion_analysis.GetClass(carry_loop_name);
-      work_list.emplace_back(fby.value(), carry_loop_class.EndPoint());
+      auto value = OperandInstance(fby.Value(), defining_op).GetValue();
+      if (value.has_value()) {
+        work_list.emplace_back(*value, carry_loop_class.EndPoint());
+      }
     } else {
       llvm_unreachable("unexpected operation");
     }
@@ -928,12 +965,12 @@ mlir::LogicalResult VerifyValuesNotOverwritten(
   for (const auto &[name_attr, buffer] : storage_analysis.buffers()) {
     auto buffer_name = name_attr.cast<mlir::StringAttr>();
     for (auto [op, operand_pos] : buffer.reads()) {
-      auto sair_op = cast<SairOp>(op.getOperation());
-      const IterationSpace &iter_space = iteration_spaces.Get(sair_op);
-      mlir::Value operand = sair_op.ValueOperands()[operand_pos].value();
+      const IterationSpace &iter_space = iteration_spaces.Get(op);
+      auto operand = op.Operand(operand_pos).GetValue();
+      if (!operand.has_value()) continue;
       ProgramPoint use_point(op, Direction::kBefore, iter_space.loop_names());
       if (mlir::failed(VerifyValueNotOverwritten(
-              buffer_name, buffer, operand, use_point, fusion_analysis,
+              buffer_name, buffer, *operand, use_point, fusion_analysis,
               iteration_spaces, storage_analysis, sequence_analysis))) {
         return mlir::failure();
       }
@@ -947,10 +984,13 @@ mlir::LogicalResult VerifyValuesNotOverwritten(
     if (to_memref == nullptr) continue;
     ProgramPoint after_program(cast<SairProgramOp>(to_memref->getParentOp()),
                                Direction::kAfter);
+
+    auto op_instance = OpInstance(cast<SairOp>(to_memref.getOperation()));
+    auto value = OperandInstance(to_memref.Value(), op_instance).GetValue();
+    if (!value.has_value()) continue;
     if (mlir::failed(VerifyValueNotOverwritten(
-            buffer_name, buffer, to_memref.value(), after_program,
-            fusion_analysis, iteration_spaces, storage_analysis,
-            sequence_analysis))) {
+            buffer_name, buffer, *value, after_program, fusion_analysis,
+            iteration_spaces, storage_analysis, sequence_analysis))) {
       return mlir::failure();
     }
   }
@@ -963,29 +1003,32 @@ static mlir::LogicalResult VerifyCommunicationVolume(
     SairProgramOp program, const IterationSpaceAnalysis &iteration_spaces,
     const StorageAnalysis &storage_analysis) {
   // Ensure that values storage have enough dimensions.
-  auto result = program.walk([&](SairOp op) -> mlir::WalkResult {
+  auto result = program.TryWalkOpInstances([&](const OpInstance &op)
+                                               -> mlir::WalkResult {
     const IterationSpace iter_space = iteration_spaces.Get(op);
     // Check dependencies for value operands.
-    for (ValueOperand operand : op.ValueOperands()) {
-      if (mlir::failed(
-              VerifyCommunicationVolume(op.getLoc(), iter_space, operand.Get(),
-                                        iteration_spaces, storage_analysis))) {
+    for (OperandInstance operand : op.Operands()) {
+      auto access = operand.Get();
+      if (!access.has_value()) continue;
+      if (mlir::failed(VerifyCommunicationVolume(
+              op, iter_space, *access, iteration_spaces, storage_analysis))) {
         return mlir::failure();
       }
     }
     // Check dependencies for domain dimensions.
-    int domain_size = op.domain().size();
+    int domain_size = op.domain_size();
+    DomainShapeAttr shape = op.GetShape();
     for (int i = 0; i < domain_size; ++i) {
-      auto dim_op = cast<SairOp>(op.domain()[i].getDefiningOp());
-      const DomainShapeDim &shape_dim = op.shape().Dimension(i);
+      OpInstance dim_op = op.domain(i).defining_op();
+      const DomainShapeDim &shape_dim = shape.Dimension(i);
       MappingAttr dim_mapping =
           shape_dim.dependency_mapping().ResizeUseDomain(domain_size);
-      for (ValueOperand operand : dim_op.ValueOperands()) {
-        ValueAccess access = operand.Get();
-        access.mapping = dim_mapping.Compose(access.mapping);
+      for (OperandInstance operand : dim_op.Operands()) {
+        auto access = operand.Get();
+        if (!access.has_value()) continue;
+        access->mapping = dim_mapping.Compose(access->mapping);
         if (mlir::failed(VerifyCommunicationVolume(
-                op.getLoc(), iter_space, operand.Get(), iteration_spaces,
-                storage_analysis))) {
+                op, iter_space, *access, iteration_spaces, storage_analysis))) {
           return mlir::failure();
         }
       }
@@ -1006,30 +1049,33 @@ mlir::LogicalResult VerifyStorages(
 
   // Ensure that operation updating a buffers in place use the same layout for
   // both inputs and outputs.
-  auto result = program.walk([&](ComputeOp op) -> mlir::WalkResult {
-    for (mlir::Value result : op->getResults()) {
-      const ValueStorage &result_storage = analysis.GetStorage(result);
-      if (result_storage.buffer_name() == nullptr) continue;
-      auto sair_op = cast<SairOp>(op.getOperation());
-      for (ValueOperand operand : sair_op.ValueOperands()) {
-        const ValueStorage &operand_storage =
-            analysis.GetStorage(operand.value());
-        if (operand_storage.buffer_name() != result_storage.buffer_name()) {
-          continue;
+  auto result = program.TryWalkComputeOpInstances(
+      [&](const ComputeOpInstance &op) -> mlir::WalkResult {
+        for (ResultInstance result : op.Results()) {
+          const ValueStorage &result_storage = analysis.GetStorage(result);
+          if (result_storage.buffer_name() == nullptr) continue;
+          for (OperandInstance operand : op.Operands()) {
+            auto value = operand.GetValue();
+            if (!value.has_value()) continue;
+            const ValueStorage &operand_storage = analysis.GetStorage(*value);
+            if (operand_storage.buffer_name() != result_storage.buffer_name()) {
+              continue;
+            }
+            auto mapped_storage =
+                operand_storage.Map(operand, iteration_spaces);
+            if (!mapped_storage.has_value()) continue;
+            if (mapped_storage->layout() != result_storage.layout()) {
+              return op.EmitError()
+                     << "in-place update of buffer "
+                     << result_storage.buffer_name()
+                     << " must use the same layout in input and output ("
+                     << mapped_storage->layout() << " vs "
+                     << result_storage.layout() << ")";
+            }
+          }
         }
-        ValueStorage mapped_storage =
-            operand_storage.Map(operand, iteration_spaces);
-        if (mapped_storage.layout() != result_storage.layout()) {
-          return op.emitError()
-                 << "in-place update of buffer " << result_storage.buffer_name()
-                 << " must use the same layout in input and output ("
-                 << mapped_storage.layout() << " vs " << result_storage.layout()
-                 << ")";
-        }
-      }
-    }
-    return mlir::success();
-  });
+        return mlir::success();
+      });
   if (result.wasInterrupted()) return mlir::failure();
 
   if (mlir::failed(
@@ -1082,22 +1128,24 @@ mlir::LogicalResult ValueStorage::MergeLayout(MappingAttr new_layout) {
   return mlir::success();
 }
 
-ValueStorage ValueStorage::Map(
-    const ValueOperand &operand,
+std::optional<ValueStorage> ValueStorage::Map(
+    const OperandInstance &operand,
     const IterationSpaceAnalysis &iteration_spaces) const {
-  return Map(operand.value().getDefiningOp(), operand.getOwner(),
-             operand.Mapping(), iteration_spaces);
+  auto value = operand.GetValue();
+  if (!value.has_value()) return std::nullopt;
+  return Map(value->defining_op(), operand.owner(), operand.Mapping(),
+             iteration_spaces);
 }
 
 ValueStorage ValueStorage::Map(
-    SairOp from, SairOp to, MappingAttr mapping,
+    const OpInstance &from, const OpInstance &to, MappingAttr mapping,
     const IterationSpaceAnalysis &iteration_spaces) const {
   MappingAttr layout;
   if (layout_ != nullptr) {
     // We need to resize mapping to match operations domain size as values may
     // have a smaller rank than the operations that creates them.
-    MappingAttr domain_mapping = mapping.Resize(from.domain().size())
-                                     .ResizeUseDomain(to.domain().size());
+    MappingAttr domain_mapping =
+        mapping.Resize(from.domain_size()).ResizeUseDomain(to.domain_size());
     MappingAttr iter_space_mapping =
         iteration_spaces.TranslateMapping(to, from, domain_mapping);
     assert(iter_space_mapping != nullptr);

@@ -34,7 +34,7 @@ class MappedDomain : public AttrLocation {
                const LoopNest &loop_nest);
 
   // Source domain. This is prefixed by the loop nest domain.
-  llvm::ArrayRef<ValueAccess> domain() const { return domain_; }
+  llvm::ArrayRef<ValueAccessInstance> domain() const { return domain_; }
 
   // Mapping from the source domain to the new domain.
   MappingAttr mapping() const { return mapping_; }
@@ -58,8 +58,9 @@ class MappedDomain : public AttrLocation {
   // Emits an error if mappings cannot be unified. `loop_nest_mapping` is a
   // mapping from the new mapping domain to the loop nest domain.
   mlir::LogicalResult UnifyMapping(
-      mlir::Location new_mapping_loc, MappingAttr loop_nest_mapping,
-      MappingAttr new_mapping, llvm::ArrayRef<ValueAccess> new_mapping_domain);
+      const OpInstance &op, MappingAttr loop_nest_mapping,
+      MappingAttr new_mapping,
+      llvm::ArrayRef<ValueAccessInstance> new_mapping_domain);
 
   // Updates the loop nest in which the target domain is defined. The new loop
   // nest must be a prefix of the current one.
@@ -69,12 +70,11 @@ class MappedDomain : public AttrLocation {
   // Extends the domain to containt `dimension` if it does not already contain
   // it. Updates `constraint` with the new expression pointing to `dimension`.
   // Emits an error on failure.
-  mlir::LogicalResult ResolveUnification(mlir::Location unification_loc,
-                                         int dimension_id,
-                                         const ValueAccess &dimension,
+  mlir::LogicalResult ResolveUnification(const OpInstance &op, int dimension_id,
+                                         const ValueAccessInstance &dimension,
                                          MappingExpr &constraint);
 
-  llvm::SmallVector<ValueAccess> domain_;
+  llvm::SmallVector<ValueAccessInstance> domain_;
   MappingAttr mapping_;
 
   llvm::SmallVector<mlir::StringAttr> loop_nest_;

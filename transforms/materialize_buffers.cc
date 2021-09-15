@@ -17,6 +17,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
 #include "loop_nest.h"
+#include "sair_op_interfaces.h"
 #include "sequence.h"
 #include "storage.h"
 #include "transforms/domain_utils.h"
@@ -54,11 +55,9 @@ std::pair<ProgramPoint, ProgramPoint> FindInsertionPoints(
 
   int num_loops = buffer.loop_nest().size();
   ProgramPoint alloc_point = sequence_analysis.FindInsertionPoint(
-      iter_spaces, cast<SairOp>(first_access.getOperation()), num_loops,
-      Direction::kBefore);
+      iter_spaces, first_access, num_loops, Direction::kBefore);
   ProgramPoint free_point = sequence_analysis.FindInsertionPoint(
-      iter_spaces, cast<SairOp>(last_access.getOperation()), num_loops,
-      Direction::kAfter);
+      iter_spaces, last_access, num_loops, Direction::kAfter);
 
   return std::make_pair(alloc_point, free_point);
 }
@@ -79,8 +78,13 @@ std::pair<mlir::SmallVector<int64_t>, ValueRange> GetMemRefShape(
   auto loops_to_domain =
       loop_nest.DomainToLoops().Inverse().Resize(buffer.domain().size());
   builder.setInsertionPointToStart(&map_body.block());
+  auto buffer_domain = llvm::to_vector<4>(llvm::map_range(
+      buffer.domain(), [](ValueAccessInstance instance) -> ValueAccess {
+        return {.value = instance.value.GetValue(),
+                .mapping = instance.mapping};
+      }));
   llvm::SmallVector<RangeParameters> range_parameters =
-      GetRangeParameters(buffer.location(), buffer.mapping(), buffer.domain(),
+      GetRangeParameters(buffer.location(), buffer.mapping(), buffer_domain,
                          loops_to_domain, map_body, builder);
   for (const auto &params : range_parameters) {
     int step = params.step;
@@ -171,7 +175,8 @@ mlir::Value AllocateBuffer(const Buffer &buffer,
       /*mapping_array=*/builder.getArrayAttr(size_mappings), sizes,
       /*decisions=*/builder.getArrayAttr({alloc_decisions}),
       /*copies=*/nullptr);
-  sequence_analysis.Insert(alloc.getDefiningOp<ComputeOp>(), alloc_point);
+  sequence_analysis.Insert(
+      ComputeOpInstance::Unique(alloc.getDefiningOp<ComputeOp>()), alloc_point);
 
   mlir::ArrayAttr free_loop_nest =
       PointwiseLoopNest(free_point.loop_nest(), fusion_analysis, builder);
@@ -184,7 +189,7 @@ mlir::Value AllocateBuffer(const Buffer &buffer,
       buffer.location(), domain,
       /*mapping_array=*/builder.getArrayAttr(identity_mapping), alloc,
       /*instances=*/builder.getArrayAttr({free_decisions}));
-  sequence_analysis.Insert(free_op, free_point);
+  sequence_analysis.Insert(ComputeOpInstance::Unique(free_op), free_point);
 
   return alloc;
 }
@@ -204,9 +209,13 @@ void InsertLoad(ComputeOp op, int operand_pos, const Buffer &buffer,
   auto sair_op = cast<SairOp>(op.getOperation());
   int op_domain_size = sair_op.domain().size();
   ValueOperand operand = sair_op.ValueOperands()[operand_pos];
-  const IterationSpace &op_iter_space = iteration_spaces.Get(sair_op);
-  ValueStorage operand_storage = storage_analysis.GetStorage(operand.value())
-                                     .Map(operand, iteration_spaces);
+
+  auto op_instance = OpInstance::Unique(sair_op);
+  OperandInstance operand_instance = op_instance.Operand(operand_pos);
+  const IterationSpace &op_iter_space = iteration_spaces.Get(op_instance);
+  ValueStorage operand_storage =
+      *storage_analysis.GetStorage(*operand_instance.GetValue())
+           .Map(operand_instance, iteration_spaces);
   mlir::Type element_type = operand.GetType().ElementType();
 
   // Create a placeholder domain for the load.
@@ -231,8 +240,12 @@ void InsertLoad(ComputeOp op, int operand_pos, const Buffer &buffer,
       builder.getArrayAttr({memref_mapping}), memref.value,
       operand_storage.layout(), /*instances=*/builder.getArrayAttr({decisions}),
       /*copies=*/nullptr);
-  sequence_analysis.Insert(loaded.getDefiningOp<ComputeOp>(),
-                           ProgramPoint(op, Direction::kBefore));
+
+  auto load_instance =
+      ComputeOpInstance::Unique(cast<ComputeOp>(loaded.getDefiningOp()));
+  sequence_analysis.Insert(
+      load_instance,
+      ProgramPoint(ComputeOpInstance::Unique(op), Direction::kBefore));
 
   // Insert a sair.proj_any operation in case the load is rematerialized.
   ValueAccess new_operand;
@@ -274,9 +287,11 @@ void InsertStore(ComputeOp op, int result_pos, const Buffer &buffer,
   builder.setInsertionPointAfter(op);
 
   auto sair_op = cast<SairOp>(op.getOperation());
-  const IterationSpace &op_iter_space = iteration_spaces.Get(sair_op);
+  const IterationSpace &op_iter_space =
+      iteration_spaces.Get(OpInstance::Unique(sair_op));
   mlir::Value result = op->getResult(result_pos);
-  const ValueStorage &result_storage = storage_analysis.GetStorage(result);
+  const ValueStorage &result_storage =
+      storage_analysis.GetStorage(ResultInstance::Unique(result));
 
   // Create a placeholder domain for the store operation.
   DomainShapeAttr store_shape =
@@ -300,11 +315,14 @@ void InsertStore(ComputeOp op, int result_pos, const Buffer &buffer,
       result, result_storage.layout(), store_shape,
       /*instances=*/builder.getArrayAttr({decisions}),
       /*copies=*/nullptr);
-  sequence_analysis.Insert(store_to_memref_op,
-                           ProgramPoint(op, Direction::kAfter));
+  auto op_instance = ComputeOpInstance::Unique(op);
+  auto to_memref_instance = ComputeOpInstance::Unique(
+      cast<ComputeOp>(store_to_memref_op.getOperation()));
+  sequence_analysis.Insert(to_memref_instance,
+                           ProgramPoint(op_instance, Direction::kAfter));
 
   // Change result storage to register.
-  op.SetStorage(result_pos, GetRegister0DBuffer(op.getContext()));
+  op_instance.SetStorage(result_pos, GetRegister0DBuffer(op.getContext()));
 }
 
 // Implements storage attributes by replacing Sair values with memrefs.
@@ -323,8 +341,9 @@ class MaterializeBuffers
       ValueAccess memref;
       // Allocate or retrieve the buffer.
       if (buffer.is_external()) {
-        const IterationSpace &iter_space = iteration_spaces.Get(
-            cast<SairOp>(buffer.import_op().getOperation()));
+        auto import_op = cast<SairOp>(buffer.import_op().getOperation());
+        const IterationSpace &iter_space =
+            iteration_spaces.Get(OpInstance::Unique(import_op));
         ValueOperand memref_operand = buffer.import_op().MemRef();
         memref.value = memref_operand.value();
         memref.mapping =
@@ -338,12 +357,16 @@ class MaterializeBuffers
 
       // Insert loads and stores.
       for (auto [op, pos] : buffer.reads()) {
-        InsertLoad(op, pos, buffer, memref, fusion_analysis, iteration_spaces,
-                   storage_analysis, sequence_analysis, builder);
+        auto compute_op = cast<ComputeOp>(op.GetDuplicatedOp());
+        InsertLoad(compute_op, pos, buffer, memref, fusion_analysis,
+                   iteration_spaces, storage_analysis, sequence_analysis,
+                   builder);
       }
       for (auto [op, pos] : buffer.writes()) {
-        InsertStore(op, pos, buffer, memref, fusion_analysis, iteration_spaces,
-                    storage_analysis, sequence_analysis, builder);
+        auto compute_op = cast<ComputeOp>(op.GetDuplicatedOp());
+        InsertStore(compute_op, pos, buffer, memref, fusion_analysis,
+                    iteration_spaces, storage_analysis, sequence_analysis,
+                    builder);
       }
 
       // Erase ToMemRefOp as it has side effects and wont be considered by
@@ -356,8 +379,8 @@ class MaterializeBuffers
       // Drop proj_* and fby operations as we changed the operation storage to
       // register which might make verifier complain that storage volume is
       // insufficient. These operations would be removed by DCE anyway.
-      for (mlir::Value value : buffer.values()) {
-        mlir::Operation *op = value.getDefiningOp();
+      for (ResultInstance value : buffer.values()) {
+        mlir::Operation *op = value.defining_op().GetDuplicatedOp();
         if (!isa<SairProjAnyOp, SairProjLastOp, SairFbyOp>(op)) {
           continue;
         }
@@ -382,7 +405,8 @@ class MaterializeBuffers
       }
       for (mlir::Value result : op->getResults()) {
         if (!result.getType().isa<ValueType>()) continue;
-        const ValueStorage &storage = storage_analysis.GetStorage(result);
+        const ValueStorage &storage =
+            storage_analysis.GetStorage(ResultInstance::Unique(result));
         if (storage.space() == nullptr) {
           return op.emitError() << "missing memory space";
         }
