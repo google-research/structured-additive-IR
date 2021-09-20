@@ -52,7 +52,7 @@ class LowerToMap : public LowerToMapPassBase<LowerToMap> {
                << "operations must have exactly one instance during expansion";
       }
 
-      DecisionsAttr decisions = op.GetDecisions(0);
+      DecisionsAttr decisions = sair_op.GetDecisions(0);
       if (decisions.expansion() == nullptr) {
         return op.emitError() << "no target expansion pattern specified";
       }
@@ -72,7 +72,8 @@ class LowerToMap : public LowerToMapPassBase<LowerToMap> {
       builder.setInsertionPoint(op);
       auto new_decisions = DecisionsAttr::get(
           decisions.sequence(), decisions.loop_nest(), decisions.storage(),
-          builder.getStringAttr(kMapExpansionPattern), context);
+          builder.getStringAttr(kMapExpansionPattern), decisions.copy_of(),
+          decisions.operands(), context);
       SairMapOp map_op = builder.create<SairMapOp>(
           op.getLoc(), op->getResultTypes(), sair_op.domain(),
           map_body.sair_values(), sair_op.shape(),

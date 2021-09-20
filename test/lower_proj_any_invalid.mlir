@@ -86,3 +86,17 @@ func @copies(%arg0: f32) {
   }
   return
 }
+
+// -----
+
+func @instances(%arg0: f32) {
+  sair.program {
+    // expected-error @below {{instances must be materialized before lowering proj_any operations}}
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.proj_any of %0 {
+      instances = [{}, {}]
+    } : #sair.shape<()>, f32
+    sair.exit
+  }
+  return
+}

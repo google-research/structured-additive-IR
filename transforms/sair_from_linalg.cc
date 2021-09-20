@@ -85,7 +85,8 @@ mlir::Value CreateSairRange(mlir::Location loc, const LoopBound &bound,
   // If the shape is statically known, create a simple static range.
   if (!mlir::ShapedType::isDynamic(dimension)) {
     auto range_type = StaticRangeType::get(dimension, 1, context);
-    return rewriter.create<SairStaticRangeOp>(loc, range_type);
+    return rewriter.create<SairStaticRangeOp>(loc, range_type,
+                                              /*instances=*/nullptr);
   }
 
   // Otherwise, extract the dynamic dimension of the shaped type, construct a 0d
@@ -110,7 +111,8 @@ mlir::Value CreateSairRange(mlir::Location loc, const LoopBound &bound,
                                          mapping_array,
                                          /*begin=*/nullptr,
                                          /*end=*/bound_value,
-                                         /*step=*/rewriter.getIndexAttr(1));
+                                         /*step=*/rewriter.getIndexAttr(1),
+                                         /*instances=*/nullptr);
 }
 
 // Extracts bounds of the loops comprised in the iteration domain from the list
@@ -267,7 +269,8 @@ void EmitMemRefToValue(
         rewriter.create<SairFromScalarOp>(loc, memref_value_type, operand);
     Value new_operand = rewriter.create<SairFromMemRefOp>(
         loc, value_type, mlir::ValueRange(), ranges, mappings, from_scalar,
-        storage_analysis.GetFreshBufferName(), /*copies=*/nullptr);
+        storage_analysis.GetFreshBufferName(), /*instances=*/nullptr,
+        /*copies=*/nullptr);
     // Insert a copy to avoid storage specification mismatch.
     // TODO(b/181850491): introduce a sair.maybe_copy operation instead.
     auto copy_mapping = rewriter.getArrayAttr(
@@ -320,6 +323,7 @@ void EmitValueToMemRef(mlir::Location loc, SairProgramOp program,
     rewriter.create<SairToMemRefOp>(
         loc, mlir::ValueRange(), ranges[i], mapping_array, from_scalar,
         sair_values[i], shape, storage_analysis.GetFreshBufferName(),
+        /*instances=*/nullptr,
         /*copies=*/nullptr);
   }
 }

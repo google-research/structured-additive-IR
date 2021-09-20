@@ -169,6 +169,57 @@ def SairMappingExpr : Attr<IsSairMappingExpr, "mapping_expr"> {
   let returnType = storageType;
 }
 
+// Identifies a numbered copy of a value to use as operand.
+def SairCopyAttr : AttrDef<SairDialect, "Copy"> {
+  let mnemonic = "copy";
+  let parameters = (ins "unsigned":$value);
+
+  let printer = [{
+    $_printer << "copy<" << getImpl()->value << ">";
+  }];
+  let parser = [{
+    unsigned pos;
+    if ($_parser.parseLess() ||
+        $_parser.parseInteger(pos) ||
+        $_parser.parseGreater()) {
+      return ::mlir::Attribute();
+    }
+    return get($_ctxt, pos);
+  }];
+}
+
+// Identifies a numbered instance of an operation whose result to use as
+// operand.
+def SairInstanceAttr : AttrDef<SairDialect, "Instance"> {
+  let mnemonic = "instance";
+  let parameters = (ins "unsigned":$value);
+
+  let printer = [{
+    $_printer << "instance<" << getImpl()->value << ">";
+  }];
+  let parser = [{
+    unsigned pos;
+    if ($_parser.parseLess() ||
+        $_parser.parseInteger(pos) ||
+        $_parser.parseGreater()) {
+      return ::mlir::Attribute();
+    }
+    return get($_ctxt, pos);
+  }];
+}
+
+// A predicate that matches either a copy or an instance attribute.
+def IsSairCopyOrInstanceAttr : Or<[SairCopyAttr.predicate,
+                                   SairInstanceAttr.predicate,
+                                   UnitAttr.predicate]>;
+def SairCopyOrInstanceAttr : Attr<IsSairCopyOrInstanceAttr,
+                                  "Sair copy or instance attribute">;
+
+// Identifies a concrete value to use as operand.
+def SairOperandsAttr
+    : TypedArrayAttrBase<SairCopyOrInstanceAttr,
+                         "array of Sair copy or instance attributes">;
+
 // Helper to define a struct attribute with some additional constraints. The
 // attribute passed to constraints has the struct type.
 class SairStructAttr<string name,
@@ -212,7 +263,9 @@ def SairDecisionsAttr : SairStructAttr<"DecisionsAttr", [
     OptionalAttr<TypedArrayAttrBase<SairLoopAttr, "array of LoopAttr">>
   >,
   StructFieldAttr<"storage", OptionalAttr<ArrayAttr>>,
-  StructFieldAttr<"expansion", OptionalAttr<StrAttr>>
+  StructFieldAttr<"expansion", OptionalAttr<StrAttr>>,
+  StructFieldAttr<"copy_of", OptionalAttr<SairCopyOrInstanceAttr>>,
+  StructFieldAttr<"operands", OptionalAttr<SairOperandsAttr>>
 ]>;
 
 // An attribute that specifies instances of an operation.
@@ -263,6 +316,12 @@ def SairMappingArrayAttr :
 class SairSameElementType<string lhs, string rhs>
   : PredOpTrait<lhs # " and " # rhs # " have the same element type",
       CPred<"IsSameElementType(" # lhs # "(), " # rhs # "())">>;
+
+// Ensures that a Sair op has at most one instance specified.
+def SingleInstance: PredOpTrait<
+    "op has at most one instance",
+    CPred<"!cast<SairOp>($_op).instances().hasValue() || "
+          "cast<SairOp>($_op).instances()->getValue().size() <= 1">>;
 
 //===----------------------------------------------------------------------===//
 // Sair Interfaces
@@ -376,45 +435,19 @@ def SairOpInterface : OpInterface<"SairOp"> {
       [{Indicates if the operation has exactly one instance and no copy.}],
       "bool", "HasExactlyOneInstance", (ins), [{}], [{
         return sair::HasExactlyOneInstance(this->getOperation());
-      }]>
-  ];
-
-  let verify = [{return VerifySairOp(op);}];
-
-  let extraClassDeclaration = [{
-    // The string identifier used for mapping attribute in Sair ops.
-    static constexpr llvm::StringRef kMappingAttrName = "mapping_array";
-  }];
-}
-
-// Base class for all Sair operators.
-class SairOp<string mnemonic,
-             list<OpTrait> traits = [],
-             Dialect dialect = SairDialect>
-  : Op<
-      dialect, mnemonic,
-      !listconcat(traits, [
-        SairOpInterface,
-        DeclareOpInterfaceMethods<SairOpInterface>
-      ])
-    > {
-
-  let hasCanonicalizer = 1;
-}
-
-def SairComputeOp : OpInterface<"ComputeOp"> {
-  let description = [{
-    A Sair operation that performs a computation and results in actual code.
-    This is as oppposition to operations defining iteration dimensions and
-    casting sair to/from Sair values.
-
-    Assumes that the operation has an optional `loop_nest` attribute of type
-    `SairLoopNestAttr`. Checks dimension names are only used once in the loop
-    nest, that dimensions referenced by the loop nest are dimensions of the
-    domain, and that the loop nest iterates on the full domain.
-  }];
-
-  let methods = [
+      }]
+    >,
+    InterfaceMethod<
+      [{Returns the instances attribute if present, llvm::None otherwise.}],
+      "llvm::Optional<mlir::ArrayAttr>", "instances", (ins), [{}],
+      [{
+        // PlacehoderOp is a special op that gets introduced during code
+        // generation and is not expected to have external decisions.
+        static_assert(std::is_same<ConcreteOp, sair::SairPlaceholderOp>::value,
+                      "Sair ops must have the 'instances' attribute");
+        return llvm::None;
+      }]
+    >,
     InterfaceMethod<
       "Returns the number of instances of the operation",
       "int", "NumInstances", (ins), [{}], [{
@@ -422,6 +455,14 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
         if (!instances.hasValue()) return 0;
         return instances.getValue().size();
       }]>,
+    InterfaceMethod<
+      "Returns lowering decisions for all instances as an array attribute",
+      "mlir::ArrayAttr", "GetAllDecisions", (ins), [{}], [{
+        llvm::Optional<mlir::ArrayAttr> instances = $_op.instances();
+        if (!instances) return mlir::ArrayAttr();
+        return instances.getValue();
+      }]
+    >,
     InterfaceMethod<
       "Returns lowering decisions for the given operation instance",
       "DecisionsAttr", "GetDecisions", (ins "int":$instance), [{}], [{
@@ -451,13 +492,45 @@ def SairComputeOp : OpInterface<"ComputeOp"> {
         instances.push_back(value);
         $_op.instancesAttr(mlir::ArrayAttr::get($_op.getContext(), instances));
       }]
-    >,
+    >
   ];
 
-  let verify = [{return sair::VerifyComputeOp(op);}];
+  let verify = [{return VerifySairOp(op);}];
 
   let extraClassDeclaration = [{
+    // The string identifier used for mapping attribute in Sair ops.
+    static constexpr llvm::StringRef kMappingAttrName = "mapping_array";
+
+    // The string identifier used for instances attribute in Sair ops.
     static constexpr llvm::StringRef kInstancesAttrName = "instances";
+  }];
+}
+
+// Base class for all Sair operators.
+class SairOp<string mnemonic,
+             list<OpTrait> traits = [],
+             Dialect dialect = SairDialect>
+  : Op<
+      dialect, mnemonic,
+      !listconcat(traits, [
+        SairOpInterface,
+        DeclareOpInterfaceMethods<SairOpInterface>
+      ])
+    > {
+
+  let hasCanonicalizer = 1;
+}
+
+def SairComputeOp : OpInterface<"ComputeOp"> {
+  let description = [{
+    A Sair operation that performs a computation and results in actual code.
+    This is as oppposition to operations defining iteration dimensions and
+    casting sair to/from Sair values.
+
+    Assumes that the operation has an optional `loop_nest` attribute of type
+    `SairLoopNestAttr`. Checks dimension names are only used once in the loop
+    nest, that dimensions referenced by the loop nest are dimensions of the
+    domain, and that the loop nest iterates on the full domain.
   }];
 }
 

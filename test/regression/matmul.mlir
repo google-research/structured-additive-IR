@@ -5,15 +5,15 @@ func @main(%arg0: memref<512x512xf32>, %arg1: memref<512x512xf32>, %arg2: memref
   %cst = constant 0.000000e+00 : f32
 
   sair.program  {
-    %3 = sair.from_scalar %arg0 : !sair.value<(), memref<512x512xf32>>
-    %4 = sair.from_scalar %arg1 : !sair.value<(), memref<512x512xf32>>
-    %5 = sair.from_scalar %arg2 : !sair.value<(), memref<512x512xf32>>
-    %6 = sair.static_range : !sair.static_range<512>
-    %7 = sair.from_memref %3 memref[d0:%6, d1:%6] {buffer_name = "A"}
+    %3 = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), memref<512x512xf32>>
+    %4 = sair.from_scalar %arg1 { instances = [{}] } : !sair.value<(), memref<512x512xf32>>
+    %5 = sair.from_scalar %arg2 { instances = [{}] } : !sair.value<(), memref<512x512xf32>>
+    %6 = sair.static_range { instances = [{}] } : !sair.static_range<512>
+    %7 = sair.from_memref %3 memref[d0:%6, d1:%6] {buffer_name = "A", instances = [{}]}
       : #sair.shape<d0:static_range<512> x d1:static_range<512>>, memref<512x512xf32>
-    %8 = sair.from_memref %4 memref[d0:%6, d1:%6] {buffer_name = "B"}
+    %8 = sair.from_memref %4 memref[d0:%6, d1:%6] {buffer_name = "B", instances = [{}]}
       : #sair.shape<d0:static_range<512> x d1:static_range<512>>, memref<512x512xf32>
-    %9 = sair.from_scalar %cst : !sair.value<(), f32>
+    %9 = sair.from_scalar %cst { instances = [{}] } : !sair.value<(), f32>
     %10 = sair.copy[d0:%6, d1:%6] %9 {
       instances = [{
         expansion = "copy",
@@ -32,7 +32,7 @@ func @main(%arg0: memref<512x512xf32>, %arg1: memref<512x512xf32>, %arg2: memref
         }]
       }]
     } : !sair.value<d0:static_range<512> x d1:static_range<512>, f32>
-    %11 = sair.fby[d0:%6, d1:%6] %10(d0, d1) then[d2:%6] %12(d0, d1, d2)
+    %11 = sair.fby[d0:%6, d1:%6] %10(d0, d1) then[d2:%6] %12(d0, d1, d2) { instances = [{}] }
       : !sair.value<d0:static_range<512> x d1:static_range<512> x d2:static_range<512>, f32>
     %12 = sair.map[d0:%6, d1:%6, d2:%6] %11(d0, d1, d2), %7(d0, d2), %8(d1, d2) attributes {
       instances = [{
@@ -59,11 +59,11 @@ func @main(%arg0: memref<512x512xf32>, %arg1: memref<512x512xf32>, %arg2: memref
       sair.return %15 : f32
     } : #sair.shape<d0:static_range<512> x d1:static_range<512> x d2:static_range<512>>,
         (f32, f32, f32) -> f32
-    %13 = sair.proj_last[d0:%6, d1:%6] of[d2:%6] %12(d0, d1, d2)
+    %13 = sair.proj_last[d0:%6, d1:%6] of[d2:%6] %12(d0, d1, d2) { instances = [{}] }
       : #sair.shape<d0:static_range<512> x d1:static_range<512> x d2:static_range<512>>, f32
-    sair.to_memref %5 memref[d0:%6, d1:%6] %13(d0, d1) {buffer_name = "C"}
+    sair.to_memref %5 memref[d0:%6, d1:%6] %13(d0, d1) {buffer_name = "C", instances = [{}]}
       : #sair.shape<d0:static_range<512> x d1:static_range<512>>, memref<512x512xf32>
-    sair.exit
+    sair.exit { instances = [{}] }
   }
   return
 }

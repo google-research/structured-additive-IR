@@ -24,8 +24,10 @@
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/AttributeSupport.h"
 #include "mlir/IR/Attributes.h"
+#include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/Identifier.h"
 #include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Types.h"
 #include "sair_dialect.h"
 
@@ -1347,7 +1349,8 @@ std::function<DecisionsAttr(DecisionsAttr)> MapLoopNest(
     if (decisions == nullptr) return nullptr;
     return DecisionsAttr::get(
         decisions.sequence(), loop_nest_fn(decisions.loop_nest()),
-        decisions.storage(), decisions.expansion(), decisions.getContext());
+        decisions.storage(), decisions.expansion(), decisions.copy_of(),
+        decisions.operands(), decisions.getContext());
   };
 }
 
@@ -1357,7 +1360,8 @@ std::function<DecisionsAttr(DecisionsAttr)> MapStorage(
     if (decisions == nullptr) return nullptr;
     return DecisionsAttr::get(decisions.sequence(), decisions.loop_nest(),
                               storage_fn(decisions.storage()),
-                              decisions.expansion(), decisions.getContext());
+                              decisions.expansion(), decisions.copy_of(),
+                              decisions.operands(), decisions.getContext());
   };
 }
 
@@ -1367,12 +1371,73 @@ DecisionsAttr UpdateSequence(DecisionsAttr decisions, int new_sequence) {
       OpBuilder(context).getI64IntegerAttr(new_sequence);
   return DecisionsAttr::get(new_sequence_attr, decisions.loop_nest(),
                             decisions.storage(), decisions.expansion(),
-                            context);
+                            decisions.copy_of(), decisions.operands(), context);
 }
 
+mlir::ArrayAttr GetInstanceZeroOperands(mlir::MLIRContext *context,
+                                        int num_operands) {
+  llvm::SmallVector<mlir::Attribute> attributes(num_operands,
+                                                InstanceAttr::get(context, 0));
+  return mlir::ArrayAttr::get(context, attributes);
+}
+
+mlir::ArrayAttr GetInstanceZeroOperandsSingleInstance(
+    mlir::MLIRContext *context, int num_operands) {
+  auto decisions = DecisionsAttr::get(
+      /*sequence=*/nullptr, /*loop_nest=*/nullptr, /*storage=*/nullptr,
+      /*expansion=*/nullptr, /*copy_of=*/nullptr,
+      GetInstanceZeroOperands(context, num_operands), context);
+  return mlir::ArrayAttr::get(context, {decisions});
+}
+
+mlir::ArrayAttr EraseOperandFromArray(mlir::ArrayAttr old_operands,
+                                      int operand) {
+  if (old_operands == nullptr) return nullptr;
+  assert(operand < old_operands.size());
+
+  llvm::SmallVector<mlir::Attribute> operands;
+  operands.reserve(old_operands.size() - 1);
+  llvm::append_range(operands, old_operands.getValue().take_front(operand));
+  llvm::append_range(operands, old_operands.getValue().drop_front(operand + 1));
+  return mlir::ArrayAttr::get(old_operands.getContext(), operands);
+}
+
+DecisionsAttr EraseOperand(DecisionsAttr decisions, int operand) {
+  return DecisionsAttr::get(
+      decisions.sequence(), decisions.loop_nest(), decisions.storage(),
+      decisions.expansion(), decisions.copy_of(),
+      EraseOperandFromArray(decisions.operands(), operand),
+      decisions.getContext());
+}
+
+mlir::ArrayAttr EraseOperandFromDecisions(mlir::ArrayAttr decisions,
+                                          int operand) {
+  if (decisions == nullptr) return decisions;
+
+  auto range =
+      llvm::map_range(decisions.getAsRange<DecisionsAttr>(),
+                      [operand](DecisionsAttr decisions) -> mlir::Attribute {
+                        return EraseOperand(decisions, operand);
+                      });
+  return mlir::ArrayAttr::get(decisions.getContext(),
+                              llvm::to_vector<1>(range));
+}
 }  // namespace sair
 
 #include "sair_structs.cc.inc"
+#define GET_ATTRDEF_CLASSES
+#include "sair_attributes.cc.inc"
+
+mlir::OptionalParseResult sair::detail::ParseGeneratedAttribute(
+    mlir::MLIRContext *context, mlir::DialectAsmParser &parser,
+    llvm::StringRef mnemonic, mlir::Type type, mlir::Attribute &attribute) {
+  return generatedAttributeParser(context, parser, mnemonic, type, attribute);
+}
+
+mlir::LogicalResult sair::detail::PrintGeneratedAttribute(
+    mlir::Attribute attribute, mlir::DialectAsmPrinter &printer) {
+  return generatedAttributePrinter(attribute, printer);
+}
 
 //===----------------------------------------------------------------------===//
 // SairDialect
@@ -1383,5 +1448,9 @@ void SairDialect::registerAttributes() {
   addAttributes<DomainShapeAttr, MappingAttr, NamedMappingAttr, MappingDimExpr,
                 MappingNoneExpr, MappingUnknownExpr, MappingStripeExpr,
                 MappingUnStripeExpr>();
+  addAttributes<
+#define GET_ATTRDEF_LIST
+#include "sair_attributes.cc.inc"
+      >();
 }
 }  // namespace sair

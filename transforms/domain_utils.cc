@@ -26,8 +26,10 @@ llvm::SmallVector<mlir::Value> CreatePlaceholderDomain(
   for (const DomainShapeDim &shape_dim : shape.Dimensions()) {
     llvm::SmallVector<mlir::Value> range_domain =
         CreatePlaceholderDomain(loc, shape_dim.type().Shape(), builder);
-    domain.push_back(
-        builder.create<SairPlaceholderOp>(loc, shape_dim.type(), range_domain));
+    domain.push_back(builder.create<SairPlaceholderOp>(
+        loc, shape_dim.type(), range_domain,
+        GetInstanceZeroOperandsSingleInstance(builder.getContext(),
+                                              range_domain.size())));
   }
   return domain;
 }

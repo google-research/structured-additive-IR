@@ -42,3 +42,56 @@ func @map_reduce(%r1: index, %r2: index, %in1: f32) {
   }
   return
 }
+
+// CHECK-LABEL: @map_reduce_multi_instance
+func @map_reduce_multi_instance(%r1: index, %r2: index, %in1: f32) {
+  sair.program {
+    %0 = sair.from_scalar %r1 : !sair.value<(), index>
+    %1 = sair.from_scalar %r2 : !sair.value<(), index>
+    %2 = sair.dyn_range %0 { instances = [{}, {}] } : !sair.dyn_range
+    %3 = sair.dyn_range %1 { instances = [{}] } : !sair.dyn_range
+
+    %4 = sair.from_scalar %in1 : !sair.value<(), f32>
+    %5 = sair.copy[d0:%2, d1:%3] %4 : !sair.value<d0:dyn_range x d1:dyn_range, f32>
+    %6 = sair.copy[d0:%2] %4 {
+      instances = [{}],
+      copies = [[
+        {copy_of = #sair.instance<0>},
+        {copy_of = #sair.copy<0>}
+      ]]
+    } : !sair.value<d0:dyn_range, f32>
+    %7 = sair.copy[d0:%2] %4 : !sair.value<d0:dyn_range, f32>
+
+    // CHECK: sair.fby
+    // CHECK: {operands = [#sair.instance<1>, #sair.instance<0>, #sair.copy<1>, #sair.instance<0>]},
+    // CHECK: {operands = [#sair.instance<0>, #sair.instance<0>, #sair.copy<0>, #sair.instance<1>]}
+    // CHECK: sair.fby
+    // CHECK: {operands = [#sair.instance<1>, #sair.instance<0>, #sair.instance<0>, #sair.instance<0>]},
+    // CHECK: {operands = [#sair.instance<0>, #sair.instance<0>, #sair.instance<0>, #sair.instance<1>]}
+
+    // CHECK: sair.map
+    // CHECK: {operands = [#sair.instance<1>, #sair.instance<0>, #sair.instance<0>, #sair.instance<0>, #sair.instance<0>]},
+    // CHECK: {operands = [#sair.instance<0>, #sair.instance<0>, #sair.instance<1>, #sair.instance<1>, #sair.instance<0>]}
+    %8:2 = sair.map_reduce[d0:%2] %6(d0), %7(d0) reduce[d1:%3] %5(d0, d1) attributes {
+      instances = [{
+        operands = [#sair.instance<1>, #sair.instance<0>, #sair.copy<1>, #sair.instance<0>, #sair.instance<0>]
+      }, {
+        operands = [#sair.instance<0>, #sair.instance<0>, #sair.copy<0>, #sair.instance<0>, #sair.instance<0>]
+      }]
+    } {
+    ^bb0(%arg0: index, %arg1: index, %arg2: f32, %arg3: f32, %arg4: f32):
+      %9 = addf %arg2, %arg3 : f32
+      %10 = mulf %arg2, %arg3 : f32
+      sair.return %9, %10 : f32, f32
+    } : #sair.shape<d0:dyn_range x d1:dyn_range>, (f32) -> (f32, f32)
+
+    // CHECK: sair.proj_last
+    // CHECK: {operands = [#sair.instance<1>, #sair.instance<0>, #sair.instance<0>]},
+    // CHECK: {operands = [#sair.instance<0>, #sair.instance<0>, #sair.instance<1>]}
+    // CHECK: sair.proj_last
+    // CHECK: {operands = [#sair.instance<1>, #sair.instance<0>, #sair.instance<0>]},
+    // CHECK: {operands = [#sair.instance<0>, #sair.instance<0>, #sair.instance<1>]}
+    sair.exit
+  }
+  return
+}

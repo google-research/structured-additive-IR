@@ -119,10 +119,14 @@ std::pair<mlir::SmallVector<int64_t>, ValueRange> GetMemRefShape(
         scalar_sizes.size(), ValueType::get(shape, builder.getIndexType()));
     llvm::SmallVector<mlir::Attribute> map_buffers(
         scalar_sizes.size(), GetRegister0DBuffer(context));
-    auto decisions =
-        DecisionsAttr::get(/*sequence=*/nullptr, /*loop_nest=*/loop_nest_attr,
-                           /*storage=*/builder.getArrayAttr(map_buffers),
-                           /*expansion=*/nullptr, context);
+    auto decisions = DecisionsAttr::get(
+        /*sequence=*/nullptr, /*loop_nest=*/loop_nest_attr,
+        /*storage=*/builder.getArrayAttr(map_buffers),
+        /*expansion=*/nullptr, /*copy_of=*/nullptr,
+        /*operands=*/
+        GetInstanceZeroOperands(context,
+                                domain.size() + map_body.sair_values().size()),
+        context);
     auto map_op = builder.create<SairMapOp>(
         buffer.location(), map_types, /*domain=*/domain,
         /*inputs=*/map_body.sair_values(), /*shape=*/shape,
@@ -169,7 +173,10 @@ mlir::Value AllocateBuffer(const Buffer &buffer,
       /*sequence=*/nullptr,
       /*loop_nest=*/alloc_loop_nest,
       /*storage=*/builder.getArrayAttr(GetRegister0DBuffer(context)),
-      /*expansion=*/builder.getStringAttr(kAllocExpansionPattern), context);
+      /*expansion=*/builder.getStringAttr(kAllocExpansionPattern),
+      /*copy_of=*/nullptr,
+      /*operands=*/
+      GetInstanceZeroOperands(context, domain.size() + sizes.size()), context);
   mlir::Value alloc = builder.create<SairAllocOp>(
       buffer.location(), type, domain,
       /*mapping_array=*/builder.getArrayAttr(size_mappings), sizes,
@@ -184,7 +191,10 @@ mlir::Value AllocateBuffer(const Buffer &buffer,
       /*sequence=*/nullptr,
       /*loop_nest=*/free_loop_nest,
       /*storage=*/nullptr,
-      /*expansion=*/builder.getStringAttr(kFreeExpansionPattern), context);
+      /*expansion=*/builder.getStringAttr(kFreeExpansionPattern),
+      /*copy_of=*/nullptr,
+      /*operands=*/GetInstanceZeroOperands(context, domain.size() + 1),
+      context);
   auto free_op = builder.create<SairFreeOp>(
       buffer.location(), domain,
       /*mapping_array=*/builder.getArrayAttr(identity_mapping), alloc,
@@ -234,7 +244,10 @@ void InsertLoad(ComputeOp op, int operand_pos, const Buffer &buffer,
   auto decisions = DecisionsAttr::get(
       /*sequence=*/nullptr, /*loop_nest=*/loop_nest,
       /*storage=*/builder.getArrayAttr({loaded_storage}),
-      /*expansion=*/builder.getStringAttr(kLoadExpansionPattern), context);
+      /*expansion=*/builder.getStringAttr(kLoadExpansionPattern),
+      /*copy_of=*/nullptr,
+      /*operands=*/GetInstanceZeroOperands(context, load_domain.size() + 1),
+      context);
   mlir::Value loaded = builder.create<SairLoadFromMemRefOp>(
       op.getLoc(), loaded_type, load_domain,
       builder.getArrayAttr({memref_mapping}), memref.value,
@@ -262,6 +275,8 @@ void InsertLoad(ComputeOp op, int operand_pos, const Buffer &buffer,
         llvm::makeArrayRef(proj_domain).take_front(op_domain_size),
         llvm::makeArrayRef(proj_domain).drop_front(op_domain_size),
         builder.getArrayAttr(proj_mapping), loaded, proj_shape,
+        /*instances=*/
+        GetInstanceZeroOperandsSingleInstance(context, proj_domain.size() + 1),
         /*copies=*/nullptr);
     new_operand.mapping = MappingAttr::GetIdentity(context, op_domain_size);
   } else {
@@ -308,6 +323,9 @@ void InsertStore(ComputeOp op, int result_pos, const Buffer &buffer,
   auto decisions = DecisionsAttr::get(
       /*sequence=*/nullptr, /*loop_nest=*/loop_nest, /*storage=*/nullptr,
       /*expansion=*/builder.getStringAttr(kStoreExpansionPattern),
+      /*copy_of=*/nullptr,
+      /*operands=*/
+      GetInstanceZeroOperands(op.getContext(), store_domain.size() + 2),
       op.getContext());
   auto store_to_memref_op = builder.create<SairStoreToMemRefOp>(
       op.getLoc(), store_domain,

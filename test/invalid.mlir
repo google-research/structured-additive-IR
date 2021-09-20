@@ -2055,19 +2055,6 @@ func @fby_value_overwrite(%arg0 : f32) {
 
 // -----
 
-func @sequence_non_compute(%arg0 : f32) {
-  sair.program {
-    // expected-error @below {{only compute Sair ops can have the 'instances' attribute}}
-    %0 = sair.from_scalar %arg0 {
-      instances = [{sequence = 1}]
-    } : !sair.value<(), f32>
-    sair.exit
-  }
-  return
-}
-
-// -----
-
 func @sequence_inversion_two_compute() {
   sair.program {
     // expected-error @below {{operation sequencing contradicts use-def chains}}
@@ -2625,6 +2612,153 @@ func @copies_invalid_expansion(%arg0: f32) {
       copies = [[{expansion = "map"}]]
     } : !sair.value<(), f32>
     sair.exit
+  }
+  return
+}
+
+// -----
+
+func @non_existent_self_instance(%arg0: f32) {
+  sair.program {
+    // expected-error @below {{'copy_of' refers to non-existent instance}}
+    %0 = sair.from_scalar %arg0 {
+      instances = [{},{}],
+      copies = [[{copy_of = #sair.instance<2>}]]
+    } : !sair.value<(), f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @non_existent_self_copy(%arg0: f32) {
+  sair.program {
+    // expected-error @below {{'copy_of' refers to non-existent copy}}
+    %0 = sair.from_scalar %arg0 {
+      copies = [[{copy_of = #sair.copy<2>}]]
+    } : !sair.value<(), f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @copy_of_in_instance(%arg0: f32) {
+  sair.program {
+    // expected-error @below {{cannot specify 'copy_of' in 'instances'}}
+    %0 = sair.from_scalar %arg0 {
+      instances = [{copy_of = unit}]
+    } : !sair.value<(), f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @producer_cannot_have_copies(%arg0: f32) {
+  sair.program {
+    %0 = sair.static_range : !sair.static_range<4>
+    // expected-error @below {{'operands' attribute expects as many entries as op has operands (1, got 0) in instance #0}}
+    %1 = sair.from_scalar %arg0 {
+      instances = [{operands = []}]
+    } : !sair.value<(), f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @producer_cannot_have_copies(%arg0: f32) {
+  sair.program {
+    %0 = sair.static_range : !sair.static_range<4>
+    %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    // expected-error @below {{operand #0 of instance #0 refers to a copy, but the producing op cannot have copies}}
+    sair.copy[d0:%0] %1 {
+      instances = [{
+        operands = [#sair.copy<0>, unit]
+      }]
+    } : !sair.value<d0:static_range<4>, f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @producer_cannot_have_copies(%arg0: f32) {
+  sair.program {
+    %0 = sair.static_range : !sair.static_range<4>
+    %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    // expected-error @below {{cannot specify 'operands' in 'copies'}}
+    sair.copy[d0:%0] %1 {
+      instances = [{}],
+      copies = [[{operands = []}]]
+    } : !sair.value<d0:static_range<4>, f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @non_existent_copy(%arg0: f32) {
+  sair.program {
+    %0 = sair.static_range : !sair.static_range<4>
+    %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %2 = sair.copy[d0:%0] %1 {
+      instances = [{}],
+      copies = [[{copy_of = #sair.instance<0>}]]
+    } : !sair.value<d0:static_range<4>, f32>
+    // expected-error @below {{operand #1 of instance #0 refers to an undefined copy}}
+    %3 = sair.copy[d0:%0] %2(d0) {
+      instances = [{operands = [unit, #sair.copy<1>]}]
+    } : !sair.value<d0:static_range<4>, f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @non_existent_instance(%arg0: f32) {
+  sair.program {
+    %0 = sair.static_range : !sair.static_range<4>
+    %1 = sair.from_scalar %arg0 {
+      instances = [{}, {}]
+    } : !sair.value<(), f32>
+    // expected-error @below {{operand #1 of instance #0 refers to non-existent instance}}
+    sair.copy[d0:%0] %1 {
+      instances = [{operands = [unit, #sair.instance<2>]}]
+    } : !sair.value<d0:static_range<4>, f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @producer_cannot_have_copies(%arg0: f32) {
+  sair.program {
+    %0 = sair.static_range : !sair.static_range<4>
+    // expected-error@below {{can specify only 'operands' decisions on non-compute Sair ops}}
+    %1 = sair.from_scalar %arg0 {
+      instances = [{sequence = 3}]
+    } : !sair.value<(), f32>
+    sair.exit
+  }
+  return
+}
+
+// -----
+
+func @sair_exit_multi_instance() {
+  sair.program {
+    // expected-error@below {{op has at most one instance}}
+    sair.exit {instances = [{}, {}]}
   }
   return
 }

@@ -2,8 +2,8 @@
 
 func @partial_layout(%arg0: f32) {
   sair.program {
-    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
-    %1 = sair.static_range : !sair.static_range<8>
+    %0 = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), f32>
+    %1 = sair.static_range { instances = [{}] } : !sair.static_range<8>
     // expected-error @+1 {{partial layouts are not yet supported}}
     %2 = sair.copy[d0:%1] %0 {
       instances = [{
@@ -19,7 +19,7 @@ func @partial_layout(%arg0: f32) {
                     layout = #sair.named_mapping<[d0:"loopB"] -> (none, d0)>}]
       }]
     } : !sair.value<d0:static_range<8>, f32>
-    sair.exit
+    sair.exit { instances = [{}] }
   }
   return
 }
@@ -28,12 +28,12 @@ func @partial_layout(%arg0: f32) {
 
 func @missing_memory_space(%arg0: f32) {
   sair.program {
-    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %0 = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), f32>
     // expected-error @+1 {{missing memory space}}
     %1 = sair.copy %0 {
       instances = [{}]
     } : !sair.value<(), f32>
-    sair.exit
+    sair.exit { instances = [{}] }
   }
   return
 }
@@ -42,7 +42,7 @@ func @missing_memory_space(%arg0: f32) {
 
 func @missing_layout(%arg0: f32) {
   sair.program {
-    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %0 = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), f32>
     // expected-error @+1 {{missing layout}}
     %1 = sair.copy %0 {
       instances = [{
@@ -50,7 +50,7 @@ func @missing_layout(%arg0: f32) {
         storage = [{space = "memory", name = "A"}]
       }]
     } : !sair.value<(), f32>
-    sair.exit
+    sair.exit { instances = [{}] }
   }
   return
 }
@@ -63,7 +63,7 @@ func @copies(%arg0: f32) {
     sair.from_scalar %arg0 {
       copies = [[{sequence = 0}]]
     } : !sair.value<(), f32>
-    sair.exit
+    sair.exit { instances = [{}] }
   }
   return
 }

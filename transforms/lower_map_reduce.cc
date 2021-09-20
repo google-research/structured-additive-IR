@@ -15,6 +15,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Pass/Pass.h"
@@ -26,6 +27,39 @@
 
 namespace sair {
 namespace {
+
+// Creates an `instances` attribute (array of decisions) that has as many
+// entries as the `instances` attribute of `op` and only has the operands field
+// filled. The callback receives as input the instance position, the list of
+// operand attributes of the corresponding instance of `op`, and a vector to
+// populate with new operand attributes. If the vector remains empty, the
+// operands field will be set to nullptr.
+mlir::ArrayAttr CreateOperandsOnlyInstances(
+    SairMapReduceOp op,
+    llvm::function_ref<void(int, llvm::ArrayRef<mlir::Attribute>,
+                            llvm::SmallVectorImpl<mlir::Attribute> &)>
+        callback) {
+  mlir::MLIRContext *ctx = op->getContext();
+  SmallVector<mlir::Attribute> instances;
+  instances.reserve(op.NumInstances());
+  for (unsigned i = 0, e = op.NumInstances(); i < e; ++i) {
+    DecisionsAttr map_reduce_decisions = op.GetDecisions(i);
+    SmallVector<mlir::Attribute> operand_attrs;
+    if (map_reduce_decisions.operands() != nullptr) {
+      callback(i, map_reduce_decisions.operands().getValue(), operand_attrs);
+    }
+    auto operands_attr = operand_attrs.empty()
+                             ? mlir::ArrayAttr()
+                             : mlir::ArrayAttr::get(ctx, operand_attrs);
+    auto decisions = DecisionsAttr::get(
+        /*sequence=*/nullptr, /*loop_nest=*/nullptr,
+        /*storage=*/nullptr, /*expansion=*/nullptr,
+        /*copy_of=*/nullptr,
+        /*operands=*/operands_attr, ctx);
+    instances.push_back(decisions);
+  }
+  return mlir::ArrayAttr::get(ctx, instances);
+}
 
 // Lowers a map-reduce `op` into a sair.map by emitting a sair.fby to tie
 // together the initial value and partial reduction values, and a sair.proj_last
@@ -68,11 +102,24 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
     auto fby_type = ValueType::get(
         op.shape(), init_value.getType().cast<ValueType>().ElementType());
 
+    // Same operands as in map_reduce are used for domain dimensions and the
+    // init. The fby value is taken from the instance with the same position as
+    // the current instance to match the map constructed below.
+    mlir::ArrayAttr instances = CreateOperandsOnlyInstances(
+        op, [&](int instance, llvm::ArrayRef<mlir::Attribute> old_operand_attrs,
+                llvm::SmallVectorImpl<mlir::Attribute> &operand_attrs) {
+          int domain_size = op.domain().size();
+          llvm::append_range(operand_attrs,
+                             old_operand_attrs.take_front(domain_size));
+          operand_attrs.append({old_operand_attrs[domain_size + i],
+                                InstanceAttr::get(ctx, instance)});
+        });
+
     // Use `init_value` as both arguments temporarily, the second argument will
     // be updated later.
     auto fby = builder.create<SairFbyOp>(
         loc, fby_type, parallel_domain, reduction_domain, mapping_attr,
-        init_value, init_value, /*copies=*/nullptr);
+        init_value, init_value, instances, /*copies=*/nullptr);
     fbys.push_back(fby);
     map_operands.push_back(fby.getResult());
   }
@@ -93,10 +140,39 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
         return ValueType::get(op.shape(), type.cast<ValueType>().ElementType());
       }));
 
-  // Keep memory space undefined for the produced value.
-  auto map = builder.create<SairMapOp>(loc, result_types, domain, map_mapping,
-                                       map_operands, op.shape(),
-                                       op.instancesAttr(), /*copies=*/nullptr);
+  // The new map op instances similar to that of map_reduce, but the operands
+  // must be adapted. The domain and input operands are the same, and the
+  // operands that correspond to fby values refer to a co-indexed instance of
+  // the corresponding fby op.
+  SmallVector<mlir::Attribute> map_instances;
+  map_instances.reserve(op.NumInstances());
+  for (unsigned i = 0, e = op.NumInstances(); i < e; ++i) {
+    DecisionsAttr old_decisions = op.GetDecisions(i);
+    if (old_decisions.operands() == nullptr) {
+      map_instances.push_back(old_decisions);
+      continue;
+    }
+
+    SmallVector<mlir::Attribute> operand_attrs;
+    operand_attrs.reserve(map_operands.size());
+    llvm::append_range(
+        operand_attrs,
+        old_decisions.operands().getValue().take_front(domain.size()));
+    operand_attrs.append(fbys.size(), InstanceAttr::get(ctx, i));
+    llvm::append_range(
+        operand_attrs,
+        old_decisions.operands().getValue().take_back(op.inputs().size()));
+
+    auto decisions = DecisionsAttr::get(
+        old_decisions.sequence(), old_decisions.loop_nest(),
+        old_decisions.storage(), old_decisions.expansion(),
+        old_decisions.copy_of(), mlir::ArrayAttr::get(ctx, operand_attrs), ctx);
+    map_instances.push_back(decisions);
+  }
+
+  auto map = builder.create<SairMapOp>(
+      loc, result_types, domain, map_mapping, map_operands, op.shape(),
+      mlir::ArrayAttr::get(ctx, map_instances), /*copies=*/nullptr);
   map.getRegion().takeBody(op.getRegion());
 
   // For each original result of sair.map_reduce, create a sair.proj_last that
@@ -105,11 +181,22 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
     // Close the cycling definition of the sair.fby op.
     fbys[i].Value().set_value(map.getResult(i));
 
+    // Same operands as map_reduce are used for domain dimensions in
+    // projections. Values are taken from the co-indexed instance of map.
+    mlir::ArrayAttr instances = CreateOperandsOnlyInstances(
+        op, [&](int instance, llvm::ArrayRef<mlir::Attribute> old_operand_attrs,
+                llvm::SmallVectorImpl<mlir::Attribute> &operand_attrs) {
+          int domain_size = op.domain().size();
+          llvm::append_range(operand_attrs,
+                             old_operand_attrs.take_front(domain_size));
+          operand_attrs.push_back(InstanceAttr::get(ctx, instance));
+        });
+
     auto copies = builder.getArrayAttr(op.GetCopies(i));
     auto proj = builder.create<SairProjLastOp>(
         loc, op.getResultTypes()[i], op.parallel_domain(),
         op.reduction_domain(), builder.getArrayAttr(identity_mapping),
-        map.getResult(i), op.shape(),
+        map.getResult(i), op.shape(), instances,
         /*copies=*/builder.getArrayAttr({copies}));
     op.results()[i].replaceAllUsesWith(proj.result());
   }

@@ -32,14 +32,19 @@ class LowerProjAny : public LowerProjAnyPassBase<LowerProjAny> {
           getChildAnalysis<IterationSpaceAnalysis>(op->getParentOp());
 
       auto source = cast<SairOp>(op.value().getDefiningOp());
+      if (op.HasCopies()) {
+        return source.emitError() << "copies must be materialized before "
+                                     "lowering proj_any operations";
+      }
+
+      if (!source.HasExactlyOneInstance()) {
+        return source.emitError() << "instances must be materialized before "
+                                     "lowering proj_any operations";
+      }
       const IterationSpace &source_space =
           iteration_spaces.Get(OpInstance::Unique(source));
       if (!source_space.mapping().IsIdentity()) {
         return source.emitError() << "operation iteration space not normalized";
-      }
-      if (op.HasCopies()) {
-        return source.emitError() << "copies must be materialized before "
-                                     "lowering proj_any operations";
       }
 
       int domain_size = op.domain().size();
@@ -92,6 +97,7 @@ class LowerProjAny : public LowerProjAnyPassBase<LowerProjAny> {
         auto proj_last = builder.create<SairProjLastOp>(
             op.getLoc(), proj_type, parallel_domain, projection_domain,
             builder.getArrayAttr({proj_mapping}), op.value(), proj_shape,
+            /*instances=*/op.instancesAttr(),
             /*copies=*/nullptr);
 
         operand.set_value(proj_last);

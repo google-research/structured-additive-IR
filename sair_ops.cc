@@ -163,7 +163,8 @@ ParseResult ParseDynRangeOp(mlir::OpAsmParser &parser,
     }
   }
 
-  if (parser.parseColonType<DynRangeType>(type) ||
+  if (parser.parseOptionalAttrDict(result.attributes) ||
+      parser.parseColonType<DynRangeType>(type) ||
       parser.addTypeToList(type, result.types) ||
       ResolveDomain(parser, type.Shape(), domain, result)) {
     return failure();
@@ -197,7 +198,8 @@ ParseResult ParseDynRangeOp(mlir::OpAsmParser &parser,
 ParseResult ParseStaticRangeOp(mlir::OpAsmParser &parser,
                                mlir::OperationState &result) {
   StaticRangeType type;
-  return failure(parser.parseColonType<StaticRangeType>(type) ||
+  return failure(parser.parseOptionalAttrDict(result.attributes) ||
+                 parser.parseColonType<StaticRangeType>(type) ||
                  parser.addTypeToList(type, result.types));
 }
 
@@ -212,6 +214,7 @@ ParseResult ParsePlaceholderOp(mlir::OpAsmParser &parser,
   DimensionType type;
 
   return mlir::failure(ParseDomain(parser, domain) ||
+                       parser.parseOptionalAttrDict(result.attributes) ||
                        parser.parseColonType<DimensionType>(type) ||
                        parser.addTypeToList(type, result.types) ||
                        ResolveDomain(parser, type.Shape(), domain, result));
@@ -678,16 +681,21 @@ void Print(SairDynRangeOp op, OpAsmPrinter &printer) {
   if (op.step() != 1) {
     printer << " " << RangeOp::kStepAttrName << " " << op.step();
   }
+  printer.printOptionalAttrDict(
+      op->getAttrs(), {RangeOp::kStepAttrName, SairOp::kMappingAttrName,
+                       SairDynRangeOp::getOperandSegmentSizeAttr()});
   printer << " : " << op.getType();
 }
 
 // Prints the sair.static_range operation.
 void Print(SairStaticRangeOp op, OpAsmPrinter &printer) {
+  printer.printOptionalAttrDict(op->getAttrs());
   printer << " : " << op.getType();
 }
 
 static void Print(SairPlaceholderOp op, mlir::OpAsmPrinter &printer) {
   PrintDomain(op.domain(), printer);
+  printer.printOptionalAttrDict(op->getAttrs());
   printer << " : " << op.range().getType();
 }
 
@@ -768,6 +776,9 @@ void PrintProjectionOp(Op op, OpAsmPrinter &printer) {
   PrintDomain(op.projection_domain(), printer, op.parallel_domain().size());
   printer << " ";
   PrintValueAccess(op.Value(), printer);
+  printer.printOptionalAttrDict(
+      op->getAttrs(), {SairFromMemRefOp::getOperandSegmentSizeAttr(),
+                       SairDialect::kShapeAttrName, SairOp::kMappingAttrName});
   printer << " : " << op.shape() << ", "
           << op.result().getType().template cast<ValueType>().ElementType();
 }
@@ -898,6 +909,7 @@ static mlir::LogicalResult VerifyFromToMemRef(mlir::Operation *op,
              << "memref domain dimensions cannot depend on each other";
     }
   }
+
   return mlir::success();
 }
 
@@ -929,7 +941,7 @@ static LogicalResult Verify(SairAllocOp op) {
     return op.emitError() << "expected " << op.MemType().getNumDynamicDims()
                           << " dynamic size operands";
   }
-  return success();
+  return mlir::success();
 }
 
 }  // namespace
@@ -1133,7 +1145,7 @@ void SairMapOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,
   result.addAttribute(SairOp::kMappingAttrName, mappings_array);
   result.addAttribute(SairDialect::kShapeAttrName, shape);
   if (instances != nullptr) {
-    result.addAttribute(ComputeOp::kInstancesAttrName, instances);
+    result.addAttribute(SairOp::kInstancesAttrName, instances);
   }
   if (copies != nullptr) {
     result.addAttribute(ValueProducerOp::kCopiesAttrName, copies);
@@ -1458,7 +1470,6 @@ mlir::LogicalResult Verify(SairMapReduceOp op) {
   if (mlir::failed(VerifyBodyTerminator(op))) {
     return mlir::failure();
   }
-
   return mlir::success();
 }
 
@@ -1555,7 +1566,8 @@ mlir::WalkResult SairProgramOp::TryWalkComputeOpInstances(
   for (mlir::Operation &operation : body().front()) {
     auto compute_op = dyn_cast<ComputeOp>(&operation);
     if (compute_op != nullptr) {
-      for (int i = 0, e = compute_op.NumInstances(); i < e; ++i) {
+      auto sair_op = cast<SairOp>(&operation);
+      for (int i = 0, e = sair_op.NumInstances(); i < e; ++i) {
         ComputeOpInstance instance(compute_op, i);
         if (walker(instance).wasInterrupted()) {
           return mlir::WalkResult::interrupt();
@@ -1592,7 +1604,8 @@ mlir::WalkResult SairProgramOp::TryWalkOpInstances(
   for (mlir::Operation &operation : body().front()) {
     auto compute_op = dyn_cast<ComputeOp>(&operation);
     if (compute_op != nullptr) {
-      for (int i = 0, e = compute_op.NumInstances(); i < e; ++i) {
+      auto sair_op = cast<SairOp>(&operation);
+      for (int i = 0, e = sair_op.NumInstances(); i < e; ++i) {
         ComputeOpInstance instance(compute_op, i);
         if (walker(instance).wasInterrupted()) {
           return mlir::WalkResult::interrupt();
@@ -1962,7 +1975,7 @@ SairOp SairProjLastOp::ReCreateWithNewDomain(
                      getType().cast<ValueType>().ElementType());
   auto new_op = builder.create<SairProjLastOp>(
       getLoc(), new_return_type, new_domains[0], new_domains[1], new_mappings,
-      value(), new_shape, /*copies=*/nullptr);
+      value(), new_shape, /*instances=*/nullptr, /*copies=*/nullptr);
   return llvm::cast<SairOp>(new_op.getOperation());
 }
 
@@ -1980,7 +1993,7 @@ SairOp SairProjAnyOp::ReCreateWithNewDomain(
                      getType().cast<ValueType>().ElementType());
   auto new_op = builder.create<SairProjAnyOp>(
       getLoc(), new_return_type, new_domains[0], new_domains[1], new_mappings,
-      value(), new_shape, /*copies=*/nullptr);
+      value(), new_shape, /*instances=*/nullptr, /*copies=*/nullptr);
   return llvm::cast<SairOp>(new_op.getOperation());
 }
 
@@ -1996,7 +2009,7 @@ SairOp SairFbyOp::ReCreateWithNewDomain(
       ValueType::get(new_shape, getType().cast<ValueType>().ElementType());
   auto new_op = builder.create<SairFbyOp>(
       getLoc(), new_return_type, new_domains[0], new_domains[1], new_mappings,
-      init(), value(), /*copies=*/nullptr);
+      init(), value(), /*instances=*/nullptr, /*copies=*/nullptr);
   return llvm::cast<SairOp>(new_op.getOperation());
 }
 

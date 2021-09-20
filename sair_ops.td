@@ -52,7 +52,8 @@ def SairDynRangeOp : SairOp<"dyn_range",
     SairMappingArrayAttr:$mapping_array,
     Optional<SairValueOf<Index>>:$lower_bound,
     SairValueOf<Index>:$upper_bound,
-    DefaultValuedAttr<Confined<IndexAttr, [IntPositive]>, "1">:$step
+    DefaultValuedAttr<Confined<IndexAttr, [IntPositive]>, "1">:$step,
+    OptionalAttr<SairInstancesAttr>:$instances
   );
 
   let results = (outs SairDynRange:$range);
@@ -87,6 +88,7 @@ def SairStaticRangeOp : SairOp<"static_range", [NoSideEffect, SairRangeOp]> {
     <var-name> = sair.static_range : !sair.static_range< <size>, <step> >
     ```
   }];
+  let arguments = (ins OptionalAttr<SairInstancesAttr>:$instances);
   let results = (outs SairStaticRange:$range);
 
   let parser = [{return ParseStaticRangeOp(parser, result);}];
@@ -126,7 +128,8 @@ def SairPlaceholderOp : SairOp<"placeholder", [NoSideEffect]> {
     loop-nest description.
   }];
 
-  let arguments = (ins Variadic<SairDimension>:$domain);
+  let arguments = (ins Variadic<SairDimension>:$domain,
+                       OptionalAttr<SairInstancesAttr>:$instances);
   let results = (outs SairDimension:$range);
 
   let parser = [{return ParsePlaceholderOp(parser, result);}];
@@ -184,6 +187,7 @@ def SairFromScalarOp : SairOp<"from_scalar", [
 
   let arguments = (ins
     AnyType:$value,
+    OptionalAttr<SairInstancesAttr>:$instances,
     OptionalAttr<SairCopiesAttr>:$copies
   );
   let results = (outs SairValue:$result);
@@ -243,6 +247,7 @@ def SairFromMemRefOp : SairOp<"from_memref", [
     SairMappingArrayAttr:$mapping_array,
     SairValueOf<AnyMemRef>:$memref,
     StrAttr:$buffer_name,
+    OptionalAttr<SairInstancesAttr>:$instances,
     OptionalAttr<SairCopiesAttr>:$copies
   );
 
@@ -325,7 +330,8 @@ def SairToMemRefOp : SairOp<"to_memref", [
     AttrSizedOperandSegments,
     SairFromToMemRefOp,
     SairInferIterationSpaceOp,
-    SairValueProducerOp]> {
+    SairValueProducerOp,
+    SingleInstance]> {
   let summary = "Interprets a Sair value as a memref";
 
   let description = [{
@@ -356,6 +362,7 @@ def SairToMemRefOp : SairOp<"to_memref", [
     SairValue:$value,
     SairDomainShapeAttr:$shape,
     StrAttr:$buffer_name,
+    OptionalAttr<SairInstancesAttr>:$instances,
     OptionalAttr<SairCopiesAttr>:$copies
   );
 
@@ -383,7 +390,8 @@ def SairToMemRefOp : SairOp<"to_memref", [
 
 def SairStoreToMemRefOp : SairOp<"store_to_memref", [
     SairComputeOp,
-    SairValueProducerOp]> {
+    SairValueProducerOp,
+    SingleInstance]> {
   let summary = "Storse a Sair value in a memref";
 
   let description = [{
@@ -605,6 +613,7 @@ class SairProjectionOp<string name> : SairOp<name, [
     SairMappingArrayAttr:$mapping_array,
     SairValue:$value,
     SairDomainShapeAttr:$shape,
+    OptionalAttr<SairInstancesAttr>:$instances,
     OptionalAttr<SairCopiesAttr>:$copies
   );
 
@@ -691,6 +700,7 @@ def SairFbyOp : SairOp<"fby", [
     SairMappingArrayAttr:$mapping_array,
     SairValue:$init,
     SairValue:$value,
+    OptionalAttr<SairInstancesAttr>:$instances,
     OptionalAttr<SairCopiesAttr>:$copies
   );
 
@@ -777,7 +787,7 @@ def SairProgramOp : Op<SairDialect, "program", [RegionKindInterface]> {
   }];
 }
 
-def SairExitOp : SairOp<"exit", [Terminator]> {
+def SairExitOp : SairOp<"exit", [SingleInstance, Terminator]> {
   let summary = "Terminates sair.program bodies";
 
   let description = [{
@@ -794,7 +804,8 @@ def SairExitOp : SairOp<"exit", [Terminator]> {
 
   let arguments = (ins
     SairMappingArrayAttr:$mapping_array,
-    Variadic<SairValue>:$inputs
+    Variadic<SairValue>:$inputs,
+    OptionalAttr<SairInstancesAttr>:$instances
   );
 
   let parser = [{return ParseExitOp(parser, result);}];

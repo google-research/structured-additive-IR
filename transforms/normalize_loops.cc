@@ -72,7 +72,9 @@ void CreateRange(const IterationSpaceAnalysis &iter_spaces, SairOp op,
   if (range_parameters.end.is<mlir::Attribute>() && is_beg_zero) {
     assert(range_rank == 0);
     builder.setInsertionPoint(op);
-    range = builder.create<SairStaticRangeOp>(op.getLoc(), loop_shape.type());
+    range = builder.create<SairStaticRangeOp>(
+        op.getLoc(), loop_shape.type(),
+        /*instances=*/GetInstanceZeroOperandsSingleInstance(context, 0));
   } else {
     llvm::SmallVector<mlir::Value> scalar_results;
     if (!is_beg_zero) {
@@ -103,7 +105,12 @@ void CreateRange(const IterationSpaceAnalysis &iter_spaces, SairOp op,
         /*sequence=*/nullptr,
         /*loop_nest=*/map_loop_nest,
         /*storage=*/builder.getArrayAttr(map_buffers),
-        /*expansion=*/builder.getStringAttr(kMapExpansionPattern), context);
+        /*expansion=*/builder.getStringAttr(kMapExpansionPattern),
+        /*copy_of=*/nullptr,
+        /*operands=*/
+        GetInstanceZeroOperands(
+            context, range_domain.size() + map_body.sair_values().size()),
+        context);
     auto map_op = builder.create<SairMapOp>(
         op.getLoc(), map_result_types,
         /*domain=*/range_domain,
@@ -124,7 +131,10 @@ void CreateRange(const IterationSpaceAnalysis &iter_spaces, SairOp op,
         /*mapping_array=*/builder.getArrayAttr(range_mappings),
         /*begin=*/is_beg_zero ? nullptr : map_op.getResult(0),
         /*end=*/map_op.getResults().back(),
-        /*step=*/step);
+        /*step=*/step,
+        /*instances=*/
+        GetInstanceZeroOperandsSingleInstance(
+            context, range_domain.size() + 1 + (is_beg_zero ? 0 : 1)));
   }
 
   new_domain.push_back(range);
@@ -293,6 +303,9 @@ void NormalizeLoops(SairOp op, const IterationSpace &iteration_space,
         llvm::makeArrayRef(proj_any_domain).take_front(op.results_rank()),
         llvm::makeArrayRef(proj_any_domain).drop_front(op.results_rank()),
         builder.getArrayAttr({result_mapping}), new_value, proj_any_shape,
+        /*instances=*/
+        GetInstanceZeroOperandsSingleInstance(op->getContext(),
+                                              proj_any_domain.size() + 1),
         /*copies=*/nullptr);
     // We can directly replace uses without updating mappings as the mapping is
     // already applied for the proj_any operation.

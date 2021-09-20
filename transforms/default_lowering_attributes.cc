@@ -50,10 +50,10 @@ namespace {
 class DefaultInstance : public DefaultInstancePassBase<DefaultInstance> {
  public:
   void runOnFunction() {
-    getFunction().walk([](ComputeOp op) {
+    getFunction().walk([](SairOp op) {
       if (op.NumInstances() > 0) return;
       op.AddInstance(DecisionsAttr::get(nullptr, nullptr, nullptr, nullptr,
-                                        op.getContext()));
+                                        nullptr, nullptr, op.getContext()));
     });
   }
 };
@@ -446,7 +446,8 @@ static mlir::LogicalResult SetDefaultExpansion(ComputeOpInstance &op) {
   mlir::MLIRContext *context = decisions.getContext();
   op.SetDecisions(DecisionsAttr::get(
       decisions.sequence(), decisions.loop_nest(), decisions.storage(),
-      mlir::StringAttr::get(context, pattern_name), context));
+      mlir::StringAttr::get(context, pattern_name), decisions.copy_of(),
+      decisions.operands(), context));
   return mlir::success();
 }
 

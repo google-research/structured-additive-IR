@@ -384,6 +384,7 @@ void EraseDimension(SairProjLastOp op, int dimension, mlir::Value new_value,
       /*mapping_array*/ driver.getArrayAttr({mapping}),
       /*value=*/new_value,
       /*shape=*/EraseDimension(op.shape(), dimension),
+      /*instances=*/EraseOperandFromDecisions(op.instancesAttr(), dimension),
       /*copies=*/nullptr);
 }
 
@@ -408,7 +409,9 @@ void EraseDimension(SairFbyOp op, int dimension, mlir::Value new_value,
       /*sequential_domain=*/EraseValue(op.sequential_domain(), dim_pos),
       /*mapping_array*/
       driver.getArrayAttr({op.Init().Mapping(), mapping}),
-      /*init=*/op.init(), /*value=*/new_value, /*copies=*/nullptr);
+      /*init=*/op.init(), /*value=*/new_value,
+      /*instances=*/EraseOperandFromDecisions(op.instancesAttr(), dimension),
+      /*copies=*/nullptr);
 }
 
 // Creates a for operation of size `size` at the current insertion point of
@@ -577,7 +580,10 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
       /*sequence=*/decisions.sequence(),
       /*loop_nest=*/new_loop_nest,
       /*storage=*/decisions.storage(),
-      /*expansion=*/decisions.expansion(), op.getContext());
+      /*expansion=*/decisions.expansion(),
+      /*copy_of=*/nullptr,
+      /*operands=*/EraseOperandFromArray(decisions.operands(), dimension),
+      op.getContext());
   SairMapOp new_op = driver.create<SairMapOp>(
       op.getLoc(),
       /*result_types=*/EraseDimension(op.getResultTypes(), dimension),
@@ -749,7 +755,12 @@ void Fuse(SairMapOp first_op, llvm::ArrayRef<mlir::Attribute> first_loop_nest,
       /*sequence=*/first_decisions.sequence(),
       /*loop_nest=*/first_decisions.loop_nest(),
       /*storage=*/driver.getArrayAttr(storages),
-      /*expansion=*/first_decisions.expansion(), context);
+      /*expansion=*/first_decisions.expansion(),
+      /*copy_of=*/first_decisions.copy_of(),
+      /*operands=*/
+      GetInstanceZeroOperands(context,
+                              first_op.domain().size() + inputs.size()),
+      context);
   SairMapOp new_op = driver.create<SairMapOp>(
       /*location=*/first_op.getLoc(),
       /*result_types=*/result_types,

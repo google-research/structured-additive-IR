@@ -33,6 +33,7 @@
 namespace sair {
 
 class IterationSpace;
+class SairPlaceholderOp;
 
 // A Sair value accessed with a mapping.
 struct ValueAccess {
@@ -225,6 +226,7 @@ class OpInstance {
 
   // Returns the operation that defines the instance.
   mlir::Operation *getOperation() const;
+  SairOp GetSairOp() const;
 
   // Provides a hash for the instance.
   unsigned HashValue() const;

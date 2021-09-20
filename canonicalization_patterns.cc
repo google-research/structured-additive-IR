@@ -77,9 +77,10 @@ bool SimplifyProjOp(ValueOperand &use, ProjOp op,
   mlir::ArrayAttr mapping_array = rewriter.getArrayAttr({new_mapping});
 
   rewriter.setInsertionPoint(op);
-  ProjOp new_op = rewriter.create<ProjOp>(
-      op.getLoc(), op.getType(), op.parallel_domain(), projection_domain,
-      mapping_array, prev_op.value(), shape, op.copiesAttr());
+  ProjOp new_op =
+      rewriter.create<ProjOp>(op.getLoc(), op.getType(), op.parallel_domain(),
+                              projection_domain, mapping_array, prev_op.value(),
+                              shape, op.instancesAttr(), op.copiesAttr());
   use.set_value(new_op.result());
 
   return true;
@@ -221,6 +222,9 @@ mlir::LogicalResult DeduplicateMapInputsOutputs(
   rewriter.setInsertionPoint(op);
   mlir::ArrayAttr new_instances = MkArrayAttrMapper<DecisionsAttr>(
       MapStorage(MkArrayAttrFilter(remaining_outputs)))(op.instancesAttr());
+  for (int operand : llvm::reverse(block_args_to_erase)) {
+    new_instances = EraseOperandFromDecisions(new_instances, operand);
+  }
   mlir::ArrayAttr new_copies =
       MkArrayAttrFilter(remaining_outputs)(op.copiesAttr());
   SairMapOp new_op = rewriter.create<SairMapOp>(

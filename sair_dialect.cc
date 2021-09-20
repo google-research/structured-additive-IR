@@ -39,6 +39,7 @@
 #include "sair_attributes.h"
 #include "sair_ops.h"
 #include "sair_types.h"
+#include "util.h"
 
 using mlir::failed;
 using mlir::succeeded;
@@ -246,8 +247,16 @@ mlir::Attribute sair::SairDialect::parseAttribute(
   }
 
   llvm::StringRef keyword;
-  if (parser.parseKeyword(&keyword) || parser.parseLess()) return nullptr;
+  if (parser.parseKeyword(&keyword)) return nullptr;
   mlir::Attribute attribute;
+  mlir::OptionalParseResult parse_result = detail::ParseGeneratedAttribute(
+      parser.getBuilder().getContext(), parser, keyword, type, attribute);
+  if (parse_result.hasValue()) {
+    if (parse_result.getValue().succeeded()) return attribute;
+    return mlir::Attribute();
+  }
+
+  if (parser.parseLess()) return nullptr;
   if (keyword == "shape") {
     attribute = ParseDomainShape(parser);
   } else if (keyword == "mapping") {
@@ -421,6 +430,9 @@ void SairDialect::printAttribute(mlir::Attribute attr,
         os << "mapping_expr<";
         PrintMappingExpr(expr, os.getStream());
         os << ">";
+      })
+      .Default([&os](mlir::Attribute attr) {
+        AssertSuccess(detail::PrintGeneratedAttribute(attr, os));
       });
 }
 

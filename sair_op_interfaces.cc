@@ -26,6 +26,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "mlir/IR/Attributes.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/Types.h"
@@ -120,6 +121,130 @@ ValueOrConstant ValueOrConstant::Map(MappingAttr mapping) const {
   return value_access;
 }
 
+// Verifies that `decisions` is well formed when used for an operation with the
+// given shape and result types.
+static mlir::LogicalResult VerifyDecisionsWellFormed(mlir::Location loc,
+                                                     DomainShapeAttr shape,
+                                                     TypeRange result_types,
+                                                     DecisionsAttr decisions) {
+  auto *sair_dialect = shape.getContext()->getLoadedDialect<SairDialect>();
+
+  // Check loop nest.
+  mlir::ArrayAttr loop_nest = decisions.loop_nest();
+  llvm::DenseSet<mlir::Attribute> loop_names;
+  if (loop_nest != nullptr) {
+    if (mlir::failed(
+            VerifyLoopNestWellFormed(loc, shape, loop_nest.getValue()))) {
+      return mlir::failure();
+    }
+    loop_names.reserve(loop_nest.size());
+    for (mlir::Attribute attr : loop_nest.getValue()) {
+      loop_names.insert(attr.cast<LoopAttr>().name());
+    }
+  }
+
+  // Check storage.
+  mlir::ArrayAttr storage = decisions.storage();
+  if (storage != nullptr &&
+      mlir::failed(VerifyStorageAttrWellFormed(
+          loc, sair_dialect, result_types, loop_names, storage.getValue()))) {
+    return mlir::failure();
+  }
+
+  // Check expansion pattern.
+  mlir::StringAttr pattern_name = decisions.expansion();
+  if (pattern_name == nullptr) return mlir::success();
+  const ExpansionPattern *pattern =
+      sair_dialect->GetExpansionPattern(pattern_name.getValue());
+  if (pattern == nullptr) {
+    return mlir::emitError(loc)
+           << "invalid expansion pattern name " << pattern_name;
+  }
+  return mlir::success();
+}
+
+static mlir::LogicalResult VerifyInstancesAttr(SairOp op) {
+  if (!op.instances().hasValue()) return success();
+
+  for (int decision_index = 0, e = op.NumInstances(); decision_index < e;
+       ++decision_index) {
+    // Ignore incorrect types here, they will be caught by the op verifier.
+    mlir::Attribute decision_attr = op.instances()->getValue()[decision_index];
+    DecisionsAttr decisions = decision_attr.dyn_cast<DecisionsAttr>();
+    if (!decisions) continue;
+
+    if (decisions.copy_of() != nullptr) {
+      return op->emitError() << "cannot specify 'copy_of' in 'instances'";
+    }
+
+    if (mlir::failed(VerifyDecisionsWellFormed(
+            op->getLoc(), op.shape(), op->getResultTypes(), decisions))) {
+      return mlir::failure();
+    }
+
+    if (decisions.operands() == nullptr) continue;
+    if (decisions.operands().size() != op->getNumOperands()) {
+      return op->emitError()
+             << "'operands' attribute expects as many entries as op has "
+                "operands ("
+             << op->getNumOperands() << ", got " << decisions.operands().size()
+             << ") in instance #" << decision_index;
+    }
+
+    for (auto en : llvm::enumerate(decisions.operands().getValue())) {
+      mlir::Attribute operand_instance = en.value();
+      if (operand_instance.isa<mlir::UnitAttr>()) continue;
+      if (auto copy = operand_instance.dyn_cast<CopyAttr>()) {
+        Value operand = op->getOperand(en.index());
+        auto defining_op = operand.getDefiningOp<ValueProducerOp>();
+        if (!defining_op) {
+          return op->emitError() << "operand #" << en.index()
+                                 << " of instance #" << decision_index
+                                 << " refers to a copy, but the producing op "
+                                    "cannot have copies";
+        }
+        if (copy.getValue() >=
+            defining_op.GetCopies(operand.cast<OpResult>().getResultNumber())
+                .size()) {
+          return op->emitError()
+                 << "operand #" << en.index() << " of instance #"
+                 << decision_index << " refers to an undefined copy";
+        }
+        continue;
+      }
+
+      // Ignore incorrect attribute types here, they will be caught by the op
+      // verifier later.
+      auto instance = operand_instance.dyn_cast<InstanceAttr>();
+      if (!instance) continue;
+
+      // There may be no defining op for operands of some non-compute ops.
+      auto defining_op = op->getOperand(en.index()).getDefiningOp<SairOp>();
+      if (!defining_op) continue;
+
+      llvm::Optional<mlir::ArrayAttr> defining_op_instances =
+          defining_op.instances();
+      if (!defining_op_instances) continue;
+      if (instance.getValue() >= defining_op_instances->size()) {
+        return op->emitError()
+               << "operand #" << en.index() << " of instance #"
+               << decision_index << " refers to non-existent instance";
+      }
+    }
+  }
+
+  if (isa<ComputeOp>(op.getOperation())) return mlir::success();
+
+  for (DecisionsAttr decisions : op.instances()->getAsRange<DecisionsAttr>()) {
+    if (decisions.sequence() != nullptr || decisions.loop_nest() != nullptr ||
+        decisions.storage() != nullptr || decisions.expansion() != nullptr) {
+      return op->emitOpError()
+             << "can specify only 'operands' decisions on non-compute Sair ops";
+    }
+  }
+  return mlir::success();
+}
+
 mlir::LogicalResult VerifySairOp(Operation *op) {
   SairOp sair_op = cast<SairOp>(op);
 
@@ -150,6 +275,10 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
       return op->emitError()
              << "sair dimensions must be defined in the region they are used";
     }
+  }
+
+  if (mlir::failed(VerifyInstancesAttr(sair_op))) {
+    return mlir::failure();
   }
 
   if (!sair_op.ValueOperands().empty()) {
@@ -213,81 +342,7 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
     }
   }
 
-  if (!isa<ComputeOp>(sair_op.getOperation())) {
-    if (sair_op->hasAttr(ComputeOp::kInstancesAttrName)) {
-      return op->emitError() << "only compute Sair ops can have the '"
-                             << ComputeOp::kInstancesAttrName << "' attribute";
-    }
-  }
-
   return ::mlir::success();
-}
-
-// Verifies that `decisions` is well formed when used for an operation with the
-// given shape and result types.
-static mlir::LogicalResult VerifyDecisionsWellFormed(mlir::Location loc,
-                                                     DomainShapeAttr shape,
-                                                     TypeRange result_types,
-                                                     DecisionsAttr decisions) {
-  auto *sair_dialect = shape.getContext()->getLoadedDialect<SairDialect>();
-
-  // Check loop nest.
-  mlir::ArrayAttr loop_nest = decisions.loop_nest();
-  llvm::DenseSet<mlir::Attribute> loop_names;
-  if (loop_nest != nullptr) {
-    if (mlir::failed(
-            VerifyLoopNestWellFormed(loc, shape, loop_nest.getValue()))) {
-      return mlir::failure();
-    }
-    loop_names.reserve(loop_nest.size());
-    for (mlir::Attribute attr : loop_nest.getValue()) {
-      loop_names.insert(attr.cast<LoopAttr>().name());
-    }
-  }
-
-  // Check storage.
-  mlir::ArrayAttr storage = decisions.storage();
-  if (storage != nullptr &&
-      mlir::failed(VerifyStorageAttrWellFormed(
-          loc, sair_dialect, result_types, loop_names, storage.getValue()))) {
-    return mlir::failure();
-  }
-
-  // Check expansion pattern.
-  mlir::StringAttr pattern_name = decisions.expansion();
-  if (pattern_name == nullptr) return mlir::success();
-  const ExpansionPattern *pattern =
-      sair_dialect->GetExpansionPattern(pattern_name.getValue());
-  if (pattern == nullptr) {
-    return mlir::emitError(loc)
-           << "invalid expansion pattern name " << pattern_name;
-  }
-  return mlir::success();
-}
-
-mlir::LogicalResult VerifyComputeOp(mlir::Operation *operation) {
-  auto op = llvm::cast<ComputeOp>(operation);
-  auto sair_op = llvm::cast<SairOp>(operation);
-  // Ensure that the instances attribute has the right type. Otherwise, return
-  // success and let the op verifier raise an error. The op verifier will raise
-  // an error as the attribute type is specified in the op definition.
-  auto instances =
-      operation->getAttrOfType<mlir::ArrayAttr>(ComputeOp::kInstancesAttrName);
-  if (instances == nullptr) return mlir::success();
-  if (llvm::any_of(instances.getValue(), [](mlir::Attribute attr) {
-        return !attr.isa<DecisionsAttr>();
-      })) {
-    return mlir::success();
-  }
-
-  for (int i = 0, e = op.NumInstances(); i < e; ++i) {
-    if (mlir::failed(VerifyDecisionsWellFormed(op.getLoc(), sair_op.shape(),
-                                               op->getResultTypes(),
-                                               op.GetDecisions(i)))) {
-      return mlir::failure();
-    }
-  }
-  return mlir::success();
 }
 
 mlir::LogicalResult VerifyValueProducerOp(mlir::Operation *operation) {
@@ -309,6 +364,24 @@ mlir::LogicalResult VerifyValueProducerOp(mlir::Operation *operation) {
               op.getLoc(), shape, {op->getResultTypes()[i]}, decisions))) {
         return mlir::failure();
       }
+      if (decisions.operands() != nullptr) {
+        return op.emitError() << "cannot specify 'operands' in 'copies'";
+      }
+      if (decisions.copy_of() == nullptr ||
+          decisions.copy_of().isa<mlir::UnitAttr>()) {
+        continue;
+      }
+      if (auto copy = decisions.copy_of().dyn_cast<CopyAttr>()) {
+        if (copy.getValue() >= op.GetCopies(i).size()) {
+          return op.emitError() << "'copy_of' refers to non-existent copy";
+        }
+      }
+      if (auto instance = decisions.copy_of().dyn_cast<InstanceAttr>()) {
+        llvm::Optional<mlir::ArrayAttr> instances = sair_op.instances();
+        if (instances && instance.getValue() >= instances->size()) {
+          return op.emitError() << "'copy_of' refers to non-existent instance";
+        }
+      }
     }
   }
   return mlir::success();
@@ -323,8 +396,7 @@ void SetMapping(SairOp op, int position, ::sair::MappingAttr mapping) {
 }
 
 bool HasExactlyOneInstance(SairOp op) {
-  auto compute_op = dyn_cast<ComputeOp>(op.getOperation());
-  if (compute_op != nullptr && compute_op.NumInstances() != 1) return false;
+  if (op.NumInstances() != 1) return false;
   auto value_producer = dyn_cast<ValueProducerOp>(op.getOperation());
   if (value_producer != nullptr && value_producer.HasCopies()) return false;
   return true;
@@ -357,6 +429,10 @@ ValueProducerOp OpInstance::GetValueProducer() const {
 mlir::Operation *OpInstance::getOperation() const {
   if (is_copy()) return op_.get<ValueProducerOp>().getOperation();
   return op_.get<SairOp>().getOperation();
+}
+
+SairOp OpInstance::GetSairOp() const {
+  return llvm::cast<SairOp>(getOperation());
 }
 
 unsigned OpInstance::HashValue() const {
@@ -487,7 +563,7 @@ ComputeOpInstance ComputeOpInstance::Unique(ComputeOp op) {
 
 DecisionsAttr ComputeOpInstance::GetDecisions() const {
   if (is_duplicate()) {
-    return GetComputeOp().GetDecisions(index());
+    return GetSairOp().GetDecisions(index());
   }
   llvm::ArrayRef<mlir::Attribute> copies =
       GetValueProducer().GetCopies(result());
@@ -497,7 +573,7 @@ DecisionsAttr ComputeOpInstance::GetDecisions() const {
 void ComputeOpInstance::SetDecisions(DecisionsAttr decisions) {
   assert(decisions != nullptr);
   if (is_duplicate()) {
-    GetComputeOp().SetDecisions(index(), decisions);
+    GetSairOp().SetDecisions(index(), decisions);
   } else {
     GetValueProducer().SetCopy(result(), index(), decisions);
   }
@@ -590,12 +666,13 @@ llvm::SmallVector<std::pair<OpInstance, int>> ResultInstance::GetUses() const {
   for (OpOperand &use : value.getUses()) {
     mlir::Operation *user = use.getOwner();
     int operand_number = use.getOperandNumber();
+    auto sair_op = cast<SairOp>(user);
     if (auto compute_op = dyn_cast<ComputeOp>(user)) {
-      for (int i = 0, e = compute_op.NumInstances(); i < e; ++i) {
+      for (int i = 0, e = sair_op.NumInstances(); i < e; ++i) {
         uses.emplace_back(ComputeOpInstance(compute_op, i), operand_number);
       }
     } else {
-      uses.emplace_back(OpInstance(cast<SairOp>(user)), operand_number);
+      uses.emplace_back(OpInstance(sair_op), operand_number);
     }
   }
   return uses;
@@ -626,12 +703,11 @@ std::optional<ResultInstance> OperandInstance::GetValue() const {
   // always use the first instance.
   OpInstance def_op;
   if (auto compute_op = dyn_cast<ComputeOp>(defining_op)) {
-    if (compute_op.NumInstances() < 1) return std::nullopt;
+    if (cast<SairOp>(defining_op).NumInstances() < 1) return std::nullopt;
     def_op = ComputeOpInstance(compute_op, 0);
   } else {
     def_op = OpInstance(cast<SairOp>(defining_op));
   }
-
   return ResultInstance(def_op, result.getResultNumber());
 }
 

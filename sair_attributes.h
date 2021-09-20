@@ -555,6 +555,12 @@ class MappingUnStripeExpr
 // namespace is required by the generated code.
 using namespace mlir;  // NOLINT
 #include "sair_structs.h.inc"
+#define GET_ATTRDEF_CLASSES
+#include "sair_attributes.h.inc"
+
+namespace mlir {
+class OptionalParseResult;
+}
 
 namespace sair {
 
@@ -576,6 +582,38 @@ std::function<DecisionsAttr(DecisionsAttr)> MapStorage(
 // Updates the sequence field of a DecisionAttr and returns the new
 // DecisionAttr.
 DecisionsAttr UpdateSequence(DecisionsAttr decisions, int new_sequence);
+
+// Returns an array attribute containing `num_operands` InstanceAttr with
+// position zero in the given context.
+mlir::ArrayAttr GetInstanceZeroOperands(mlir::MLIRContext *context,
+                                        int num_operands);
+
+// Returns an array attribute containing a single DecisionsAttr (one instance)
+// that has its `operands` field set to contain `num_operands` InstanceAttrs
+// with position zero and the remaining fields unset.
+mlir::ArrayAttr GetInstanceZeroOperandsSingleInstance(
+    mlir::MLIRContext *context, int num_operands);
+
+// Returns a copy of `decisions` with the given operand erased from the operands
+// field.
+DecisionsAttr EraseOperand(DecisionsAttr decisions, int operand);
+
+// Returns a copy of `operands` without the `operand`-th element.
+mlir::ArrayAttr EraseOperandFromArray(mlir::ArrayAttr operands, int operand);
+
+// Returns a copy of array attribute containing DecisionsAttr with, for each
+// element, the `operand`-th entry of the `operands` field erased.
+mlir::ArrayAttr EraseOperandFromDecisions(mlir::ArrayAttr decisions,
+                                          int operand);
+
+namespace detail {
+mlir::OptionalParseResult ParseGeneratedAttribute(
+    mlir::MLIRContext *context, mlir::DialectAsmParser &parser,
+    llvm::StringRef mnemonic, mlir::Type type, mlir::Attribute &attribute);
+
+mlir::LogicalResult PrintGeneratedAttribute(mlir::Attribute attribute,
+                                            mlir::DialectAsmPrinter &printer);
+}  // namespace detail
 
 }  // namespace sair
 

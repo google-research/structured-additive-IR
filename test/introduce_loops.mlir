@@ -7,9 +7,9 @@ func @foo(%arg0: index, %arg1: index) { return }
 func @map(%arg0: index) {
   sair.program {
     // CHECK: %[[V0:.*]] = sair.from_scalar %[[ARG0]]
-    %0 = sair.from_scalar %arg0 : !sair.value<(), index>
-    %1 = sair.dyn_range %0 : !sair.dyn_range
-    %2 = sair.static_range : !sair.static_range<8>
+    %0 = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), index>
+    %1 = sair.dyn_range %0 { instances = [{}] } : !sair.dyn_range
+    %2 = sair.static_range { instances = [{}] } : !sair.static_range<8>
     // CHECK: sair.map %[[V0]] attributes
     // CHECK-SAME: {instances = [{loop_nest = []}]} {
     sair.map[d0: %1, d1: %2] attributes {
@@ -37,7 +37,7 @@ func @map(%arg0: index) {
         sair.return
     // CHECK: } : #sair.shape<()>, (index) -> ()
     } : #sair.shape<d0:dyn_range x d1:static_range<8>>, () -> ()
-    sair.exit
+    sair.exit { instances = [{}] }
   }
   return
 }
@@ -45,8 +45,8 @@ func @map(%arg0: index) {
 // CHECK-LABEL: @proj_last
 func @proj_last(%arg0: f32) {
   sair.program {
-    %0 = sair.static_range : !sair.static_range<8>
-    %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %0 = sair.static_range { instances = [{}] }  : !sair.static_range<8>
+    %1 = sair.from_scalar %arg0 { instances = [{}] }  : !sair.value<(), f32>
     // CHECK: %[[V0:.*]] = sair.map %{{.*}}
     %2 = sair.map[d0:%0] %1 attributes {
       instances = [{
@@ -57,9 +57,9 @@ func @proj_last(%arg0: f32) {
         sair.return %arg2: f32
     } : #sair.shape<d0:static_range<8>>, (f32) -> f32
     // CHECK-NOT: sair.proj_last
-    %3 = sair.proj_last of[d0:%0] %2(d0) : #sair.shape<d0:static_range<8>>, f32
+    %3 = sair.proj_last of[d0:%0] %2(d0)  { instances = [{}] } : #sair.shape<d0:static_range<8>>, f32
     // CHECK: sair.exit %[[V0]]
-    sair.exit %3 : f32
+    sair.exit %3 { instances = [{}] } : f32
   } : f32
   return
 }
@@ -69,11 +69,11 @@ func @bar(%arg0: f32) -> f32 { return %arg0 : f32 }
 // CHECK-LABEL: @fby
 func @fby(%arg0: f32) {
   sair.program {
-    %0 = sair.static_range : !sair.static_range<8>
+    %0 = sair.static_range { instances = [{}] } : !sair.static_range<8>
     // CHECK: %[[V0:.*]] = sair.from_scalar
-    %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %1 = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), f32>
     // CHECK-NOT: sair.fby
-    %2 = sair.fby %1 then[d0:%0] %3(d0) : !sair.value<d0:static_range<8>, f32>
+    %2 = sair.fby %1 then[d0:%0] %3(d0) { instances = [{}] } : !sair.value<d0:static_range<8>, f32>
     // CHECK: %[[V1:.*]] = sair.map %[[V0]] attributes
     %3 = sair.map[d0: %0] %2(d0) attributes {
       instances = [{
@@ -86,8 +86,8 @@ func @fby(%arg0: f32) {
         %6 = call @bar(%5) : (f32) -> f32
         sair.return %6 : f32
     } : #sair.shape<d0:static_range<8>>, (f32) -> (f32)
-    %4 = sair.proj_last of[d0:%0] %3(d0) : #sair.shape<d0:static_range<8>>, f32
-    sair.exit %4 : f32
+    %4 = sair.proj_last of[d0:%0] %3(d0) { instances = [{}] } : #sair.shape<d0:static_range<8>>, f32
+    sair.exit %4 { instances = [{}] } : f32
   } : f32
   return
 }
@@ -95,10 +95,10 @@ func @fby(%arg0: f32) {
 // CHECK-LABEL: @fuse
 func @fuse(%arg0: f32) {
   sair.program {
-    %0 = sair.static_range : !sair.static_range<4>
-    %1 = sair.static_range : !sair.static_range<8>
+    %0 = sair.static_range { instances = [{}] } : !sair.static_range<4>
+    %1 = sair.static_range { instances = [{}] } : !sair.static_range<8>
     // CHECK: %[[V0:.*]] = sair.from_scalar
-    %2 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %2 = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), f32>
     // CHECK: sair.map %[[V0]] attributes
     %3 = sair.map[d0:%0, d1:%1] attributes {
       instances = [{
@@ -136,7 +136,7 @@ func @fuse(%arg0: f32) {
         call @bar(%arg4) : (f32) -> f32
         sair.return
     } : #sair.shape<d0:static_range<8> x d1:static_range<4>>, (f32, f32) -> ()
-    sair.exit
+    sair.exit { instances = [{}] }
   }
   return
 }
@@ -144,9 +144,9 @@ func @fuse(%arg0: f32) {
 // CHECK-LABEL: @fuse_reorder
 func @fuse_reorder(%arg0: f32) {
   sair.program {
-    %0 = sair.static_range : !sair.static_range<8>
-    %1 = sair.static_range : !sair.static_range<16>
-    %2 = sair.from_scalar %arg0: !sair.value<(), f32>
+    %0 = sair.static_range { instances = [{}] } : !sair.static_range<8>
+    %1 = sair.static_range { instances = [{}] } : !sair.static_range<16>
+    %2 = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), f32>
     // Check that loop introduction and fusion accounts for sequence numbers.
     // In particular, the body of the second map (sequence number 1) should
     // come first, and have a separate inner loop. The bodies of the first
@@ -211,7 +211,7 @@ func @fuse_reorder(%arg0: f32) {
       call @bar(%10) : (f32) -> f32
       sair.return
     } : #sair.shape<d0:static_range<8> x d1:static_range<16>>, () -> ()
-    sair.exit
+    sair.exit { instances = [{}] }
   }
   return
 }
@@ -224,7 +224,7 @@ func @dependent_dims() {
       // CHECK-DAG: %[[V1:.*]] = constant 64
       // CHECK-DAG: %[[V2:.*]] = constant 8
       // CHECK: scf.for %[[V3:.*]] = %[[V0]] to %[[V1]] step %[[V2]] {
-    %0 = sair.static_range : !sair.static_range<64, 8>
+    %0 = sair.static_range { instances = [{}] } : !sair.static_range<64, 8>
     %1, %2 = sair.map[d0:%0] attributes {
       instances = [{
         loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}],
@@ -242,7 +242,7 @@ func @dependent_dims() {
         sair.return %arg0, %5 : index, index
     } : #sair.shape<d0:static_range<64, 8>>, () -> (index, index)
         // CHECK: %[[V6:.*]] = constant 1
-    %3 = sair.dyn_range[d0:%0] %1(d0), %2(d0) : !sair.dyn_range<d0:static_range<64, 8>>
+    %3 = sair.dyn_range[d0:%0] %1(d0), %2(d0) { instances = [{}] } : !sair.dyn_range<d0:static_range<64, 8>>
         // CHECK: scf.for %[[V7:.*]] = %[[V3]] to %[[V5]] step %[[V6]] {
     sair.map[d0:%0, d1:%3] attributes {
       instances = [{
@@ -262,7 +262,7 @@ func @dependent_dims() {
       // CHECK: sair.return
     // CHECK: } : #sair.shape<()>, () -> ()
     // CHECK: sair.exit
-    sair.exit
+    sair.exit { instances = [{}] }
   }
   return
 }
@@ -272,7 +272,7 @@ func private @baz()
 // CHECK-LABEL: @full_unroll
 func @full_unroll() {
   sair.program {
-    %0 = sair.static_range : !sair.static_range<3>
+    %0 = sair.static_range { instances = [{}] } : !sair.static_range<3>
     // CHECK: sair.map
     // CHECK-SAME: loop_nest = []
     // CHECK-NOT: scf.for
@@ -288,7 +288,7 @@ func @full_unroll() {
       call @baz() : () -> ()
       sair.return
     } : #sair.shape<d0:static_range<3>>, () -> ()
-    sair.exit
+    sair.exit { instances = [{}] }
   }
   return
 }
@@ -296,7 +296,7 @@ func @full_unroll() {
 // CHECK-LABEL: @partial_unroll
 func @partial_unroll() {
   sair.program {
-    %0 = sair.static_range : !sair.static_range<5>
+    %0 = sair.static_range { instances = [{}] } : !sair.static_range<5>
     // CHECK: sair.map
     // CHECK-SAME: loop_nest = []
     // CHECK: %[[STEP:.*]] = constant 2 : index
@@ -317,7 +317,7 @@ func @partial_unroll() {
       call @baz() : () -> ()
       sair.return
     } : #sair.shape<d0:static_range<5>>, () -> ()
-    sair.exit
+    sair.exit { instances = [{}] }
   }
   return
 }
@@ -325,8 +325,8 @@ func @partial_unroll() {
 // CHECK-LABEL: @dyn_range_unroll
 func @dyn_range_unroll(%sz: index) {
   sair.program {
-    %0 = sair.from_scalar %sz : !sair.value<(), index>
-    %1 = sair.dyn_range %0 : !sair.dyn_range
+    %0 = sair.from_scalar %sz { instances = [{}] } : !sair.value<(), index>
+    %1 = sair.dyn_range %0 { instances = [{}] } : !sair.dyn_range
     // CHECK: sair.map
     // CHECK-SAME: loop_nest = []
     // CHECK: scf.for {{.*}} {
@@ -347,7 +347,7 @@ func @dyn_range_unroll(%sz: index) {
       call @baz() : () -> ()
       sair.return
     } : #sair.shape<d0:dyn_range>, () -> ()
-    sair.exit
+    sair.exit { instances = [{}] }
   }
   return
 }
@@ -355,7 +355,7 @@ func @dyn_range_unroll(%sz: index) {
 // CHECK-LABEL: @nested_unroll
 func @nested_unroll() {
   sair.program {
-    %0 = sair.static_range : !sair.static_range<2>
+    %0 = sair.static_range { instances = [{}] } : !sair.static_range<2>
     // CHECK: sair.map
     // CHECK-SAME: loop_nest = []
     // CHECK-NOT: scf.for
@@ -373,7 +373,7 @@ func @nested_unroll() {
       call @baz() : () -> ()
       sair.return
     } : #sair.shape<d0:static_range<2> x d1:static_range<2> x d2:static_range<2>>, () -> ()
-    sair.exit
+    sair.exit { instances = [{}] }
   }
   return
 }

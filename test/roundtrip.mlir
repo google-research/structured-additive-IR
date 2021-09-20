@@ -817,3 +817,11 @@ func @static_range_type() {
     attr = #sair.shape<d0:static_range<8, 2>>
   } : () -> ()
 }
+
+// CHECK-LABEL: @copy_attr
+// CHECK: #sair.copy<42>
+func private @copy_attr() attributes { foo = #sair.copy<42> }
+
+// CHECK-LABEL: @instance_attr
+// CHECK: #sair.instance<42>
+func private @instance_attr() attributes { foo = #sair.instance<42> }

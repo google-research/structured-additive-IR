@@ -24,6 +24,30 @@ func @deduplicate_map_input(%arg0: f32) {
   return
 }
 
+// CHECK-LABEL: @deduplicate_map_input_instances
+func @deduplicate_map_input_instances(%arg0: f32) {
+  sair.program {
+    // CHECK: %[[V0:.*]] = sair.from_scalar
+    %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    // CHECK: sair.map %[[V0]]
+    // CHECK: operands = [#sair.instance<0>]
+    // CHECK: operands = [#sair.instance<0>]
+    sair.map %0, %0 attributes {
+      instances = [
+        {operands = [#sair.instance<0>, #sair.instance<0>]},
+        {operands = [#sair.instance<0>, #sair.instance<0>]}
+      ]
+    } {
+      ^bb0(%arg1: f32, %arg2: f32):
+        %1 = addf %arg1, %arg2 : f32
+        call @use(%1) : (f32) -> ()
+        sair.return
+    } : #sair.shape<()>, (f32, f32) -> ()
+    sair.exit
+  }
+  return
+}
+
 // CHECK-LABEL: @deduplicate_map_output
 func @deduplicate_map_output() {
   %3, %4 = sair.program {

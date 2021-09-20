@@ -41,8 +41,9 @@ func @convert_to_proj_last(%arg0: f32) {
       }]
     } : !sair.value<d0:dyn_range, f32>
     // CHECK: %[[V2:.*]] = sair.proj_last of[d0:%{{.*}}] %[[V1]](d0)
+    // CHECK:   instances = [{}, {}]
     // CHECK:   : #sair.shape<d0:dyn_range>, f32
-    %3 = sair.proj_any of[d0:%1] %2(d0) : #sair.shape<d0:dyn_range>, f32
+    %3 = sair.proj_any of[d0:%1] %2(d0) { instances = [{}, {}] } : #sair.shape<d0:dyn_range>, f32
     // CHECK: sair.copy[d0:%{{.*}}] %[[V2]]
     %4 = sair.copy[d0:%1] %3 {
       instances = [{
