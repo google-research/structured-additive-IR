@@ -825,3 +825,31 @@ func private @copy_attr() attributes { foo = #sair.copy<42> }
 // CHECK-LABEL: @instance_attr
 // CHECK: #sair.instance<42>
 func private @instance_attr() attributes { foo = #sair.instance<42> }
+
+// CHECK-LABEL: @attribute_printing
+func @attribute_printing(%arg0: f32, %arg1: index) {
+  sair.program {
+    // CHECK: sair.static_range
+    // CHECK-SAME: attr = "content"
+    %0 = sair.static_range { attr = "content" } : !sair.static_range<42>
+    %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
+    %2 = sair.copy[d0:%0] %1 : !sair.value<d0:static_range<42>, f32>
+    // CHECK: proj_any
+    // CHECK-SAME: foo = "bar"
+    %3 = sair.proj_any of[d0:%0] %2(d0) { foo = "bar" }
+       : #sair.shape<d0:static_range<42>>, f32
+    // CHECK: proj_last
+    // CHECK-SAME: baz = "qux"
+    %4 = sair.proj_last of[d0:%0] %2(d0) { baz = "qux" }
+       : #sair.shape<d0:static_range<42>>, f32
+    %5 = sair.from_scalar %arg1 : !sair.value<(), index>
+    // CHECK: dyn_range
+    // CHECK-SAME: key = "value"
+    sair.dyn_range %5 { key = "value" } : !sair.dyn_range
+    // CHECK: placeholder
+    // CHECK-SAME: check = "roundtrip"
+    sair.placeholder { check = "roundtrip" } : !sair.dyn_range
+    sair.exit
+  }
+  return
+}
