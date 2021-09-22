@@ -2762,3 +2762,28 @@ func @sair_exit_multi_instance() {
   }
   return
 }
+
+// -----
+
+func @sair_exit_no_instance() {
+  sair.program {
+    // expected-error@below {{op must have an instance}}
+    sair.exit {instances = []}
+  }
+  return
+}
+
+// -----
+
+// Make sure we don't segfault on malformed instances.
+func @malformed_instances(%arg0: f32) {
+  sair.program {
+    // expected-error@below {{failed to satisfy constraint: array of Sair decisions}}
+    %0 = sair.from_scalar %arg0 {
+      instances = [{operands = [#sair.instance<0>],
+                    copies = [[{copy_of = unit}]]}]
+    } : !sair.value<(), f32>
+    sair.exit { instances = [{operands = []}] }
+  }
+  return
+}

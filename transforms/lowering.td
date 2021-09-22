@@ -52,6 +52,11 @@ def MaterializeBuffersPass : FunctionPass<"sair-materialize-buffers"> {
   let dependentDialects = !listconcat(Deps.dialects, ["::mlir::AffineDialect"]);
 }
 
+def MaterializeInstancesPass : FunctionPass<"sair-materialize-instances"> {
+  let summary = "Create ops for instances and copies defined in attributes";
+  let constructor = [{ ::sair::CreateMaterializeInstancesPass(); }];
+}
+
 def IntroduceLoopsPass : FunctionPass<"sair-introduce-loops"> {
   let summary = "Replaces Sair iteration dimensions by loops";
   let constructor = [{ ::sair::CreateIntroduceLoopsPass(); }];

@@ -579,9 +579,14 @@ std::function<DecisionsAttr(DecisionsAttr)> MapLoopNest(
 std::function<DecisionsAttr(DecisionsAttr)> MapStorage(
     std::function<mlir::ArrayAttr(mlir::ArrayAttr)> storage_fn);
 
-// Updates the sequence field of a DecisionAttr and returns the new
-// DecisionAttr.
+// Updates the sequence field of a DecisionsAttr and returns the new
+// DecisionsAttr.
 DecisionsAttr UpdateSequence(DecisionsAttr decisions, int new_sequence);
+
+// Updates the operands field of a DecisionsAttr and returns the new
+// DecisionsAttr.
+DecisionsAttr UpdateOperands(DecisionsAttr decisions,
+                             ArrayRef<mlir::Attribute> operands);
 
 // Returns an array attribute containing `num_operands` InstanceAttr with
 // position zero in the given context.

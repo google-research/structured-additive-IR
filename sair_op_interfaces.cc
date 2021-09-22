@@ -235,7 +235,9 @@ static mlir::LogicalResult VerifyInstancesAttr(SairOp op) {
 
   if (isa<ComputeOp>(op.getOperation())) return mlir::success();
 
-  for (DecisionsAttr decisions : op.instances()->getAsRange<DecisionsAttr>()) {
+  for (mlir::Attribute attr : op.instances()->getValue()) {
+    DecisionsAttr decisions = attr.dyn_cast<DecisionsAttr>();
+    if (!decisions) continue;
     if (decisions.sequence() != nullptr || decisions.loop_nest() != nullptr ||
         decisions.storage() != nullptr || decisions.expansion() != nullptr) {
       return op->emitOpError()

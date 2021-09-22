@@ -1374,6 +1374,15 @@ DecisionsAttr UpdateSequence(DecisionsAttr decisions, int new_sequence) {
                             decisions.copy_of(), decisions.operands(), context);
 }
 
+DecisionsAttr UpdateOperands(DecisionsAttr decisions,
+                             llvm::ArrayRef<mlir::Attribute> operands) {
+  mlir::MLIRContext *context = decisions.getContext();
+  return DecisionsAttr::get(decisions.sequence(), decisions.loop_nest(),
+                            decisions.storage(), decisions.expansion(),
+                            decisions.copy_of(),
+                            mlir::ArrayAttr::get(context, operands), context);
+}
+
 mlir::ArrayAttr GetInstanceZeroOperands(mlir::MLIRContext *context,
                                         int num_operands) {
   llvm::SmallVector<mlir::Attribute> attributes(num_operands,
