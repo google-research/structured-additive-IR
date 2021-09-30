@@ -1440,7 +1440,7 @@ mlir::ArrayAttr EraseOperandFromDecisions(mlir::ArrayAttr decisions,
 mlir::OptionalParseResult sair::detail::ParseGeneratedAttribute(
     mlir::MLIRContext *context, mlir::DialectAsmParser &parser,
     llvm::StringRef mnemonic, mlir::Type type, mlir::Attribute &attribute) {
-  return generatedAttributeParser(context, parser, mnemonic, type, attribute);
+  return generatedAttributeParser(parser, mnemonic, type, attribute);
 }
 
 mlir::LogicalResult sair::detail::PrintGeneratedAttribute(
