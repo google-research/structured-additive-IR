@@ -43,7 +43,7 @@ func @proj_any_must_be_eliminated() {
       instances = [{loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]}]
     } {
       ^bb0(%arg0: index):
-        %2 = constant 1.0 : f32
+        %2 = arith.constant 1.0 : f32
         sair.return %2 : f32
     } : #sair.shape<d0:static_range<8>>, () -> f32
     // expected-error @+1 {{sair.proj_any operations must be eliminated before introducing loops}}

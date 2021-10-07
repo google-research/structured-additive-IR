@@ -16,9 +16,9 @@ func @empty_program() {
 func @copy_to_memref(%arg0: memref<8xf32>, %arg1: memref<8xf32>) {
   // CHECK-NOT: sair.program
   sair.program {
-    // CHECK-DAG: %[[C0:.*]] = constant 0 : index
-    // CHECK-DAG: %[[C1:.*]] = constant 1 : index
-    // CHECK-DAG: %[[C8:.*]] = constant 8 : index
+    // CHECK-DAG: %[[C0:.*]] = arith.constant 0 : index
+    // CHECK-DAG: %[[C1:.*]] = arith.constant 1 : index
+    // CHECK-DAG: %[[C8:.*]] = arith.constant 8 : index
     // CHECK: scf.for %[[V0:.*]] = %[[C0]] to %[[C8]] step %[[C1]] {
     %0 = sair.static_range : !sair.static_range<8>
     %1 = sair.from_scalar %arg0 : !sair.value<(), memref<8xf32>>
@@ -44,11 +44,11 @@ func @copy_to_memref(%arg0: memref<8xf32>, %arg1: memref<8xf32>) {
 func @matmul(%arg0: memref<8x8xf32>,
              %arg1: memref<8x8xf32>,
              %arg2: memref<8x8xf32>) {
-  // CHECK-DAG: %[[CF0:.*]] = constant 0.0
-  // CHECK-DAG: %[[C0:.*]] = constant 0 : index
-  // CHECK-DAG: %[[C1:.*]] = constant 1 : index
-  // CHECK-DAG: %[[C8:.*]] = constant 8 : index
-  %C0 = constant 0.0 : f32
+  // CHECK-DAG: %[[CF0:.*]] = arith.constant 0.0
+  // CHECK-DAG: %[[C0:.*]] = arith.constant 0 : index
+  // CHECK-DAG: %[[C1:.*]] = arith.constant 1 : index
+  // CHECK-DAG: %[[C8:.*]] = arith.constant 8 : index
+  %C0 = arith.constant 0.0 : f32
   // CHECK-NOT: sair.program
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), memref<8x8xf32>>
@@ -84,8 +84,8 @@ func @matmul(%arg0: memref<8x8xf32>,
     // CHECK-DAG:   %[[V0:.*]] = memref.load %[[C]][%[[I]], %[[J]]] : memref<8x8xf32>
     // CHECK-DAG:   %[[V1:.*]] = memref.load %[[A]][%[[I]], %[[K]]] : memref<8x8xf32>
     // CHECK-DAG:   %[[V2:.*]] = memref.load %[[B]][%[[J]], %[[K]]] : memref<8x8xf32>
-    // CHECK:       %[[V3:.*]] = mulf %[[V1]], %[[V2]] : f32
-    // CHECK:       %[[V4:.*]] = addf %[[V0]], %[[V3]] : f32
+    // CHECK:       %[[V3:.*]] = arith.mulf %[[V1]], %[[V2]] : f32
+    // CHECK:       %[[V4:.*]] = arith.addf %[[V0]], %[[V3]] : f32
     // CHECK:       memref.store %[[V4]], %[[C]][%[[I]], %[[J]]] : memref<8x8xf32>
     %9 = sair.map[d0:%3, d1:%3, d2:%3] %8(d0, d1, d2), %4(d0, d2), %5(d1, d2) attributes {
       instances = [{
@@ -101,8 +101,8 @@ func @matmul(%arg0: memref<8x8xf32>,
       }]
     } {
       ^bb0(%i: index, %j: index, %k : index, %c0: f32, %a: f32, %b: f32):
-        %c1 = mulf %a, %b : f32
-        %c2 = addf %c0, %c1 : f32
+        %c1 = arith.mulf %a, %b : f32
+        %c2 = arith.addf %c0, %c1 : f32
         sair.return %c2 : f32
     } : #sair.shape<d0:static_range<8> x d1:static_range<8> x d2:static_range<8>>,
         (f32, f32, f32) -> (f32)

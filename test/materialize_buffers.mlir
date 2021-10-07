@@ -2,7 +2,7 @@
 
 // CHECK-LABEL: @from_to_memref
 func @from_to_memref(%arg0: memref<?xf32>, %arg1: memref<?xf32>) {
-  %n = constant 8 : index
+  %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n { instances = [{}] } : !sair.value<(), index>
     // CHECK: %[[M0:.*]] = sair.from_scalar %{{.*}} : !sair.value<(), memref<?xf32>>
@@ -127,10 +127,10 @@ func @loop_nest(%arg0: f32) {
     // CHECK: } {
     // CHECK:   ^{{.*}}(%[[ARG0:.*]]: index):
     // CHECK:     %[[V1:.*]] = affine.apply affine_map<(d0) -> (d0)>(%[[ARG0]])
-    // CHECK:     %[[C4:.*]] = constant 4
-    // CHECK:     %[[V2:.*]] = addi %[[V1]], %[[C4]]
-    // CHECK:     %[[C16:.*]] = constant 16
-    // CHECK:     %[[V3:.*]] = cmpi ult, %[[C16]], %[[V2]]
+    // CHECK:     %[[C4:.*]] = arith.constant 4
+    // CHECK:     %[[V2:.*]] = arith.addi %[[V1]], %[[C4]]
+    // CHECK:     %[[C16:.*]] = arith.constant 16
+    // CHECK:     %[[V3:.*]] = arith.cmpi ult, %[[C16]], %[[V2]]
     // CHECK:     %[[V4:.*]] = select %[[V3]], %[[C16]], %[[V2]]
     // CHECK:     %[[V5:.*]] = affine.apply affine_map<(d0, d1) -> (d1 - d0)>
     // CHECK:     sair.return %[[V5]] : index

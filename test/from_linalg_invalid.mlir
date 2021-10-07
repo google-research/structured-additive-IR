@@ -16,7 +16,7 @@ func @reductions(%arg0: memref<2x3x4x5x6xf32>, %arg1: memref<2x4x6xf32>) {
     ins(%arg0 : memref<2x3x4x5x6xf32>)
    outs(%arg1 : memref<2x4x6xf32>) {
   ^bb0(%a0: f32, %a1: f32):
-    %0 = addf %a1, %a0 : f32
+    %0 = arith.addf %a1, %a0 : f32
     linalg.yield %0 : f32
   }
 
@@ -39,7 +39,7 @@ func @shape_mismatch(%arg0: memref<?xf32>, %arg1: memref<2xf32>) {
     ins(%arg0 : memref<?xf32>)
    outs(%arg1 : memref<2xf32>) {
   ^bb(%a0: f32, %a1: f32):
-    %1 = addf %a0, %a1 : f32
+    %1 = arith.addf %a0, %a1 : f32
     linalg.yield %1 : f32
   }
   return

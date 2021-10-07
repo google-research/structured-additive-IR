@@ -22,12 +22,12 @@ func @map(%arg0: index) {
     } {
       // CHECK: ^{{.*}}(%[[ARG1:.*]]: index):
       ^bb0(%arg1: index, %arg2: index):
-        // CHECK-DAG: %[[C0:.*]] = constant 0 : index
-        // CHECK-DAG: %[[C1:.*]] = constant 1 : index
-        // CHECK-DAG: %[[C8:.*]] = constant 8 : index
+        // CHECK-DAG: %[[C0:.*]] = arith.constant 0 : index
+        // CHECK-DAG: %[[C1:.*]] = arith.constant 1 : index
+        // CHECK-DAG: %[[C8:.*]] = arith.constant 8 : index
         // CHECK: scf.for %[[V1:.*]] = %[[C0]] to %[[C8]] step %[[C1]] {
-        // CHECK-DAG:   %[[C2:.*]] = constant 0 : index
-        // CHECK-DAG:   %[[C3:.*]] = constant 1 : index
+        // CHECK-DAG:   %[[C2:.*]] = arith.constant 0 : index
+        // CHECK-DAG:   %[[C3:.*]] = arith.constant 1 : index
         // CHECK:   scf.for %[[V2:.*]] = %[[C2]] to %[[ARG1]] step %[[C3]] {
         // CHECK:     call @foo(%[[V2]], %[[V1]]) : (index, index) -> ()
                       call @foo(%arg1, %arg2) : (index, index) -> ()
@@ -114,8 +114,8 @@ func @fuse(%arg0: f32) {
         // CHECK: scf.for %[[I1:.*]] = %{{.*}} to %{{.*}}
         // CHECK: call @foo(%[[I0]], %[[I1]])
         call @foo(%arg1, %arg2) : (index, index) -> ()
-        // CHECK: %[[V1:.*]] = constant
-        %4 = constant 1.0 : f32
+        // CHECK: %[[V1:.*]] = arith.constant
+        %4 = arith.constant 1.0 : f32
         sair.return %4 : f32
     } : #sair.shape<d0:static_range<4> x d1:static_range<8>>, () -> (f32)
     // CHECK-NOT: sair.map
@@ -179,8 +179,8 @@ func @fuse_reorder(%arg0: f32) {
     } {
     ^bb0(%arg1: index, %arg2: index, %arg3: f32):
       call @foo(%arg1, %arg2) : (index, index) -> ()
-      %4 = constant 1.0 : f32
-      %5 = addf %arg3, %4 : f32
+      %4 = arith.constant 1.0 : f32
+      %5 = arith.addf %arg3, %4 : f32
       sair.return %5 : f32
     } : #sair.shape<d0:static_range<8> x d1:static_range<16>>, (f32) -> (f32)
     %6 = sair.map[d0:%0, d1:%1] %2 attributes {
@@ -206,8 +206,8 @@ func @fuse_reorder(%arg0: f32) {
       }]
     } {
     ^bb0(%arg1: index, %arg2: index):
-      %9 = index_cast %arg1 : index to i32
-      %10 = sitofp %9 : i32 to f32
+      %9 = arith.index_cast %arg1 : index to i32
+      %10 = arith.sitofp %9 : i32 to f32
       call @bar(%10) : (f32) -> f32
       sair.return
     } : #sair.shape<d0:static_range<8> x d1:static_range<16>>, () -> ()
@@ -220,9 +220,9 @@ func @fuse_reorder(%arg0: f32) {
 func @dependent_dims() {
   sair.program {
     // CHECK: sair.map
-      // CHECK-DAG: %[[V0:.*]] = constant 0
-      // CHECK-DAG: %[[V1:.*]] = constant 64
-      // CHECK-DAG: %[[V2:.*]] = constant 8
+      // CHECK-DAG: %[[V0:.*]] = arith.constant 0
+      // CHECK-DAG: %[[V1:.*]] = arith.constant 64
+      // CHECK-DAG: %[[V2:.*]] = arith.constant 8
       // CHECK: scf.for %[[V3:.*]] = %[[V0]] to %[[V1]] step %[[V2]] {
     %0 = sair.static_range { instances = [{}] } : !sair.static_range<64, 8>
     %1, %2 = sair.map[d0:%0] attributes {
@@ -235,13 +235,13 @@ func @dependent_dims() {
       }]
     } {
       ^bb0(%arg0: index):
-        // CHECK: %[[V4:.*]] = constant 8
-        %4 = constant 8 : index
-        // CHECK: %[[V5:.*]] = addi %[[V3]], %[[V4]]
-        %5 = addi %arg0, %4 : index
+        // CHECK: %[[V4:.*]] = arith.constant 8
+        %4 = arith.constant 8 : index
+        // CHECK: %[[V5:.*]] = arith.addi %[[V3]], %[[V4]]
+        %5 = arith.addi %arg0, %4 : index
         sair.return %arg0, %5 : index, index
     } : #sair.shape<d0:static_range<64, 8>>, () -> (index, index)
-        // CHECK: %[[V6:.*]] = constant 1
+        // CHECK: %[[V6:.*]] = arith.constant 1
     %3 = sair.dyn_range[d0:%0] %1(d0), %2(d0) { instances = [{}] } : !sair.dyn_range<d0:static_range<64, 8>>
         // CHECK: scf.for %[[V7:.*]] = %[[V3]] to %[[V5]] step %[[V6]] {
     sair.map[d0:%0, d1:%3] attributes {
@@ -299,7 +299,7 @@ func @partial_unroll() {
     %0 = sair.static_range { instances = [{}] } : !sair.static_range<5>
     // CHECK: sair.map
     // CHECK-SAME: loop_nest = []
-    // CHECK: %[[STEP:.*]] = constant 2 : index
+    // CHECK: %[[STEP:.*]] = arith.constant 2 : index
     // CHECK: scf.for %{{.*}} = %{{.*}} to %{{.*}} step %[[STEP]] {
     // CHECK-COUNT-2: call @baz()
     // CHECK: }

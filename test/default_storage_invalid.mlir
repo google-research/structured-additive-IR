@@ -68,7 +68,7 @@ func @non_rectangular_shape(%arg0: f32, %arg1: index) {
 // -----
 
 func @incomplete_loop_nest(%arg0: memref<4xf32>, %arg1: index) {
-  %c = constant 42.0 : f32
+  %c = arith.constant 42.0 : f32
   sair.program {
     %n = sair.from_scalar %arg1 : !sair.value<(), index>
     %r = sair.dyn_range %n : !sair.dyn_range

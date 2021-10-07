@@ -415,7 +415,7 @@ func @map_wrong_terminator_operand() {
     // expected-error @+1 {{expects element types of results to match operand types of the body terminator}}
     sair.map {
     ^bb0:
-      %0 = constant 1.0 : f32
+      %0 = arith.constant 1.0 : f32
       // expected-note @+1 {{body terminator}}
       sair.return %0 : f32
     } : #sair.shape<()>, () -> (i32)
@@ -535,7 +535,7 @@ func @map_reduce_unexpected_shape() {
     // expected-error @+1 {{unexpected shape}}
     "sair.map_reduce"() ({
       ^bb0:
-        %0 = constant 1.0 : f32
+        %0 = arith.constant 1.0 : f32
         sair.return %0 : f32
     }) {
       mapping_array = [],
@@ -551,7 +551,7 @@ func @map_reduce_unexpected_shape() {
 
 func @from_scalar_element_type() {
 // expected-note @+1 {{prior use here}}
-  %0 = constant 0 : index
+  %0 = arith.constant 0 : index
   sair.program {
     // expected-error @+1 {{expects different type}}
     sair.from_scalar %0 : !sair.value<(), f32>
@@ -563,7 +563,7 @@ func @from_scalar_element_type() {
 // -----
 
 func @from_scalar_element_type_generic_form() {
-  %0 = constant 0 : index
+  %0 = arith.constant 0 : index
   sair.program {
     // expected-error @+1 {{expects different type}}
     "sair.from_scalar" (%0) : (index) -> !sair.value<(), f32>
@@ -578,7 +578,7 @@ func @sair_program_non_sair_op() {
   // expected-error @+1 {{expected only Sair operations in the body}}
   sair.program {
     // expected-note @+1 {{found}}
-    %0 = constant 0 : index
+    %0 = arith.constant 0 : index
     sair.exit
   }
   return
@@ -606,7 +606,7 @@ func @sair_value_defined_outside_sair_program(%arg0: !sair.value<(), f32>) {
 // -----
 
 func @sair_dimension_defined_outside_sair_program(%arg0: !sair.dyn_range) {
-  %0 = constant 1.0 : f32
+  %0 = arith.constant 1.0 : f32
   sair.program {
     %1 = sair.from_scalar %0 : !sair.value<(), f32>
     // expected-error @+1 {{sair dimensions must be defined in the region they are used}}
@@ -639,7 +639,7 @@ func @sair_exit_wrong_num_operands() {
 // -----
 
 func @sair_exit_wrong_type() {
-  %c0 = constant 1 : i32
+  %c0 = arith.constant 1 : i32
   %0 = sair.program {
     %1 = sair.from_scalar %c0 : !sair.value<(), i32>
     // expected-error @+1 {{sair.exit operands must match the return type of the sair.program: expected 'f32', found 'i32'}}
@@ -1209,7 +1209,7 @@ func @alloc_dim_sizes_mismatch(%arg0: index) {
 // -----
 
 func @loop_crosses_subdomain_boundaries(%arg0: f32) {
-  %c4 = constant 4 : index
+  %c4 = arith.constant 4 : index
   sair.program {
     %sc4 = sair.from_scalar %c4 : !sair.value<(), index>
     %0 = sair.static_range : !sair.static_range<4, 4>
@@ -1833,7 +1833,7 @@ func @two_results_same_buffer() {
       }]
     } {
       ^bb0:
-        %c0 = constant 1.0 : f32
+        %c0 = arith.constant 1.0 : f32
         sair.return %c0, %c0 : f32, f32
     } : #sair.shape<()>, () -> (f32, f32)
     sair.exit

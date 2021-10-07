@@ -17,6 +17,7 @@
 #include <memory>
 
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
+#include "mlir/Conversion/ArithmeticToLLVM/ArithmeticToLLVM.h"
 #include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
@@ -70,6 +71,7 @@ class LowerToLLVMPass : public LowerToLLVMBase<LowerToLLVMPass> {
     LLVMTypeConverter converter(&getContext());
     populateMemRefToLLVMConversionPatterns(converter, patterns);
     populateStdToLLVMConversionPatterns(converter, patterns);
+    arith::populateArithmeticToLLVMConversionPatterns(converter, patterns);
     patterns.insert<LowerUndef>(converter);
 
     LLVMConversionTarget target(getContext());

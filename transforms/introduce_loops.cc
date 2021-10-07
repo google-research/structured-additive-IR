@@ -428,7 +428,7 @@ mlir::scf::ForOp CreateForOp(mlir::Location loc, mlir::Value lower_bound,
                              llvm::ArrayRef<int> results_pos, Driver &driver) {
   mlir::OpBuilder::InsertionGuard guard(driver);
   auto step_value =
-      driver.create<mlir::ConstantIndexOp>(loc, step.getSExtValue());
+      driver.create<mlir::arith::ConstantIndexOp>(loc, step.getSExtValue());
   mlir::scf::ForOp for_op = driver.create<mlir::scf::ForOp>(
       loc, lower_bound, upper_bound, step_value, iter_args_init);
 
@@ -472,7 +472,7 @@ mlir::Value GetValueOfType(mlir::Location loc, mlir::Type type,
     mlir::emitError(loc) << "unable to create a default value of type " << type;
     return nullptr;
   }
-  return driver.create<mlir::ConstantOp>(loc, type, value);
+  return driver.create<mlir::arith::ConstantOp>(loc, type, value);
 }
 
 // Updates users of a value after introducing a loop in the sair.map operation
@@ -548,7 +548,7 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
   driver.setInsertionPointToStart(&op.block());
   auto materialize_bound = [&](const ValueOrConstant &bound) -> mlir::Value {
     if (bound.is_constant()) {
-      return driver.create<ConstantOp>(op.getLoc(), bound.constant());
+      return driver.create<arith::ConstantOp>(op.getLoc(), bound.constant());
     }
     // Check that the value is stored in registers.
     auto bound_instance = ResultInstance::Unique(bound.value().value);
