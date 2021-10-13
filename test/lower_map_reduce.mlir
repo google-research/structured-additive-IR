@@ -23,9 +23,9 @@ func @map_reduce(%r1: index, %r2: index, %in1: f32) {
     // CHECK: ^{{.*}}
     ^bb0(%arg0: index, %arg1: index, %arg2: f32, %arg3: f32, %arg4: f32):
       // CHECK: addf
-      %9 = addf %arg2, %arg3 : f32
+      %9 = arith.addf %arg2, %arg3 : f32
       // CHECK: mulf
-      %10 = mulf %arg2, %arg3 : f32
+      %10 = arith.mulf %arg2, %arg3 : f32
       sair.return %9, %10 : f32, f32
     // CHECK: #sair.shape<d0:dyn_range x d1:dyn_range>, (f32, f32, f32) -> (f32, f32)
     } : #sair.shape<d0:dyn_range x d1:dyn_range>, (f32) -> (f32, f32)
@@ -80,8 +80,8 @@ func @map_reduce_multi_instance(%r1: index, %r2: index, %in1: f32) {
       }]
     } {
     ^bb0(%arg0: index, %arg1: index, %arg2: f32, %arg3: f32, %arg4: f32):
-      %9 = addf %arg2, %arg3 : f32
-      %10 = mulf %arg2, %arg3 : f32
+      %9 = arith.addf %arg2, %arg3 : f32
+      %10 = arith.mulf %arg2, %arg3 : f32
       sair.return %9, %10 : f32, f32
     } : #sair.shape<d0:dyn_range x d1:dyn_range>, (f32) -> (f32, f32)
 

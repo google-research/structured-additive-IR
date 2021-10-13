@@ -5,7 +5,7 @@
 // map_reduce.
 // CHECK-LABEL: @from_memref_in_memory
 func @from_memref_in_memory(%arg0: memref<?xf32>, %arg1: f32) {
-  %n = constant 8 : index
+  %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 : !sair.value<(), memref<?xf32>>

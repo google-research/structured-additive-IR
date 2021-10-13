@@ -2,7 +2,7 @@
 
 // CHECK-LABEL: @eliminate
 func @eliminate(%arg0: f32) {
-  %n = constant 8 : index
+  %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     // CHECK: %[[V0:.*]] = sair.from_scalar %{{.*}} : !sair.value<(), f32>
@@ -28,7 +28,7 @@ func @eliminate(%arg0: f32) {
 
 // CHECK-LABEL: @convert_to_proj_last
 func @convert_to_proj_last(%arg0: f32) {
-  %n = constant 8 : index
+  %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     // CHECK: %[[V0:.*]] = sair.from_scalar %{{.*}} : !sair.value<(), f32>

@@ -14,7 +14,7 @@ func @deduplicate_map_input(%arg0: f32) {
       // CHECK: ^bb0(%[[V1:.*]]: f32):
       ^bb0(%arg1: f32, %arg2: f32):
         // CHECK: addf %[[V1]], %[[V1]] : f32
-        %1 = addf %arg1, %arg2 : f32
+        %1 = arith.addf %arg1, %arg2 : f32
         call @use(%1) : (f32) -> ()
         sair.return
     // CHECK: } : #sair.shape<()>, (f32) -> ()
@@ -39,7 +39,7 @@ func @deduplicate_map_input_instances(%arg0: f32) {
       ]
     } {
       ^bb0(%arg1: f32, %arg2: f32):
-        %1 = addf %arg1, %arg2 : f32
+        %1 = arith.addf %arg1, %arg2 : f32
         call @use(%1) : (f32) -> ()
         sair.return
     } : #sair.shape<()>, (f32, f32) -> ()
@@ -54,8 +54,8 @@ func @deduplicate_map_output() {
     // CHECK: %[[V0:.*]] = sair.map
     %0, %1 = sair.map {
       ^bb0:
-        // CHECK: %[[V1:.*]] = constant
-        %2 = constant 1.0 : f32
+        // CHECK: %[[V1:.*]] = arith.constant
+        %2 = arith.constant 1.0 : f32
         // CHECK: sair.return %[[V1]] : f32
         sair.return %2, %2 : f32, f32
     // CHECK: #sair.shape<()>, () -> f32
@@ -68,7 +68,7 @@ func @deduplicate_map_output() {
 
 // CHECK-LABEL: @fold_empty_proj
 func @fold_empty_proj(%arg0: f32) {
-  %n = constant 8 : index
+  %n = arith.constant 8 : index
   %0 = sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -86,7 +86,7 @@ func @fold_empty_proj(%arg0: f32) {
 
 // CHECK-LABEL: @fold_empty_fby
 func @fold_empty_fby(%arg0: f32) {
-  %n = constant 8 : index
+  %n = arith.constant 8 : index
   %0 = sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -104,7 +104,7 @@ func @fold_empty_fby(%arg0: f32) {
 
 // CHECK-LABEL: @merge_proj
 func @merge_proj(%arg0: f32) {
-  %n = constant 8 : index
+  %n = arith.constant 8 : index
   %0 = sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -124,7 +124,7 @@ func @merge_proj(%arg0: f32) {
 
 // CHECK-LABEL: @remove_cyclic_fby
 func @remove_cyclic_fby(%arg0: f32, %arg1: memref<?x?x?xf32>) {
-  %n = constant 8 : index
+  %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -145,7 +145,7 @@ func @remove_cyclic_fby(%arg0: f32, %arg1: memref<?x?x?xf32>) {
 
 // CHECK-LABEL: @remove_useless_dims_fby
 func @remove_useless_dims_fby(%arg0: f32) {
-  %n = constant 8 : index
+  %n = arith.constant 8 : index
   %0 = sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -167,7 +167,7 @@ func @remove_useless_dims_fby(%arg0: f32) {
 
 // CHECK-LABEL: @remove_useless_dims_proj
 func @remove_useless_dims_proj(%arg0: f32) {
-  %n = constant 8 : index
+  %n = arith.constant 8 : index
   %0 = sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -189,7 +189,7 @@ func @remove_useless_dims_proj(%arg0: f32) {
 
 // CHECK-LABEL: @remove_useless_dims_proj_dependent
 func @remove_useless_dims_proj_dependent(%arg0: f32, %arg1: index) {
-  %n = constant 8 : index
+  %n = arith.constant 8 : index
   %0 = sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -217,7 +217,7 @@ func @remove_useless_dims_proj_dependent(%arg0: f32, %arg1: index) {
 
 // CHECK-LABEL: @mappings
 func @mappings(%arg0: f32) {
-  %n = constant 8 : index
+  %n = arith.constant 8 : index
   %0 = sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>

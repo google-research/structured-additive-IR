@@ -123,19 +123,19 @@ RangeParameters RangeParameterBuilder::Get(MappingStripeExpr expr) {
 
   // Compute the end index as `min(begin + size, operand_size)`.
   mlir::Type index_type = builder_.getIndexType();
-  auto size_op = builder_.create<mlir::ConstantOp>(
+  auto size_op = builder_.create<mlir::arith::ConstantOp>(
       loc_, index_type, builder_.getIndexAttr(size * operand_parameters.step));
   auto uncapped_end =
-      builder_.create<mlir::AddIOp>(loc_, index_type, begin, size_op);
+      builder_.create<mlir::arith::AddIOp>(loc_, index_type, begin, size_op);
   mlir::Value operand_end;
   if (operand_parameters.end.is<mlir::Attribute>()) {
-    operand_end = builder_.create<mlir::ConstantOp>(
+    operand_end = builder_.create<mlir::arith::ConstantOp>(
         loc_, index_type, operand_parameters.end.get<mlir::Attribute>());
   } else {
     operand_end = operand_parameters.end.get<mlir::Value>();
   }
-  auto is_capped = builder_.create<mlir::CmpIOp>(loc_, CmpIPredicate::ult,
-                                                 operand_end, uncapped_end);
+  auto is_capped = builder_.create<mlir::arith::CmpIOp>(
+      loc_, arith::CmpIPredicate::ult, operand_end, uncapped_end);
   mlir::Value end = builder_.create<mlir::SelectOp>(
       loc_, builder_.getIndexType(), is_capped, operand_end, uncapped_end);
 
@@ -153,7 +153,8 @@ RangeParameters RangeParameterBuilder::Get(MappingUnStripeExpr expr) {
 mlir::Value Materialize(mlir::Location loc, mlir::OpFoldResult value,
                         mlir::OpBuilder &builder) {
   if (value.is<mlir::Value>()) return value.get<mlir::Value>();
-  return builder.create<mlir::ConstantOp>(loc, value.get<mlir::Attribute>());
+  return builder.create<mlir::arith::ConstantOp>(loc,
+                                                 value.get<mlir::Attribute>());
 }
 
 llvm::SmallVector<RangeParameters> GetRangeParameters(

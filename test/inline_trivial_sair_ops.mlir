@@ -2,8 +2,8 @@
 
 // CHECK-LABEL: @one_map
 func @one_map() -> f32 {
-  // CHECK: %[[v0:.*]] = constant 1.0
-  %0 = constant 1.0 : f32
+  // CHECK: %[[v0:.*]] = arith.constant 1.0
+  %0 = arith.constant 1.0 : f32
   // CHECK-NOT: sair.program
   %1 = sair.program {
     // CHECK-NOT: from_scalar
@@ -11,8 +11,8 @@ func @one_map() -> f32 {
     // CHECK-NOT: sair.map
     %3 = sair.map %2 {
     ^bb0(%arg0: f32):
-      // CHECK: %[[v3:.*]] = addf %[[v0]], %[[v0]]
-      %4 = addf %arg0, %arg0 : f32
+      // CHECK: %[[v3:.*]] = arith.addf %[[v0]], %[[v0]]
+      %4 = arith.addf %arg0, %arg0 : f32
       // CHECK-NOT: sair.return
       sair.return %4 : f32
     } : #sair.shape<()>, (f32) -> f32
@@ -25,8 +25,8 @@ func @one_map() -> f32 {
 
 // CHECK-LABEL: @sequence
 func @sequence() -> f32 {
-  // CHECK: %[[v0:.*]] = constant 1.0
-  %0 = constant 1.0 : f32
+  // CHECK: %[[v0:.*]] = arith.constant 1.0
+  %0 = arith.constant 1.0 : f32
   // CHECK-NOT: sair.program
   %6 = sair.program {
     // CHECK-NOT: from_scalar
@@ -34,8 +34,8 @@ func @sequence() -> f32 {
     // CHECK-NOT: sair.map
     %2 = sair.map %1 {
     ^bb0(%arg0: f32):
-      // CHECK: %[[v3:.*]] = addf %[[v0]], %[[v0]]
-      %3 = addf %arg0, %arg0 : f32
+      // CHECK: %[[v3:.*]] = arith.addf %[[v0]], %[[v0]]
+      %3 = arith.addf %arg0, %arg0 : f32
       // CHECK-NOT: sair.return
       sair.return %3 : f32
     } : #sair.shape<()>, (f32) -> f32
@@ -48,7 +48,7 @@ func @sequence() -> f32 {
 
 // CHECK-LABEL: @do_nothing
 func @do_nothing() {
-  %0 = constant 1.0 : f32
+  %0 = arith.constant 1.0 : f32
   sair.program {
     %1 = sair.static_range : !sair.static_range<8>
     %2 = sair.from_scalar %0 : !sair.value<(), f32>

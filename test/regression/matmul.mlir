@@ -1,8 +1,8 @@
 // RUN: sair-opt %s -convert-sair-to-loop
 
 func @main(%arg0: memref<512x512xf32>, %arg1: memref<512x512xf32>, %arg2: memref<512x512xf32>) {
-  %c0 = constant 0 : index
-  %cst = constant 0.000000e+00 : f32
+  %c0 = arith.constant 0 : index
+  %cst = arith.constant 0.000000e+00 : f32
 
   sair.program  {
     %3 = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), memref<512x512xf32>>
@@ -54,8 +54,8 @@ func @main(%arg0: memref<512x512xf32>, %arg1: memref<512x512xf32>, %arg2: memref
       }]
     } {
     ^bb0(%arg3: index, %arg4: index, %arg5: index, %arg6: f32, %arg7: f32, %arg8: f32):  // no predecessors
-      %14 = mulf %arg7, %arg8 : f32
-      %15 = addf %arg6, %14 : f32
+      %14 = arith.mulf %arg7, %arg8 : f32
+      %15 = arith.addf %arg6, %14 : f32
       sair.return %15 : f32
     } : #sair.shape<d0:static_range<512> x d1:static_range<512> x d2:static_range<512>>,
         (f32, f32, f32) -> f32

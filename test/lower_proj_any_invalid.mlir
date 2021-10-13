@@ -1,7 +1,7 @@
 // RUN: sair-opt -sair-lower-proj-any -split-input-file -verify-diagnostics %s
 
 func @source_not_normalized(%arg0: f32) {
-  %n = constant 8 : index
+  %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -26,7 +26,7 @@ func @source_not_normalized(%arg0: f32) {
 // -----
 
 func @result_not_normalized(%arg0: f32) {
-  %n = constant 8 : index
+  %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -51,7 +51,7 @@ func @result_not_normalized(%arg0: f32) {
 // -----
 
 func @cannot_lower(%arg0: f32) {
-  %n = constant 8 : index
+  %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>

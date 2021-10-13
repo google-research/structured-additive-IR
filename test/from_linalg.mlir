@@ -38,7 +38,7 @@ func @pointwise(%arg0: memref<1x2x3xf32>, %arg1: memref<2x3x1xf32>) {
    outs(%arg1 : memref<2x3x1xf32>) {
   // CHECK: ^{{.*}}(%{{.*}}: index, %{{.*}}: index, %{{.*}}: index, %{{.*}}: f32, %{{.*}}: f32):
   ^bb(%a0: f32, %a1: f32):
-    %1 = addf %a0, %a1 : f32
+    %1 = arith.addf %a0, %a1 : f32
     // CHECK: sair.return %{{.*}} f32
     linalg.yield %1 : f32
   // CHECK: #sair.shape<d0:static_range<1> x d1:static_range<3> x d2:static_range<2>>, (f32, f32) -> f32
@@ -89,7 +89,7 @@ func @dynamic(%arg0: memref<?x2x?xf32>, %arg1: memref<2x?x?xf32>) {
     ins(%arg0 : memref<?x2x?xf32>)
    outs(%arg1 : memref<2x?x?xf32>) {
   ^bb(%a0: f32, %a1: f32):
-    %1 = addf %a0, %a1 : f32
+    %1 = arith.addf %a0, %a1 : f32
     linalg.yield %1 : f32
   }
 
@@ -139,8 +139,8 @@ func @reductions(%arg0: memref<2x3x4x5x6xf32>, %arg1: memref<2x4x6xf32>) {
     // Expecting the operands to be swapped because of block argument
     // reordering that places the partial reduction first to comply with Sair
     // conventions.
-    // CHECK: %[[v0:.*]] = addf %[[reduce]], %[[arg]]
-    %0 = addf %a1, %a0 : f32
+    // CHECK: %[[v0:.*]] = arith.addf %[[reduce]], %[[arg]]
+    %0 = arith.addf %a1, %a0 : f32
     // CHECK: sair.return %[[v0]]
     linalg.yield %0 : f32
   // CHECK: } : #sair.shape<d0:static_range<2> x d1:static_range<4> x
@@ -164,12 +164,12 @@ func @indices(%arg0: memref<1x2x3xf32>, %arg1: memref<2x3x1xf32>) {
     %0 = linalg.index 0 : index
     %1 = linalg.index 2 : index
     %2 = linalg.index 1 : index
-    // CHECK: = addi %[[I0]], %[[I2]]
-    // CHECK: = addi %{{.*}}, %[[I1]]
-    %3 = addi %0, %1 : index
-    %4 = addi %3, %2 : index
-    %5 = index_cast %4 : index to i32
-    %6 = sitofp %5 : i32 to f32
+    // CHECK: = arith.addi %[[I0]], %[[I2]]
+    // CHECK: = arith.addi %{{.*}}, %[[I1]]
+    %3 = arith.addi %0, %1 : index
+    %4 = arith.addi %3, %2 : index
+    %5 = arith.index_cast %4 : index to i32
+    %6 = arith.sitofp %5 : i32 to f32
     linalg.yield %6 : f32
   }
   return
