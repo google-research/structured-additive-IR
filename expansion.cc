@@ -113,7 +113,7 @@ class AllocExpansionPattern : public TypedExpansionPattern<SairAllocOp> {
 
 mlir::LogicalResult AllocExpansionPattern::Match(SairAllocOp op) const {
   // Cannot emit an allocation for a map with layout.
-  if (!op.MemType().getAffineMaps().empty()) return mlir::failure();
+  if (!op.MemType().getLayout().isIdentity()) return mlir::failure();
   return mlir::success();
 }
 
