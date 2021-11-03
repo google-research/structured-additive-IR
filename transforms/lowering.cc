@@ -47,7 +47,7 @@ class LowerUndef : public ConvertOpToLLVMPattern<SairUndefOp> {
   using ConvertOpToLLVMPattern<SairUndefOp>::ConvertOpToLLVMPattern;
 
   mlir::LogicalResult matchAndRewrite(
-      SairUndefOp op, llvm::ArrayRef<mlir::Value> operands,
+      SairUndefOp op, OpAdaptor adaptor,
       mlir::ConversionPatternRewriter &rewriter) const override {
     mlir::Type converted = typeConverter->convertType(op.getResult().getType());
     if (!converted) return failure();
