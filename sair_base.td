@@ -175,7 +175,7 @@ def SairCopyAttr : AttrDef<SairDialect, "Copy"> {
   let parameters = (ins "unsigned":$value);
 
   let printer = [{
-    $_printer << "copy<" << getImpl()->value << ">";
+    $_printer << "<" << getImpl()->value << ">";
   }];
   let parser = [{
     unsigned pos;
@@ -195,7 +195,7 @@ def SairInstanceAttr : AttrDef<SairDialect, "Instance"> {
   let parameters = (ins "unsigned":$value);
 
   let printer = [{
-    $_printer << "instance<" << getImpl()->value << ">";
+    $_printer << "<" << getImpl()->value << ">";
   }];
   let parser = [{
     unsigned pos;
