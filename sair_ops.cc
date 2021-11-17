@@ -1523,10 +1523,9 @@ mlir::LogicalResult Verify(SairProgramOp program) {
                  .attachNote(nested_operation.getLoc())
              << "found";
     }
-    const mlir::AbstractOperation &abstract_op =
-        *nested_operation.getAbstractOperation();
+    mlir::RegisteredOperationName info = *nested_operation.getRegisteredInfo();
     // Run operation verifier here so we can safely access their fields.
-    if (mlir::failed(abstract_op.verifyInvariants(&nested_operation))) {
+    if (mlir::failed(info.verifyInvariants(&nested_operation))) {
       return mlir::failure();
     }
   }
