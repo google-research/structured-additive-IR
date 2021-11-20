@@ -54,7 +54,7 @@ class LowerUndef : public ConvertOpToLLVMPattern<SairUndefOp> {
 
     auto undef = rewriter.create<mlir::LLVM::UndefOp>(op.getLoc(), converted);
     for (mlir::NamedAttribute attr : op->getAttrs()) {
-      undef->setAttr(std::get<0>(attr), std::get<1>(attr));
+      undef->setAttr(attr.getName(), attr.getValue());
     }
     rewriter.replaceOp(op, undef.getResult());
     return mlir::success();
