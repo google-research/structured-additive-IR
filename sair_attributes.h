@@ -613,11 +613,11 @@ mlir::ArrayAttr EraseOperandFromDecisions(mlir::ArrayAttr decisions,
 
 namespace detail {
 mlir::OptionalParseResult ParseGeneratedAttribute(
-    mlir::MLIRContext *context, mlir::DialectAsmParser &parser,
+    mlir::MLIRContext *context, mlir::AsmParser &parser,
     llvm::StringRef mnemonic, mlir::Type type, mlir::Attribute &attribute);
 
 mlir::LogicalResult PrintGeneratedAttribute(mlir::Attribute attribute,
-                                            mlir::DialectAsmPrinter &printer);
+                                            mlir::AsmPrinter &printer);
 }  // namespace detail
 
 }  // namespace sair

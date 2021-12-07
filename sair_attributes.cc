@@ -1438,13 +1438,13 @@ mlir::ArrayAttr EraseOperandFromDecisions(mlir::ArrayAttr decisions,
 #include "sair_attributes.cc.inc"
 
 mlir::OptionalParseResult sair::detail::ParseGeneratedAttribute(
-    mlir::MLIRContext *context, mlir::DialectAsmParser &parser,
+    mlir::MLIRContext *context, mlir::AsmParser &parser,
     llvm::StringRef mnemonic, mlir::Type type, mlir::Attribute &attribute) {
   return generatedAttributeParser(parser, mnemonic, type, attribute);
 }
 
 mlir::LogicalResult sair::detail::PrintGeneratedAttribute(
-    mlir::Attribute attribute, mlir::DialectAsmPrinter &printer) {
+    mlir::Attribute attribute, mlir::AsmPrinter &printer) {
   return generatedAttributePrinter(attribute, printer);
 }
 
