@@ -513,7 +513,7 @@ func @map_reduce_init_accessing_reduction(%arg0 : f32) {
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %2 = sair.copy[d0:%0] %1 : !sair.value<d0:static_range<8>, f32>
     // expected-error @+1 {{an operand mapping references a dimension that depends on the operand}}
-    %3 = "sair.map_reduce"(%0, %0, %2, %2) ( {
+    %3 = "sair.map_reduce"(%0, %0, %2, %2) ({
       ^bb0(%arg1: index, %arg2: index, %arg3: f32, %arg4: f32):
         "sair.return"(%arg3) : (f32) -> ()
       }) {mapping_array = [#sair.mapping<2:d1>, #sair.mapping<2:d1>],
