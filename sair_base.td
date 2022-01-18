@@ -32,6 +32,7 @@ def SairDialect : Dialect {
   let cppNamespace = "::sair";
 
   let emitAccessorPrefix = kEmitAccessorPrefix_Raw;
+  let useDefaultAttributePrinterParser = 0;
 }
 
 //===----------------------------------------------------------------------===//
