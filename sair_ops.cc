@@ -1200,6 +1200,7 @@ void Print(SairMapOp op, OpAsmPrinter &printer) {
       op->getAttrs(), {SairMapOp::getOperandSegmentSizeAttr(),
                        SairDialect::kShapeAttrName, SairOp::kMappingAttrName});
 
+  printer << ' ';
   printer.printRegion(op.body());
   printer << " : ";
   printer.printAttribute(op.shape());
@@ -1435,6 +1436,7 @@ void Print(SairMapReduceOp op, mlir::OpAsmPrinter &printer) {
   printer.printOptionalAttrDictWithKeyword(
       op->getAttrs(), {SairMapOp::getOperandSegmentSizeAttr(),
                        SairDialect::kShapeAttrName, SairOp::kMappingAttrName});
+  printer << " ";
   printer.printRegion(op.body());
 
   // Print the trailing type using operand and result element types as a single
@@ -1504,6 +1506,7 @@ mlir::ParseResult ParseProgramOp(mlir::OpAsmParser &parser,
 void Print(SairProgramOp op, mlir::OpAsmPrinter &printer) {
   printer << " ";
   printer.printOptionalAttrDictWithKeyword(op->getAttrs());
+  printer << " ";
   printer.printRegion(op.body(), /*printEntryBlockArgs=*/false,
                       /*printBlockTerminators=*/true);
   if (op.results().empty()) return;
