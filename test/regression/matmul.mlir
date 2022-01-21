@@ -53,7 +53,7 @@ func @main(%arg0: memref<512x512xf32>, %arg1: memref<512x512xf32>, %arg2: memref
         }]
       }]
     } {
-    ^bb0(%arg3: index, %arg4: index, %arg5: index, %arg6: f32, %arg7: f32, %arg8: f32):  // no predecessors
+    ^bb0(%arg3: index, %arg4: index, %arg5: index, %arg6: f32, %arg7: f32, %arg8: f32):
       %14 = arith.mulf %arg7, %arg8 : f32
       %15 = arith.addf %arg6, %14 : f32
       sair.return %15 : f32
