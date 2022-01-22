@@ -1165,11 +1165,11 @@ void SairMapOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,
   mlir::Block *block = new Block();
   region->push_back(block);
   for (int i = 0, e = domain.size(); i < e; ++i) {
-    block->addArgument(builder.getIndexType());
+    block->addArgument(builder.getIndexType(), result.location);
   }
   for (mlir::Value input : inputs) {
     mlir::Type element_type = input.getType().cast<ValueType>().ElementType();
-    block->addArgument(element_type);
+    block->addArgument(element_type, result.location);
   }
 }
 
@@ -1962,7 +1962,8 @@ SairOp SairMapReduceOp::ReCreateWithNewDomain(
     block_arg_types.push_back(operand.GetType().ElementType());
   }
   mlir::OpBuilder::InsertionGuard guard(builder);
-  builder.createBlock(&new_op.body(), {}, block_arg_types);
+  builder.createBlock(&new_op.body(), {}, block_arg_types,
+                      SmallVector<Location>(block_arg_types.size(), getLoc()));
   MoveMapBody(getLoc(), block(), new_op.block(), new_to_old_mapping, builder);
   return llvm::cast<SairOp>(new_op.getOperation());
 }

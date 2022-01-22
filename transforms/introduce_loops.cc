@@ -562,7 +562,7 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
 
     inputs.push_back(bound.value().value);
     mappings.push_back(range_mapping.Compose(bound.value().mapping));
-    return op.block().addArgument(driver.getIndexType());
+    return op.block().addArgument(driver.getIndexType(), op.getLoc());
   };
 
   mlir::Value upper_bound = materialize_bound(range.UpperBound());
@@ -710,8 +710,8 @@ void Fuse(SairMapOp first_op, llvm::ArrayRef<mlir::Attribute> first_loop_nest,
 
     inputs.push_back(operand.value());
     mappings.push_back(first_to_second_mapping_attr.Compose(operand.Mapping()));
-    mlir::Value block_argument =
-        first_op.block().addArgument(operand.GetType().ElementType());
+    mlir::Value block_argument = first_op.block().addArgument(
+        operand.GetType().ElementType(), second_op.getLoc());
     second_block_args.push_back(block_argument);
   }
 

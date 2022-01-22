@@ -360,8 +360,9 @@ void PermuteBlockArguments(llvm::ArrayRef<int> new_positions, int offset,
   llvm::SmallVector<mlir::Value, 8> new_arguments(num_permuted_args);
   for (int i = 0; i < num_permuted_args; ++i) {
     mlir::Value old_argument = block.getArgument(offset + i);
-    new_arguments[new_positions[i]] = block.insertArgument(
-        offset + num_permuted_args + i, old_argument.getType());
+    new_arguments[new_positions[i]] =
+        block.insertArgument(offset + num_permuted_args + i,
+                             old_argument.getType(), old_argument.getLoc());
   }
 
   mlir::ValueRange old_arguments =
@@ -423,7 +424,8 @@ void MoveBodyBlock(mlir::AffineMap linalg_to_sair_loops,
   // Insert arguments for iteration indices.
   int num_loops = source_op.getNumLoops();
   for (int i = 0; i < num_loops; ++i) {
-    body.insertArgument(body.args_begin(), rewriter.getIndexType());
+    body.insertArgument(body.args_begin(), rewriter.getIndexType(),
+                        source_op.getLoc());
   }
 
   // Replace index operations with index values coming from block arguments.

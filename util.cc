@@ -198,8 +198,9 @@ MapBodyBuilder::MapBodyBuilder(int domain_size, mlir::MLIRContext *context)
   auto *block = new Block();
   region_.getBlocks().insert(region_.end(), block);
   auto index_type = mlir::IndexType::get(context);
+  Location loc = UnknownLoc::get(context);
   for (int i = 0; i < domain_size; ++i) {
-    block->addArgument(index_type);
+    block->addArgument(index_type, loc);
   }
 }
 
@@ -224,7 +225,7 @@ mlir::ValueRange MapBodyBuilder::block_inputs() {
 mlir::Value MapBodyBuilder::AddOperand(ValueAccess operand) {
   operands_.push_back(operand);
   auto value_type = operand.value.getType().cast<ValueType>();
-  return block().addArgument(value_type.ElementType());
+  return block().addArgument(value_type.ElementType(), operand.value.getLoc());
 }
 
 }  // namespace sair
