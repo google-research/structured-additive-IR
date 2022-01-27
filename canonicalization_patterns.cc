@@ -399,92 +399,92 @@ class NormalizeSequenceNumbers : public mlir::OpRewritePattern<SairProgramOp> {
 
 }  // end namespace
 
-void SairCopyOp::getCanonicalizationPatterns(
-    mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
+void SairCopyOp::getCanonicalizationPatterns(mlir::RewritePatternSet &patterns,
+                                             mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>(context);
 }
 
-void SairExitOp::getCanonicalizationPatterns(
-    mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
+void SairExitOp::getCanonicalizationPatterns(mlir::RewritePatternSet &patterns,
+                                             mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>(context);
 }
 
 void SairFromMemRefOp::getCanonicalizationPatterns(
-    mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
+    mlir::RewritePatternSet &patterns, mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>(context);
 }
 
 void SairLoadFromMemRefOp::getCanonicalizationPatterns(
-    mlir::OwningRewritePatternList &results, mlir::MLIRContext *context) {
+    mlir::RewritePatternSet &results, mlir::MLIRContext *context) {
   results.insert<SimplifySairOperands>(context);
 }
 
-void SairFbyOp::getCanonicalizationPatterns(
-    mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
+void SairFbyOp::getCanonicalizationPatterns(mlir::RewritePatternSet &patterns,
+                                            mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>(context);
   patterns.insert<RemoveCyclicFby, RemoveUnreferencedDims<SairFbyOp>>(context);
 }
 
 void SairFromScalarOp::getCanonicalizationPatterns(
-    mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
+    mlir::RewritePatternSet &patterns, mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>(context);
 }
 
 void SairMapReduceOp::getCanonicalizationPatterns(
-    mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
+    mlir::RewritePatternSet &patterns, mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>(context);
 }
 
 void SairProjAnyOp::getCanonicalizationPatterns(
-    mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
+    mlir::RewritePatternSet &patterns, mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>(context);
   patterns.insert<RemoveUnreferencedDims<SairProjAnyOp>>(context);
 }
 
 void SairProjLastOp::getCanonicalizationPatterns(
-    mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
+    mlir::RewritePatternSet &patterns, mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>(context);
   patterns.insert<RemoveUnreferencedDims<SairProjLastOp>>(context);
 }
 
 void SairDynRangeOp::getCanonicalizationPatterns(
-    mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
+    mlir::RewritePatternSet &patterns, mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>(context);
 }
 
 void SairPlaceholderOp::getCanonicalizationPatterns(
-    mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
+    mlir::RewritePatternSet &patterns, mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>(context);
 }
 
 void SairStaticRangeOp::getCanonicalizationPatterns(
-    mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
+    mlir::RewritePatternSet &patterns, mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>(context);
 }
 
 void SairToMemRefOp::getCanonicalizationPatterns(
-    mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
+    mlir::RewritePatternSet &patterns, mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>(context);
 }
 
 void SairStoreToMemRefOp::getCanonicalizationPatterns(
-    mlir::OwningRewritePatternList &results, mlir::MLIRContext *context) {
+    mlir::RewritePatternSet &results, mlir::MLIRContext *context) {
   results.insert<SimplifySairOperands>(context);
 }
 
-void SairMapOp::getCanonicalizationPatterns(
-    mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
+void SairMapOp::getCanonicalizationPatterns(mlir::RewritePatternSet &patterns,
+                                            mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>(context);
   patterns.insert(DeduplicateMapInputsOutputs);
 }
 
-void SairAllocOp::getCanonicalizationPatterns(
-    mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
+void SairAllocOp::getCanonicalizationPatterns(mlir::RewritePatternSet &patterns,
+                                              mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>(context);
 }
 
-void SairFreeOp::getCanonicalizationPatterns(
-    mlir::OwningRewritePatternList &patterns, mlir::MLIRContext *context) {
+void SairFreeOp::getCanonicalizationPatterns(mlir::RewritePatternSet &patterns,
+                                             mlir::MLIRContext *context) {
   patterns.insert<SimplifySairOperands>(context);
 }
 

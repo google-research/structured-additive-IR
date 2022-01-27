@@ -51,7 +51,7 @@ namespace {
 
 // Adds canonicalization patterns from Ops to `list.
 template <typename... Ops>
-void getAllPatterns(mlir::OwningRewritePatternList &list, mlir::MLIRContext *ctx) {
+void getAllPatterns(mlir::RewritePatternSet &list, mlir::MLIRContext *ctx) {
   (Ops::getCanonicalizationPatterns(list, ctx), ...);
 }
 
@@ -208,7 +208,7 @@ class Driver : public mlir::PatternRewriter {
     pending_updates_.erase(op);
   }
 
-  mlir::OwningRewritePatternList canonicalization_patterns_;
+  mlir::RewritePatternSet canonicalization_patterns_;
   llvm::SetVector<mlir::Operation *> simplify_work_list_;
   llvm::SetVector<mlir::Operation *> map_ops_work_list_;
 

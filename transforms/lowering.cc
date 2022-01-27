@@ -67,7 +67,7 @@ class LowerToLLVMPass : public LowerToLLVMBase<LowerToLLVMPass> {
   void runOnOperation() override {
     auto module = getOperation();
 
-    OwningRewritePatternList patterns(&getContext());
+    RewritePatternSet patterns(&getContext());
     LLVMTypeConverter converter(&getContext());
     populateMemRefToLLVMConversionPatterns(converter, patterns);
     populateStdToLLVMConversionPatterns(converter, patterns);
