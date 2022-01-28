@@ -20,7 +20,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "mlir/Dialect/Affine/LoopUtils.h"
 #include "mlir/Dialect/SCF/SCF.h"
-#include "mlir/Dialect/SCF/Utils.h"
+#include "mlir/Dialect/SCF/Utils/Utils.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
