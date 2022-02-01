@@ -511,7 +511,7 @@ def SairOpInterface : OpInterface<"SairOp"> {
 
 // Base class for all Sair operators.
 class SairOp<string mnemonic,
-             list<OpTrait> traits = [],
+             list<Trait> traits = [],
              Dialect dialect = SairDialect>
   : Op<
       dialect, mnemonic,
