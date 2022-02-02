@@ -205,8 +205,8 @@ mlir::LogicalResult CreateInstancesAndCopies(Operation *container) {
 class MaterializeInstancesPass
     : public MaterializeInstancesPassBase<MaterializeInstancesPass> {
  public:
-  void runOnFunction() override {
-    if (mlir::failed(CreateInstancesAndCopies(getFunction()))) {
+  void runOnOperation() override {
+    if (mlir::failed(CreateInstancesAndCopies(getOperation()))) {
       signalPassFailure();
     }
   }

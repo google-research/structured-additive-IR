@@ -373,10 +373,10 @@ class NormalizeLoopsPass : public NormalizeLoopsPassBase<NormalizeLoopsPass> {
     return mlir::success();
   }
 
-  void runOnFunction() override {
+  void runOnOperation() override {
     mlir::OpBuilder builder(&getContext());
     auto result =
-        getFunction().walk([&](SairProgramOp program) -> mlir::WalkResult {
+        getOperation().walk([&](SairProgramOp program) -> mlir::WalkResult {
           return RunOpProgram(program, builder);
         });
     if (result.wasInterrupted()) signalPassFailure();

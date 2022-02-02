@@ -23,10 +23,11 @@ namespace {
 
 class LowerProjAny : public LowerProjAnyPassBase<LowerProjAny> {
   // Eliminates proj_any operations or lowers them to proj_last operations.
-  void runOnFunction() override {
+  void runOnOperation() override {
     mlir::MLIRContext *context = &getContext();
     mlir::OpBuilder builder(context);
-    auto result = getFunction().walk([&](SairProjAnyOp op) -> mlir::WalkResult {
+    auto result = getOperation().walk([&](SairProjAnyOp op)
+                                          -> mlir::WalkResult {
       builder.setInsertionPoint(op);
       const auto &iteration_spaces =
           getChildAnalysis<IterationSpaceAnalysis>(op->getParentOp());

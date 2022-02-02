@@ -124,8 +124,8 @@ bool InlineTrivialSairOp(mlir::FuncOp function) {
 // MLIR pass that replaces trivial Sair ops with the content of their body.
 class InlineTrivialSairOpsPass
     : public InlineTrivialSairOpsPassBase<InlineTrivialSairOpsPass> {
-  void runOnFunction() override {
-    mlir::FuncOp function = getFunction();
+  void runOnOperation() override {
+    mlir::FuncOp function = getOperation();
     // Iteratively find the first trivial Sair Op and inline it, which may
     // create new trivial Ops. The iteration stops when no trivial Ops are
     // present in the function.

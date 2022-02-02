@@ -214,9 +214,9 @@ class LowerMapReduce : public LowerMapReducePassBase<LowerMapReduce> {
   // <tmp0> = sair.fby[<D0>] <inits> then[<D1>] <tmp1>
   // <tmp1> = sair.map[<D0>, <D1>] <tmp0>, <values> <body>
   // <res> = sair.proj_last[<D0>] last[<D1>] <tmp1>
-  void runOnFunction() override {
+  void runOnOperation() override {
     mlir::MLIRContext *context = &getContext();
-    getFunction().walk([context](SairMapReduceOp op) {
+    getOperation().walk([context](SairMapReduceOp op) {
       mlir::OpBuilder builder(context);
       builder.setInsertionPoint(op);
       RewriteMapReduceToMap(op, builder);

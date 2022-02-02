@@ -40,11 +40,11 @@ namespace {
 class LowerToMap : public LowerToMapPassBase<LowerToMap> {
   // Converts sair.copy operations into sair.map operations. This is a hook for
   // the MLIR pass infrastructure.
-  void runOnFunction() override {
+  void runOnOperation() override {
     mlir::MLIRContext *context = &getContext();
     mlir::OpBuilder builder(context);
 
-    auto result = getFunction().walk([&](ComputeOp op) -> mlir::WalkResult {
+    auto result = getOperation().walk([&](ComputeOp op) -> mlir::WalkResult {
       auto *sair_dialect = static_cast<SairDialect *>(op->getDialect());
       auto sair_op = cast<SairOp>(op.getOperation());
       if (!sair_op.HasExactlyOneInstance()) {

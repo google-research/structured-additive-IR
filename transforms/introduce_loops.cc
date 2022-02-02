@@ -848,9 +848,9 @@ class IntroduceLoops : public IntroduceLoopsPassBase<IntroduceLoops> {
     }
   }
 
-  void runOnFunction() override {
+  void runOnOperation() override {
     // Retreive a a sorted list of SairMap operations.
-    getFunction().walk([&](SairProgramOp op) { IntroduceProgramLoops(op); });
+    getOperation().walk([&](SairProgramOp op) { IntroduceProgramLoops(op); });
   }
 };
 

@@ -411,10 +411,10 @@ class MaterializeBuffers
     sequence_analysis.AssignInferred();
   }
 
-  void runOnFunction() override {
+  void runOnOperation() override {
     markAnalysesPreserved<LoopFusionAnalysis, IterationSpaceAnalysis>();
 
-    auto result = getFunction().walk([&](SairOp op) -> mlir::WalkResult {
+    auto result = getOperation().walk([&](SairOp op) -> mlir::WalkResult {
       auto storage_analysis =
           getChildAnalysis<StorageAnalysis>(op->getParentOp());
       if (!op.HasExactlyOneInstance()) {
@@ -442,7 +442,7 @@ class MaterializeBuffers
       return;
     }
 
-    getFunction().walk([&](SairProgramOp program) { RunOnProgram(program); });
+    getOperation().walk([&](SairProgramOp program) { RunOnProgram(program); });
   }
 };
 

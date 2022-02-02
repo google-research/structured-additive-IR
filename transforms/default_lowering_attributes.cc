@@ -49,8 +49,8 @@ namespace {
 // Creates a blank instance for ComputeOp with no instances.
 class DefaultInstance : public DefaultInstancePassBase<DefaultInstance> {
  public:
-  void runOnFunction() {
-    getFunction().walk([](SairOp op) {
+  void runOnOperation() {
+    getOperation().walk([](SairOp op) {
       if (op.NumInstances() > 0) return;
       op.AddInstance(DecisionsAttr::get(nullptr, nullptr, nullptr, nullptr,
                                         nullptr, nullptr, op.getContext()));
@@ -248,8 +248,8 @@ static mlir::LogicalResult CreateBufferIfNeeded(
 // the sub-domain of dimensions to materialize is a dependent domain.
 class DefaultStorage : public DefaultStoragePassBase<DefaultStorage> {
  public:
-  void runOnFunction() override {
-    auto result = getFunction().walk([&](SairProgramOp program) {
+  void runOnOperation() override {
+    auto result = getOperation().walk([&](SairProgramOp program) {
       return program.TryWalkComputeOpInstances(
           [](const ComputeOpInstance &op) -> mlir::WalkResult {
             DecisionsAttr decisions = op.GetDecisions();
@@ -264,7 +264,7 @@ class DefaultStorage : public DefaultStoragePassBase<DefaultStorage> {
       return;
     }
 
-    getFunction().walk([&](SairProgramOp program) -> mlir::WalkResult {
+    getOperation().walk([&](SairProgramOp program) -> mlir::WalkResult {
       mlir::LogicalResult result = RunOnProgram(program);
       if (mlir::failed(result)) signalPassFailure();
       return result;
@@ -383,8 +383,8 @@ mlir::ArrayAttr GetDefaultLoopNest(int num_dimensions,
 // rematerialization or strip-mining.
 class DefaultLoopNest : public DefaultLoopNestPassBase<DefaultLoopNest> {
  public:
-  void runOnFunction() override {
-    getFunction().walk([&](SairProgramOp program) {
+  void runOnOperation() override {
+    getOperation().walk([&](SairProgramOp program) {
       auto &fusion_analysis = getChildAnalysis<LoopFusionAnalysis>(program);
       program.WalkComputeOpInstances([&](ComputeOpInstance &op) {
         DecisionsAttr decisions = op.GetDecisions();
@@ -409,8 +409,8 @@ void UpdateSequence(SairProgramOp program) {
 class DefaultSequencePass
     : public DefaultSequencePassBase<DefaultSequencePass> {
  public:
-  void runOnFunction() override {
-    getFunction().walk(
+  void runOnOperation() override {
+    getOperation().walk(
         [](SairProgramOp program_op) { UpdateSequence(program_op); });
   }
 };
@@ -455,8 +455,8 @@ static mlir::LogicalResult SetDefaultExpansion(ComputeOpInstance &op) {
 // expansion pattern implementing the operation.
 class DefaultExpansion : public DefaultExpansionPassBase<DefaultExpansion> {
  public:
-  void runOnFunction() override {
-    auto result = getFunction().walk([&](SairProgramOp program) {
+  void runOnOperation() override {
+    auto result = getOperation().walk([&](SairProgramOp program) {
       return program.TryWalkComputeOpInstances(
           [&](ComputeOpInstance &op) -> mlir::WalkResult {
             return SetDefaultExpansion(op);

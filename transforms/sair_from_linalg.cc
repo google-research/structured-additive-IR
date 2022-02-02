@@ -671,14 +671,14 @@ class LinalgToSairConversion
     : public SairFromLinalgPassBase<LinalgToSairConversion> {
  public:
   // Runs the pass on a function.
-  void runOnFunction() override;
+  void runOnOperation() override;
 };
 
-void LinalgToSairConversion::runOnFunction() {
+void LinalgToSairConversion::runOnOperation() {
   mlir::MLIRContext *context = &getContext();
 
   // Replace all suitable Linalg generic operations in a function.
-  getFunction().walk([context, this](mlir::linalg::LinalgOp op) {
+  getOperation().walk([context, this](mlir::linalg::LinalgOp op) {
     mlir::OpBuilder builder(context);
     builder.setInsertionPoint(op);
     if (mlir::failed(sair::RewriteLinalgToSair(op, builder))) {

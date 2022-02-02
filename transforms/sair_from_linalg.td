@@ -14,7 +14,7 @@
 
 include "mlir/Pass/PassBase.td"
 
-def SairFromLinalgPass : FunctionPass<"convert-linalg-to-sair"> {
+def SairFromLinalgPass : Pass<"convert-linalg-to-sair", "mlir::FuncOp"> {
   let summary = "Convert compatible Linalg dialect operations to Sair";
   let constructor = [{ ::sair::CreateLinalgToSairConversionPass(); }];
   let dependentDialects = ["::mlir::linalg::LinalgDialect",
