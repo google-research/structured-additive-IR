@@ -51,7 +51,7 @@ func @stripe() {
     // CHECK:     %[[V3:.*]] = arith.addi %[[V1]], %[[V2]] : index
     // CHECK:     %[[V4:.*]] = arith.constant 62 : index
     // CHECK:     %[[V5:.*]] = arith.cmpi ult, %[[V4]], %[[V3]] : index
-    // CHECK:     %[[V6:.*]] = select %[[V5]], %[[V4]], %[[V3]] : index
+    // CHECK:     %[[V6:.*]] = arith.select %[[V5]], %[[V4]], %[[V3]] : index
     // CHECK:     sair.return %[[V1]], %[[V6]] : index, index
 
     // CHECK: %[[D1:.*]] = sair.dyn_range[d0:%[[D0]]] %[[V0]]#0(d0), %[[V0]]#1(d0)
@@ -247,7 +247,7 @@ func @sequence_attr(%arg0: f32) {
     // CHECK:   %[[V2:.*]] = arith.addi %[[V1]], %[[C4]]
     // CHECK:   %[[C16:.*]] = arith.constant 16
     // CHECK:   %[[V3:.*]] = arith.cmpi ult, %[[C16]], %[[V2]]
-    // CHECK:   %[[V4:.*]] = select %[[V3]], %[[C16]], %[[V2]]
+    // CHECK:   %[[V4:.*]] = arith.select %[[V3]], %[[C16]], %[[V2]]
     // CHECK:   sair.return %[[V1]], %[[V4]]
     // CHECK: %[[DYN:.*]] = sair.dyn_range[d0:%[[STATIC]]] %[[RANGE]]#0(d0), %[[RANGE]]#1(d0)
 

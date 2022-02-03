@@ -17,7 +17,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
-#include "mlir/Dialect/StandardOps/IR/Ops.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/IR/OperationSupport.h"
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
@@ -136,7 +136,7 @@ RangeParameters RangeParameterBuilder::Get(MappingStripeExpr expr) {
   }
   auto is_capped = builder_.create<mlir::arith::CmpIOp>(
       loc_, arith::CmpIPredicate::ult, operand_end, uncapped_end);
-  mlir::Value end = builder_.create<mlir::SelectOp>(
+  mlir::Value end = builder_.create<mlir::arith::SelectOp>(
       loc_, builder_.getIndexType(), is_capped, operand_end, uncapped_end);
 
   return {begin, end, step};
