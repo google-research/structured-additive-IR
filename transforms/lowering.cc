@@ -72,7 +72,7 @@ class LowerToLLVMPass : public LowerToLLVMBase<LowerToLLVMPass> {
     populateMemRefToLLVMConversionPatterns(converter, patterns);
     populateStdToLLVMConversionPatterns(converter, patterns);
     arith::populateArithmeticToLLVMConversionPatterns(converter, patterns);
-    patterns.insert<LowerUndef>(converter);
+    patterns.add<LowerUndef>(converter);
 
     LLVMConversionTarget target(getContext());
     target.addLegalOp<mlir::ModuleOp>();
