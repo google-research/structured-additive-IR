@@ -18,10 +18,11 @@
 
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Conversion/ArithmeticToLLVM/ArithmeticToLLVM.h"
+#include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
 #include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
-#include "mlir/Conversion/SCFToStandard/SCFToStandard.h"
+#include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
 #include "mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Attributes.h"
@@ -71,6 +72,7 @@ class LowerToLLVMPass : public LowerToLLVMBase<LowerToLLVMPass> {
     LLVMTypeConverter converter(&getContext());
     populateMemRefToLLVMConversionPatterns(converter, patterns);
     populateStdToLLVMConversionPatterns(converter, patterns);
+    cf::populateControlFlowToLLVMConversionPatterns(converter, patterns);
     arith::populateArithmeticToLLVMConversionPatterns(converter, patterns);
     patterns.add<LowerUndef>(converter);
 
@@ -105,7 +107,7 @@ void CreateSairToLoopConversionPipeline(mlir::OpPassManager *pm) {
 void CreateSairToLLVMConversionPipeline(mlir::OpPassManager *pm) {
   CreateSairToLoopConversionPipeline(pm);
   pm->addPass(mlir::createLowerAffinePass());
-  pm->addPass(mlir::createLowerToCFGPass());
+  pm->addPass(mlir::createConvertSCFToCFPass());
   pm->addPass(CreateLowerToLLVMPass());
 }
 

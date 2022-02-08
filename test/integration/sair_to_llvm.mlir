@@ -12,20 +12,20 @@ func @check_memrefs_equal(%lhs: memref<8xi32>, %rhs: memref<8xi32>) -> f32 {
   %c8 = arith.constant 8 : index
   %c0f = arith.constant 0.0 : f32
   %c1f = arith.constant 1.0 : f32
-  br ^bb0(%c0 : index)
+  cf.br ^bb0(%c0 : index)
 
 // Loop on the memrefs.
 ^bb0(%0: index):
   %1 = arith.cmpi slt, %0, %c8 : index
   // Return 1.0 if we reached the end without error.
-  cond_br %1, ^bb1(%0 : index), ^bb2(%c1f : f32)
+  cf.cond_br %1, ^bb1(%0 : index), ^bb2(%c1f : f32)
 ^bb1(%2: index):
   %4 = memref.load %lhs[%2] : memref<8xi32>
   %5 = memref.load %rhs[%2] : memref<8xi32>
   %3 = arith.addi %2, %c1 : index
   %6 = arith.cmpi eq, %4, %5 : i32
   // Returns 0.0 if we found an error.
-  cond_br %6, ^bb0(%3 : index), ^bb2(%c0f : f32)
+  cf.cond_br %6, ^bb0(%3 : index), ^bb2(%c0f : f32)
 
 ^bb2(%7: f32):
   return %7 : f32
