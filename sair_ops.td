@@ -194,7 +194,7 @@ def SairFromScalarOp : SairOp<"from_scalar", [
 
   let parser = [{return ParseFromScalarOp(parser, result);}];
   let printer = [{return Print(*this, p);}];
-  let verifier = [{return Verify(*this);}];
+  let hasVerifier = 1;
 
   let builders = [
     OpBuilder<(ins "Value":$value),
@@ -255,10 +255,7 @@ def SairFromMemRefOp : SairOp<"from_memref", [
 
   let parser = [{return ParseFromMemRef(parser, result);}];
   let printer = [{return Print(*this, p);}];
-  let verifier = [{
-    return VerifyFromToMemRef(
-      getOperation(), parallel_domain().size(), shape(), memref(), result());
-  }];
+  let hasVerifier = 1;
 
   let extraClassDeclaration = [{
     ValueOperand MemRef() { return ValueOperands()[0]; }
@@ -310,10 +307,7 @@ def SairLoadFromMemRefOp : SairOp<"load_from_memref", [
 
   let parser = [{return ParseLoadFromMemRef(parser, result);}];
   let printer = [{return Print(*this, p);}];
-  let verifier = [{
-    return VerifyLoadFromStoreToMemRef(getOperation(), MemRefType(),
-                                       getType().cast<ValueType>(), layout());
-  }];
+  let hasVerifier = 1;
 
   let extraClassDeclaration = [{
     ValueOperand MemRef() { return ValueOperands()[0]; }
@@ -368,10 +362,7 @@ def SairToMemRefOp : SairOp<"to_memref", [
 
   let parser = [{return ParseToMemRef(parser, result);}];
   let printer = [{return Print(*this, p);}];
-  let verifier = [{
-    return VerifyFromToMemRef(
-      getOperation(), parallel_domain().size(), shape(), memref(), value());
-  }];
+  let hasVerifier = 1;
 
   let extraClassDeclaration = [{
     ValueOperand MemRef() { return ValueOperands()[0]; }
@@ -423,10 +414,7 @@ def SairStoreToMemRefOp : SairOp<"store_to_memref", [
 
   let parser = [{return ParseStoreToMemRef(parser, result);}];
   let printer = [{return Print(*this, p);}];
-  let verifier = [{
-    return VerifyLoadFromStoreToMemRef(getOperation(), MemRefType(),
-                                       Value().GetType(), layout());
-  }];
+  let hasVerifier = 1;
 
   let extraClassDeclaration = [{
     ValueOperand MemRef() { return ValueOperands()[0]; }
@@ -524,7 +512,7 @@ def SairMapOp : SairOp<"map", [
 
   let parser = [{return ParseMapOp(parser, result);}];
   let printer = [{return Print(*this, p);}];
-  let verifier = [{return Verify(*this);}];
+  let hasVerifier = 1;
 }
 
 def SairMapReduceOp : SairOp<"map_reduce", [
@@ -598,7 +586,7 @@ def SairMapReduceOp : SairOp<"map_reduce", [
 
   let parser = [{return ParseMapReduceOp(parser, result);}];
   let printer = [{Print(*this, p);}];
-  let verifier = [{return Verify(*this);}];
+  let hasVerifier = 1;
 }
 
 class SairProjectionOp<string name> : SairOp<name, [
@@ -758,7 +746,7 @@ def SairProgramOp : Op<SairDialect, "program", [RegionKindInterface]> {
 
   let parser = [{return ParseProgramOp(parser, result);}];
   let printer = [{Print(*this, p);}];
-  let verifier = [{return Verify(*this);}];
+  let hasVerifier = 1;
 
   let skipDefaultBuilders = 1;
   let builders = [
@@ -810,7 +798,7 @@ def SairExitOp : SairOp<"exit", [SingleInstance, Terminator]> {
 
   let parser = [{return ParseExitOp(parser, result);}];
   let printer = [{Print(*this, p);}];
-  let verifier = [{return Verify(*this);}];
+  let hasVerifier = 1;
 
   DerivedAttr shape = SairEmptyDomainShapeAttr;
 
@@ -883,7 +871,7 @@ def SairAllocOp : SairOp<"alloc", [
 
   let parser = [{return ParseAllocOp(parser, result); }];
   let printer = [{Print(*this, p);}];
-  let verifier = [{return Verify(*this);}];
+  let hasVerifier = 1;
 
   DerivedAttr shape = SairResultDomainShapeAttr;
 

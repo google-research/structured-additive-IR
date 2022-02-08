@@ -857,16 +857,6 @@ static void Print(SairFreeOp op, mlir::OpAsmPrinter &printer) {
   printer << " : " << ValueType::get(op.shape(), element_type);
 }
 
-mlir::LogicalResult Verify(SairFromScalarOp op) {
-  mlir::Type expected_type =
-      op.result().getType().cast<ValueType>().ElementType();
-  if (op.value().getType() != expected_type) {
-    return op.emitError() << "expects different type: '" << op.value().getType()
-                          << "' vs '" << expected_type << "'";
-  }
-  return mlir::success();
-}
-
 mlir::LogicalResult VerifyLoadFromStoreToMemRef(mlir::Operation *op,
                                                 mlir::MemRefType memref_type,
                                                 ValueType value_type,
@@ -913,7 +903,21 @@ static mlir::LogicalResult VerifyFromToMemRef(mlir::Operation *op,
   return mlir::success();
 }
 
-mlir::LogicalResult Verify(SairExitOp op) {
+}  // namespace
+
+mlir::LogicalResult SairFromScalarOp::verify() {
+  SairFromScalarOp op = *this;
+  mlir::Type expected_type =
+      op.result().getType().cast<ValueType>().ElementType();
+  if (op.value().getType() != expected_type) {
+    return op.emitError() << "expects different type: '" << op.value().getType()
+                          << "' vs '" << expected_type << "'";
+  }
+  return mlir::success();
+}
+
+mlir::LogicalResult SairExitOp::verify() {
+  SairExitOp op = *this;
   auto program_op = op->getParentOfType<SairProgramOp>();
   assert(program_op);
 
@@ -940,7 +944,8 @@ mlir::LogicalResult Verify(SairExitOp op) {
   return mlir::success();
 }
 
-static LogicalResult Verify(SairAllocOp op) {
+mlir::LogicalResult SairAllocOp::verify() {
+  SairAllocOp op = *this;
   if (op.dynamic_sizes().size() != op.MemType().getNumDynamicDims()) {
     return op.emitError() << "expected " << op.MemType().getNumDynamicDims()
                           << " dynamic size operands";
@@ -948,7 +953,25 @@ static LogicalResult Verify(SairAllocOp op) {
   return mlir::success();
 }
 
-}  // namespace
+mlir::LogicalResult SairLoadFromMemRefOp::verify() {
+  return VerifyLoadFromStoreToMemRef(*this, MemRefType(),
+                                     getType().cast<ValueType>(), layout());
+}
+
+mlir::LogicalResult SairStoreToMemRefOp::verify() {
+  return VerifyLoadFromStoreToMemRef(*this, MemRefType(), Value().GetType(),
+                                     layout());
+}
+
+mlir::LogicalResult SairFromMemRefOp::verify() {
+  return VerifyFromToMemRef(*this, parallel_domain().size(), shape(), memref(),
+                            result());
+}
+
+mlir::LogicalResult SairToMemRefOp::verify() {
+  return VerifyFromToMemRef(*this, parallel_domain().size(), shape(), memref(),
+                            value());
+}
 
 template <typename OpTy>
 llvm::SmallBitVector FromToMemRefLikeDimsDependingOnOperands(OpTy op,
@@ -1276,7 +1299,8 @@ static mlir::LogicalResult VerifyBodyTerminator(Operation *op) {
 
 // Verifies that a Sair MapOp is well-formed. Prints error messages to the MLIR
 // default stream on any failure and returns immediately.
-mlir::LogicalResult Verify(SairMapOp op) {
+mlir::LogicalResult SairMapOp::verify() {
+  SairMapOp op = *this;
   // Check body region argument types.
   llvm::SmallVector<mlir::Type, 4> types;
   ExtractElementTypes(op.inputs(), types);
@@ -1462,7 +1486,8 @@ mlir::LogicalResult VerifyReductionMapping(MappingAttr mapping,
 
 // Verifies that a Sair MapReduce operation is well-formed. Prints error
 // messages to the MLIR default stream on any failure and returns immediately.
-mlir::LogicalResult Verify(SairMapReduceOp op) {
+mlir::LogicalResult SairMapReduceOp::verify() {
+  SairMapReduceOp op = *this;
   // Check body region argument types.
   llvm::SmallVector<mlir::Type, 4> types;
   ExtractElementTypes(op.inits(), types);
@@ -1518,7 +1543,8 @@ void Print(SairProgramOp op, mlir::OpAsmPrinter &printer) {
 // Verifies the well-formedness of the given SairProgramOp, in particular that
 // all its non-terminator ops are Sair ops, and the correctness of lowering
 // attributes that operate across operations: buffer, sequence and loop_nest.
-mlir::LogicalResult Verify(SairProgramOp program) {
+mlir::LogicalResult SairProgramOp::verify() {
+  SairProgramOp program = *this;
   mlir::Block *body = &program.body().front();
   for (mlir::Operation &nested_operation : *body) {
     if (!isa<SairOp>(nested_operation)) {
