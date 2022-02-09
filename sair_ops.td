@@ -58,8 +58,7 @@ def SairDynRangeOp : SairOp<"dyn_range",
 
   let results = (outs SairDynRange:$range);
 
-  let parser = [{return ParseDynRangeOp(parser, result);}];
-  let printer = [{return Print(*this, p);}];
+  let hasCustomAssemblyFormat = 1;
 
   DerivedAttr shape = SairResultDomainShapeAttr;
 
@@ -90,9 +89,7 @@ def SairStaticRangeOp : SairOp<"static_range", [NoSideEffect, SairRangeOp]> {
   }];
   let arguments = (ins OptionalAttr<SairInstancesAttr>:$instances);
   let results = (outs SairStaticRange:$range);
-
-  let parser = [{return ParseStaticRangeOp(parser, result);}];
-  let printer = [{return Print(*this, p);}];
+  let hasCustomAssemblyFormat = 1;
 
   DerivedAttr shape = SairEmptyDomainShapeAttr;
 
@@ -131,9 +128,7 @@ def SairPlaceholderOp : SairOp<"placeholder", [NoSideEffect]> {
   let arguments = (ins Variadic<SairDimension>:$domain,
                        OptionalAttr<SairInstancesAttr>:$instances);
   let results = (outs SairDimension:$range);
-
-  let parser = [{return ParsePlaceholderOp(parser, result);}];
-  let printer = [{return Print(*this, p);}];
+  let hasCustomAssemblyFormat = 1;
 
   DerivedAttr shape = SairResultDomainShapeAttr;
 }
@@ -170,8 +165,7 @@ def SairCopyOp : SairOp<"copy", [
 
   let results = (outs SairValue:$result);
 
-  let parser = [{return ParseCopyOp(parser, result);}];
-  let printer = [{return Print(*this, p);}];
+  let hasCustomAssemblyFormat = 1;
 
   DerivedAttr shape = SairResultDomainShapeAttr;
 
@@ -192,8 +186,7 @@ def SairFromScalarOp : SairOp<"from_scalar", [
   );
   let results = (outs SairValue:$result);
 
-  let parser = [{return ParseFromScalarOp(parser, result);}];
-  let printer = [{return Print(*this, p);}];
+  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 
   let builders = [
@@ -253,8 +246,7 @@ def SairFromMemRefOp : SairOp<"from_memref", [
 
   let results = (outs SairValue:$result);
 
-  let parser = [{return ParseFromMemRef(parser, result);}];
-  let printer = [{return Print(*this, p);}];
+  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 
   let extraClassDeclaration = [{
@@ -305,8 +297,7 @@ def SairLoadFromMemRefOp : SairOp<"load_from_memref", [
 
   let results = (outs SairValue:$result);
 
-  let parser = [{return ParseLoadFromMemRef(parser, result);}];
-  let printer = [{return Print(*this, p);}];
+  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 
   let extraClassDeclaration = [{
@@ -360,8 +351,7 @@ def SairToMemRefOp : SairOp<"to_memref", [
     OptionalAttr<SairCopiesAttr>:$copies
   );
 
-  let parser = [{return ParseToMemRef(parser, result);}];
-  let printer = [{return Print(*this, p);}];
+  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 
   let extraClassDeclaration = [{
@@ -412,8 +402,7 @@ def SairStoreToMemRefOp : SairOp<"store_to_memref", [
     OptionalAttr<SairCopiesAttr>:$copies
   );
 
-  let parser = [{return ParseStoreToMemRef(parser, result);}];
-  let printer = [{return Print(*this, p);}];
+  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 
   let extraClassDeclaration = [{
@@ -443,8 +432,7 @@ def SairReturnOp : Op<SairDialect, "return", [Terminator]> {
       [{ return build($_builder, $_state, ValueRange()); }]>];
 
   let arguments = (ins Variadic<AnyType>:$operands);
-  let parser = [{return ParseReturnOp(parser, result);}];
-  let printer = [{return Print(*this, p);}];
+  let hasCustomAssemblyFormat = 1;
 }
 
 def SairMapOp : SairOp<"map", [
@@ -510,8 +498,7 @@ def SairMapOp : SairOp<"map", [
     mlir::Block& block() { return body().front(); }
   }];
 
-  let parser = [{return ParseMapOp(parser, result);}];
-  let printer = [{return Print(*this, p);}];
+  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 }
 
@@ -584,8 +571,7 @@ def SairMapReduceOp : SairOp<"map_reduce", [
     mlir::Block& block() { return body().front(); }
   }];
 
-  let parser = [{return ParseMapReduceOp(parser, result);}];
-  let printer = [{Print(*this, p);}];
+  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 }
 
@@ -606,9 +592,6 @@ class SairProjectionOp<string name> : SairOp<name, [
   );
 
   let results = (outs SairValue:$result);
-
-  let parser = [{return ParseProjection(parser, result);}];
-  let printer = [{Print(*this, p);}];
 
   code commonDeclarations = [{
     int results_rank() { return parallel_domain().size(); }
@@ -638,6 +621,7 @@ def SairProjAnyOp : SairProjectionOp<"proj_any"> {
     ```
   }];
 
+  let hasCustomAssemblyFormat = 1;
   let extraClassDeclaration = commonDeclarations;
 }
 
@@ -656,6 +640,7 @@ def SairProjLastOp : SairProjectionOp<"proj_last"> {
     ```
   }];
 
+  let hasCustomAssemblyFormat = 1;
   let extraClassDeclaration = commonDeclarations # [{
     llvm::SmallBitVector ResultsDimDependencies();
   }];
@@ -694,8 +679,7 @@ def SairFbyOp : SairOp<"fby", [
 
   let results = (outs SairValue:$result);
 
-  let parser = [{return ParseFbyOp(parser, result);}];
-  let printer = [{Print(*this, p);}];
+  let hasCustomAssemblyFormat = 1;
 
   DerivedAttr shape = SairResultDomainShapeAttr;
 
@@ -744,8 +728,7 @@ def SairProgramOp : Op<SairDialect, "program", [RegionKindInterface]> {
   let regions = (region SizedRegion<1>:$body);
   let results = (outs Variadic<AnyType>:$results);
 
-  let parser = [{return ParseProgramOp(parser, result);}];
-  let printer = [{Print(*this, p);}];
+  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 
   let skipDefaultBuilders = 1;
@@ -796,8 +779,7 @@ def SairExitOp : SairOp<"exit", [SingleInstance, Terminator]> {
     OptionalAttr<SairInstancesAttr>:$instances
   );
 
-  let parser = [{return ParseExitOp(parser, result);}];
-  let printer = [{Print(*this, p);}];
+  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 
   DerivedAttr shape = SairEmptyDomainShapeAttr;
@@ -869,8 +851,7 @@ def SairAllocOp : SairOp<"alloc", [
 
   let results = (outs SairValueOf<AnyMemRef>:$result);
 
-  let parser = [{return ParseAllocOp(parser, result); }];
-  let printer = [{Print(*this, p);}];
+  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 
   DerivedAttr shape = SairResultDomainShapeAttr;
@@ -903,8 +884,7 @@ def SairFreeOp : SairOp<"free", [
     OptionalAttr<SairInstancesAttr>:$instances
   );
 
-  let parser = [{return ParseFreeOp(parser, result); }];
-  let printer = [{Print(*this, p);}];
+  let hasCustomAssemblyFormat = 1;
 
   let extraClassDeclaration = [{
     ValueOperand Value() { return ValueOperands()[0]; }

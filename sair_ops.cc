@@ -134,6 +134,7 @@ ParseResult ResolveOperand(const mlir::OpAsmParser::OperandType &operand,
   auto type = ValueType::get(shape, element_type).AccessedType(mapping);
   return parser.resolveOperand(operand, type, result.operands);
 }
+}  // namespace
 
 // Parses the range operator. This operation has an iteration domain and
 // accesses a single Sair value with index elements. The syntax for the range
@@ -141,8 +142,8 @@ ParseResult ResolveOperand(const mlir::OpAsmParser::OperandType &operand,
 //
 //   range-op ::= `sair.dyn_range` domain  ssa-value mapping
 //
-ParseResult ParseDynRangeOp(mlir::OpAsmParser &parser,
-                            mlir::OperationState &result) {
+ParseResult SairDynRangeOp::parse(mlir::OpAsmParser &parser,
+                                  mlir::OperationState &result) {
   mlir::Builder &builder = parser.getBuilder();
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 2> operands;
@@ -195,8 +196,8 @@ ParseResult ParseDynRangeOp(mlir::OpAsmParser &parser,
 //
 // static-range-op ::= `sair.static_range` : !sair.static_range< size, step >
 //
-ParseResult ParseStaticRangeOp(mlir::OpAsmParser &parser,
-                               mlir::OperationState &result) {
+ParseResult SairStaticRangeOp::parse(mlir::OpAsmParser &parser,
+                                     mlir::OperationState &result) {
   StaticRangeType type;
   return failure(parser.parseOptionalAttrDict(result.attributes) ||
                  parser.parseColonType<StaticRangeType>(type) ||
@@ -208,8 +209,8 @@ ParseResult ParseStaticRangeOp(mlir::OpAsmParser &parser,
 //
 // placeholder-op ::= `sair.placeholder` domain : range-type
 //
-ParseResult ParsePlaceholderOp(mlir::OpAsmParser &parser,
-                               mlir::OperationState &result) {
+ParseResult SairPlaceholderOp::parse(mlir::OpAsmParser &parser,
+                                     mlir::OperationState &result) {
   llvm::SmallVector<mlir::OpAsmParser::OperandType> domain;
   DimensionType type;
 
@@ -225,8 +226,8 @@ ParseResult ParsePlaceholderOp(mlir::OpAsmParser &parser,
 //
 // copy-op ::= `sair.copy` domain ssa-value mapping attributes
 //
-ParseResult ParseCopyOp(mlir::OpAsmParser &parser,
-                        mlir::OperationState &result) {
+ParseResult SairCopyOp::parse(mlir::OpAsmParser &parser,
+                              mlir::OperationState &result) {
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
   mlir::OpAsmParser::OperandType value;
   MappingAttr mapping;
@@ -254,8 +255,8 @@ ParseResult ParseCopyOp(mlir::OpAsmParser &parser,
 // from-scalar-op ::= `sair.from_memref` ssa-value attribute-dict
 //   `:` sair-value-type
 //
-ParseResult ParseFromScalarOp(mlir::OpAsmParser &parser,
-                              mlir::OperationState &result) {
+ParseResult SairFromScalarOp::parse(mlir::OpAsmParser &parser,
+                                    mlir::OperationState &result) {
   mlir::OpAsmParser::OperandType operand;
   ValueType result_type;
   if (parser.parseOperand(operand) ||
@@ -276,12 +277,12 @@ ParseResult ParseFromScalarOp(mlir::OpAsmParser &parser,
 // from-memref-op ::= 'sair.from_memref' parallel-domain memref-operand
 //    'memref' memref-domain attr-dict : shape, memref-type
 //
-ParseResult ParseFromMemRef(mlir::OpAsmParser &parser,
-                            mlir::OperationState &result) {
+ParseResult SairFromMemRefOp::parse(mlir::OpAsmParser &parser,
+                                    mlir::OperationState &result) {
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
   mlir::OpAsmParser::OperandType memref;
   MappingAttr mapping;
-  MemRefType memref_type;
+  mlir::MemRefType memref_type;
   DomainShapeAttr shape;
 
   if (mlir::failed(ParseDomain(parser, domain))) return mlir::failure();
@@ -321,12 +322,12 @@ ParseResult ParseFromMemRef(mlir::OpAsmParser &parser,
 // from-memref-op ::= 'sair.load_from_memref' domain memref-operand
 //    attr-dict : memref-type -> value_type
 //
-ParseResult ParseLoadFromMemRef(mlir::OpAsmParser &parser,
-                                mlir::OperationState &result) {
+ParseResult SairLoadFromMemRefOp::parse(mlir::OpAsmParser &parser,
+                                        mlir::OperationState &result) {
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
   mlir::OpAsmParser::OperandType memref;
   MappingAttr mapping;
-  MemRefType memref_type;
+  mlir::MemRefType memref_type;
   ValueType value_type;
 
   if (ParseDomain(parser, domain) ||
@@ -352,8 +353,8 @@ ParseResult ParseLoadFromMemRef(mlir::OpAsmParser &parser,
 // to-memref-op ::= 'sair.from_memref' parallel-domain memref-operand
 //    'memref' memref-domain value-operand attr-dict : shape, memref-type
 //
-ParseResult ParseToMemRef(mlir::OpAsmParser &parser,
-                          mlir::OperationState &result) {
+ParseResult SairToMemRefOp::parse(mlir::OpAsmParser &parser,
+                                  mlir::OperationState &result) {
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
   mlir::OpAsmParser::OperandType memref, value;
   MappingAttr memref_mapping, value_mapping;
@@ -398,12 +399,12 @@ ParseResult ParseToMemRef(mlir::OpAsmParser &parser,
 // store-to-memref-op ::= 'sair.store_to_memref' domain memref-operand ','
 //   value-operand  attr-dict : shape, memref_type
 //
-ParseResult ParseStoreToMemRef(mlir::OpAsmParser &parser,
-                               mlir::OperationState &result) {
+ParseResult SairStoreToMemRefOp::parse(mlir::OpAsmParser &parser,
+                                       mlir::OperationState &result) {
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
   mlir::OpAsmParser::OperandType memref, value;
   MappingAttr memref_mapping, value_mapping;
-  MemRefType memref_type;
+  mlir::MemRefType memref_type;
   DomainShapeAttr shape;
 
   if (ParseDomain(parser, domain) ||
@@ -428,6 +429,7 @@ ParseResult ParseStoreToMemRef(mlir::OpAsmParser &parser,
                                 memref_type.getElementType(), parser, result));
 }
 
+namespace {
 constexpr llvm::StringRef kOfKeyword = "of";
 
 // Parses an operation of the form:
@@ -435,8 +437,8 @@ constexpr llvm::StringRef kOfKeyword = "of";
 // proj ::= dialect-namespace '.' op-name domain 'of' domain operand
 //    attr-dict? ':' shape ',' element-type
 //
-ParseResult ParseProjection(mlir::OpAsmParser &parser,
-                            mlir::OperationState &result) {
+mlir::ParseResult parseProjectionOp(mlir::OpAsmParser &parser,
+                                    mlir::OperationState &result) {
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
   mlir::OpAsmParser::OperandType value;
   MappingAttr mapping;
@@ -473,13 +475,24 @@ ParseResult ParseProjection(mlir::OpAsmParser &parser,
 
   return ResolveOperand(value, mapping, shape, element_type, parser, result);
 }
+}  // namespace
+
+mlir::ParseResult SairProjAnyOp::parse(mlir::OpAsmParser &parser,
+                                       mlir::OperationState &result) {
+  return parseProjectionOp(parser, result);
+}
+
+mlir::ParseResult SairProjLastOp::parse(mlir::OpAsmParser &parser,
+                                        mlir::OperationState &result) {
+  return parseProjectionOp(parser, result);
+}
 
 // Parses the sair.return operation, with the following syntax.
 //
 // return-op ::= `sair.return` operands attr-dict (`:` operands-types)?
 //
-ParseResult ParseReturnOp(mlir::OpAsmParser &parser,
-                          mlir::OperationState &result) {
+mlir::ParseResult SairReturnOp::parse(mlir::OpAsmParser &parser,
+                                      mlir::OperationState &result) {
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> operands;
   llvm::SmallVector<mlir::Type, 4> operand_types;
   return failure(parser.parseOperandList(operands) ||
@@ -493,8 +506,8 @@ ParseResult ParseReturnOp(mlir::OpAsmParser &parser,
 //
 // exit-op ::= `sair.exit` operands attr-dict? (':' element-types)?
 //
-ParseResult ParseExitOp(mlir::OpAsmParser &parser,
-                        mlir::OperationState &result) {
+mlir::ParseResult SairExitOp::parse(mlir::OpAsmParser &parser,
+                                    mlir::OperationState &result) {
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> operands;
   llvm::SmallVector<mlir::Type, 4> element_types;
   llvm::SmallVector<MappingAttr, 4> mappings;
@@ -535,8 +548,8 @@ ParseResult ParseExitOp(mlir::OpAsmParser &parser,
 //
 // alloc-op ::= `sair.alloc` value-list attr-dict? : type
 //
-static mlir::ParseResult ParseAllocOp(mlir::OpAsmParser &parser,
-                                      mlir::OperationState &result) {
+mlir::ParseResult SairAllocOp::parse(mlir::OpAsmParser &parser,
+                                     mlir::OperationState &result) {
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain, values;
   llvm::SmallVector<mlir::Attribute, 4> access_patterns;
   mlir::OpAsmParser::OperandType value;
@@ -591,8 +604,8 @@ static mlir::ParseResult ParseAllocOp(mlir::OpAsmParser &parser,
 //
 // free-op ::= `sair.free` domain value attr-dict : type
 //
-static mlir::ParseResult ParseFreeOp(mlir::OpAsmParser &parser,
-                                     mlir::OperationState &result) {
+mlir::ParseResult SairFreeOp::parse(mlir::OpAsmParser &parser,
+                                    mlir::OperationState &result) {
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
 
   mlir::OpAsmParser::OperandType value;
@@ -618,8 +631,8 @@ static mlir::ParseResult ParseFreeOp(mlir::OpAsmParser &parser,
 //
 // fby-op ::= `sair.fby` domain init `then` domain value attr-dict : type
 //
-static mlir::ParseResult ParseFbyOp(mlir::OpAsmParser &parser,
-                                    mlir::OperationState &result) {
+mlir::ParseResult SairFbyOp::parse(mlir::OpAsmParser &parser,
+                                   mlir::OperationState &result) {
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
   mlir::OpAsmParser::OperandType init, value;
   MappingAttr init_mapping, value_mapping;
@@ -659,115 +672,123 @@ static mlir::ParseResult ParseFbyOp(mlir::OpAsmParser &parser,
                                 type.ElementType(), parser, result));
 }
 
+namespace {
 // Prints a Sair value access list. Takes the list of values and respective
 // mappings as arguments. Expects "values" and "mappings" to be ranges
 // of equal length.
-static void PrintValueAccessList(const ValueOperandRange operands,
-                                 mlir::OpAsmPrinter &printer) {
+void PrintValueAccessList(const ValueOperandRange operands,
+                          mlir::OpAsmPrinter &printer) {
   llvm::interleaveComma(operands, printer, [&](ValueOperand operand) {
     PrintValueAccess(operand, printer);
   });
 }
+}  // namespace
 
 // Prints the range operation.
-void Print(SairDynRangeOp op, OpAsmPrinter &printer) {
-  PrintDomain(op.domain(), printer);
+void SairDynRangeOp::print(OpAsmPrinter &printer) {
+  PrintDomain(domain(), printer);
   printer << " ";
-  if (op.LowerBound().is_value()) {
-    PrintValueAccess(op.ValueOperands()[0], printer);
+  if (LowerBound().is_value()) {
+    PrintValueAccess(ValueOperands()[0], printer);
     printer << ", ";
   }
-  PrintValueAccess(op.ValueOperands().back(), printer);
-  if (op.step() != 1) {
-    printer << " " << RangeOp::kStepAttrName << " " << op.step();
+  PrintValueAccess(ValueOperands().back(), printer);
+  if (step() != 1) {
+    printer << " " << RangeOp::kStepAttrName << " " << step();
   }
   printer.printOptionalAttrDict(
-      op->getAttrs(), {RangeOp::kStepAttrName, SairOp::kMappingAttrName,
-                       SairDynRangeOp::getOperandSegmentSizeAttr()});
-  printer << " : " << op.getType();
+      getOperation()->getAttrs(),
+      {RangeOp::kStepAttrName, SairOp::kMappingAttrName,
+       SairDynRangeOp::getOperandSegmentSizeAttr()});
+  printer << " : " << getType();
 }
 
 // Prints the sair.static_range operation.
-void Print(SairStaticRangeOp op, OpAsmPrinter &printer) {
-  printer.printOptionalAttrDict(op->getAttrs());
-  printer << " : " << op.getType();
+void SairStaticRangeOp::print(OpAsmPrinter &printer) {
+  printer.printOptionalAttrDict(getOperation()->getAttrs());
+  printer << " : " << getType();
 }
 
-static void Print(SairPlaceholderOp op, mlir::OpAsmPrinter &printer) {
-  PrintDomain(op.domain(), printer);
-  printer.printOptionalAttrDict(op->getAttrs());
-  printer << " : " << op.range().getType();
+void SairPlaceholderOp::print(mlir::OpAsmPrinter &printer) {
+  PrintDomain(domain(), printer);
+  printer.printOptionalAttrDict(getOperation()->getAttrs());
+  printer << " : " << range().getType();
 }
 
 // Prints the copy operation.
-void Print(SairCopyOp op, OpAsmPrinter &printer) {
-  PrintDomain(op.domain(), printer);
+void SairCopyOp::print(OpAsmPrinter &printer) {
+  PrintDomain(domain(), printer);
   printer << " ";
-  PrintValueAccess(op.Value(), printer);
-  printer.printOptionalAttrDict(op->getAttrs(), {SairOp::kMappingAttrName});
-  printer << " : " << op.getType();
+  PrintValueAccess(Value(), printer);
+  printer.printOptionalAttrDict(getOperation()->getAttrs(),
+                                {SairOp::kMappingAttrName});
+  printer << " : " << getType();
 }
 
 // Prints the sair.from_scalar operation.
-void Print(SairFromScalarOp op, OpAsmPrinter &printer) {
-  printer << " " << op.value();
-  printer.printOptionalAttrDict(op->getAttrs());
-  printer << " : " << op.getType();
+void SairFromScalarOp::print(OpAsmPrinter &printer) {
+  printer << " " << value();
+  printer.printOptionalAttrDict(getOperation()->getAttrs());
+  printer << " : " << getType();
 }
 
 // Prints the from_memref operation.
-void Print(SairFromMemRefOp op, OpAsmPrinter &printer) {
-  PrintDomain(op.parallel_domain(), printer);
+void SairFromMemRefOp::print(OpAsmPrinter &printer) {
+  PrintDomain(parallel_domain(), printer);
   printer << " ";
-  PrintValueAccess(op.MemRef(), printer);
+  PrintValueAccess(MemRef(), printer);
   printer << " memref";
-  PrintDomain(op.memref_domain(), printer, op.parallel_domain().size());
+  PrintDomain(memref_domain(), printer, parallel_domain().size());
   // It is irrelevant which Op class we use to get the attribute name because it
   // comes from a trait. However, we cannot call a trait method directly.
-  printer.printOptionalAttrDict(op->getAttrs(),
+  printer.printOptionalAttrDict(getOperation()->getAttrs(),
                                 {SairFromMemRefOp::getOperandSegmentSizeAttr(),
                                  SairOp::kMappingAttrName});
-  printer << " : " << op.shape() << ", " << op.MemRefType();
+  printer << " : " << shape() << ", " << MemRefType();
 }
 
 // Prints the load_from_memref operation.
-void Print(SairLoadFromMemRefOp op, OpAsmPrinter &printer) {
-  PrintDomain(op.domain(), printer);
+void SairLoadFromMemRefOp::print(OpAsmPrinter &printer) {
+  PrintDomain(domain(), printer);
   printer << " ";
-  PrintValueAccess(op.MemRef(), printer);
-  printer.printOptionalAttrDict(op->getAttrs(), {SairOp::kMappingAttrName});
-  printer << " : " << op.MemRefType() << " -> " << op.getType();
+  PrintValueAccess(MemRef(), printer);
+  printer.printOptionalAttrDict(getOperation()->getAttrs(),
+                                {SairOp::kMappingAttrName});
+  printer << " : " << MemRefType() << " -> " << getType();
 }
 
 // Prints the to_memref operation.
-void Print(SairToMemRefOp op, OpAsmPrinter &printer) {
-  PrintDomain(op.parallel_domain(), printer);
+void SairToMemRefOp::print(OpAsmPrinter &printer) {
+  PrintDomain(parallel_domain(), printer);
   printer << " ";
-  PrintValueAccess(op.MemRef(), printer);
+  PrintValueAccess(MemRef(), printer);
   printer << " memref";
-  PrintDomain(op.memref_domain(), printer, op.parallel_domain().size());
+  PrintDomain(memref_domain(), printer, parallel_domain().size());
   printer << " ";
-  PrintValueAccess(op.Value(), printer);
+  PrintValueAccess(Value(), printer);
   // It is irrelevant which Op class we use to get the attribute name because it
   // comes from a trait. However, we cannot call a trait method directly.
   printer.printOptionalAttrDict(
-      op->getAttrs(), {SairFromMemRefOp::getOperandSegmentSizeAttr(),
-                       SairDialect::kShapeAttrName, SairOp::kMappingAttrName});
-  printer << " : " << op.shape() << ", " << op.MemRefType();
+      getOperation()->getAttrs(),
+      {SairFromMemRefOp::getOperandSegmentSizeAttr(),
+       SairDialect::kShapeAttrName, SairOp::kMappingAttrName});
+  printer << " : " << shape() << ", " << MemRefType();
 }
 
 // Prints the store_to_memref operation.
-void Print(SairStoreToMemRefOp op, OpAsmPrinter &printer) {
-  PrintDomain(op.domain(), printer);
+void SairStoreToMemRefOp::print(OpAsmPrinter &printer) {
+  PrintDomain(domain(), printer);
   printer << " ";
-  PrintValueAccess(op.MemRef(), printer);
+  PrintValueAccess(MemRef(), printer);
   printer << ", ";
-  PrintValueAccess(op.Value(), printer);
+  PrintValueAccess(Value(), printer);
   printer.printOptionalAttrDict(
-      op->getAttrs(), {SairOp::kMappingAttrName, SairDialect::kShapeAttrName});
-  printer << " : " << op.shape() << ", " << op.MemRefType();
+      getOperation()->getAttrs(),
+      {SairOp::kMappingAttrName, SairDialect::kShapeAttrName});
+  printer << " : " << shape() << ", " << MemRefType();
 }
 
+namespace {
 // Prints a projection operation.
 template<typename Op>
 void PrintProjectionOp(Op op, OpAsmPrinter &printer) {
@@ -782,81 +803,85 @@ void PrintProjectionOp(Op op, OpAsmPrinter &printer) {
   printer << " : " << op.shape() << ", "
           << op.result().getType().template cast<ValueType>().ElementType();
 }
+}  // namespace
 
 // Prints the proj_any operation.
-void Print(SairProjAnyOp op, OpAsmPrinter &printer) {
-  PrintProjectionOp(op, printer);
+void SairProjAnyOp::print(OpAsmPrinter &printer) {
+  PrintProjectionOp(*this, printer);
 }
 
 // Prints the proj_last operation.
-void Print(SairProjLastOp op, OpAsmPrinter &printer) {
-  PrintProjectionOp(op, printer);
+void SairProjLastOp::print(OpAsmPrinter &printer) {
+  PrintProjectionOp(*this, printer);
 }
 
 // Prints the sair.return operation.
-void Print(SairReturnOp op, OpAsmPrinter &printer) {
+void SairReturnOp::print(OpAsmPrinter &printer) {
   printer << " ";
-  printer.printOperands(op.operands());
-  printer.printOptionalAttrDict(op->getAttrs());
-  if (op.operands().empty()) return;
+  printer.printOperands(operands());
+  printer.printOptionalAttrDict(getOperation()->getAttrs());
+  if (operands().empty()) return;
   printer << " : ";
-  llvm::interleaveComma(op.getOperands().getTypes(), printer,
+  llvm::interleaveComma(getOperands().getTypes(), printer,
                         [&](mlir::Type type) { printer.printType(type); });
 }
 
 // Prints the sair.exit operation.
-void Print(SairExitOp op, OpAsmPrinter &printer) {
+void SairExitOp::print(OpAsmPrinter &printer) {
   printer << " ";
-  PrintValueAccessList(op.ValueOperands(), printer);
-  printer.printOptionalAttrDict(op->getAttrs(), {SairOp::kMappingAttrName});
-  if (op.inputs().empty()) return;
+  PrintValueAccessList(ValueOperands(), printer);
+  printer.printOptionalAttrDict(getOperation()->getAttrs(),
+                                {SairOp::kMappingAttrName});
+  if (inputs().empty()) return;
   printer << " : ";
   llvm::interleaveComma(
-      op.getOperands().getTypes(), printer, [&](mlir::Type type) {
+      getOperands().getTypes(), printer, [&](mlir::Type type) {
         printer.printType(type.cast<ValueType>().ElementType());
       });
 }
 
 // Prints the sair.fby operation.
-void Print(SairFbyOp op, OpAsmPrinter &printer) {
-  PrintDomain(op.parallel_domain(), printer);
+void SairFbyOp::print(OpAsmPrinter &printer) {
+  PrintDomain(parallel_domain(), printer);
   printer << " ";
-  PrintValueAccess(op.Init(), printer);
+  PrintValueAccess(Init(), printer);
   printer << " " << SairFbyOp::kThenKeyword;
-  PrintDomain(op.sequential_domain(), printer, op.parallel_domain().size());
+  PrintDomain(sequential_domain(), printer, parallel_domain().size());
   printer << " ";
-  PrintValueAccess(op.Value(), printer);
+  PrintValueAccess(Value(), printer);
 
-  printer.printOptionalAttrDict(op->getAttrs(),
+  printer.printOptionalAttrDict(getOperation()->getAttrs(),
                                 {
                                     SairMapOp::getOperandSegmentSizeAttr(),
                                     SairOp::kMappingAttrName,
                                 });
   printer << " : ";
-  printer.printType(op.getType());
+  printer.printType(getType());
 }
 
-static void Print(SairAllocOp op, mlir::OpAsmPrinter &printer) {
-  PrintDomain(op.domain(), printer);
-  if (!op.ValueOperands().empty()) printer << " ";
-  llvm::interleaveComma(op.ValueOperands(), printer, [&](ValueOperand value) {
+void SairAllocOp::print(mlir::OpAsmPrinter &printer) {
+  PrintDomain(domain(), printer);
+  if (!ValueOperands().empty()) printer << " ";
+  llvm::interleaveComma(ValueOperands(), printer, [&](ValueOperand value) {
     PrintValueAccess(value, printer);
   });
   printer.printOptionalAttrDict(
-      op->getAttrs(),
+      getOperation()->getAttrs(),
       {SairOp::kMappingAttrName, SairAllocOp::getOperandSegmentSizeAttr()});
-  printer << " : " << op.result().getType();
+  printer << " : " << result().getType();
 }
 
-static void Print(SairFreeOp op, mlir::OpAsmPrinter &printer) {
-  PrintDomain(op.domain(), printer);
+void SairFreeOp::print(mlir::OpAsmPrinter &printer) {
+  PrintDomain(domain(), printer);
   printer << " ";
-  PrintValueAccess(op.Value(), printer);
-  printer.printOptionalAttrDict(op->getAttrs(), {SairOp::kMappingAttrName});
-  mlir::Type element_type = op.Value().GetType().ElementType();
-  printer << " : " << ValueType::get(op.shape(), element_type);
+  PrintValueAccess(Value(), printer);
+  printer.printOptionalAttrDict(getOperation()->getAttrs(),
+                                {SairOp::kMappingAttrName});
+  mlir::Type element_type = Value().GetType().ElementType();
+  printer << " : " << ValueType::get(shape(), element_type);
 }
 
+namespace {
 mlir::LogicalResult VerifyLoadFromStoreToMemRef(mlir::Operation *op,
                                                 mlir::MemRefType memref_type,
                                                 ValueType value_type,
@@ -1059,8 +1084,8 @@ bool IsSameElementType(mlir::Value lhs, mlir::Value rhs) {
 //
 // op ::= `sair.map` domain value-list `attributes` attr-dict region
 //        `:` shape `,` functional-type
-ParseResult ParseMapOp(mlir::OpAsmParser &parser,
-                       mlir::OperationState &result) {
+ParseResult SairMapOp::parse(mlir::OpAsmParser &parser,
+                             mlir::OperationState &result) {
   // First, parse the domain and store the dimension names.
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
   if (mlir::failed(ParseDomain(parser, domain))) {
@@ -1212,28 +1237,29 @@ void ExtractElementTypes(mlir::ValueRange values,
 }
 
 // Prints a Sair MapOp using the 'printer' provided.
-void Print(SairMapOp op, OpAsmPrinter &printer) {
-  PrintDomain(op.domain(), printer);
+void SairMapOp::print(OpAsmPrinter &printer) {
+  PrintDomain(domain(), printer);
   printer << " ";
 
-  PrintValueAccessList(op.ValueOperands(), printer);
+  PrintValueAccessList(ValueOperands(), printer);
 
   // Print the attributes except those that are handled specially in the syntax.
   printer.printOptionalAttrDictWithKeyword(
-      op->getAttrs(), {SairMapOp::getOperandSegmentSizeAttr(),
-                       SairDialect::kShapeAttrName, SairOp::kMappingAttrName});
+      getOperation()->getAttrs(),
+      {SairMapOp::getOperandSegmentSizeAttr(), SairDialect::kShapeAttrName,
+       SairOp::kMappingAttrName});
 
   printer << ' ';
-  printer.printRegion(op.body());
+  printer.printRegion(body());
   printer << " : ";
-  printer.printAttribute(op.shape());
+  printer.printAttribute(shape());
   printer << ", ";
 
   // Print operand and result element types as a single function type.
   llvm::SmallVector<mlir::Type, 4> input_types;
-  ExtractElementTypes(op.inputs(), input_types);
+  ExtractElementTypes(inputs(), input_types);
   llvm::SmallVector<mlir::Type, 4> output_types;
-  ExtractElementTypes(op.results(), output_types);
+  ExtractElementTypes(results(), output_types);
   printer.printFunctionalType(input_types, output_types);
 }
 
@@ -1329,8 +1355,8 @@ llvm::SmallBitVector SairMapReduceOp::DimsDependingOnOperand(int sair_operand) {
 //
 // op ::= `sair.map_reduce` domain value-list `reduce` domain value-list
 //        (`attributes` attr-dict)? region `:` shape `,` functional-type
-ParseResult ParseMapReduceOp(mlir::OpAsmParser &parser,
-                             mlir::OperationState &result) {
+ParseResult SairMapReduceOp::parse(mlir::OpAsmParser &parser,
+                                   mlir::OperationState &result) {
   // First, parse the parallel part of the domain and store the dimension names.
   llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
   if (mlir::failed(ParseDomain(parser, domain))) {
@@ -1443,36 +1469,37 @@ ParseResult ParseMapReduceOp(mlir::OpAsmParser &parser,
 }
 
 // Prints a Sair MapReduce operation using the "printer" provided.
-void Print(SairMapReduceOp op, mlir::OpAsmPrinter &printer) {
+void SairMapReduceOp::print(mlir::OpAsmPrinter &printer) {
   // Print the parallel part of the domain.
-  PrintDomain(op.parallel_domain(), printer);
+  PrintDomain(parallel_domain(), printer);
   printer << " ";
-  int num_inits = op.inits().size();
-  PrintValueAccessList(op.ValueOperands().take_front(num_inits), printer);
+  int num_inits = inits().size();
+  PrintValueAccessList(ValueOperands().take_front(num_inits), printer);
 
   // Print the reduction part of the domain.
   printer << " " << SairMapReduceOp::kReduceKeyword;
-  PrintDomain(op.reduction_domain(), printer, op.parallel_domain().size());
+  PrintDomain(reduction_domain(), printer, parallel_domain().size());
   printer << " ";
-  PrintValueAccessList(op.ValueOperands().drop_front(num_inits), printer);
+  PrintValueAccessList(ValueOperands().drop_front(num_inits), printer);
 
   // Print the attributes and the body.
   printer.printOptionalAttrDictWithKeyword(
-      op->getAttrs(), {SairMapOp::getOperandSegmentSizeAttr(),
-                       SairDialect::kShapeAttrName, SairOp::kMappingAttrName});
+      getOperation()->getAttrs(),
+      {SairMapOp::getOperandSegmentSizeAttr(), SairDialect::kShapeAttrName,
+       SairOp::kMappingAttrName});
   printer << " ";
-  printer.printRegion(op.body());
+  printer.printRegion(body());
 
   // Print the trailing type using operand and result element types as a single
   // functional type.
   printer << " : ";
-  printer.printAttribute(op.shape());
+  printer.printAttribute(shape());
   printer << ", ";
 
   llvm::SmallVector<mlir::Type, 4> input_types;
   llvm::SmallVector<mlir::Type, 4> init_types;
-  ExtractElementTypes(op.inputs(), input_types);
-  ExtractElementTypes(op.inits(), init_types);
+  ExtractElementTypes(inputs(), input_types);
+  ExtractElementTypes(inits(), init_types);
   printer.printFunctionalType(input_types, init_types);
 }
 
@@ -1515,8 +1542,8 @@ llvm::SmallBitVector SairProjLastOp::ResultsDimDependencies() {
 // follows.
 //
 // op ::= `sair.program` (`attributes` attr-dict)? region
-mlir::ParseResult ParseProgramOp(mlir::OpAsmParser &parser,
-                                 mlir::OperationState &result) {
+mlir::ParseResult SairProgramOp::parse(mlir::OpAsmParser &parser,
+                                       mlir::OperationState &result) {
   mlir::Region *body = result.addRegion();
   if (parser.parseOptionalAttrDictWithKeyword(result.attributes) ||
       parser.parseRegion(*body, /*arguments=*/llvm::None,
@@ -1528,15 +1555,15 @@ mlir::ParseResult ParseProgramOp(mlir::OpAsmParser &parser,
 }
 
 // Prints the given SairProgramOp using "printer".
-void Print(SairProgramOp op, mlir::OpAsmPrinter &printer) {
+void SairProgramOp::print(mlir::OpAsmPrinter &printer) {
   printer << " ";
-  printer.printOptionalAttrDictWithKeyword(op->getAttrs());
+  printer.printOptionalAttrDictWithKeyword(getOperation()->getAttrs());
   printer << " ";
-  printer.printRegion(op.body(), /*printEntryBlockArgs=*/false,
+  printer.printRegion(body(), /*printEntryBlockArgs=*/false,
                       /*printBlockTerminators=*/true);
-  if (op.results().empty()) return;
+  if (results().empty()) return;
   printer << " : ";
-  llvm::interleaveComma(op.getResultTypes(), printer,
+  llvm::interleaveComma(getResultTypes(), printer,
                         [&](mlir::Type type) { printer.printType(type); });
 }
 
