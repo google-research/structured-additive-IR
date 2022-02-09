@@ -416,7 +416,7 @@ void SairFromMemRefOp::getCanonicalizationPatterns(
 
 void SairLoadFromMemRefOp::getCanonicalizationPatterns(
     mlir::RewritePatternSet &results, mlir::MLIRContext *context) {
-  results.insert<SimplifySairOperands>(context);
+  results.add<SimplifySairOperands>(context);
 }
 
 void SairFbyOp::getCanonicalizationPatterns(mlir::RewritePatternSet &patterns,
@@ -469,7 +469,7 @@ void SairToMemRefOp::getCanonicalizationPatterns(
 
 void SairStoreToMemRefOp::getCanonicalizationPatterns(
     mlir::RewritePatternSet &results, mlir::MLIRContext *context) {
-  results.insert<SimplifySairOperands>(context);
+  results.add<SimplifySairOperands>(context);
 }
 
 void SairMapOp::getCanonicalizationPatterns(mlir::RewritePatternSet &patterns,
