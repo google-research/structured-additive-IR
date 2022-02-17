@@ -177,18 +177,7 @@ def SairCopyAttr : AttrDef<SairDialect, "Copy"> {
   let mnemonic = "copy";
   let parameters = (ins "unsigned":$value);
 
-  let printer = [{
-    $_printer << "<" << getImpl()->value << ">";
-  }];
-  let parser = [{
-    unsigned pos;
-    if ($_parser.parseLess() ||
-        $_parser.parseInteger(pos) ||
-        $_parser.parseGreater()) {
-      return ::mlir::Attribute();
-    }
-    return get($_ctxt, pos);
-  }];
+  let assemblyFormat = "`<` $value `>`";
 }
 
 // Identifies a numbered instance of an operation whose result to use as
@@ -197,18 +186,7 @@ def SairInstanceAttr : AttrDef<SairDialect, "Instance"> {
   let mnemonic = "instance";
   let parameters = (ins "unsigned":$value);
 
-  let printer = [{
-    $_printer << "<" << getImpl()->value << ">";
-  }];
-  let parser = [{
-    unsigned pos;
-    if ($_parser.parseLess() ||
-        $_parser.parseInteger(pos) ||
-        $_parser.parseGreater()) {
-      return ::mlir::Attribute();
-    }
-    return get($_ctxt, pos);
-  }];
+  let assemblyFormat = "`<` $value `>`";
 }
 
 // A predicate that matches either a copy or an instance attribute.
