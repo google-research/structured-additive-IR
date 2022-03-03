@@ -15,7 +15,7 @@
 #ifndef THIRD_PARTY_SAIR_TRANSFORMS_DOMAIN_UTILS_H_
 #define THIRD_PARTY_SAIR_TRANSFORMS_DOMAIN_UTILS_H_
 
-#include "mlir/Dialect/StandardOps/IR/Ops.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Builders.h"
 #include "sair_op_interfaces.h"
 

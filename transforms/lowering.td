@@ -17,7 +17,7 @@ include "mlir/Pass/PassBase.td"
 // List of dialects on which all lowering passes depend.
 def Deps {
   list<string> dialects = ["::mlir::scf::SCFDialect",
-                           "::mlir::StandardOpsDialect",
+                           "::mlir::func::FuncDialect",
                            "::sair::SairDialect"];
 }
 
