@@ -15,6 +15,7 @@
 #ifndef SAIR_SAIR_BASE_TD_
 #define SAIR_SAIR_BASE_TD_
 
+include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/OpBase.td"
 
 def SairDialect : Dialect {
