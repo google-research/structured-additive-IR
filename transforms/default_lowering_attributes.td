@@ -12,24 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+
 include "mlir/Pass/PassBase.td"
 
-def DefaultInstancePass : Pass<"sair-create-default-instance", "mlir::FuncOp"> {
+def DefaultInstancePass : Pass<"sair-create-default-instance", "mlir::func::FuncOp"> {
   let summary = "Creates a blank instance for ComputeOp without instances";
   let constructor = [{ ::sair::CreateDefaultInstancePass(); }];
 }
 
-def DefaultLoopNestPass : Pass<"sair-assign-default-loop-nest", "mlir::FuncOp"> {
+def DefaultLoopNestPass : Pass<"sair-assign-default-loop-nest", "mlir::func::FuncOp"> {
   let summary = "Assigns the default loop nest to Sair operations";
   let constructor = [{ ::sair::CreateDefaultLoopNestPass(); }];
 }
 
-def DefaultSequencePass : Pass<"sair-assign-default-sequence", "mlir::FuncOp"> {
+def DefaultSequencePass : Pass<"sair-assign-default-sequence", "mlir::func::FuncOp"> {
   let summary = "Assigns the default sequence to Sair compute operations";
   let constructor = [{ ::sair::CreateDefaultSequencePass(); }];
 }
 
-def DefaultStoragePass : Pass<"sair-assign-default-storage", "mlir::FuncOp"> {
+def DefaultStoragePass : Pass<"sair-assign-default-storage", "mlir::func::FuncOp"> {
   let summary = "Assigns the default storage to Sair values.";
 
   let description = [{
@@ -40,7 +41,7 @@ def DefaultStoragePass : Pass<"sair-assign-default-storage", "mlir::FuncOp"> {
   let constructor = [{ ::sair::CreateDefaultStoragePass(); }];
 }
 
-def DefaultExpansionPass : Pass<"sair-assign-default-expansion", "mlir::FuncOp"> {
+def DefaultExpansionPass : Pass<"sair-assign-default-expansion", "mlir::func::FuncOp"> {
   let summary = "Assigns default expansion patterns to Sair operations";
 
   let description = [{

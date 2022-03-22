@@ -17,13 +17,14 @@
 
 #include <memory>
 
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
 
 namespace sair {
 
 // Creates a pass that converts Linalg operations to Sair operations.
-std::unique_ptr<mlir::OperationPass<mlir::FuncOp>>
+std::unique_ptr<mlir::OperationPass<mlir::func::FuncOp>>
 CreateLinalgToSairConversionPass();
 
 }  // namespace sair

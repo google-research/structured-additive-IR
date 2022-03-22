@@ -17,6 +17,7 @@
 
 #include <memory>
 
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
@@ -25,10 +26,11 @@ namespace sair {
 
 // Returns a pass that lowers sair.map_reduce operations into sair.map,
 // sair.proj_last and sair.fby operations.
-std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateLowerMapReducePass();
+std::unique_ptr<mlir::OperationPass<mlir::func::FuncOp>>
+CreateLowerMapReducePass();
 
 // Returns a pass that converts sair operations into sair.map operations.
-std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateLowerToMapPass();
+std::unique_ptr<mlir::OperationPass<mlir::func::FuncOp>> CreateLowerToMapPass();
 
 // Returns a pass that lowers Sair and Standard dialect operations to the LLVM
 // dialect.
@@ -36,26 +38,30 @@ std::unique_ptr<mlir::Pass> CreateLowerToLLVMPass();
 
 // Returns a pass that replaces the first trivial Sair Op in the function with
 // the contents of its body.
-std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateInlineTrivialOpsPass();
+std::unique_ptr<mlir::OperationPass<mlir::func::FuncOp>>
+CreateInlineTrivialOpsPass();
 
 // Replaces Sair values by buffers as specified by the `storage` attribute.
-std::unique_ptr<mlir::OperationPass<mlir::FuncOp>>
+std::unique_ptr<mlir::OperationPass<mlir::func::FuncOp>>
 CreateMaterializeBuffersPass();
 
 // Create ops for instances and copies defined in attributes.
-std::unique_ptr<mlir::OperationPass<mlir::FuncOp>>
+std::unique_ptr<mlir::OperationPass<mlir::func::FuncOp>>
 CreateMaterializeInstancesPass();
 
 // Replaces iteration dimensions by loops in sair.map and sair.map_reduce
 // operations.
-std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateIntroduceLoopsPass();
+std::unique_ptr<mlir::OperationPass<mlir::func::FuncOp>>
+CreateIntroduceLoopsPass();
 
 // Returns a pass that rewrites the domain of operations so that each loop
 // corresponds to a dimension.
-std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateNormalizeLoopsPass();
+std::unique_ptr<mlir::OperationPass<mlir::func::FuncOp>>
+CreateNormalizeLoopsPass();
 
 // Returns a pass that lowers sair.proj_any operations.
-std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateLowerProjAnyPass();
+std::unique_ptr<mlir::OperationPass<mlir::func::FuncOp>>
+CreateLowerProjAnyPass();
 
 // Populates the pass manager to convert Sair operations to the Loops dialect.
 void CreateSairToLoopConversionPipeline(mlir::OpPassManager *pm);

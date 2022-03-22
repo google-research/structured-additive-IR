@@ -385,7 +385,8 @@ class NormalizeLoopsPass : public NormalizeLoopsPassBase<NormalizeLoopsPass> {
 
 }  // namespace
 
-std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateNormalizeLoopsPass() {
+std::unique_ptr<mlir::OperationPass<mlir::func::FuncOp>>
+CreateNormalizeLoopsPass() {
   return std::make_unique<NormalizeLoopsPass>();
 }
 

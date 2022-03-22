@@ -690,7 +690,7 @@ void LinalgToSairConversion::runOnOperation() {
 
 }  // namespace
 
-std::unique_ptr<mlir::OperationPass<mlir::FuncOp>>
+std::unique_ptr<mlir::OperationPass<mlir::func::FuncOp>>
 CreateLinalgToSairConversionPass() {
   return std::make_unique<LinalgToSairConversion>();
 }

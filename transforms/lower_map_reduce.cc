@@ -226,7 +226,8 @@ class LowerMapReduce : public LowerMapReducePassBase<LowerMapReduce> {
 
 }  // namespace
 
-std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateLowerMapReducePass() {
+std::unique_ptr<mlir::OperationPass<mlir::func::FuncOp>>
+CreateLowerMapReducePass() {
   return std::make_unique<LowerMapReduce>();
 }
 

@@ -119,7 +119,8 @@ class LowerProjAny : public LowerProjAnyPassBase<LowerProjAny> {
 
 }  // namespace
 
-std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateLowerProjAnyPass() {
+std::unique_ptr<mlir::OperationPass<mlir::func::FuncOp>>
+CreateLowerProjAnyPass() {
   return std::make_unique<LowerProjAny>();
 }
 

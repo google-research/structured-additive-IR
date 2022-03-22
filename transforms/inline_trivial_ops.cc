@@ -51,7 +51,7 @@ bool IsTrivialSairMap(SairMapOp op) {
 // Ops trivial, and since it can invalidate the pointers to the operations if we
 // stored them during a pre-pass. Returns "true" if it modified the input
 // function, "false" otherwise.
-bool InlineTrivialSairOp(mlir::FuncOp function) {
+bool InlineTrivialSairOp(mlir::func::FuncOp function) {
   // Find the first map or map_reduce operation with 0d domain and 0d inputs.
   SairMapOp trivial_op;
   mlir::WalkResult walk_result = function.walk([&trivial_op](SairMapOp op) {
@@ -125,7 +125,7 @@ bool InlineTrivialSairOp(mlir::FuncOp function) {
 class InlineTrivialSairOpsPass
     : public InlineTrivialSairOpsPassBase<InlineTrivialSairOpsPass> {
   void runOnOperation() override {
-    mlir::FuncOp function = getOperation();
+    mlir::func::FuncOp function = getOperation();
     // Iteratively find the first trivial Sair Op and inline it, which may
     // create new trivial Ops. The iteration stops when no trivial Ops are
     // present in the function.
@@ -155,7 +155,7 @@ class InlineTrivialSairOpsPass
 
 }  // namespace
 
-std::unique_ptr<mlir::OperationPass<mlir::FuncOp>>
+std::unique_ptr<mlir::OperationPass<mlir::func::FuncOp>>
 CreateInlineTrivialOpsPass() {
   return std::make_unique<InlineTrivialSairOpsPass>();
 }

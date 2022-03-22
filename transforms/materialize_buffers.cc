@@ -448,7 +448,7 @@ class MaterializeBuffers
 
 }  // namespace
 
-std::unique_ptr<mlir::OperationPass<mlir::FuncOp>>
+std::unique_ptr<mlir::OperationPass<mlir::func::FuncOp>>
 CreateMaterializeBuffersPass() {
   return std::make_unique<MaterializeBuffers>();
 }

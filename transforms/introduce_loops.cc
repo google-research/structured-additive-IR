@@ -856,7 +856,8 @@ class IntroduceLoops : public IntroduceLoopsPassBase<IntroduceLoops> {
 
 }  // namespace
 
-std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateIntroduceLoopsPass() {
+std::unique_ptr<mlir::OperationPass<mlir::func::FuncOp>>
+CreateIntroduceLoopsPass() {
   return std::make_unique<IntroduceLoops>();
 }
 

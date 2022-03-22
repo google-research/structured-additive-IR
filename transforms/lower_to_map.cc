@@ -93,7 +93,8 @@ class LowerToMap : public LowerToMapPassBase<LowerToMap> {
 
 }  // namespace
 
-std::unique_ptr<mlir::OperationPass<mlir::FuncOp>> CreateLowerToMapPass() {
+std::unique_ptr<mlir::OperationPass<mlir::func::FuncOp>>
+CreateLowerToMapPass() {
   return std::make_unique<LowerToMap>();
 }
 
