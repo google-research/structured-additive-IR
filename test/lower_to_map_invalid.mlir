@@ -1,6 +1,6 @@
 // RUN: sair-opt -split-input-file -sair-lower-to-map -verify-diagnostics %s
 
-func @no_expansion_pattern(%arg0: f32) {
+func.func @no_expansion_pattern(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{no target expansion pattern specified}}
@@ -14,7 +14,7 @@ func @no_expansion_pattern(%arg0: f32) {
 
 // -----
 
-func @copies(%arg0: f32) {
+func.func @copies(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{operations must have exactly one instance during expansion}}

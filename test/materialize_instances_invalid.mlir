@@ -1,6 +1,6 @@
 // RUN: sair-opt -sair-materialize-instances -split-input-file -verify-diagnostics
 
-func @no_instances(%arg0: f32) {
+func.func @no_instances(%arg0: f32) {
   sair.program {
     // expected-error@below {{expected ops to have instances}}
     sair.exit
@@ -10,7 +10,7 @@ func @no_instances(%arg0: f32) {
 
 // -----
 
-func @user_of_zero_instance(%arg0: f32) {
+func.func @user_of_zero_instance(%arg0: f32) {
   sair.program {
     // expected-error@below {{operation has zero instances but its results are in use}}
     %0 = sair.from_scalar %arg0 { instances = [] } : !sair.value<(), f32>
@@ -23,7 +23,7 @@ func @user_of_zero_instance(%arg0: f32) {
 
 // -----
 
-func @no_operands(%arg0: f32) {
+func.func @no_operands(%arg0: f32) {
   sair.program {
     // expected-error@below {{expected 'operands' field of 'instances' to be specified}}
     %0 = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), f32>
@@ -34,7 +34,7 @@ func @no_operands(%arg0: f32) {
 
 // -----
 
-func @no_operands_copies(%arg0: f32) {
+func.func @no_operands_copies(%arg0: f32) {
   sair.program {
     // expected-error@below {{expected the source of copy to be specified}}
     %0 = sair.from_scalar %arg0 {
@@ -49,7 +49,7 @@ func @no_operands_copies(%arg0: f32) {
 
 // -----
 
-func @unit_operand(%arg0: f32) {
+func.func @unit_operand(%arg0: f32) {
   sair.program {
     // expected-error@below {{expceted concerete instance or copy as operand #0}}
     %0 = sair.from_scalar %arg0 {
@@ -62,7 +62,7 @@ func @unit_operand(%arg0: f32) {
 
 // -----
 
-func @unit_copy(%arg0: f32) {
+func.func @unit_copy(%arg0: f32) {
   sair.program {
     // expected-error@below {{expected the source of copy to be specified}}
     %0 = sair.from_scalar %arg0 {

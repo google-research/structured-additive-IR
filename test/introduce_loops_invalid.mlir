@@ -1,6 +1,6 @@
 // RUN: sair-opt -split-input-file -sair-introduce-loops -verify-diagnostics %s
 
-func @must_lower_to_map() {
+func.func @must_lower_to_map() {
   sair.program {
     %0 = sair.static_range { instances = [{}] } : !sair.static_range<8>
     // expected-error @+1 {{operation must be lowered to sair.map}}
@@ -19,7 +19,7 @@ func @must_lower_to_map() {
 
 // -----
 
-func @missing_loop_nest_attribute() {
+func.func @missing_loop_nest_attribute() {
   sair.program {
     %0 = sair.static_range { instances = [{}] } : !sair.static_range<8>
     // expected-error @+1 {{missing loop_nest attribute}}
@@ -36,7 +36,7 @@ func @missing_loop_nest_attribute() {
 
 // -----
 
-func @proj_any_must_be_eliminated() {
+func.func @proj_any_must_be_eliminated() {
   sair.program {
     %0 = sair.static_range { instances = [{}] } : !sair.static_range<8>
     %1 = sair.map[d0:%0] attributes {
@@ -55,7 +55,7 @@ func @proj_any_must_be_eliminated() {
 
 // -----
 
-func @strip_mined_loop() {
+func.func @strip_mined_loop() {
   sair.program {
     %0 = sair.static_range { instances = [{}] } : !sair.static_range<8>
     // expected-error @+1 {{loop must not rematerialize or be strip-mined}}
@@ -77,7 +77,7 @@ func @strip_mined_loop() {
 
 // -----
 
-func @unable_to_create_default_value() {
+func.func @unable_to_create_default_value() {
   %0 = sair.program {
     %1 = sair.static_range { instances = [{}] } : !sair.static_range<8>
     // expected-error @+1 {{unable to create a default value of type 'memref<f32>'}}
@@ -98,7 +98,7 @@ func @unable_to_create_default_value() {
 
 // -----
 
-func @proj_of_fby(%arg0: f32) {
+func.func @proj_of_fby(%arg0: f32) {
   %0 = sair.program {
     %0 = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), f32>
     %1 = sair.static_range { instances = [{}] } : !sair.static_range<8>
@@ -121,9 +121,9 @@ func @proj_of_fby(%arg0: f32) {
 
 // -----
 
-func @foo() { return }
+func.func @foo() { return }
 
-func @size_not_in_register(%arg0: index) {
+func.func @size_not_in_register(%arg0: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), index>
     %1 = sair.map %0 attributes {
@@ -148,7 +148,7 @@ func @size_not_in_register(%arg0: index) {
 
 // -----
 
-func @placeholder() {
+func.func @placeholder() {
   sair.program {
     %0 = sair.static_range { instances = [{}] } : !sair.static_range<8>
     // expected-error @+1 {{placeholders must be replaced by actual dimensions before introducing loops}}
@@ -176,7 +176,7 @@ func @placeholder() {
 
 // -----
 
-func @copies(%arg0: f32) {
+func.func @copies(%arg0: f32) {
   sair.program {
     // expected-error @+1 {{operations must have exactly one instance when introducing loops}}
     sair.from_scalar %arg0 {

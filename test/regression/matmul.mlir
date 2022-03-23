@@ -1,6 +1,6 @@
 // RUN: sair-opt %s -convert-sair-to-loop
 
-func @main(%arg0: memref<512x512xf32>, %arg1: memref<512x512xf32>, %arg2: memref<512x512xf32>) {
+func.func @main(%arg0: memref<512x512xf32>, %arg1: memref<512x512xf32>, %arg2: memref<512x512xf32>) {
   %c0 = arith.constant 0 : index
   %cst = arith.constant 0.000000e+00 : f32
 

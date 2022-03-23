@@ -4,7 +4,7 @@
 // it in memory. It is sufficient that we don't fail here due to mismatch in
 // map_reduce.
 // CHECK-LABEL: @from_memref_in_memory
-func @from_memref_in_memory(%arg0: memref<?xf32>, %arg1: f32) {
+func.func @from_memref_in_memory(%arg0: memref<?xf32>, %arg1: f32) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>

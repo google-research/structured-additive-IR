@@ -1,7 +1,7 @@
 // RUN: sair-opt -sair-materialize-instances %s | FileCheck %s
 
 // CHECK-LABEL: @instances
-func @instances(%arg0: f32) {
+func.func @instances(%arg0: f32) {
   sair.program {
     // CHECK: %[[SCALAR0:.*]] = sair.from_scalar
     // CHECK: %[[SCALAR1:.*]] = sair.from_scalar
@@ -19,7 +19,7 @@ func @instances(%arg0: f32) {
 }
 
 // CHECK-LABEL: @instances_and_copies
-func @instances_and_copies(%arg0: f32) {
+func.func @instances_and_copies(%arg0: f32) {
   sair.program {
     // CHECK: %[[SCALAR0:.*]] = sair.from_scalar
     // CHECK: %[[SCALAR1:.*]] = sair.from_scalar
@@ -51,7 +51,7 @@ func @instances_and_copies(%arg0: f32) {
 }
 
 // CHECK-LABEL: @map_multi_result
-func @map_multi_result(%arg0: f32) {
+func.func @map_multi_result(%arg0: f32) {
   sair.program {
     // CHECK: %[[SCALAR:.*]] = sair.from_scalar
     %0 = sair.from_scalar %arg0 {
@@ -128,7 +128,7 @@ func @map_multi_result(%arg0: f32) {
 }
 
 // CHECK-LABEL: @erase_zero_instance
-func @erase_zero_instance(%arg0: f32) {
+func.func @erase_zero_instance(%arg0: f32) {
   sair.program {
     // CHECK-NOT: sair.from_scalar
     sair.from_scalar %arg0 { instances = [] } : !sair.value<(), f32>
