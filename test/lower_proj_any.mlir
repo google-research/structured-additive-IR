@@ -1,7 +1,7 @@
 // RUN: sair-opt %s -sair-lower-proj-any | FileCheck %s
 
 // CHECK-LABEL: @eliminate
-func @eliminate(%arg0: f32) {
+func.func @eliminate(%arg0: f32) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -27,7 +27,7 @@ func @eliminate(%arg0: f32) {
 }
 
 // CHECK-LABEL: @convert_to_proj_last
-func @convert_to_proj_last(%arg0: f32) {
+func.func @convert_to_proj_last(%arg0: f32) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>

@@ -2,7 +2,7 @@
 
 // CHECK-LABEL: @empty
 // Shouldn't fail here.
-func @empty() {
+func.func @empty() {
   sair.program {
     sair.exit
   }
@@ -10,7 +10,7 @@ func @empty() {
 }
 
 // CHECK-LABEL: @simple_use_def
-func @simple_use_def() {
+func.func @simple_use_def() {
   sair.program {
     // CHECK: sair.alloc
     // CHECK-SAME: sequence = 0
@@ -28,7 +28,7 @@ func @simple_use_def() {
 }
 
 // CHECK-LABEL: @simple_use_def_chain
-func @simple_use_def_chain(%arg0: f32) {
+func.func @simple_use_def_chain(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // CHECK: sair.copy
@@ -62,7 +62,7 @@ func @simple_use_def_chain(%arg0: f32) {
 // CHECK-LABEL: @use_def_graph
 // Check that we deterministically prefer the original order of operations in
 // absence of other criteria.
-func @use_def_graph(%arg0: f32, %arg1: f32) {
+func.func @use_def_graph(%arg0: f32, %arg1: f32) {
   sair.program {
     // CHECK: %[[V0:.*]] = sair.from_scalar
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -103,7 +103,7 @@ func @use_def_graph(%arg0: f32, %arg1: f32) {
 
 // CHECK-LABEL: @use_def_graph_partial
 // Check that pre-existent relative order is preserved.
-func @use_def_graph_partial(%arg0: f32, %arg1: f32) {
+func.func @use_def_graph_partial(%arg0: f32, %arg1: f32) {
   sair.program {
     // CHECK: %[[V0:.*]] = sair.from_scalar
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -144,7 +144,7 @@ func @use_def_graph_partial(%arg0: f32, %arg1: f32) {
 
 // CHECK-LABEL: @fby
 // Check that the pass is not confused by fby self-dependency.
-func @fby(%arg0: f32) {
+func.func @fby(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<42>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -168,7 +168,7 @@ func @fby(%arg0: f32) {
 }
 
 // CHECK-LABEL: @fby_many_compute
-func @fby_many_compute(%arg0: f32) -> f32 {
+func.func @fby_many_compute(%arg0: f32) -> f32 {
   %out = sair.program {
     %0 = sair.static_range : !sair.static_range<42>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -205,7 +205,7 @@ func @fby_many_compute(%arg0: f32) -> f32 {
 }
 
 // CHECK-LABEL: @fby_two_cycles
-func @fby_two_cycles(%arg0: f32) -> f32 {
+func.func @fby_two_cycles(%arg0: f32) -> f32 {
   %out = sair.program {
     %0 = sair.static_range : !sair.static_range<42>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -242,7 +242,7 @@ func @fby_two_cycles(%arg0: f32) -> f32 {
 }
 
 // CHECK-LABEL: @fby_then_different_source
-func @fby_then_different_source(%arg0: f32) {
+func.func @fby_then_different_source(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<42>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -271,7 +271,7 @@ func @fby_then_different_source(%arg0: f32) {
 }
 
 // CHECK-LABEL: @sequence_domain
-func @sequence_domain(%arg0: index) {
+func.func @sequence_domain(%arg0: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
     %1 = sair.dyn_range %0 : !sair.dyn_range
@@ -294,7 +294,7 @@ func @sequence_domain(%arg0: index) {
 }
 
 // CHECK-LABEL: @sequence_implicit_domain
-func @sequence_implicit_domain(%arg0: index) {
+func.func @sequence_implicit_domain(%arg0: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
     %1 = sair.dyn_range %0 : !sair.dyn_range
@@ -324,7 +324,7 @@ func @sequence_implicit_domain(%arg0: index) {
 }
 
 // CHECK-LABEL: @sequence_implicit_domain_partial
-func @sequence_implicit_domain_partial(%arg0: index) {
+func.func @sequence_implicit_domain_partial(%arg0: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
     %1 = sair.dyn_range %0 : !sair.dyn_range
@@ -360,7 +360,7 @@ func @sequence_implicit_domain_partial(%arg0: index) {
 // It shouldn't be a problem to have a dynamic range for a rematerialized
 // dimension to be defined after its used as long as there is no circular
 // dependency introduced.
-func @reordered_remat(%arg0: f32) {
+func.func @reordered_remat(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // CHECK: sair.copy

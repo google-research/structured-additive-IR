@@ -1,6 +1,6 @@
 // RUN: sair-opt -sair-assign-default-storage -split-input-file -verify-diagnostics %s
 
-func @expected_loop_nest(%arg0: f32) {
+func.func @expected_loop_nest(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{expected a loop-nest attribute}}
@@ -14,7 +14,7 @@ func @expected_loop_nest(%arg0: f32) {
 
 // -----
 
-func @index_to_memory(%arg0: index) {
+func.func @index_to_memory(%arg0: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
     %1 = sair.dyn_range %0 : !sair.dyn_range
@@ -36,7 +36,7 @@ func @index_to_memory(%arg0: index) {
 
 // -----
 
-func @non_rectangular_shape(%arg0: f32, %arg1: index) {
+func.func @non_rectangular_shape(%arg0: f32, %arg1: index) {
   // expected-error @+1 {{unable to generate storage attributes}}
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -67,7 +67,7 @@ func @non_rectangular_shape(%arg0: f32, %arg1: index) {
 
 // -----
 
-func @incomplete_loop_nest(%arg0: memref<4xf32>, %arg1: index) {
+func.func @incomplete_loop_nest(%arg0: memref<4xf32>, %arg1: index) {
   %c = arith.constant 42.0 : f32
   sair.program {
     %n = sair.from_scalar %arg1 : !sair.value<(), index>
@@ -87,7 +87,7 @@ func @incomplete_loop_nest(%arg0: memref<4xf32>, %arg1: index) {
 
 // -----
 
-func @increase_external_buffer_rank(%arg0: memref<f32>, %arg1: index) {
+func.func @increase_external_buffer_rank(%arg0: memref<f32>, %arg1: index) {
   sair.program {
     %n = sair.from_scalar %arg1 : !sair.value<(), index>
     %r = sair.dyn_range %n : !sair.dyn_range

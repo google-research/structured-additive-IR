@@ -1,6 +1,6 @@
 // RUN: sair-opt -sair-assign-default-expansion %s -split-input-file -verify-diagnostics
 
-func @main() {
+func.func @main() {
   sair.program {
     // expected-error @+1 {{not supported}}
     sair.map_reduce reduce attributes {instances = [{}]} {

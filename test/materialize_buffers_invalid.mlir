@@ -1,6 +1,6 @@
 // RUN: sair-opt -split-input-file -verify-diagnostics -sair-materialize-buffers %s
 
-func @partial_layout(%arg0: f32) {
+func.func @partial_layout(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), f32>
     %1 = sair.static_range { instances = [{}] } : !sair.static_range<8>
@@ -26,7 +26,7 @@ func @partial_layout(%arg0: f32) {
 
 // -----
 
-func @missing_memory_space(%arg0: f32) {
+func.func @missing_memory_space(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), f32>
     // expected-error @+1 {{missing memory space}}
@@ -40,7 +40,7 @@ func @missing_memory_space(%arg0: f32) {
 
 // -----
 
-func @missing_layout(%arg0: f32) {
+func.func @missing_layout(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), f32>
     // expected-error @+1 {{missing layout}}
@@ -57,7 +57,7 @@ func @missing_layout(%arg0: f32) {
 
 // -----
 
-func @copies(%arg0: f32) {
+func.func @copies(%arg0: f32) {
   sair.program {
     // expected-error @+1 {{operations must have exactly one instance when materializing buffers}}
     sair.from_scalar %arg0 {

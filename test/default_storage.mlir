@@ -1,7 +1,7 @@
 // RUN: sair-opt %s -sair-assign-default-storage | FileCheck %s
 
 // CHECK-LABEL: @memory_space_is_set
-func @memory_space_is_set() {
+func.func @memory_space_is_set() {
   sair.program {
     // CHECK: %{{.*}} = sair.map attributes {
     // CHECK: storage = [{layout = #sair.named_mapping<[] -> ()>, space = "register"}]
@@ -16,7 +16,7 @@ func @memory_space_is_set() {
 }
 
 // CHECK-LABEL: @preserve_memory_space
-func @preserve_memory_space() {
+func.func @preserve_memory_space() {
   sair.program {
     // CHECK: %{{.*}} = sair.map attributes {
     // CHECK: storage = [{layout = #sair.named_mapping<[] -> ()>, name = "A", space = "memory"}]
@@ -36,7 +36,7 @@ func @preserve_memory_space() {
 }
 
 // CHECK-LABEL: @multi_dim
-func @multi_dim(%arg0: f32, %arg1: memref<8x8xf32>) {
+func.func @multi_dim(%arg0: f32, %arg1: memref<8x8xf32>) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -79,7 +79,7 @@ func @multi_dim(%arg0: f32, %arg1: memref<8x8xf32>) {
 }
 
 // CHECK-LABEL: @to_memref_proj_fby
-func @to_memref_proj_fby(%arg0: f32, %arg1: memref<f32>) {
+func.func @to_memref_proj_fby(%arg0: f32, %arg1: memref<f32>) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -116,7 +116,7 @@ func @to_memref_proj_fby(%arg0: f32, %arg1: memref<f32>) {
 }
 
 // CHECK-LABEL: @propagate_storage
-func @propagate_storage(%arg0: f32) {
+func.func @propagate_storage(%arg0: f32) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -136,7 +136,7 @@ func @propagate_storage(%arg0: f32) {
 }
 
 // CHECK-LABEL: @non_rectangular
-func @non_rectangular_shape(%arg0: f32, %arg1: index) {
+func.func @non_rectangular_shape(%arg0: f32, %arg1: index) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -170,7 +170,7 @@ func @non_rectangular_shape(%arg0: f32, %arg1: index) {
 }
 
 // CHECK-LABEL: @buffer_reuse
-func @buffer_reuse(%arg0: f32) {
+func.func @buffer_reuse(%arg0: f32) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>

@@ -2,7 +2,7 @@
 // RUN:   -canonicalize -mlir-print-local-scope %s | FileCheck %s
 
 // CHECK-LABEL: @empty_program
-func @empty_program() {
+func.func @empty_program() {
   // CHECK-NOT: sair.program
   sair.program {
     // CHECK-NOT: sair.exit
@@ -13,7 +13,7 @@ func @empty_program() {
 
 // CHECK-LABEL: @copy_to_memref
 // CHECK: %[[ARG0:.*]]: memref<8xf32>, %[[ARG1:.*]]: memref<8xf32>
-func @copy_to_memref(%arg0: memref<8xf32>, %arg1: memref<8xf32>) {
+func.func @copy_to_memref(%arg0: memref<8xf32>, %arg1: memref<8xf32>) {
   // CHECK-NOT: sair.program
   sair.program {
     // CHECK-DAG: %[[C0:.*]] = arith.constant 0 : index
@@ -41,7 +41,7 @@ func @copy_to_memref(%arg0: memref<8xf32>, %arg1: memref<8xf32>) {
 
 // CHECK-LABEL: @matmul
 // CHECK: %[[A:.*]]: memref<8x8xf32>, %[[B:.*]]: memref<8x8xf32>, %[[C:.*]]:  memref<8x8xf32>
-func @matmul(%arg0: memref<8x8xf32>,
+func.func @matmul(%arg0: memref<8x8xf32>,
              %arg1: memref<8x8xf32>,
              %arg2: memref<8x8xf32>) {
   // CHECK-DAG: %[[CF0:.*]] = arith.constant 0.0

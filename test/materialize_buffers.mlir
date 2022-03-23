@@ -1,7 +1,7 @@
 // RUN: sair-opt %s -sair-materialize-buffers -mlir-print-local-scope | FileCheck %s
 
 // CHECK-LABEL: @from_to_memref
-func @from_to_memref(%arg0: memref<?xf32>, %arg1: memref<?xf32>) {
+func.func @from_to_memref(%arg0: memref<?xf32>, %arg1: memref<?xf32>) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n { instances = [{}] } : !sair.value<(), index>
@@ -38,7 +38,7 @@ func @from_to_memref(%arg0: memref<?xf32>, %arg1: memref<?xf32>) {
 }
 
 // CHECK-LABEL: @static_shape
-func @static_shape(%arg0: f32) {
+func.func @static_shape(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), f32>
     %1 = sair.static_range { instances = [{}] } : !sair.static_range<16, 2>
@@ -82,7 +82,7 @@ func @static_shape(%arg0: f32) {
 }
 
 // CHECK-LABEL: @dynamic_shape
-func @dynamic_shape(%arg0: f32, %arg1: index, %arg2: index) {
+func.func @dynamic_shape(%arg0: f32, %arg1: index, %arg2: index) {
   sair.program {
     // CHECK: %[[V3:.*]] = sair.map %[[V1:.*]], %[[V2:.*]] attributes {
     // CHECK:   loop_nest = []
@@ -118,7 +118,7 @@ func @dynamic_shape(%arg0: f32, %arg1: index, %arg2: index) {
 }
 
 // CHECK-LABEL: @loop_nest
-func @loop_nest(%arg0: f32) {
+func.func @loop_nest(%arg0: f32) {
   sair.program {
     // CHECK: %[[D0:.*]] = sair.placeholder {instances = [{operands = []}]} : !sair.static_range<16, 4>
 
@@ -211,7 +211,7 @@ func @loop_nest(%arg0: f32) {
 }
 
 // CHECK-LABEL: @sequence_attr
-func @sequence_attr(%arg0: f32) {
+func.func @sequence_attr(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), f32>
     %1 = sair.static_range { instances = [{}] } : !sair.static_range<16>
