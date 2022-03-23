@@ -15,7 +15,7 @@ func @deduplicate_map_input(%arg0: f32) {
       ^bb0(%arg1: f32, %arg2: f32):
         // CHECK: addf %[[V1]], %[[V1]] : f32
         %1 = arith.addf %arg1, %arg2 : f32
-        call @use(%1) : (f32) -> ()
+        func.call @use(%1) : (f32) -> ()
         sair.return
     // CHECK: } : #sair.shape<()>, (f32) -> ()
     } : #sair.shape<()>, (f32, f32) -> ()
@@ -40,7 +40,7 @@ func @deduplicate_map_input_instances(%arg0: f32) {
     } {
       ^bb0(%arg1: f32, %arg2: f32):
         %1 = arith.addf %arg1, %arg2 : f32
-        call @use(%1) : (f32) -> ()
+        func.call @use(%1) : (f32) -> ()
         sair.return
     } : #sair.shape<()>, (f32, f32) -> ()
     sair.exit

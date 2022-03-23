@@ -138,7 +138,7 @@ func @size_not_in_register(%arg0: index) {
       instances = [{loop_nest = [{name = "A", iter = #sair.mapping_expr<d0>}]}]
     } {
       ^bb0(%arg1: index):
-        call @foo() : () -> ()
+        func.call @foo() : () -> ()
         sair.return
     } : #sair.shape<d0:dyn_range>, () -> ()
     sair.exit { instances = [{}] }

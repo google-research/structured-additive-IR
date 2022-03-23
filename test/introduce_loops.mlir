@@ -30,7 +30,7 @@ func @map(%arg0: index) {
         // CHECK-DAG:   %[[C3:.*]] = arith.constant 1 : index
         // CHECK:   scf.for %[[V2:.*]] = %[[C2]] to %[[ARG1]] step %[[C3]] {
         // CHECK:     call @foo(%[[V2]], %[[V1]]) : (index, index) -> ()
-                      call @foo(%arg1, %arg2) : (index, index) -> ()
+                      func.call @foo(%arg1, %arg2) : (index, index) -> ()
         // CHECK:   }
         // CHECK: }
         // CHECK: sair.return
@@ -113,7 +113,7 @@ func @fuse(%arg0: f32) {
         // CHECK: scf.for %[[I0:.*]] = %{{.*}} to %{{.*}}
         // CHECK: scf.for %[[I1:.*]] = %{{.*}} to %{{.*}}
         // CHECK: call @foo(%[[I0]], %[[I1]])
-        call @foo(%arg1, %arg2) : (index, index) -> ()
+        func.call @foo(%arg1, %arg2) : (index, index) -> ()
         // CHECK: %[[V1:.*]] = arith.constant
         %4 = arith.constant 1.0 : f32
         sair.return %4 : f32
@@ -129,11 +129,11 @@ func @fuse(%arg0: f32) {
     } {
       ^bb0(%arg1:index, %arg2: index, %arg3: f32, %arg4: f32):
         // CHECK: call @foo(%[[I1]], %[[I0]])
-        call @foo(%arg1, %arg2) : (index, index) -> ()
+        func.call @foo(%arg1, %arg2) : (index, index) -> ()
         // CHECK: call @bar(%[[ARG0]])
-        call @bar(%arg3) : (f32) -> f32
+        func.call @bar(%arg3) : (f32) -> f32
         // CHECK: call @bar(%[[V1]])
-        call @bar(%arg4) : (f32) -> f32
+        func.call @bar(%arg4) : (f32) -> f32
         sair.return
     } : #sair.shape<d0:static_range<8> x d1:static_range<4>>, (f32, f32) -> ()
     sair.exit { instances = [{}] }
@@ -178,7 +178,7 @@ func @fuse_reorder(%arg0: f32) {
       }]
     } {
     ^bb0(%arg1: index, %arg2: index, %arg3: f32):
-      call @foo(%arg1, %arg2) : (index, index) -> ()
+      func.call @foo(%arg1, %arg2) : (index, index) -> ()
       %4 = arith.constant 1.0 : f32
       %5 = arith.addf %arg3, %4 : f32
       sair.return %5 : f32
@@ -208,7 +208,7 @@ func @fuse_reorder(%arg0: f32) {
     ^bb0(%arg1: index, %arg2: index):
       %9 = arith.index_cast %arg1 : index to i32
       %10 = arith.sitofp %9 : i32 to f32
-      call @bar(%10) : (f32) -> f32
+      func.call @bar(%10) : (f32) -> f32
       sair.return
     } : #sair.shape<d0:static_range<8> x d1:static_range<16>>, () -> ()
     sair.exit { instances = [{}] }
@@ -254,7 +254,7 @@ func @dependent_dims() {
     } {
       ^bb0(%arg0: index, %arg1: index):
           // CHECK: call @foo(%[[V3]], %[[V7]])
-        call @foo(%arg0, %arg1) : (index, index) -> ()
+        func.call @foo(%arg0, %arg1) : (index, index) -> ()
         sair.return
     } : #sair.shape<d0:static_range<64, 8> x d1:dyn_range(d0)>, () -> ()
         // CHECK: }
@@ -285,7 +285,7 @@ func @full_unroll() {
       }]
     } {
     ^bb0(%arg0: index):
-      call @baz() : () -> ()
+      func.call @baz() : () -> ()
       sair.return
     } : #sair.shape<d0:static_range<3>>, () -> ()
     sair.exit { instances = [{}] }
@@ -314,7 +314,7 @@ func @partial_unroll() {
       }]
     } {
     ^bb0(%arg0: index):
-      call @baz() : () -> ()
+      func.call @baz() : () -> ()
       sair.return
     } : #sair.shape<d0:static_range<5>>, () -> ()
     sair.exit { instances = [{}] }
@@ -344,7 +344,7 @@ func @dyn_range_unroll(%sz: index) {
       }]
     } {
     ^bb0(%arg0: index):
-      call @baz() : () -> ()
+      func.call @baz() : () -> ()
       sair.return
     } : #sair.shape<d0:dyn_range>, () -> ()
     sair.exit { instances = [{}] }
@@ -370,7 +370,7 @@ func @nested_unroll() {
       }]
     } {
     ^bb0(%arg0: index, %arg1: index, %arg2: index):
-      call @baz() : () -> ()
+      func.call @baz() : () -> ()
       sair.return
     } : #sair.shape<d0:static_range<2> x d1:static_range<2> x d2:static_range<2>>, () -> ()
     sair.exit { instances = [{}] }
