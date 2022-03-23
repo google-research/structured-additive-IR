@@ -201,7 +201,7 @@ func @fby_many_compute(%arg0: f32) -> f32 {
     %8 = sair.proj_last of[d0:%0] %3(d0) : #sair.shape<d0:static_range<42>>, f32
     sair.exit %8 : f32
   } : f32
-  return %out : f32
+  func.return %out : f32
 }
 
 // CHECK-LABEL: @fby_two_cycles
@@ -238,7 +238,7 @@ func @fby_two_cycles(%arg0: f32) -> f32 {
       : #sair.shape<d0:static_range<42> x d1:static_range<42>>, f32
     sair.exit %9 : f32
   } : f32
-  return %out : f32
+  func.return %out : f32
 }
 
 // CHECK-LABEL: @fby_then_different_source
