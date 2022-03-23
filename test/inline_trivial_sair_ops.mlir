@@ -20,7 +20,7 @@ func @one_map() -> f32 {
     sair.exit %3 : f32
   } : f32
   // CHECK: return %[[v3]] : f32
-  return %1 : f32
+  func.return %1 : f32
 }
 
 // CHECK-LABEL: @sequence
@@ -43,7 +43,7 @@ func @sequence() -> f32 {
     sair.exit %2 : f32
   } : f32
   // CHECK: return %[[v3]] : f32
-  return %6 : f32
+  func.return %6 : f32
 }
 
 // CHECK-LABEL: @do_nothing
