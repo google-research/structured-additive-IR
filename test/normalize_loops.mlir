@@ -263,7 +263,7 @@ func @sequence_attr(%arg0: f32) {
       }]
     } {
     ^bb0(%arg1: index, %arg2: f32):
-      call @foo(%arg1, %arg2) : (index, f32) -> ()
+      func.call @foo(%arg1, %arg2) : (index, f32) -> ()
       sair.return
     } : #sair.shape<d0:static_range<16>>, (f32) -> ()
 
@@ -277,7 +277,7 @@ func @sequence_attr(%arg0: f32) {
       }]
     } {
     ^bb0(%arg1: index, %arg2: f32):
-      call @foo(%arg1, %arg2) : (index, f32) -> ()
+      func.call @foo(%arg1, %arg2) : (index, f32) -> ()
       sair.return
     } : #sair.shape<d0:static_range<16>>, (f32) -> ()
 
@@ -293,7 +293,7 @@ func @sequence_attr(%arg0: f32) {
       }]
     } {
     ^bb0(%arg1: index, %arg2: f32):
-      call @foo(%arg1, %arg2) : (index, f32) -> ()
+      func.call @foo(%arg1, %arg2) : (index, f32) -> ()
       sair.return
     } : #sair.shape<d0:static_range<16>>, (f32) -> ()
     sair.exit { instances = [{}] }
