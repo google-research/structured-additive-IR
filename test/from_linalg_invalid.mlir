@@ -10,7 +10,7 @@
                     "parallel"]
 }
 
-func @reductions(%arg0: memref<2x3x4x5x6xf32>, %arg1: memref<2x4x6xf32>) {
+func.func @reductions(%arg0: memref<2x3x4x5x6xf32>, %arg1: memref<2x4x6xf32>) {
   // expected-error @+1 {{unexpected output tensor expression in indexing map #0 a.k.a 'd3' is function of reduction iterator 'd3'}}
   linalg.generic #reductions_trait
     ins(%arg0 : memref<2x3x4x5x6xf32>)
@@ -33,7 +33,7 @@ func @reductions(%arg0: memref<2x3x4x5x6xf32>, %arg1: memref<2x4x6xf32>) {
   iterator_types = ["parallel"]
 }
 
-func @shape_mismatch(%arg0: memref<?xf32>, %arg1: memref<2xf32>) {
+func.func @shape_mismatch(%arg0: memref<?xf32>, %arg1: memref<2xf32>) {
   // expected-error @+1 {{Linalg op is not compatible with Sair}}
   linalg.generic #pointwise_trait
     ins(%arg0 : memref<?xf32>)

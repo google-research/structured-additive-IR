@@ -1,50 +1,50 @@
 // RUN: sair-opt --allow-unregistered-dialect -split-input-file -verify-diagnostics %s
 
 // expected-error @+1 {{invalid sair type}}
-func @invalid_type() -> !sair.foo
+func.func @invalid_type() -> !sair.foo
 
 // -----
 
 // expected-error @+1 {{unexpected nul or EOF}}
-func @unfinished_range_dep() -> !sair.dyn_range<d0:dyn_range, d1:dyn_range
+func.func @unfinished_range_dep() -> !sair.dyn_range<d0:dyn_range, d1:dyn_range
 
 // -----
 
 // expected-error @+1 {{expected 'x' or '>'}}
-func @garbage_in_range_dep() -> !sair.dyn_range<d0:dyn_range? d1:dyn_range>
+func.func @garbage_in_range_dep() -> !sair.dyn_range<d0:dyn_range? d1:dyn_range>
 
 // -----
 
 // expected-error @+1 {{dimension 'd1' is out of range (0 dimensions)}}
-func @invalid_dep() -> !sair.dyn_range<d0:dyn_range(d1)>
+func.func @invalid_dep() -> !sair.dyn_range<d0:dyn_range(d1)>
 // -----
 
 // expected-error @+1 {{invalid dimension name}}
-func @invalid_dep() -> !sair.dyn_range<d0:dyn_range(x)>
+func.func @invalid_dep() -> !sair.dyn_range<d0:dyn_range(x)>
 
 // -----
 
 // expected-error @+1 {{non-transitive dependency}}
-func @non_transitive_dependency() -> !sair.dyn_range<d0:dyn_range x d1:dyn_range(d0) x d2:dyn_range(d1)>
+func.func @non_transitive_dependency() -> !sair.dyn_range<d0:dyn_range x d1:dyn_range(d0) x d2:dyn_range(d1)>
 
 // -----
 
 // expected-error @+1 {{invalid mapping}}
-func @duplicate_dependency() -> !sair.dyn_range<d0:dyn_range x d1:dyn_range(d0, d0)>
+func.func @duplicate_dependency() -> !sair.dyn_range<d0:dyn_range x d1:dyn_range(d0, d0)>
 
 // -----
 
 // expected-error @+1 {{expected 'd1'}}
-func @shape_dim_redefinition() -> !sair.dyn_range<d0:dyn_range x d0:dyn_range>
+func.func @shape_dim_redefinition() -> !sair.dyn_range<d0:dyn_range x d0:dyn_range>
 
 // -----
 
 // expected-error @+1 {{the mapping must map all dimensions}}
-func @shape_none_dim() -> !sair.dyn_range<d0:dyn_range x d1:dyn_range(none)>
+func.func @shape_none_dim() -> !sair.dyn_range<d0:dyn_range x d1:dyn_range(none)>
 
 // -----
 
-func @operand_mapping_dim_not_mapped(%arg0: f32) {
+func.func @operand_mapping_dim_not_mapped(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
@@ -58,7 +58,7 @@ func @operand_mapping_dim_not_mapped(%arg0: f32) {
 
 // -----
 
-func @operand_mapping_dim_not_mapped_raw(%arg0: f32) {
+func.func @operand_mapping_dim_not_mapped_raw(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
@@ -74,7 +74,7 @@ func @operand_mapping_dim_not_mapped_raw(%arg0: f32) {
 
 // -----
 
-func @dimension_out_of_range() {
+func.func @dimension_out_of_range() {
   // expected-error @+1 {{dimension 'd2' is out of range}}
   "foo"() {mapping = #sair.mapping<2 : d0, d1, d2>} : () -> ()
 }
@@ -82,7 +82,7 @@ func @dimension_out_of_range() {
 // -----
 
 // expected-note @+1 {{prior use here}}
-func @dyn_range_op_invalid_type(%arg0 : !sair.value<(), index>) {
+func.func @dyn_range_op_invalid_type(%arg0 : !sair.value<(), index>) {
   sair.program {
     // expected-error @+1 {{expects different type}}
     %1 = sair.dyn_range[d0:%arg0] %arg0 : !sair.dyn_range<d0:dyn_range>
@@ -93,7 +93,7 @@ func @dyn_range_op_invalid_type(%arg0 : !sair.value<(), index>) {
 
 // -----
 
-func @domain_unexpected_num_dims(%arg0 : !sair.value<(), index>) {
+func.func @domain_unexpected_num_dims(%arg0 : !sair.value<(), index>) {
   sair.program {
     %0 = sair.dyn_range %arg0 : !sair.dyn_range
     // expected-error @+1 {{2 operands present, but expected 1}}
@@ -105,7 +105,7 @@ func @domain_unexpected_num_dims(%arg0 : !sair.value<(), index>) {
 
 // -----
 
-func @domain_unexpected_dimension_type(%arg0 : !sair.value<(), index>) {
+func.func @domain_unexpected_dimension_type(%arg0 : !sair.value<(), index>) {
   sair.program {
     // expected-note @+1 {{prior use here}}
     %0 = sair.dyn_range %arg0 : !sair.dyn_range
@@ -118,7 +118,7 @@ func @domain_unexpected_dimension_type(%arg0 : !sair.value<(), index>) {
 
 // -----
 
-func @domain_dim_redefinition(%arg0 : !sair.value<(), index>) {
+func.func @domain_dim_redefinition(%arg0 : !sair.value<(), index>) {
   sair.program {
     %0 = sair.dyn_range %arg0 : !sair.dyn_range
     // expected-error @+1 {{expected 'd1'}}
@@ -130,7 +130,7 @@ func @domain_dim_redefinition(%arg0 : !sair.value<(), index>) {
 
 // -----
 
-func @fby_cycle(%arg0: f32) {
+func.func @fby_cycle(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<8>
     // expected-error @below {{unexpected use-def cycle}}
@@ -147,7 +147,7 @@ func @fby_cycle(%arg0: f32) {
 
 // -----
 
-func @copy_cycle(%arg0: f32) {
+func.func @copy_cycle(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<8>
     // expected-error @below {{unexpected use-def cycle}}
@@ -170,7 +170,7 @@ func @copy_cycle(%arg0: f32) {
 
 // -----
 
-func @mixed_cycle(%arg0: f32) {
+func.func @mixed_cycle(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<8>
     // expected-error @below {{unexpected use-def cycle}}
@@ -186,7 +186,7 @@ func @mixed_cycle(%arg0: f32) {
 
 // -----
 
-func @domain_cycle(%arg0: f32, %arg1: index) {
+func.func @domain_cycle(%arg0: f32, %arg1: index) {
   sair.program {
     %0 = sair.from_scalar %arg1 : !sair.value<(), index>
     %1 = sair.static_range : !sair.static_range<42>
@@ -203,7 +203,7 @@ func @domain_cycle(%arg0: f32, %arg1: index) {
 
 // -----
 
-func @invalid_mapping(%arg0 : !sair.dyn_range,
+func.func @invalid_mapping(%arg0 : !sair.dyn_range,
                              // expected-note @+1 {{prior use here}}
                              %arg1 : !sair.value<d0:dyn_range x d1:dyn_range(d0), index>) {
   sair.program {
@@ -216,14 +216,14 @@ func @invalid_mapping(%arg0 : !sair.dyn_range,
 
 // -----
 
-func @invalid_attr_name() {
+func.func @invalid_attr_name() {
   // expected-error @+1 {{unexpected Sair attribute}}
   "foo"() {shape=#sair.invalid_attr_name<()>} : () -> ()
 }
 
 // -----
 
-func @copy_exected_same_element_type(%arg0 : f32) {
+func.func @copy_exected_same_element_type(%arg0 : f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{same element type}}
@@ -236,7 +236,7 @@ func @copy_exected_same_element_type(%arg0 : f32) {
 
 // -----
 
-func @invalid_use_domain_size(%arg0 : f32) {
+func.func @invalid_use_domain_size(%arg0 : f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{invalid use domain size}}
@@ -249,7 +249,7 @@ func @invalid_use_domain_size(%arg0 : f32) {
 
 // -----
 
-func @copy_expected_value() {
+func.func @copy_expected_value() {
   sair.program {
     // expected-error @+1 {{expected a sair value access}}
     sair.copy : !sair.value<(), f32>
@@ -260,7 +260,7 @@ func @copy_expected_value() {
 
 // -----
 
-func @from_memref_exected_same_element_type(%arg0 : memref<f32>) {
+func.func @from_memref_exected_same_element_type(%arg0 : memref<f32>) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), memref<f32>>
     // expected-error @+1 {{same element type}}
@@ -277,7 +277,7 @@ func @from_memref_exected_same_element_type(%arg0 : memref<f32>) {
 
 // -----
 
-func @load_from_memref_exected_same_element_type(%arg0 : memref<f32>) {
+func.func @load_from_memref_exected_same_element_type(%arg0 : memref<f32>) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), memref<f32>>
     // expected-error @+1 {{memref and value type must have the same element type}}
@@ -290,7 +290,7 @@ func @load_from_memref_exected_same_element_type(%arg0 : memref<f32>) {
 
 // -----
 
-func @load_from_memref_rank_mismatch(%arg0 : memref<?xf32>) {
+func.func @load_from_memref_rank_mismatch(%arg0 : memref<?xf32>) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), memref<?xf32>>
     // expected-error @+1 {{memref and layout must have the same rank}}
@@ -303,7 +303,7 @@ func @load_from_memref_rank_mismatch(%arg0 : memref<?xf32>) {
 
 // -----
 
-func @load_from_memref_layout_partially_specified(%arg0 : memref<?xf32>) {
+func.func @load_from_memref_layout_partially_specified(%arg0 : memref<?xf32>) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), memref<?xf32>>
     // expected-error @+1 {{layout must be surjective}}
@@ -316,7 +316,7 @@ func @load_from_memref_layout_partially_specified(%arg0 : memref<?xf32>) {
 
 // -----
 
-func @hyper_rectangular_domain(%arg0: index, %arg1 : memref<?x?xf32>) {
+func.func @hyper_rectangular_domain(%arg0: index, %arg1 : memref<?x?xf32>) {
   sair.program {
     %0 = sair.static_range :!sair.static_range<8>
     %1 = sair.from_scalar %arg0 : !sair.value<(), index>
@@ -334,7 +334,7 @@ func @hyper_rectangular_domain(%arg0: index, %arg1 : memref<?x?xf32>) {
 
 // -----
 
-func @from_memref_rank(%arg0 : memref<?xf32>) {
+func.func @from_memref_rank(%arg0 : memref<?xf32>) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), memref<?xf32>>
     // expected-error @+1 {{expected memref of rank 0, got 1}}
@@ -348,7 +348,7 @@ func @from_memref_rank(%arg0 : memref<?xf32>) {
 
 // -----
 
-func @map_wrong_body_argument_count(%arg0 : f32) {
+func.func @map_wrong_body_argument_count(%arg0 : f32) {
   sair.program {
     %0 = sair.static_range :!sair.static_range<8>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -364,7 +364,7 @@ func @map_wrong_body_argument_count(%arg0 : f32) {
 
 // -----
 
-func @map_wrong_body_argument_type(%arg0 : f32) {
+func.func @map_wrong_body_argument_type(%arg0 : f32) {
   sair.program {
     %0 = sair.static_range :!sair.static_range<8>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -380,7 +380,7 @@ func @map_wrong_body_argument_type(%arg0 : f32) {
 
 // -----
 
-func @map_wrong_body_argument_trailing_type(%arg0 : f32) {
+func.func @map_wrong_body_argument_trailing_type(%arg0 : f32) {
   sair.program {
     %0 = sair.static_range :!sair.static_range<8>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -396,7 +396,7 @@ func @map_wrong_body_argument_trailing_type(%arg0 : f32) {
 
 // -----
 
-func @map_wrong_terminator() {
+func.func @map_wrong_terminator() {
   sair.program {
     // expected-error @+1 {{expects body to be terminated with 'sair.return'}}
     sair.map {
@@ -410,7 +410,7 @@ func @map_wrong_terminator() {
 
 // -----
 
-func @map_wrong_terminator_operand() {
+func.func @map_wrong_terminator_operand() {
   sair.program {
     // expected-error @+1 {{expects element types of results to match operand types of the body terminator}}
     sair.map {
@@ -426,7 +426,7 @@ func @map_wrong_terminator_operand() {
 
 // -----
 
-func @map_wrong_trailing_arg_count() {
+func.func @map_wrong_trailing_arg_count() {
   sair.program {
     %0 = sair.static_range : !sair.static_range<8>
     sair.map[d0:%0] {
@@ -440,7 +440,7 @@ func @map_wrong_trailing_arg_count() {
 
 // -----
 
-func @map_reduce_wrong_trailing_arg_count(%arg0 : f32) {
+func.func @map_reduce_wrong_trailing_arg_count(%arg0 : f32) {
   sair.program {
     %0 = sair.static_range :!sair.static_range<8>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -456,7 +456,7 @@ func @map_reduce_wrong_trailing_arg_count(%arg0 : f32) {
 
 // -----
 
-func @map_reduce_wrong_trailing_res_count(%arg0 : f32) {
+func.func @map_reduce_wrong_trailing_res_count(%arg0 : f32) {
   sair.program {
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     sair.map_reduce %1 reduce {
@@ -472,7 +472,7 @@ func @map_reduce_wrong_trailing_res_count(%arg0 : f32) {
 
 // -----
 
-func @map_reduce_wrong_body_argument_count(%arg0 : f32) {
+func.func @map_reduce_wrong_body_argument_count(%arg0 : f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<8>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -489,7 +489,7 @@ func @map_reduce_wrong_body_argument_count(%arg0 : f32) {
 
 // -----
 
-func @map_reduce_wrong_terminator_type(%arg0 : f32) {
+func.func @map_reduce_wrong_terminator_type(%arg0 : f32) {
   sair.program {
     %0 = sair.static_range :!sair.static_range<8>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -507,7 +507,7 @@ func @map_reduce_wrong_terminator_type(%arg0 : f32) {
 
 // -----
 
-func @map_reduce_init_accessing_reduction(%arg0 : f32) {
+func.func @map_reduce_init_accessing_reduction(%arg0 : f32) {
   sair.program {
     %0 = sair.static_range :!sair.static_range<8>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -530,7 +530,7 @@ func @map_reduce_init_accessing_reduction(%arg0 : f32) {
 
 // -----
 
-func @map_reduce_unexpected_shape() {
+func.func @map_reduce_unexpected_shape() {
   sair.program {
     // expected-error @+1 {{unexpected shape}}
     "sair.map_reduce"() ({
@@ -549,7 +549,7 @@ func @map_reduce_unexpected_shape() {
 
 // -----
 
-func @from_scalar_element_type() {
+func.func @from_scalar_element_type() {
 // expected-note @+1 {{prior use here}}
   %0 = arith.constant 0 : index
   sair.program {
@@ -562,7 +562,7 @@ func @from_scalar_element_type() {
 
 // -----
 
-func @from_scalar_element_type_generic_form() {
+func.func @from_scalar_element_type_generic_form() {
   %0 = arith.constant 0 : index
   sair.program {
     // expected-error @+1 {{expects different type}}
@@ -574,7 +574,7 @@ func @from_scalar_element_type_generic_form() {
 
 // -----
 
-func @sair_program_non_sair_op() {
+func.func @sair_program_non_sair_op() {
   // expected-error @+1 {{expected only Sair operations in the body}}
   sair.program {
     // expected-note @+1 {{found}}
@@ -586,7 +586,7 @@ func @sair_program_non_sair_op() {
 
 // -----
 
-func @sair_op_outside_sair_program() {
+func.func @sair_op_outside_sair_program() {
   // expected-error @+1 {{expected to be immediately contained in a 'sair.program'}}
   %0 = sair.static_range : !sair.static_range<42>
   return
@@ -594,7 +594,7 @@ func @sair_op_outside_sair_program() {
 
 // -----
 
-func @sair_value_defined_outside_sair_program(%arg0: !sair.value<(), f32>) {
+func.func @sair_value_defined_outside_sair_program(%arg0: !sair.value<(), f32>) {
   sair.program {
     // expected-error @+1 {{sair values must be defined in the region they are used}}
     %0 = sair.copy %arg0 : !sair.value<(), f32>
@@ -605,7 +605,7 @@ func @sair_value_defined_outside_sair_program(%arg0: !sair.value<(), f32>) {
 
 // -----
 
-func @sair_dimension_defined_outside_sair_program(%arg0: !sair.dyn_range) {
+func.func @sair_dimension_defined_outside_sair_program(%arg0: !sair.dyn_range) {
   %0 = arith.constant 1.0 : f32
   sair.program {
     %1 = sair.from_scalar %0 : !sair.value<(), f32>
@@ -618,7 +618,7 @@ func @sair_dimension_defined_outside_sair_program(%arg0: !sair.dyn_range) {
 
 // -----
 
-func @sair_program_wrong_terminator() {
+func.func @sair_program_wrong_terminator() {
   // expected-error @+1 {{expected a sair.exit terminator}}
   sair.program {
     sair.static_range : !sair.static_range<8>
@@ -628,7 +628,7 @@ func @sair_program_wrong_terminator() {
 
 // -----
 
-func @sair_exit_wrong_num_operands() {
+func.func @sair_exit_wrong_num_operands() {
   %0 = sair.program {
     // expected-error @+1 {{expected 1 operands, found 0}}
     sair.exit
@@ -638,7 +638,7 @@ func @sair_exit_wrong_num_operands() {
 
 // -----
 
-func @sair_exit_wrong_type() {
+func.func @sair_exit_wrong_type() {
   %c0 = arith.constant 1 : i32
   %0 = sair.program {
     %1 = sair.from_scalar %c0 : !sair.value<(), i32>
@@ -650,7 +650,7 @@ func @sair_exit_wrong_type() {
 
 // -----
 
-func @sair_exit_type_operands_mismatch() {
+func.func @sair_exit_type_operands_mismatch() {
   sair.program {
     // expected-error @+1 {{expected 0 types}}
     sair.exit : f32
@@ -659,7 +659,7 @@ func @sair_exit_type_operands_mismatch() {
 
 // -----
 
-func @expected_loop_attr() {
+func.func @expected_loop_attr() {
   sair.program {
     // expected-error @+1 {{attribute 'instances' failed to satisfy constraint}}
     sair.map attributes {instances = [{loop_nest = [0]}]} {
@@ -672,7 +672,7 @@ func @expected_loop_attr() {
 
 // -----
 
-func @loop_name_used_twice(%arg0: f32) {
+func.func @loop_name_used_twice(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<8>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -692,7 +692,7 @@ func @loop_name_used_twice(%arg0: f32) {
 
 // -----
 
-func @dim_not_covered_by_loop_nest(%arg0: f32) {
+func.func @dim_not_covered_by_loop_nest(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<8>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -706,7 +706,7 @@ func @dim_not_covered_by_loop_nest(%arg0: f32) {
 
 // -----
 
-func @loop_dependencies_not_covered(%arg0: index, %arg1: f32) {
+func.func @loop_dependencies_not_covered(%arg0: index, %arg1: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<8>
     %1 = sair.from_scalar %arg0 : !sair.value<(), index>
@@ -729,7 +729,7 @@ func @loop_dependencies_not_covered(%arg0: index, %arg1: f32) {
 
 // -----
 
-func @unknown_dim_in_loop_nest(%arg0: f32) {
+func.func @unknown_dim_in_loop_nest(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{dimension 'd0' is out of range of the domain}}
@@ -743,7 +743,7 @@ func @unknown_dim_in_loop_nest(%arg0: f32) {
 
 // -----
 
-func @loop_step_increasing(%arg0: f32) {
+func.func @loop_step_increasing(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<8>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -763,7 +763,7 @@ func @loop_step_increasing(%arg0: f32) {
 
 // -----
 
-func @loop_fusion_different_prefix(%arg0: f32) {
+func.func @loop_fusion_different_prefix(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<8>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -792,7 +792,7 @@ func @loop_fusion_different_prefix(%arg0: f32) {
 
 // -----
 
-func @loop_fusion_not_contiguous(%arg0: f32) {
+func.func @loop_fusion_not_contiguous(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<8>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -819,7 +819,7 @@ func @loop_fusion_not_contiguous(%arg0: f32) {
 
 // -----
 
-func @iter_field_missing(%arg0: f32) {
+func.func @iter_field_missing(%arg0: f32) {
   sair.program {
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{in loop "A": iterator is not fully specified}}
@@ -833,7 +833,7 @@ func @iter_field_missing(%arg0: f32) {
 
 // -----
 
-func @loop_definition_mismatch(%arg0: f32) {
+func.func @loop_definition_mismatch(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
 
@@ -855,7 +855,7 @@ func @loop_definition_mismatch(%arg0: f32) {
 
 // -----
 
-func @init_nested_in_reduction_loop(%arg0: f32) {
+func.func @init_nested_in_reduction_loop(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
@@ -877,7 +877,7 @@ func @init_nested_in_reduction_loop(%arg0: f32) {
 
 // -----
 
-func @dimension_defined_in_loop_nest(%arg0: index, %arg1: f32) {
+func.func @dimension_defined_in_loop_nest(%arg0: index, %arg1: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
     %1 = sair.from_scalar %arg1 : !sair.value<(), f32>
@@ -897,7 +897,7 @@ func @dimension_defined_in_loop_nest(%arg0: index, %arg1: f32) {
 
 // -----
 
-func @proj_last_dependency(%arg0: f32) {
+func.func @proj_last_dependency(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
@@ -916,7 +916,7 @@ func @proj_last_dependency(%arg0: f32) {
 
 // -----
 
-func @mapped_dimensions(%arg0: f32) {
+func.func @mapped_dimensions(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
@@ -945,7 +945,7 @@ func @mapped_dimensions(%arg0: f32) {
 
 // -----
 
-func @dimension_size_loop_nest(%arg0: index, %arg1: f32) {
+func.func @dimension_size_loop_nest(%arg0: index, %arg1: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
     %1 = sair.from_scalar %arg1 : !sair.value<(), f32>
@@ -980,7 +980,7 @@ func @dimension_size_loop_nest(%arg0: index, %arg1: f32) {
 
 // -----
 
-func @fby_must_fuse(%arg0: f32) {
+func.func @fby_must_fuse(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
@@ -999,7 +999,7 @@ func @fby_must_fuse(%arg0: f32) {
 
 // -----
 
-func @fby_of_proj_dependency(%arg0: f32) {
+func.func @fby_of_proj_dependency(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
@@ -1025,7 +1025,7 @@ func @fby_of_proj_dependency(%arg0: f32) {
 
 // -----
 
-func @fby_of_fby_dependency(%arg0: f32) {
+func.func @fby_of_fby_dependency(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
@@ -1051,7 +1051,7 @@ func @fby_of_fby_dependency(%arg0: f32) {
 // -----
 
 // Make sure we don't crash here.
-func @fby_dim_out_of_range(%arg0: f32) {
+func.func @fby_dim_out_of_range(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
@@ -1066,7 +1066,7 @@ func @fby_dim_out_of_range(%arg0: f32) {
 
 // -----
 
-func @wrong_order_for_remat(%arg0: index) {
+func.func @wrong_order_for_remat(%arg0: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
     // expected-error @+1 {{rematerialized loop "A" indirectly uses the range before it is defined}}
@@ -1088,7 +1088,7 @@ func @wrong_order_for_remat(%arg0: index) {
 
 // -----
 
-func @loop_unification_failed(%arg0: f32) {
+func.func @loop_unification_failed(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
@@ -1117,7 +1117,7 @@ func @loop_unification_failed(%arg0: f32) {
 
 // -----
 
-func @loop_unification_failed_subexpr(%arg0: f32) {
+func.func @loop_unification_failed_subexpr(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
@@ -1141,7 +1141,7 @@ func @loop_unification_failed_subexpr(%arg0: f32) {
 
 // -----
 
-func @incompatible_loop_iterators(%arg0: f32) {
+func.func @incompatible_loop_iterators(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
@@ -1161,41 +1161,41 @@ func @incompatible_loop_iterators(%arg0: f32) {
 
 // -----
 
-func @stripe_expected_less_than() {
+func.func @stripe_expected_less_than() {
   // expected-error @+1 {{expected an integer > 2}}
   "foo"() { bar = #sair.mapping_expr<stripe(d0, [2, 4])> } : () -> ()
 }
 
 // -----
 
-func @invalid_expected_positive() {
+func.func @invalid_expected_positive() {
   // expected-error @+1 {{expected a positive integer}}
   "foo"() { bar = #sair.mapping_expr<stripe(d0, [-1])> } : () -> ()
 }
 
 // -----
 
-func @unstripe_must_end_with_1() {
+func.func @unstripe_must_end_with_1() {
   // expected-error @+1 {{unstripe factors must end with 1}}
   "foo"() { bar = #sair.mapping_expr<unstripe(d0, d1, [3, 2])> } : () -> ()
 }
 // -----
 
-func @unstripe_invalid_number_of_factors() {
+func.func @unstripe_invalid_number_of_factors() {
   // expected-error @+1 {{invalid number of factors}}
   "foo"() { bar = #sair.mapping_expr<unstripe(d0, d1, [2])> } : () -> ()
 }
 
 // -----
 
-func @invalid_mapping() {
+func.func @invalid_mapping() {
   // expected-error @+1 {{invalid mapping}}
   "foo"() { bar = #sair.mapping<1: d0, d0> } : () -> ()
 }
 
 // -----
 
-func @alloc_dim_sizes_mismatch(%arg0: index) {
+func.func @alloc_dim_sizes_mismatch(%arg0: index) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<2>
     %idx = sair.from_scalar %arg0 : !sair.value<(), index>
@@ -1208,7 +1208,7 @@ func @alloc_dim_sizes_mismatch(%arg0: index) {
 
 // -----
 
-func @loop_crosses_subdomain_boundaries(%arg0: f32) {
+func.func @loop_crosses_subdomain_boundaries(%arg0: f32) {
   %c4 = arith.constant 4 : index
   sair.program {
     %sc4 = sair.from_scalar %c4 : !sair.value<(), index>
@@ -1232,7 +1232,7 @@ func @loop_crosses_subdomain_boundaries(%arg0: f32) {
 
 // -----
 
-func @storage_wrong_number_of_entries(%arg0: f32) {
+func.func @storage_wrong_number_of_entries(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{wrong number of storage entries}}
@@ -1249,7 +1249,7 @@ func @storage_wrong_number_of_entries(%arg0: f32) {
 
 // -----
 
-func @storage_invalid_attr(%arg0: f32) {
+func.func @storage_invalid_attr(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{storage attribute must be an array of buffers or unit attributes}}
@@ -1266,7 +1266,7 @@ func @storage_invalid_attr(%arg0: f32) {
 
 // -----
 
-func @invalid_memory_space(%arg0: f32) {
+func.func @invalid_memory_space(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{invalid memory space}}
@@ -1286,7 +1286,7 @@ func @invalid_memory_space(%arg0: f32) {
 
 // -----
 
-func @index_variable_in_memory(%arg0: index) {
+func.func @index_variable_in_memory(%arg0: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
     // expected-error @+1 {{index and memref variables cannot be allocated in memory}}
@@ -1306,7 +1306,7 @@ func @index_variable_in_memory(%arg0: index) {
 
 // -----
 
-func @buffer_must_have_name_if_in_memory(%arg0: f32) {
+func.func @buffer_must_have_name_if_in_memory(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{buffers must have a name if and only if they are stored in memory}}
@@ -1326,7 +1326,7 @@ func @buffer_must_have_name_if_in_memory(%arg0: f32) {
 
 // -----
 
-func @storage_1D_buffer_register(%arg0: f32) {
+func.func @storage_1D_buffer_register(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
@@ -1347,7 +1347,7 @@ func @storage_1D_buffer_register(%arg0: f32) {
 
 // -----
 
-func @storage_unknown_loop_name(%arg0: f32) {
+func.func @storage_unknown_loop_name(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{unknown loop name "loopA"}}
@@ -1367,7 +1367,7 @@ func @storage_unknown_loop_name(%arg0: f32) {
 
 // -----
 
-func @fby_operand_different_storage(%arg0: f32) {
+func.func @fby_operand_different_storage(%arg0: f32) {
   sair.program {
     // expected-error @+1 {{conflicting memory spaces: expected "register", got "memory"}}
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -1389,7 +1389,7 @@ func @fby_operand_different_storage(%arg0: f32) {
 
 // -----
 
-func @fby_operand_different_storage2(%arg0: f32) {
+func.func @fby_operand_different_storage2(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
@@ -1417,7 +1417,7 @@ func @fby_operand_different_storage2(%arg0: f32) {
 
 // -----
 
-func @buffer_different_element_type(%arg0: f32, %arg1: i32) {
+func.func @buffer_different_element_type(%arg0: f32, %arg1: i32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.from_scalar %arg1 : !sair.value<(), i32>
@@ -1448,7 +1448,7 @@ func @buffer_different_element_type(%arg0: f32, %arg1: i32) {
 
 // -----
 
-func @buffer_layout_incompatible(%arg0: f32) {
+func.func @buffer_layout_incompatible(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
@@ -1479,7 +1479,7 @@ func @buffer_layout_incompatible(%arg0: f32) {
 
 // -----
 
-func @buffer_rank_differs(%arg0: f32) {
+func.func @buffer_rank_differs(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
@@ -1510,7 +1510,7 @@ func @buffer_rank_differs(%arg0: f32) {
 
 // -----
 
-func @layout_depends_on_loops(%arg0: f32, %arg1: index) {
+func.func @layout_depends_on_loops(%arg0: f32, %arg1: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.from_scalar %arg1 : !sair.value<(), index>
@@ -1550,7 +1550,7 @@ func @layout_depends_on_loops(%arg0: f32, %arg1: index) {
 
 // -----
 
-func @layout_depends_indexed_loop(%arg0: f32) {
+func.func @layout_depends_indexed_loop(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
@@ -1574,7 +1574,7 @@ func @layout_depends_indexed_loop(%arg0: f32) {
 
 // -----
 
-func @buffer_used_before_dimension_def(%arg0: f32, %arg1: index) {
+func.func @buffer_used_before_dimension_def(%arg0: f32, %arg1: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
 
@@ -1615,7 +1615,7 @@ func @buffer_used_before_dimension_def(%arg0: f32, %arg1: index) {
 
 // -----
 
-func @buffer_used_before_dimension_def(%arg0: f32, %arg1: index) {
+func.func @buffer_used_before_dimension_def(%arg0: f32, %arg1: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.from_scalar %arg1 : !sair.value<(), index>
@@ -1657,7 +1657,7 @@ func @buffer_used_before_dimension_def(%arg0: f32, %arg1: index) {
 
 // -----
 
-func @placeholder_loop_nest_unspecified(%arg0: f32) {
+func.func @placeholder_loop_nest_unspecified(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.placeholder : !sair.dyn_range
@@ -1674,7 +1674,7 @@ func @placeholder_loop_nest_unspecified(%arg0: f32) {
 
 // -----
 
-func @partial_layout(%arg0: f32) {
+func.func @partial_layout(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
@@ -1693,7 +1693,7 @@ func @partial_layout(%arg0: f32) {
 
 // -----
 
-func @buffer_name_already_used(%arg0: memref<f32>, %arg1: memref<f32>) {
+func.func @buffer_name_already_used(%arg0: memref<f32>, %arg1: memref<f32>) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), memref<f32>>
     %1 = sair.from_scalar %arg1 : !sair.value<(), memref<f32>>
@@ -1709,7 +1709,7 @@ func @buffer_name_already_used(%arg0: memref<f32>, %arg1: memref<f32>) {
 
 // -----
 
-func @buffer_used_before_def(%arg0: f32, %arg1: memref<f32>) {
+func.func @buffer_used_before_def(%arg0: f32, %arg1: memref<f32>) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{buffer "bufferA" used before it is defined}}
@@ -1738,7 +1738,7 @@ func @buffer_used_before_def(%arg0: f32, %arg1: memref<f32>) {
 
 // -----
 
-func @buffer_used_before_def_seq(%arg0: f32, %arg1: memref<f32>) {
+func.func @buffer_used_before_def_seq(%arg0: f32, %arg1: memref<f32>) {
   sair.program {
     %2 = sair.from_scalar %arg1 : !sair.value<(), memref<f32>>
     // expected-note @+1 {{buffer defined here}}
@@ -1768,7 +1768,7 @@ func @buffer_used_before_def_seq(%arg0: f32, %arg1: memref<f32>) {
 
 // -----
 
-func @to_memref_buffer_name(%arg0: f32, %arg1: memref<f32>) {
+func.func @to_memref_buffer_name(%arg0: f32, %arg1: memref<f32>) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.from_scalar %arg1 : !sair.value<(), memref<f32>>
@@ -1792,7 +1792,7 @@ func @to_memref_buffer_name(%arg0: f32, %arg1: memref<f32>) {
 
 // -----
 
-func @to_memref_layout(%arg0: f32, %arg1: memref<?x?xf32>) {
+func.func @to_memref_layout(%arg0: f32, %arg1: memref<?x?xf32>) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.from_scalar %arg1 : !sair.value<(), memref<?x?xf32>>
@@ -1820,7 +1820,7 @@ func @to_memref_layout(%arg0: f32, %arg1: memref<?x?xf32>) {
 
 // -----
 
-func @two_results_same_buffer() {
+func.func @two_results_same_buffer() {
   sair.program {
     // expected-error @+1 {{operation cannot store two results in the same buffer}}
     %0, %1 = sair.map attributes {
@@ -1843,7 +1843,7 @@ func @two_results_same_buffer() {
 
 // -----
 
-func @storage_must_cover_dimensions(%arg0: f32) {
+func.func @storage_must_cover_dimensions(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
@@ -1867,7 +1867,7 @@ func @storage_must_cover_dimensions(%arg0: f32) {
 
 // -----
 
-func @inplace_update_different_layout(%arg0: f32) {
+func.func @inplace_update_different_layout(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
@@ -1903,7 +1903,7 @@ func @inplace_update_different_layout(%arg0: f32) {
 
 // -----
 
-func @unknown_operand_mapping(%arg0: f32) {
+func.func @unknown_operand_mapping(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
@@ -1917,7 +1917,7 @@ func @unknown_operand_mapping(%arg0: f32) {
 
 // -----
 
-func @unknown_loop_nest(%arg0: f32) {
+func.func @unknown_loop_nest(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{loop iterators cannot contain `?` expressions}}
@@ -1933,7 +1933,7 @@ func @unknown_loop_nest(%arg0: f32) {
 
 // -----
 
-func @unknown_layout(%arg0: f32) {
+func.func @unknown_layout(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{layouts cannot contain `?` expressions}}
@@ -1951,7 +1951,7 @@ func @unknown_layout(%arg0: f32) {
 
 // -----
 
-func @from_memref_overwrite(%arg0 : memref<f32>) {
+func.func @from_memref_overwrite(%arg0 : memref<f32>) {
   // expected-note @+1 {{value stored before entering sair program}}
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), memref<f32>>
@@ -1978,7 +1978,7 @@ func @from_memref_overwrite(%arg0 : memref<f32>) {
 
 // -----
 
-func @to_memref_overwrite(%arg0: memref<f32>, %arg1: f32) {
+func.func @to_memref_overwrite(%arg0: memref<f32>, %arg1: f32) {
   // expected-note @+1 {{value used after exiting sair program}}
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), memref<f32>>
@@ -2000,7 +2000,7 @@ func @to_memref_overwrite(%arg0: memref<f32>, %arg1: f32) {
 
 // -----
 
-func @fby_init_overwrite(%arg0 : f32) {
+func.func @fby_init_overwrite(%arg0 : f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %r = sair.static_range : !sair.static_range<8>
@@ -2026,7 +2026,7 @@ func @fby_init_overwrite(%arg0 : f32) {
 
 // -----
 
-func @fby_value_overwrite(%arg0 : f32) {
+func.func @fby_value_overwrite(%arg0 : f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %r = sair.static_range : !sair.static_range<8>
@@ -2055,7 +2055,7 @@ func @fby_value_overwrite(%arg0 : f32) {
 
 // -----
 
-func @sequence_inversion_two_compute() {
+func.func @sequence_inversion_two_compute() {
   sair.program {
     // expected-error @below {{operation sequencing contradicts use-def chains}}
     // expected-note @below {{sequenceable operation}}
@@ -2075,7 +2075,7 @@ func @sequence_inversion_two_compute() {
 
 // By default, MLIR treats attributes as unsigned but prints them as signed...
 // Make sure we use signed everywhere to avoid confusion.
-func @sequence_inversion_negative_value() {
+func.func @sequence_inversion_negative_value() {
   sair.program {
     // expected-error @below {{operation sequencing contradicts use-def chains}}
     // expected-note @below {{sequenceable operation}}
@@ -2093,7 +2093,7 @@ func @sequence_inversion_negative_value() {
 
 // -----
 
-func @sequence_inversion_proj_any(%arg0: f32) {
+func.func @sequence_inversion_proj_any(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<42>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -2115,7 +2115,7 @@ func @sequence_inversion_proj_any(%arg0: f32) {
 
 // -----
 
-func @sequence_inversion_proj_last(%arg0: f32) {
+func.func @sequence_inversion_proj_last(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<42>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -2137,7 +2137,7 @@ func @sequence_inversion_proj_last(%arg0: f32) {
 
 // -----
 
-func @sequence_inversion_fby(%arg0: f32) {
+func.func @sequence_inversion_fby(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<42>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -2162,7 +2162,7 @@ func @sequence_inversion_fby(%arg0: f32) {
 
 // -----
 
-func @sequence_inversion_fby_then(%arg0: f32) {
+func.func @sequence_inversion_fby_then(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<42>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -2192,7 +2192,7 @@ func @sequence_inversion_fby_then(%arg0: f32) {
 
 // If the "then" operand of fby comes from a different operation that the user
 // of fby, it should be sequenced before.
-func @sequence_same_fby_then_different_source(%arg0: f32) {
+func.func @sequence_same_fby_then_different_source(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<42>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -2220,7 +2220,7 @@ func @sequence_same_fby_then_different_source(%arg0: f32) {
 
 // -----
 
-func @sequence_inversion_from_memref(%arg0: f32) {
+func.func @sequence_inversion_from_memref(%arg0: f32) {
   sair.program {
     // expected-error @below {{operation sequencing contradicts use-def chains}}
     // expected-note @below {{sequenceable operation}}
@@ -2240,7 +2240,7 @@ func @sequence_inversion_from_memref(%arg0: f32) {
 
 // -----
 
-func @sequence_inversion_domain(%arg0: index) {
+func.func @sequence_inversion_domain(%arg0: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
     %1 = sair.dyn_range %0 : !sair.dyn_range
@@ -2264,7 +2264,7 @@ func @sequence_inversion_domain(%arg0: index) {
 
 // -----
 
-func @sequence_inversion_implicit_sequence_domain(%arg0: index) {
+func.func @sequence_inversion_implicit_sequence_domain(%arg0: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
     %1 = sair.dyn_range %0 : !sair.dyn_range
@@ -2297,7 +2297,7 @@ func @sequence_inversion_implicit_sequence_domain(%arg0: index) {
 
 // Shouldn't fail on placeholders even though the check will go through
 // dyn_range.
-func @sequence_inversion_placeholder(%arg0: index) {
+func.func @sequence_inversion_placeholder(%arg0: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
     %1 = sair.dyn_range %0 : !sair.dyn_range
@@ -2320,7 +2320,7 @@ func @sequence_inversion_placeholder(%arg0: index) {
 
 // -----
 
-func @invalid_mapping_shape_in_shape() {
+func.func @invalid_mapping_shape_in_shape() {
   "foo"() {
     // expected-error @+1 {{in operation shape: operand 1 of unstripe in #sair.mapping_expr<unstripe(d0, d1, [4, 1])> has an invalid shape}}
     bar = #sair.shape<d0:dyn_range x d1:dyn_range x d2:dyn_range(unstripe(d0, d1, [4, 1]))>
@@ -2329,7 +2329,7 @@ func @invalid_mapping_shape_in_shape() {
 
 // -----
 
-func @invalid_mapping_shape_in_operand(%arg0: f32, %arg1: index) {
+func.func @invalid_mapping_shape_in_operand(%arg0: f32, %arg1: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.from_scalar %arg1 : !sair.value<(), index>
@@ -2349,7 +2349,7 @@ func @invalid_mapping_shape_in_operand(%arg0: f32, %arg1: index) {
 
 // -----
 
-func @invalid_mapping_shape_in_operand_raw(%arg0: f32, %arg1: index) {
+func.func @invalid_mapping_shape_in_operand_raw(%arg0: f32, %arg1: index) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.from_scalar %arg1 : !sair.value<(), index>
@@ -2373,7 +2373,7 @@ func @invalid_mapping_shape_in_operand_raw(%arg0: f32, %arg1: index) {
 
 // -----
 
-func @invalid_operand_shape(%arg0: f32) {
+func.func @invalid_operand_shape(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
@@ -2389,7 +2389,7 @@ func @invalid_operand_shape(%arg0: f32) {
 
 // -----
 
-func @use_def_partial_invalid(%arg0: f32) {
+func.func @use_def_partial_invalid(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.copy %0 {
@@ -2415,7 +2415,7 @@ func @use_def_partial_invalid(%arg0: f32) {
 
 // -----
 
-func @storage_invalid_shape(%arg0: f32) {
+func.func @storage_invalid_shape(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<8>
@@ -2438,11 +2438,11 @@ func @storage_invalid_shape(%arg0: f32) {
 // -----
 
 // expected-error @+1 {{expected positive step and size}}
-func @static_range_type() -> !sair.static_range<0>
+func.func @static_range_type() -> !sair.static_range<0>
 
 // -----
 
-func @sequence_attr(%arg0: f32) {
+func.func @sequence_attr(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<16>
@@ -2483,7 +2483,7 @@ func @sequence_attr(%arg0: f32) {
 
 // -----
 
-func @mismatching_unroll() {
+func.func @mismatching_unroll() {
   sair.program {
     %0 = sair.static_range : !sair.static_range<3>
     // expected-note@below {{previous occurrence here}}
@@ -2516,7 +2516,7 @@ func @mismatching_unroll() {
 
 // -----
 
-func @mismatching_unroll_missing() {
+func.func @mismatching_unroll_missing() {
   sair.program {
     %0 = sair.static_range : !sair.static_range<3>
     // expected-note@below {{previous occurrence here}}
@@ -2549,7 +2549,7 @@ func @mismatching_unroll_missing() {
 
 // -----
 
-func @invalid_expansion_pattern_name(%arg0: f32) {
+func.func @invalid_expansion_pattern_name(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{invalid expansion pattern name "invalid_name"}}
@@ -2563,7 +2563,7 @@ func @invalid_expansion_pattern_name(%arg0: f32) {
 
 // -----
 
-func @invalid_expansion_pattern(%arg0: f32) {
+func.func @invalid_expansion_pattern(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // expected-error @+1 {{expansion pattern does not apply to the operation}}
@@ -2577,7 +2577,7 @@ func @invalid_expansion_pattern(%arg0: f32) {
 
 // -----
 
-func @copies_arity(%arg0: f32) {
+func.func @copies_arity(%arg0: f32) {
   sair.program {
     // expected-error @+1 {{the `copies` attribute must have one entry per operation result}}
     %0 = sair.from_scalar %arg0 {
@@ -2590,7 +2590,7 @@ func @copies_arity(%arg0: f32) {
 
 // -----
 
-func @copies_invalid_loop_nest(%arg0: f32) {
+func.func @copies_invalid_loop_nest(%arg0: f32) {
   sair.program {
     // expected-error @+1 {{dimension 'd0' is out of range of the domain}}
     %0 = sair.from_scalar %arg0 {
@@ -2605,7 +2605,7 @@ func @copies_invalid_loop_nest(%arg0: f32) {
 
 // -----
 
-func @copies_invalid_expansion(%arg0: f32) {
+func.func @copies_invalid_expansion(%arg0: f32) {
   sair.program {
     // expected-error @+1 {{in copy 0 of result 0: expansion pattern does not apply to the operation}}
     %0 = sair.from_scalar %arg0 {
@@ -2618,7 +2618,7 @@ func @copies_invalid_expansion(%arg0: f32) {
 
 // -----
 
-func @non_existent_self_instance(%arg0: f32) {
+func.func @non_existent_self_instance(%arg0: f32) {
   sair.program {
     // expected-error @below {{'copy_of' refers to non-existent instance}}
     %0 = sair.from_scalar %arg0 {
@@ -2632,7 +2632,7 @@ func @non_existent_self_instance(%arg0: f32) {
 
 // -----
 
-func @non_existent_self_copy(%arg0: f32) {
+func.func @non_existent_self_copy(%arg0: f32) {
   sair.program {
     // expected-error @below {{'copy_of' refers to non-existent copy}}
     %0 = sair.from_scalar %arg0 {
@@ -2645,7 +2645,7 @@ func @non_existent_self_copy(%arg0: f32) {
 
 // -----
 
-func @copy_of_in_instance(%arg0: f32) {
+func.func @copy_of_in_instance(%arg0: f32) {
   sair.program {
     // expected-error @below {{cannot specify 'copy_of' in 'instances'}}
     %0 = sair.from_scalar %arg0 {
@@ -2658,7 +2658,7 @@ func @copy_of_in_instance(%arg0: f32) {
 
 // -----
 
-func @producer_cannot_have_copies(%arg0: f32) {
+func.func @producer_cannot_have_copies(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<4>
     // expected-error @below {{'operands' attribute expects as many entries as op has operands (1, got 0) in instance #0}}
@@ -2672,7 +2672,7 @@ func @producer_cannot_have_copies(%arg0: f32) {
 
 // -----
 
-func @producer_cannot_have_copies(%arg0: f32) {
+func.func @producer_cannot_have_copies(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<4>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -2689,7 +2689,7 @@ func @producer_cannot_have_copies(%arg0: f32) {
 
 // -----
 
-func @producer_cannot_have_copies(%arg0: f32) {
+func.func @producer_cannot_have_copies(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<4>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -2705,7 +2705,7 @@ func @producer_cannot_have_copies(%arg0: f32) {
 
 // -----
 
-func @non_existent_copy(%arg0: f32) {
+func.func @non_existent_copy(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<4>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -2724,7 +2724,7 @@ func @non_existent_copy(%arg0: f32) {
 
 // -----
 
-func @non_existent_instance(%arg0: f32) {
+func.func @non_existent_instance(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<4>
     %1 = sair.from_scalar %arg0 {
@@ -2741,7 +2741,7 @@ func @non_existent_instance(%arg0: f32) {
 
 // -----
 
-func @producer_cannot_have_copies(%arg0: f32) {
+func.func @producer_cannot_have_copies(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<4>
     // expected-error@below {{can specify only 'operands' decisions on non-compute Sair ops}}
@@ -2755,7 +2755,7 @@ func @producer_cannot_have_copies(%arg0: f32) {
 
 // -----
 
-func @sair_exit_multi_instance() {
+func.func @sair_exit_multi_instance() {
   sair.program {
     // expected-error@below {{op has at most one instance}}
     sair.exit {instances = [{}, {}]}
@@ -2765,7 +2765,7 @@ func @sair_exit_multi_instance() {
 
 // -----
 
-func @sair_exit_no_instance() {
+func.func @sair_exit_no_instance() {
   sair.program {
     // expected-error@below {{op must have an instance}}
     sair.exit {instances = []}
@@ -2776,7 +2776,7 @@ func @sair_exit_no_instance() {
 // -----
 
 // Make sure we don't segfault on malformed instances.
-func @malformed_instances(%arg0: f32) {
+func.func @malformed_instances(%arg0: f32) {
   sair.program {
     // expected-error@below {{failed to satisfy constraint: array of Sair decisions}}
     %0 = sair.from_scalar %arg0 {

@@ -1,7 +1,7 @@
 // RUN: sair-opt -split-input-file -sair-normalize-loops -verify-diagnostics %s
 
 // CHECK-LABEL: @from_memref
-func @from_memref(%arg0: index) {
+func.func @from_memref(%arg0: index) {
   sair.program {
     %size = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), index>
     %0 = sair.static_range { instances = [{}] } : !sair.static_range<4>
@@ -21,7 +21,7 @@ func @from_memref(%arg0: index) {
 
 // -----
 
-func @memrefs_must_be_introduced(%arg0: f32) {
+func.func @memrefs_must_be_introduced(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), f32>
     %1 = sair.static_range { instances = [{}] } : !sair.static_range<8>
@@ -34,7 +34,7 @@ func @memrefs_must_be_introduced(%arg0: f32) {
 
 // -----
 
-func @copies(%arg0: f32) {
+func.func @copies(%arg0: f32) {
   sair.program {
     // expected-error @+1 {{operations must have exactly one instance when normalizing loop nests}}
     sair.from_scalar %arg0 {

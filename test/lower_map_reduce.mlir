@@ -2,7 +2,7 @@
 // RUN: sair-opt %s -sair-lower-map-reduce --mlir-print-op-generic | FileCheck %s --check-prefix=GENERIC
 
 // CHECK-LABEL: @map_reduce
-func @map_reduce(%r1: index, %r2: index, %in1: f32) {
+func.func @map_reduce(%r1: index, %r2: index, %in1: f32) {
   sair.program {
     %0 = sair.from_scalar %r1 : !sair.value<(), index>
     %1 = sair.from_scalar %r2 : !sair.value<(), index>
@@ -44,7 +44,7 @@ func @map_reduce(%r1: index, %r2: index, %in1: f32) {
 }
 
 // CHECK-LABEL: @map_reduce_multi_instance
-func @map_reduce_multi_instance(%r1: index, %r2: index, %in1: f32) {
+func.func @map_reduce_multi_instance(%r1: index, %r2: index, %in1: f32) {
   sair.program {
     %0 = sair.from_scalar %r1 : !sair.value<(), index>
     %1 = sair.from_scalar %r2 : !sair.value<(), index>

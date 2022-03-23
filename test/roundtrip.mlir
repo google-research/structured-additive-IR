@@ -1,31 +1,31 @@
 // RUN: sair-opt -allow-unregistered-dialect %s | sair-opt -allow-unregistered-dialect | FileCheck %s
 
 // CHECK: -> !sair.dyn_range
-func private @dyn_range_type() -> !sair.dyn_range
+func.func private @dyn_range_type() -> !sair.dyn_range
 
 // Make sure empty type-dependence list is dropped.
 // CHECK: -> !sair.dyn_range
 // CHECK-NOT: <()>
-func private @independent_range_type() -> !sair.dyn_range<()>
+func.func private @independent_range_type() -> !sair.dyn_range<()>
 
 // CHECK: -> !sair.dyn_range<d0:dyn_range>
-func private @dependent_range_type_1() -> !sair.dyn_range<d0:dyn_range>
+func.func private @dependent_range_type_1() -> !sair.dyn_range<d0:dyn_range>
 
 // CHECK: -> !sair.value<(), f32>
-func private @value_type_empty_domain() -> !sair.value<(), f32>
+func.func private @value_type_empty_domain() -> !sair.value<(), f32>
 
 // CHECK: -> !sair.value<d0:dyn_range x d1:dyn_range, f32>
-func private @value_type() -> !sair.value<d0:dyn_range x d1:dyn_range, f32>
+func.func private @value_type() -> !sair.value<d0:dyn_range x d1:dyn_range, f32>
 
 // CHECK: -> !sair.dyn_range<d0:dyn_range x d1:dyn_range(d0)>
-func private @dependent_dimensions() -> !sair.dyn_range<d0:dyn_range x d1:dyn_range(d0)>
+func.func private @dependent_dimensions() -> !sair.dyn_range<d0:dyn_range x d1:dyn_range(d0)>
 
 // CHECK: -> !sair.dyn_range<d0:dyn_range x d1:dyn_range(d0) x d2:dyn_range(d0, d1)>
-func private @dependent_dimensions_2()
+func.func private @dependent_dimensions_2()
   -> !sair.dyn_range<d0:dyn_range x d1:dyn_range(d0) x d2:dyn_range(d0, d1)>
 
 // CHECK-LABEL: @sair_program
-func @sair_program() {
+func.func @sair_program() {
   // CHECK: sair.program
   sair.program {
     // CHECK: sair.exit
@@ -35,7 +35,7 @@ func @sair_program() {
 }
 
 // CHECK-LABEL: @sair_program_return_values
-func @sair_program_return_values() {
+func.func @sair_program_return_values() {
   %c0 = arith.constant 1.0 : f32
   %c1 = arith.constant 1 : i32
   // CHECK: %{{.*}}:2 = sair.program
@@ -52,7 +52,7 @@ func @sair_program_return_values() {
 }
 
 // CHECK-LABEL: @dyn_range_op
-func @dyn_range_op() {
+func.func @dyn_range_op() {
   %c0 = arith.constant 0 : index
   sair.program {
     // CHECK: %[[V0:.*]] = sair.from_scalar
@@ -65,7 +65,7 @@ func @dyn_range_op() {
 }
 
 // CHECK-LABEL: @dyn_range_with_step
-func @dyn_range_with_step(%arg0: index, %arg1: index) {
+func.func @dyn_range_with_step(%arg0: index, %arg1: index) {
   sair.program {
     // CHECK: %[[V0:.*]] = sair.from_scalar
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
@@ -79,7 +79,7 @@ func @dyn_range_with_step(%arg0: index, %arg1: index) {
 }
 
 // CHECK-LABEL: @static_range_op
-func @static_range_op() {
+func.func @static_range_op() {
   sair.program {
     // CHECK: %{{.*}} = sair.static_range : !sair.static_range<42>
     %0 = sair.static_range : !sair.static_range<42>
@@ -89,7 +89,7 @@ func @static_range_op() {
 }
 
 // CHECK-LABEL: @static_range_with_step
-func @static_range_with_step() {
+func.func @static_range_with_step() {
   sair.program {
     // CHECK: %{{.*}} = sair.static_range : !sair.static_range<42, 2>
     %0 = sair.static_range : !sair.static_range<42, 2>
@@ -99,7 +99,7 @@ func @static_range_with_step() {
 }
 
 // CHECK-LABEL: @dependent_range_op
-func @dependent_range_op(%arg0 : index) {
+func.func @dependent_range_op(%arg0 : index) {
   sair.program {
     // CHECK: %[[V0:.*]] = sair.from_scalar
     %0 = sair.from_scalar %arg0 : !sair.value<(), index>
@@ -125,7 +125,7 @@ func @dependent_range_op(%arg0 : index) {
 }
 
 // CHECK-LABEL: @generic_mapping
-func @generic_mapping() {
+func.func @generic_mapping() {
   // CHECK: "foo"() {mapping = #sair.mapping<3 : d0, d2, d1, none>}
   "foo"() {mapping = #sair.mapping<3 : d0, d2, d1, none>} : () -> ()
   // CHECK: "bar"() {mapping = #sair.mapping<4 : d0, d1, d2>}
@@ -133,19 +133,19 @@ func @generic_mapping() {
 }
 
 // CHECK-LABEL: @generic_mapping_empty
-func @generic_mapping_empty() {
+func.func @generic_mapping_empty() {
   // CHECK: "foo"() {mapping = #sair.mapping<0>}
   "foo"() {mapping = #sair.mapping<0>} : () -> ()
 }
 
 // CHECK-LABEL: @shape_attribute
-func @shape_attribute() {
+func.func @shape_attribute() {
   // CHECK: "foo"() {shape = #sair.shape<d0:dyn_range x d1:dyn_range(d0)>}
   "foo"() {shape = #sair.shape<d0:dyn_range x d1:dyn_range(d0)>} : () -> ()
 }
 
 // CHECK-LABEL: @copy
-func @copy(%arg0 : f32) {
+func.func @copy(%arg0 : f32) {
   sair.program {
     // CHECK: %[[D0:.*]] = sair.static_range
     %0 = sair.static_range : !sair.static_range<8>
@@ -165,7 +165,7 @@ func @copy(%arg0 : f32) {
 }
 
 // CHECK-LABEL: @copy_attributes
-func @copy_attributes(%arg0 : f32) {
+func.func @copy_attributes(%arg0 : f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     // CHECK: foo = 3
@@ -176,7 +176,7 @@ func @copy_attributes(%arg0 : f32) {
 }
 
 // CHECK-LABEL: @from_memref
-func @from_memref(%arg0 : memref<?x?xf32>) {
+func.func @from_memref(%arg0 : memref<?x?xf32>) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -195,7 +195,7 @@ func @from_memref(%arg0 : memref<?x?xf32>) {
 }
 
 // CHECK-LABEL: @to_memref
-func @to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
+func.func @to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -230,7 +230,7 @@ func @to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
 }
 
 // CHECK-LABEL: @load_from_memref
-func @load_from_memref(%arg0 : memref<?x?xf32>) {
+func.func @load_from_memref(%arg0 : memref<?x?xf32>) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -250,7 +250,7 @@ func @load_from_memref(%arg0 : memref<?x?xf32>) {
 }
 
 // CHECK-LABEL: @store_to_memref
-func @store_to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
+func.func @store_to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -272,7 +272,7 @@ func @store_to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
 }
 
 // CHECK-LABEL: @map
-func @map(%arg0 : f32, %arg1: i32) {
+func.func @map(%arg0 : f32, %arg1: i32) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -299,7 +299,7 @@ func @map(%arg0 : f32, %arg1: i32) {
 }
 
 // CHECK-LABEL: @map_noargs
-func @map_noargs() {
+func.func @map_noargs() {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -321,7 +321,7 @@ func @map_noargs() {
 }
 
 // CHECK-LABEL: @return_noargs
-func @return_noargs() {
+func.func @return_noargs() {
   sair.program {
     sair.map {
       ^bb0:
@@ -334,7 +334,7 @@ func @return_noargs() {
 }
 
 // CHECK-LABEL: @map_reduce
-func @map_reduce(%arg0 : f32, %arg1 : i32, %arg2 : f64) {
+func.func @map_reduce(%arg0 : f32, %arg1 : i32, %arg2 : f64) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -368,7 +368,7 @@ func @map_reduce(%arg0 : f32, %arg1 : i32, %arg2 : f64) {
 }
 
 // CHECK-LABEL: @from_scalar
-func @from_scalar() {
+func.func @from_scalar() {
   // CHECK: %[[V0:.*]] = arith.constant 1 : index
   %0 = arith.constant 1 : index
   sair.program {
@@ -380,7 +380,7 @@ func @from_scalar() {
 }
 
 // CHECK-LABEL: @loop_nest_attr
-func @loop_nest_attr(%arg0: f32) {
+func.func @loop_nest_attr(%arg0: f32) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -411,7 +411,7 @@ func @loop_nest_attr(%arg0: f32) {
 }
 
 // CHECK-LABEL: @proj_any
-func @proj_any(%arg0: f32) {
+func.func @proj_any(%arg0: f32) {
   sair.program {
     // CHECK: %[[D0:.*]] = sair.static_range : !sair.static_range<4>
     %0 = sair.static_range : !sair.static_range<4>
@@ -430,7 +430,7 @@ func @proj_any(%arg0: f32) {
 }
 
 // CHECK-LABEL: @proj_last
-func @proj_last(%arg0: f32) {
+func.func @proj_last(%arg0: f32) {
   sair.program {
     // CHECK: %[[D0:.*]] = sair.static_range : !sair.static_range<4>
     %0 = sair.static_range : !sair.static_range<4>
@@ -449,7 +449,7 @@ func @proj_last(%arg0: f32) {
 }
 
 // CHECK-LABEL: @proj_last_different_shape
-func @proj_last_different_shape(%arg0: f32) {
+func.func @proj_last_different_shape(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
     %1 = sair.static_range : !sair.static_range<4>
@@ -462,7 +462,7 @@ func @proj_last_different_shape(%arg0: f32) {
 
 // CHECK-LABEL: @fby
 
-func @fby(%arg0: f32) {
+func.func @fby(%arg0: f32) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -487,7 +487,7 @@ func @fby(%arg0: f32) {
 }
 
 // CHECK-LABEL: @undef
-func @undef() {
+func.func @undef() {
   // CHECK: %[[UNDEF:.*]] = sair.undef : f32
   %0 = sair.undef : f32
   sair.program {
@@ -499,7 +499,7 @@ func @undef() {
 }
 
 // CHECK-LABEL: @mapping_expr_attr
-func @mapping_expr_attr() {
+func.func @mapping_expr_attr() {
   // CHECK: "foo"() {mapping_expr = #sair.mapping_expr<d0>}
   "foo"() {mapping_expr = #sair.mapping_expr<d0>} : () -> ()
   // CHECK: "foo"() {mapping_expr = #sair.mapping_expr<none>}
@@ -512,7 +512,7 @@ func @mapping_expr_attr() {
   "foo"() {mapping_expr = #sair.mapping_expr<unstripe(d0, d1, [4, 1])>} : () -> ()
 }
 
-func @stripe_mined_loop() {
+func.func @stripe_mined_loop() {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -533,7 +533,7 @@ func @stripe_mined_loop() {
   return
 }
 
-func @stripe_mapping(%arg0: f32) {
+func.func @stripe_mapping(%arg0: f32) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -566,7 +566,7 @@ func @stripe_mapping(%arg0: f32) {
 }
 
 // CHECK-LABEL: @named_mapping
-func @named_mapping() {
+func.func @named_mapping() {
   // CHECK: #sair.named_mapping<[] -> ()>
   "foo"() { bar = #sair.named_mapping<[] -> ()>} : () -> ()
   // CHECK: #sair.named_mapping<[d0:"A", d1:"B"] -> (d0, d1)>
@@ -574,7 +574,7 @@ func @named_mapping() {
 }
 
 // CHECK-LABEL: @alloc_simple
-func @alloc_simple() {
+func.func @alloc_simple() {
   sair.program {
     // CHECK: = sair.alloc : !sair.value<(), memref<42x42xf32>>
     sair.alloc : !sair.value<(), memref<42x42xf32>>
@@ -584,7 +584,7 @@ func @alloc_simple() {
 }
 
 // CHECK-LABEL: @alloc
-func @alloc(%arg0: index) {
+func.func @alloc(%arg0: index) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -601,7 +601,7 @@ func @alloc(%arg0: index) {
 }
 
 // CHECK-LABEL: @alloc_nosize
-func @alloc_nosize(%arg0: index) {
+func.func @alloc_nosize(%arg0: index) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -618,7 +618,7 @@ func @alloc_nosize(%arg0: index) {
 }
 
 // CHECK-LABEL: @free_simple
-func @free_simple() {
+func.func @free_simple() {
   sair.program {
     %0 = sair.alloc : !sair.value<(), memref<42x42xf32>>
     // CHECK: sair.free %{{.*}} : !sair.value<(), memref<42x42xf32>>
@@ -629,7 +629,7 @@ func @free_simple() {
 }
 
 // CHECK-LABEL: @sair_free
-func @sair_free(%arg0: index) {
+func.func @sair_free(%arg0: index) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -647,7 +647,7 @@ func @sair_free(%arg0: index) {
 }
 
 // CHECK-LABEL: @free_nosize
-func @free_nosize(%arg0: index) {
+func.func @free_nosize(%arg0: index) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -665,7 +665,7 @@ func @free_nosize(%arg0: index) {
 }
 
 // CHECK-LABEL: @storage_stripe
-func @storage_stripe(%arg0: f32) {
+func.func @storage_stripe(%arg0: f32) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -689,7 +689,7 @@ func @storage_stripe(%arg0: f32) {
 }
 
 // CHECK-LABEL: @storage_no_layout
-func @storage_no_layout(%arg0: f32) {
+func.func @storage_no_layout(%arg0: f32) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -707,7 +707,7 @@ func @storage_no_layout(%arg0: f32) {
 }
 
 // CHECK-LABEL: @placeholder
-func @placeholder(%arg0: f32) {
+func.func @placeholder(%arg0: f32) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -721,7 +721,7 @@ func @placeholder(%arg0: f32) {
 }
 
 // CHECK-LABEL: @placeholder_with_loop_nest
-func @placeholder_with_loop_nest(%arg0: f32) {
+func.func @placeholder_with_loop_nest(%arg0: f32) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -744,7 +744,7 @@ func @placeholder_with_loop_nest(%arg0: f32) {
 }
 
 // CHECK-LABEL: @free_with_mapping
-func @free_with_mapping() {
+func.func @free_with_mapping() {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -760,14 +760,14 @@ func @free_with_mapping() {
 }
 
 // CHECK-LABEL: @mapping_any_expr
-func @mapping_any_expr() {
+func.func @mapping_any_expr() {
   // CHECK: "foo"() {bar = #sair.mapping_expr<?>} : () -> ()
   "foo"() {bar = #sair.mapping_expr<?>} : () -> ()
   return
 }
 
 // CHECK-LABEL: @sequence_attr
-func @sequence_attr() {
+func.func @sequence_attr() {
   sair.program {
     %0 = sair.static_range : !sair.static_range<42>
     // CHECK: sair.alloc
@@ -786,7 +786,7 @@ func @sequence_attr() {
 // Should not error on fby's "then" operand having the same sequence number
 // as the user of "fby" result in case of use-def loop.
 // CHECK-LABEL: @sequence_same_fby_then
-func @sequence_same_fby_then(%arg0: f32) {
+func.func @sequence_same_fby_then(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<42>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -804,7 +804,7 @@ func @sequence_same_fby_then(%arg0: f32) {
 }
 
 // CHECK-LABEL: @static_range_type
-func @static_range_type() {
+func.func @static_range_type() {
   // CHECK: !sair.static_range<8>
   "foo"() : () -> !sair.static_range<8>
   // CHECK: !sair.static_range<8>
@@ -820,14 +820,14 @@ func @static_range_type() {
 
 // CHECK-LABEL: @copy_attr
 // CHECK: #sair.copy<42>
-func private @copy_attr() attributes { foo = #sair.copy<42> }
+func.func private @copy_attr() attributes { foo = #sair.copy<42> }
 
 // CHECK-LABEL: @instance_attr
 // CHECK: #sair.instance<42>
-func private @instance_attr() attributes { foo = #sair.instance<42> }
+func.func private @instance_attr() attributes { foo = #sair.instance<42> }
 
 // CHECK-LABEL: @attribute_printing
-func @attribute_printing(%arg0: f32, %arg1: index) {
+func.func @attribute_printing(%arg0: f32, %arg1: index) {
   sair.program {
     // CHECK: sair.static_range
     // CHECK-SAME: attr = "content"

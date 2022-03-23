@@ -1,7 +1,7 @@
 // RUN: sair-opt -inline-trivial-sair-ops %s | FileCheck %s
 
 // CHECK-LABEL: @one_map
-func @one_map() -> f32 {
+func.func @one_map() -> f32 {
   // CHECK: %[[v0:.*]] = arith.constant 1.0
   %0 = arith.constant 1.0 : f32
   // CHECK-NOT: sair.program
@@ -24,7 +24,7 @@ func @one_map() -> f32 {
 }
 
 // CHECK-LABEL: @sequence
-func @sequence() -> f32 {
+func.func @sequence() -> f32 {
   // CHECK: %[[v0:.*]] = arith.constant 1.0
   %0 = arith.constant 1.0 : f32
   // CHECK-NOT: sair.program
@@ -47,7 +47,7 @@ func @sequence() -> f32 {
 }
 
 // CHECK-LABEL: @do_nothing
-func @do_nothing() {
+func.func @do_nothing() {
   %0 = arith.constant 1.0 : f32
   sair.program {
     %1 = sair.static_range : !sair.static_range<8>

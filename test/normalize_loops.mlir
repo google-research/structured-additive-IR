@@ -3,7 +3,7 @@
 
 
 // CHECK-LABEL: @identity
-func @identity(%arg0: index, %arg1: f32) {
+func.func @identity(%arg0: index, %arg1: f32) {
   sair.program {
     // CHECK: %[[V0:.*]] = sair.from_scalar %{{.*}} : !sair.value<(), index>
     %0 = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), index>
@@ -38,7 +38,7 @@ func @identity(%arg0: index, %arg1: f32) {
 }
 
 // CHECK-LABEL: @stripe
-func @stripe() {
+func.func @stripe() {
   sair.program {
     %0 = sair.static_range { instances = [{}] } : !sair.static_range<62>
     // CHECK: %[[D0:.*]] = sair.static_range {instances = [{operands = []}]} : !sair.static_range<62, 4>
@@ -84,7 +84,7 @@ func @stripe() {
 }
 
 // CHECK-LABEL: @unstripe
-func @unstripe(%arg0: f32) {
+func.func @unstripe(%arg0: f32) {
   %c4 = arith.constant 4 : index
   sair.program {
     %sc4 = sair.from_scalar %c4 { instances = [{}] } : !sair.value<(), index>
@@ -114,7 +114,7 @@ func @unstripe(%arg0: f32) {
 }
 
 // CHECK-LABEL: @load_store_memref
-func @load_store_memref(%arg0: index) {
+func.func @load_store_memref(%arg0: index) {
   sair.program {
     // CHECK: %[[SIZE:.*]] = sair.from_scalar
     %size = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), index>
@@ -188,7 +188,7 @@ func @load_store_memref(%arg0: index) {
 // GENERIC-LABEL: sym_name = "load_store_memref"
 
 // CHECK-LABEL: @remat
-func @remat(%arg0: f32) {
+func.func @remat(%arg0: f32) {
   sair.program {
     // CHECK: %[[INIT:.*]] = sair.from_scalar
     // GENERIC: %[[INIT:.*]] = "sair.from_scalar"
@@ -230,10 +230,10 @@ func @remat(%arg0: f32) {
 // GENERIC-LABEL: sym_name = "remat"
 
 
-func private @foo(index, f32)
+func.func private @foo(index, f32)
 
 // CHECK-LABEL: @sequence_attr
-func @sequence_attr(%arg0: f32) {
+func.func @sequence_attr(%arg0: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), f32>
     // CHECK: %[[STATIC:.*]] = sair.static_range {instances = [{operands = []}]} : !sair.static_range<16, 4>
@@ -302,7 +302,7 @@ func @sequence_attr(%arg0: f32) {
 }
 
 // CHECK-LABEL: @unroll_preserved
-func @unroll_preserved(%arg0: index, %arg1: f32) {
+func.func @unroll_preserved(%arg0: index, %arg1: f32) {
   sair.program {
     %0 = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), index>
     %1 = sair.from_scalar %arg1 { instances = [{}] } : !sair.value<(), f32>
@@ -331,7 +331,7 @@ func @unroll_preserved(%arg0: index, %arg1: f32) {
 }
 
 // CHECK-LABEL: @unroll_propagated
-func @unroll_propagated() {
+func.func @unroll_propagated() {
   sair.program {
     %0 = sair.static_range { instances = [{}] } : !sair.static_range<62>
     // CHECK: %[[D0:.*]] = sair.static_range {instances = [{operands = []}]} : !sair.static_range<62, 4>

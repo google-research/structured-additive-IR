@@ -1,6 +1,6 @@
 // RUN: sair-opt -sair-lower-proj-any -split-input-file -verify-diagnostics %s
 
-func @source_not_normalized(%arg0: f32) {
+func.func @source_not_normalized(%arg0: f32) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -25,7 +25,7 @@ func @source_not_normalized(%arg0: f32) {
 
 // -----
 
-func @result_not_normalized(%arg0: f32) {
+func.func @result_not_normalized(%arg0: f32) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -50,7 +50,7 @@ func @result_not_normalized(%arg0: f32) {
 
 // -----
 
-func @cannot_lower(%arg0: f32) {
+func.func @cannot_lower(%arg0: f32) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -75,7 +75,7 @@ func @cannot_lower(%arg0: f32) {
 
 // -----
 
-func @copies(%arg0: f32) {
+func.func @copies(%arg0: f32) {
   sair.program {
     // expected-error @+1 {{copies must be materialized before lowering proj_any operations}}
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>
@@ -89,7 +89,7 @@ func @copies(%arg0: f32) {
 
 // -----
 
-func @instances(%arg0: f32) {
+func.func @instances(%arg0: f32) {
   sair.program {
     // expected-error @below {{instances must be materialized before lowering proj_any operations}}
     %0 = sair.from_scalar %arg0 : !sair.value<(), f32>

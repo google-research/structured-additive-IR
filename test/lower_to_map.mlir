@@ -1,7 +1,7 @@
 // RUN: sair-opt %s -sair-lower-to-map --mlir-print-local-scope | FileCheck %s
 
 // CHECK-LABEL: @copy
-func @copy(%arg0 : memref<?x?xf32>) {
+func.func @copy(%arg0 : memref<?x?xf32>) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -25,7 +25,7 @@ func @copy(%arg0 : memref<?x?xf32>) {
 }
 
 // CHECK-LABEL: @alloc
-func @alloc(%arg0: index) {
+func.func @alloc(%arg0: index) {
   %n = arith.constant 8 : index
   sair.program {
     %sn = sair.from_scalar %n : !sair.value<(), index>
@@ -56,7 +56,7 @@ func @alloc(%arg0: index) {
 }
 
 // CHECK-LABEL: @sair_free
-func @sair_free(%arg0: index) {
+func.func @sair_free(%arg0: index) {
   sair.program {
     %idx = sair.from_scalar %arg0 : !sair.value<(), index>
     // CHECK: %[[D0:.*]] = sair.dyn_range
@@ -89,7 +89,7 @@ func @sair_free(%arg0: index) {
 }
 
 // CHECK-LABEL: @load_from_memref
-func @load_from_memref(%arg0 : memref<?x?xf32>) {
+func.func @load_from_memref(%arg0 : memref<?x?xf32>) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<8, 2>
     %1, %2 = sair.map[d0:%0] attributes {
@@ -120,7 +120,7 @@ func @load_from_memref(%arg0 : memref<?x?xf32>) {
 }
 
 // CHECK-LABEL: @store_to_memref
-func @store_to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
+func.func @store_to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<8>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>

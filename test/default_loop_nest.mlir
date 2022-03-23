@@ -1,6 +1,6 @@
 // RUN: sair-opt -sair-assign-default-loop-nest %s | FileCheck %s
 
-func @default_loop_nest(%arg0: f32) {
+func.func @default_loop_nest(%arg0: f32) {
   sair.program {
     %0 = sair.static_range : !sair.static_range<16>
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>

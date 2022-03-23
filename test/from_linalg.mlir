@@ -10,7 +10,7 @@
 }
 
 // CHECK-LABEL: @pointwise
-func @pointwise(%arg0: memref<1x2x3xf32>, %arg1: memref<2x3x1xf32>) {
+func.func @pointwise(%arg0: memref<1x2x3xf32>, %arg1: memref<2x3x1xf32>) {
   // CHECK: %[[s0:.*]] = sair.static_range : !sair.static_range<1>
   // CHECK: %[[s1:.*]] = sair.static_range : !sair.static_range<2>
   // CHECK: %[[s2:.*]] = sair.static_range : !sair.static_range<3>
@@ -51,7 +51,7 @@ func @pointwise(%arg0: memref<1x2x3xf32>, %arg1: memref<2x3x1xf32>) {
 
 // CHECK-LABEL: @dynamic
 // CHECK: (%[[ARG0:.*]]: memref<?x2x?xf32>, %[[ARG1:.*]]: memref<2x?x?xf32>)
-func @dynamic(%arg0: memref<?x2x?xf32>, %arg1: memref<2x?x?xf32>) {
+func.func @dynamic(%arg0: memref<?x2x?xf32>, %arg1: memref<2x?x?xf32>) {
   // CHECK: %[[DIM0_0:.*]] = memref.dim %[[ARG0]], %c0
   // CHECK: %[[DIM0_2:.*]] = memref.dim %[[ARG0]], %c2
   // CHECK: %[[DIM1_1:.*]] = memref.dim %[[ARG1]], %c1
@@ -109,7 +109,7 @@ func @dynamic(%arg0: memref<?x2x?xf32>, %arg1: memref<2x?x?xf32>) {
 }
 
 // CHECK-LABEL: @reductions
-func @reductions(%arg0: memref<2x3x4x5x6xf32>, %arg1: memref<2x4x6xf32>) {
+func.func @reductions(%arg0: memref<2x3x4x5x6xf32>, %arg1: memref<2x4x6xf32>) {
   // CHECK: %[[s0:.*]] = sair.static_range : !sair.static_range<2>
   // CHECK: %[[s1:.*]] = sair.static_range : !sair.static_range<3>
   // CHECK: %[[s2:.*]] = sair.static_range : !sair.static_range<4>
@@ -153,7 +153,7 @@ func @reductions(%arg0: memref<2x3x4x5x6xf32>, %arg1: memref<2x4x6xf32>) {
 }
 
 // CHECK-LABEL: @indices
-func @indices(%arg0: memref<1x2x3xf32>, %arg1: memref<2x3x1xf32>) {
+func.func @indices(%arg0: memref<1x2x3xf32>, %arg1: memref<2x3x1xf32>) {
   // CHECK: sair.map
   // CHECK: ^{{.*}}(%[[I0:.*]]: index, %[[I1:.*]]: index, %[[I2:.*]]: index, %{{.*}}: f32, %{{.*}}: f32):
   linalg.generic #pointwise_trait

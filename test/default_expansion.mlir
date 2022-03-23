@@ -1,7 +1,7 @@
 // RUN: sair-opt -sair-assign-default-expansion %s | FileCheck %s
 
 // CHECK-LABEL: @map
-func @map() {
+func.func @map() {
   sair.program {
     // CHECK: sair.map
     // CHECK-SAME: expansion = "map"
@@ -16,7 +16,7 @@ func @map() {
 }
 
 // CHECK-LABEL: @copy
-func @copy(%arg0: f32) {
+func.func @copy(%arg0: f32) {
   sair.program {
     // CHECK: sair.from_scalar
     %0 = sair.from_scalar %arg0 {

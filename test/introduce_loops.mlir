@@ -1,10 +1,10 @@
 // RUN: sair-opt %s -sair-introduce-loops | FileCheck %s
 
-func @foo(%arg0: index, %arg1: index) { return }
+func.func @foo(%arg0: index, %arg1: index) { return }
 
 // CHECK-LABEL: @map
 // CHECK: %[[ARG0:.*]]: index
-func @map(%arg0: index) {
+func.func @map(%arg0: index) {
   sair.program {
     // CHECK: %[[V0:.*]] = sair.from_scalar %[[ARG0]]
     %0 = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), index>
@@ -43,7 +43,7 @@ func @map(%arg0: index) {
 }
 
 // CHECK-LABEL: @proj_last
-func @proj_last(%arg0: f32) {
+func.func @proj_last(%arg0: f32) {
   sair.program {
     %0 = sair.static_range { instances = [{}] }  : !sair.static_range<8>
     %1 = sair.from_scalar %arg0 { instances = [{}] }  : !sair.value<(), f32>
@@ -64,10 +64,10 @@ func @proj_last(%arg0: f32) {
   return
 }
 
-func @bar(%arg0: f32) -> f32 { return %arg0 : f32 }
+func.func @bar(%arg0: f32) -> f32 { return %arg0 : f32 }
 
 // CHECK-LABEL: @fby
-func @fby(%arg0: f32) {
+func.func @fby(%arg0: f32) {
   sair.program {
     %0 = sair.static_range { instances = [{}] } : !sair.static_range<8>
     // CHECK: %[[V0:.*]] = sair.from_scalar
@@ -93,7 +93,7 @@ func @fby(%arg0: f32) {
 }
 
 // CHECK-LABEL: @fuse
-func @fuse(%arg0: f32) {
+func.func @fuse(%arg0: f32) {
   sair.program {
     %0 = sair.static_range { instances = [{}] } : !sair.static_range<4>
     %1 = sair.static_range { instances = [{}] } : !sair.static_range<8>
@@ -142,7 +142,7 @@ func @fuse(%arg0: f32) {
 }
 
 // CHECK-LABEL: @fuse_reorder
-func @fuse_reorder(%arg0: f32) {
+func.func @fuse_reorder(%arg0: f32) {
   sair.program {
     %0 = sair.static_range { instances = [{}] } : !sair.static_range<8>
     %1 = sair.static_range { instances = [{}] } : !sair.static_range<16>
@@ -217,7 +217,7 @@ func @fuse_reorder(%arg0: f32) {
 }
 
 // CHECK-LABEL: @dependent_dims
-func @dependent_dims() {
+func.func @dependent_dims() {
   sair.program {
     // CHECK: sair.map
       // CHECK-DAG: %[[V0:.*]] = arith.constant 0
@@ -267,10 +267,10 @@ func @dependent_dims() {
   return
 }
 
-func private @baz()
+func.func private @baz()
 
 // CHECK-LABEL: @full_unroll
-func @full_unroll() {
+func.func @full_unroll() {
   sair.program {
     %0 = sair.static_range { instances = [{}] } : !sair.static_range<3>
     // CHECK: sair.map
@@ -294,7 +294,7 @@ func @full_unroll() {
 }
 
 // CHECK-LABEL: @partial_unroll
-func @partial_unroll() {
+func.func @partial_unroll() {
   sair.program {
     %0 = sair.static_range { instances = [{}] } : !sair.static_range<5>
     // CHECK: sair.map
@@ -323,7 +323,7 @@ func @partial_unroll() {
 }
 
 // CHECK-LABEL: @dyn_range_unroll
-func @dyn_range_unroll(%sz: index) {
+func.func @dyn_range_unroll(%sz: index) {
   sair.program {
     %0 = sair.from_scalar %sz { instances = [{}] } : !sair.value<(), index>
     %1 = sair.dyn_range %0 { instances = [{}] } : !sair.dyn_range
@@ -353,7 +353,7 @@ func @dyn_range_unroll(%sz: index) {
 }
 
 // CHECK-LABEL: @nested_unroll
-func @nested_unroll() {
+func.func @nested_unroll() {
   sair.program {
     %0 = sair.static_range { instances = [{}] } : !sair.static_range<2>
     // CHECK: sair.map
