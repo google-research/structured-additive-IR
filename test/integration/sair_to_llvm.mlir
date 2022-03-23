@@ -28,7 +28,7 @@ func @check_memrefs_equal(%lhs: memref<8xi32>, %rhs: memref<8xi32>) -> f32 {
   cf.cond_br %6, ^bb0(%3 : index), ^bb2(%c0f : f32)
 
 ^bb2(%7: f32):
-  return %7 : f32
+  func.return %7 : f32
 }
 
 func @from_scalar() -> f32 {
@@ -37,7 +37,7 @@ func @from_scalar() -> f32 {
     %1 = sair.from_scalar %0 : !sair.value<(), f32>
     sair.exit %1 : f32
   } : f32
-  return %2 : f32
+  func.return %2 : f32
 }
 
 func @from_to_memref() -> f32 {
@@ -75,5 +75,5 @@ func @from_to_memref() -> f32 {
 
   // Check that %0 and %1 are equal.
   %2 = call @check_memrefs_equal(%0, %1) : (memref<8xi32>, memref<8xi32>) -> f32
-  return %2 : f32
+  func.return %2 : f32
 }
