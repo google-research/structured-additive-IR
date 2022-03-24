@@ -53,16 +53,16 @@ namespace sair {
 // '['.
 ParseResult ParseDomain(
     mlir::OpAsmParser &parser,
-    llvm::SmallVectorImpl<mlir::OpAsmParser::OperandType> &dimensions);
+    llvm::SmallVectorImpl<mlir::OpAsmParser::UnresolvedOperand> &dimensions);
 // Resolves the operands that consitute the dimensions of an iteration domain
 // and registers them in 'result'.
-ParseResult ResolveDomain(mlir::OpAsmParser &parser,
-                          DomainShapeAttr expected_shape,
-                          llvm::ArrayRef<mlir::OpAsmParser::OperandType> domain,
-                          mlir::OperationState &result);
+ParseResult ResolveDomain(
+    mlir::OpAsmParser &parser, DomainShapeAttr expected_shape,
+    llvm::ArrayRef<mlir::OpAsmParser::UnresolvedOperand> domain,
+    mlir::OperationState &result);
 // Parses an access to a Sair value, composed of an SSA-value and a mapping.
 ParseResult ParseValueAccess(int num_dimensions, mlir::OpAsmParser &parser,
-                             mlir::OpAsmParser::OperandType &value,
+                             mlir::OpAsmParser::UnresolvedOperand &value,
                              MappingAttr &mapping);
 
 // Prints access to a Sair value, composed of the name of the SSA value and of

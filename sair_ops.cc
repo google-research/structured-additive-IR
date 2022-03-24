@@ -66,7 +66,7 @@ namespace {
 // mapping attribute on success.
 OptionalParseResult ParseOptionalValueAccess(
     int num_dimensions, mlir::OpAsmParser &parser,
-    mlir::OpAsmParser::OperandType &value, MappingAttr &mapping) {
+    mlir::OpAsmParser::UnresolvedOperand &value, MappingAttr &mapping) {
   OptionalParseResult has_operand = parser.parseOptionalOperand(value);
   if (!has_operand.hasValue() || mlir::failed(has_operand.getValue()))
     return has_operand;
@@ -89,11 +89,11 @@ OptionalParseResult ParseOptionalValueAccess(
 //              | ssa-value mapping (`,` ssa-value mapping)*
 ParseResult ParseOperandList(
     int num_dimensions, mlir::OpAsmParser &parser,
-    llvm::SmallVectorImpl<mlir::OpAsmParser::OperandType> &operands,
+    llvm::SmallVectorImpl<mlir::OpAsmParser::UnresolvedOperand> &operands,
     llvm::SmallVectorImpl<MappingAttr> &mappings) {
   // Try parsing a value access. If there is no operand in the parsing stream,
   // interpret it as having parsed an empty operand list and succeed.
-  mlir::OpAsmParser::OperandType first_operand;
+  mlir::OpAsmParser::UnresolvedOperand first_operand;
   MappingAttr first_mapping;
   OptionalParseResult has_first_operand = ParseOptionalValueAccess(
       num_dimensions, parser, first_operand, first_mapping);
@@ -122,7 +122,7 @@ ParseResult ParseOperandList(
 
 // Checks the type of an operand and the shape of its mapping. Registers the
 // operand in result.
-ParseResult ResolveOperand(const mlir::OpAsmParser::OperandType &operand,
+ParseResult ResolveOperand(const mlir::OpAsmParser::UnresolvedOperand &operand,
                            MappingAttr mapping, DomainShapeAttr shape,
                            mlir::Type element_type, mlir::OpAsmParser &parser,
                            mlir::OperationState &result) {
@@ -145,8 +145,8 @@ ParseResult ResolveOperand(const mlir::OpAsmParser::OperandType &operand,
 ParseResult SairDynRangeOp::parse(mlir::OpAsmParser &parser,
                                   mlir::OperationState &result) {
   mlir::Builder &builder = parser.getBuilder();
-  llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
-  llvm::SmallVector<mlir::OpAsmParser::OperandType, 2> operands;
+  llvm::SmallVector<mlir::OpAsmParser::UnresolvedOperand, 4> domain;
+  llvm::SmallVector<mlir::OpAsmParser::UnresolvedOperand, 2> operands;
   llvm::SmallVector<MappingAttr, 2> mappings;
   DynRangeType type;
 
@@ -211,7 +211,7 @@ ParseResult SairStaticRangeOp::parse(mlir::OpAsmParser &parser,
 //
 ParseResult SairPlaceholderOp::parse(mlir::OpAsmParser &parser,
                                      mlir::OperationState &result) {
-  llvm::SmallVector<mlir::OpAsmParser::OperandType> domain;
+  llvm::SmallVector<mlir::OpAsmParser::UnresolvedOperand> domain;
   DimensionType type;
 
   return mlir::failure(ParseDomain(parser, domain) ||
@@ -228,8 +228,8 @@ ParseResult SairPlaceholderOp::parse(mlir::OpAsmParser &parser,
 //
 ParseResult SairCopyOp::parse(mlir::OpAsmParser &parser,
                               mlir::OperationState &result) {
-  llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
-  mlir::OpAsmParser::OperandType value;
+  llvm::SmallVector<mlir::OpAsmParser::UnresolvedOperand, 4> domain;
+  mlir::OpAsmParser::UnresolvedOperand value;
   MappingAttr mapping;
   ValueType type;
 
@@ -257,7 +257,7 @@ ParseResult SairCopyOp::parse(mlir::OpAsmParser &parser,
 //
 ParseResult SairFromScalarOp::parse(mlir::OpAsmParser &parser,
                                     mlir::OperationState &result) {
-  mlir::OpAsmParser::OperandType operand;
+  mlir::OpAsmParser::UnresolvedOperand operand;
   ValueType result_type;
   if (parser.parseOperand(operand) ||
       parser.parseOptionalAttrDict(result.attributes) ||
@@ -279,8 +279,8 @@ ParseResult SairFromScalarOp::parse(mlir::OpAsmParser &parser,
 //
 ParseResult SairFromMemRefOp::parse(mlir::OpAsmParser &parser,
                                     mlir::OperationState &result) {
-  llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
-  mlir::OpAsmParser::OperandType memref;
+  llvm::SmallVector<mlir::OpAsmParser::UnresolvedOperand, 4> domain;
+  mlir::OpAsmParser::UnresolvedOperand memref;
   MappingAttr mapping;
   mlir::MemRefType memref_type;
   DomainShapeAttr shape;
@@ -324,8 +324,8 @@ ParseResult SairFromMemRefOp::parse(mlir::OpAsmParser &parser,
 //
 ParseResult SairLoadFromMemRefOp::parse(mlir::OpAsmParser &parser,
                                         mlir::OperationState &result) {
-  llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
-  mlir::OpAsmParser::OperandType memref;
+  llvm::SmallVector<mlir::OpAsmParser::UnresolvedOperand, 4> domain;
+  mlir::OpAsmParser::UnresolvedOperand memref;
   MappingAttr mapping;
   mlir::MemRefType memref_type;
   ValueType value_type;
@@ -355,8 +355,8 @@ ParseResult SairLoadFromMemRefOp::parse(mlir::OpAsmParser &parser,
 //
 ParseResult SairToMemRefOp::parse(mlir::OpAsmParser &parser,
                                   mlir::OperationState &result) {
-  llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
-  mlir::OpAsmParser::OperandType memref, value;
+  llvm::SmallVector<mlir::OpAsmParser::UnresolvedOperand, 4> domain;
+  mlir::OpAsmParser::UnresolvedOperand memref, value;
   MappingAttr memref_mapping, value_mapping;
   DomainShapeAttr shape;
   mlir::MemRefType memref_type;
@@ -401,8 +401,8 @@ ParseResult SairToMemRefOp::parse(mlir::OpAsmParser &parser,
 //
 ParseResult SairStoreToMemRefOp::parse(mlir::OpAsmParser &parser,
                                        mlir::OperationState &result) {
-  llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
-  mlir::OpAsmParser::OperandType memref, value;
+  llvm::SmallVector<mlir::OpAsmParser::UnresolvedOperand, 4> domain;
+  mlir::OpAsmParser::UnresolvedOperand memref, value;
   MappingAttr memref_mapping, value_mapping;
   mlir::MemRefType memref_type;
   DomainShapeAttr shape;
@@ -439,8 +439,8 @@ constexpr llvm::StringRef kOfKeyword = "of";
 //
 mlir::ParseResult parseProjectionOp(mlir::OpAsmParser &parser,
                                     mlir::OperationState &result) {
-  llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
-  mlir::OpAsmParser::OperandType value;
+  llvm::SmallVector<mlir::OpAsmParser::UnresolvedOperand, 4> domain;
+  mlir::OpAsmParser::UnresolvedOperand value;
   MappingAttr mapping;
   DomainShapeAttr shape;
   mlir::Type element_type;
@@ -493,7 +493,7 @@ mlir::ParseResult SairProjLastOp::parse(mlir::OpAsmParser &parser,
 //
 mlir::ParseResult SairReturnOp::parse(mlir::OpAsmParser &parser,
                                       mlir::OperationState &result) {
-  llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> operands;
+  llvm::SmallVector<mlir::OpAsmParser::UnresolvedOperand, 4> operands;
   llvm::SmallVector<mlir::Type, 4> operand_types;
   return failure(parser.parseOperandList(operands) ||
                  parser.parseOptionalAttrDict(result.attributes) ||
@@ -508,7 +508,7 @@ mlir::ParseResult SairReturnOp::parse(mlir::OpAsmParser &parser,
 //
 mlir::ParseResult SairExitOp::parse(mlir::OpAsmParser &parser,
                                     mlir::OperationState &result) {
-  llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> operands;
+  llvm::SmallVector<mlir::OpAsmParser::UnresolvedOperand, 4> operands;
   llvm::SmallVector<mlir::Type, 4> element_types;
   llvm::SmallVector<MappingAttr, 4> mappings;
   llvm::SMLoc type_loc;
@@ -550,9 +550,9 @@ mlir::ParseResult SairExitOp::parse(mlir::OpAsmParser &parser,
 //
 mlir::ParseResult SairAllocOp::parse(mlir::OpAsmParser &parser,
                                      mlir::OperationState &result) {
-  llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain, values;
+  llvm::SmallVector<mlir::OpAsmParser::UnresolvedOperand, 4> domain, values;
   llvm::SmallVector<mlir::Attribute, 4> access_patterns;
-  mlir::OpAsmParser::OperandType value;
+  mlir::OpAsmParser::UnresolvedOperand value;
   MappingAttr pattern;
   if (failed(ParseDomain(parser, domain))) return mlir::failure();
 
@@ -606,9 +606,9 @@ mlir::ParseResult SairAllocOp::parse(mlir::OpAsmParser &parser,
 //
 mlir::ParseResult SairFreeOp::parse(mlir::OpAsmParser &parser,
                                     mlir::OperationState &result) {
-  llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
+  llvm::SmallVector<mlir::OpAsmParser::UnresolvedOperand, 4> domain;
 
-  mlir::OpAsmParser::OperandType value;
+  mlir::OpAsmParser::UnresolvedOperand value;
   MappingAttr mapping;
   ValueType value_type;
 
@@ -633,8 +633,8 @@ mlir::ParseResult SairFreeOp::parse(mlir::OpAsmParser &parser,
 //
 mlir::ParseResult SairFbyOp::parse(mlir::OpAsmParser &parser,
                                    mlir::OperationState &result) {
-  llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
-  mlir::OpAsmParser::OperandType init, value;
+  llvm::SmallVector<mlir::OpAsmParser::UnresolvedOperand, 4> domain;
+  mlir::OpAsmParser::UnresolvedOperand init, value;
   MappingAttr init_mapping, value_mapping;
   ValueType type;
 
@@ -1019,7 +1019,7 @@ llvm::SmallBitVector SairToMemRefOp::DimsDependingOnOperand(int sair_operand) {
 
 ParseResult ParseDomain(
     mlir::OpAsmParser &parser,
-    llvm::SmallVectorImpl<mlir::OpAsmParser::OperandType> &dimensions) {
+    llvm::SmallVectorImpl<mlir::OpAsmParser::UnresolvedOperand> &dimensions) {
   if (failed(parser.parseOptionalLSquare())) return success();
   do {
     std::string dim_name = "d" + std::to_string(dimensions.size());
@@ -1031,10 +1031,10 @@ ParseResult ParseDomain(
   return parser.parseRSquare();
 }
 
-ParseResult ResolveDomain(mlir::OpAsmParser &parser,
-                          DomainShapeAttr expected_shape,
-                          llvm::ArrayRef<mlir::OpAsmParser::OperandType> domain,
-                          mlir::OperationState &result) {
+ParseResult ResolveDomain(
+    mlir::OpAsmParser &parser, DomainShapeAttr expected_shape,
+    llvm::ArrayRef<mlir::OpAsmParser::UnresolvedOperand> domain,
+    mlir::OperationState &result) {
   std::vector<Type> domain_type;
   for (const DomainShapeDim &dim : expected_shape.Dimensions()) {
     domain_type.push_back(dim.type());
@@ -1044,7 +1044,7 @@ ParseResult ResolveDomain(mlir::OpAsmParser &parser,
 }
 
 ParseResult ParseValueAccess(int num_dimensions, mlir::OpAsmParser &parser,
-                             mlir::OpAsmParser::OperandType &value,
+                             mlir::OpAsmParser::UnresolvedOperand &value,
                              MappingAttr &mapping) {
   OptionalParseResult has_value_access =
       ParseOptionalValueAccess(num_dimensions, parser, value, mapping);
@@ -1087,14 +1087,14 @@ bool IsSameElementType(mlir::Value lhs, mlir::Value rhs) {
 ParseResult SairMapOp::parse(mlir::OpAsmParser &parser,
                              mlir::OperationState &result) {
   // First, parse the domain and store the dimension names.
-  llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
+  llvm::SmallVector<mlir::OpAsmParser::UnresolvedOperand, 4> domain;
   if (mlir::failed(ParseDomain(parser, domain))) {
     return mlir::failure();
   }
 
   // Parse a non-empty list of operands and store them to have their types
   // resolved when the type information is available.
-  llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> operands;
+  llvm::SmallVector<mlir::OpAsmParser::UnresolvedOperand, 4> operands;
   llvm::SmallVector<MappingAttr, 4> mappings;
   if (mlir::failed(
           ParseOperandList(domain.size(), parser, operands, mappings))) {
@@ -1358,7 +1358,7 @@ llvm::SmallBitVector SairMapReduceOp::DimsDependingOnOperand(int sair_operand) {
 ParseResult SairMapReduceOp::parse(mlir::OpAsmParser &parser,
                                    mlir::OperationState &result) {
   // First, parse the parallel part of the domain and store the dimension names.
-  llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> domain;
+  llvm::SmallVector<mlir::OpAsmParser::UnresolvedOperand, 4> domain;
   if (mlir::failed(ParseDomain(parser, domain))) {
     return mlir::failure();
   }
@@ -1366,7 +1366,7 @@ ParseResult SairMapReduceOp::parse(mlir::OpAsmParser &parser,
 
   // Parse a list of reduction initializer operands and store them to have their
   // types resolved when the type information is available.
-  llvm::SmallVector<mlir::OpAsmParser::OperandType, 4> operands;
+  llvm::SmallVector<mlir::OpAsmParser::UnresolvedOperand, 4> operands;
   llvm::SmallVector<MappingAttr, 4> mappings;
   if (mlir::failed(
           ParseOperandList(domain.size(), parser, operands, mappings))) {
