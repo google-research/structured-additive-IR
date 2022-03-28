@@ -6,7 +6,7 @@
 
 // Helper function that returns 1.0 if the two memrefs are equal and 0.0
 // otherwise.
-func @check_memrefs_equal(%lhs: memref<8xi32>, %rhs: memref<8xi32>) -> f32 {
+func.func @check_memrefs_equal(%lhs: memref<8xi32>, %rhs: memref<8xi32>) -> f32 {
   %c0 = arith.constant 0 : index
   %c1 = arith.constant 1 : index
   %c8 = arith.constant 8 : index
@@ -31,7 +31,7 @@ func @check_memrefs_equal(%lhs: memref<8xi32>, %rhs: memref<8xi32>) -> f32 {
   func.return %7 : f32
 }
 
-func @from_scalar() -> f32 {
+func.func @from_scalar() -> f32 {
   %0 = arith.constant 1.0 : f32
   %2 = sair.program {
     %1 = sair.from_scalar %0 : !sair.value<(), f32>
@@ -40,7 +40,7 @@ func @from_scalar() -> f32 {
   func.return %2 : f32
 }
 
-func @from_to_memref() -> f32 {
+func.func @from_to_memref() -> f32 {
   %c0 = arith.constant 0 : index
   %c1 = arith.constant 1 : index
   %c8 = arith.constant 8 : index
