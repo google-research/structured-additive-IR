@@ -40,7 +40,7 @@ func.func @map_reduce(%r1: index, %r2: index, %in1: f32) {
     // GENERIC: "sair.proj_last"
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @map_reduce_multi_instance
@@ -93,5 +93,5 @@ func.func @map_reduce_multi_instance(%r1: index, %r2: index, %in1: f32) {
     // CHECK: {operands = [#sair.instance<0>, #sair.instance<0>, #sair.instance<1>]}
     sair.exit
   }
-  return
+  func.return
 }

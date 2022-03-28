@@ -15,7 +15,7 @@ func.func @instances(%arg0: f32) {
     %2 = sair.copy[d0:%1] %0 { instances = [{operands = [#sair.instance<0>, #sair.instance<1>]}] }  : !sair.value<d0:static_range<4>, f32>
     sair.exit { instances = [{operands = []}] }
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @instances_and_copies
@@ -47,7 +47,7 @@ func.func @instances_and_copies(%arg0: f32) {
       : !sair.value<d0:static_range<4>, f32>
     sair.exit { instances = [{operands = []}] }
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @map_multi_result
@@ -124,7 +124,7 @@ func.func @map_multi_result(%arg0: f32) {
     } : #sair.shape<d0:static_range<4> x d1:static_range<4> x d2:static_range<4>>, (f32) -> (f32, f32)
     sair.exit { instances = [{operands = []}] }
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @erase_zero_instance
@@ -134,6 +134,6 @@ func.func @erase_zero_instance(%arg0: f32) {
     sair.from_scalar %arg0 { instances = [] } : !sair.value<(), f32>
     sair.exit { instances = [{operands = []}] }
   }
-  return
+  func.return
 }
 

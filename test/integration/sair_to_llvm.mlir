@@ -74,6 +74,6 @@ func @from_to_memref() -> f32 {
   }
 
   // Check that %0 and %1 are equal.
-  %2 = call @check_memrefs_equal(%0, %1) : (memref<8xi32>, memref<8xi32>) -> f32
+  %2 = func.call @check_memrefs_equal(%0, %1) : (memref<8xi32>, memref<8xi32>) -> f32
   func.return %2 : f32
 }

@@ -12,7 +12,7 @@ func.func @map() {
     } : #sair.shape<()>, () -> (f32)
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @copy
@@ -25,5 +25,5 @@ func.func @copy(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }

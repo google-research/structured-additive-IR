@@ -4,5 +4,5 @@
 func.func @undef() {
   // = llvm.mlir.undef : f32
   %0 = sair.undef : f32
-  return
+  func.return
 }

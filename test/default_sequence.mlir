@@ -6,7 +6,7 @@ func.func @empty() {
   sair.program {
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @simple_use_def
@@ -24,7 +24,7 @@ func.func @simple_use_def() {
     } : !sair.value<(), memref<f32>>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @simple_use_def_chain
@@ -56,7 +56,7 @@ func.func @simple_use_def_chain(%arg0: f32) {
     } : #sair.shape<()>, (f32) -> (f32)
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @use_def_graph
@@ -98,7 +98,7 @@ func.func @use_def_graph(%arg0: f32, %arg1: f32) {
     } : #sair.shape<()>, (f32, f32, f32) -> (f32, f32, f32)
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @use_def_graph_partial
@@ -139,7 +139,7 @@ func.func @use_def_graph_partial(%arg0: f32, %arg1: f32) {
     } : #sair.shape<()>, (f32, f32, f32) -> (f32, f32, f32)
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @fby
@@ -164,7 +164,7 @@ func.func @fby(%arg0: f32) {
     } : #sair.shape<d0:static_range<42>>, (f32) -> (f32)
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @fby_many_compute
@@ -267,7 +267,7 @@ func.func @fby_then_different_source(%arg0: f32) {
     } : #sair.shape<d0:static_range<42>>, (f32) -> (f32)
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @sequence_domain
@@ -290,7 +290,7 @@ func.func @sequence_domain(%arg0: index) {
 
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @sequence_implicit_domain
@@ -320,7 +320,7 @@ func.func @sequence_implicit_domain(%arg0: index) {
 
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @sequence_implicit_domain_partial
@@ -353,7 +353,7 @@ func.func @sequence_implicit_domain_partial(%arg0: index) {
 
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @reordered_remat
@@ -380,6 +380,6 @@ func.func @reordered_remat(%arg0: f32) {
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 

@@ -31,7 +31,7 @@ func.func @sair_program() {
     // CHECK: sair.exit
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @sair_program_return_values
@@ -48,7 +48,7 @@ func.func @sair_program_return_values() {
     sair.exit %2, %3 : f32, i32
   // CHECK: } : f32, i32
   } : f32, i32
-  return
+  func.return
 }
 
 // CHECK-LABEL: @dyn_range_op
@@ -61,7 +61,7 @@ func.func @dyn_range_op() {
     %1 = sair.dyn_range %0 : !sair.dyn_range
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @dyn_range_with_step
@@ -75,7 +75,7 @@ func.func @dyn_range_with_step(%arg0: index, %arg1: index) {
     %2 = sair.dyn_range %0, %1 step 2 : !sair.dyn_range
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @static_range_op
@@ -85,7 +85,7 @@ func.func @static_range_op() {
     %0 = sair.static_range : !sair.static_range<42>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @static_range_with_step
@@ -95,7 +95,7 @@ func.func @static_range_with_step() {
     %0 = sair.static_range : !sair.static_range<42, 2>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @dependent_range_op
@@ -121,7 +121,7 @@ func.func @dependent_range_op(%arg0 : index) {
       : !sair.dyn_range<d0:dyn_range x d1:dyn_range(d0)>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @generic_mapping
@@ -161,7 +161,7 @@ func.func @copy(%arg0 : f32) {
       : !sair.value<d0:static_range<8> x d1:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @copy_attributes
@@ -172,7 +172,7 @@ func.func @copy_attributes(%arg0 : f32) {
     %1 = sair.copy %0 {foo = 3} : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @from_memref
@@ -191,7 +191,7 @@ func.func @from_memref(%arg0 : memref<?x?xf32>) {
     } : #sair.shape<d0:dyn_range x d1:dyn_range x d2:dyn_range>, memref<?x?xf32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @to_memref
@@ -226,7 +226,7 @@ func.func @to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
     } : #sair.shape<d0:dyn_range x d1:dyn_range x d2:dyn_range>, memref<?x?xf32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @load_from_memref
@@ -246,7 +246,7 @@ func.func @load_from_memref(%arg0 : memref<?x?xf32>) {
     } : memref<?x?xf32> -> !sair.value<d0:dyn_range x d1:dyn_range x d2:dyn_range, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @store_to_memref
@@ -268,7 +268,7 @@ func.func @store_to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
     } : #sair.shape<d0:dyn_range x d1:dyn_range x d2:dyn_range>, memref<?x?xf32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @map
@@ -295,7 +295,7 @@ func.func @map(%arg0 : f32, %arg1: i32) {
     } : #sair.shape<d0:dyn_range x d1:dyn_range>, (f32, i32) -> (f32, i32)
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @map_noargs
@@ -317,7 +317,7 @@ func.func @map_noargs() {
     } : #sair.shape<d0:dyn_range x d1:dyn_range>, () -> (f32, i32)
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @return_noargs
@@ -330,7 +330,7 @@ func.func @return_noargs() {
     } : #sair.shape<()>, () -> ()
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @map_reduce
@@ -364,7 +364,7 @@ func.func @map_reduce(%arg0 : f32, %arg1 : i32, %arg2 : f64) {
     } : #sair.shape<d0:dyn_range x d1:dyn_range x d2:dyn_range>, (i32, f64) -> (f32)
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @from_scalar
@@ -376,7 +376,7 @@ func.func @from_scalar() {
     %1 = sair.from_scalar %0 : !sair.value<(), index>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @loop_nest_attr
@@ -407,7 +407,7 @@ func.func @loop_nest_attr(%arg0: f32) {
     } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @proj_any
@@ -426,7 +426,7 @@ func.func @proj_any(%arg0: f32) {
       : #sair.shape<d0:static_range<4> x d1:static_range<8>>, f32
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @proj_last
@@ -445,7 +445,7 @@ func.func @proj_last(%arg0: f32) {
       : #sair.shape<d0:static_range<4> x d1:static_range<8>>, f32
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @proj_last_different_shape
@@ -457,7 +457,7 @@ func.func @proj_last_different_shape(%arg0: f32) {
     %2 = sair.proj_last of[d0:%1] %0 : #sair.shape<d0:static_range<4>>, f32
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @fby
@@ -483,7 +483,7 @@ func.func @fby(%arg0: f32) {
     %5 = sair.copy[d0:%1, d1:%3] %4(d0, d1) : !sair.value<d0:dyn_range x d1:dyn_range, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @undef
@@ -495,7 +495,7 @@ func.func @undef() {
     %1 = sair.from_scalar %0 : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @mapping_expr_attr
@@ -530,7 +530,7 @@ func.func @stripe_mined_loop() {
     } : #sair.shape<d0:dyn_range>, () -> ()
     sair.exit
   }
-  return
+  func.return
 }
 
 func.func @stripe_mapping(%arg0: f32) {
@@ -562,7 +562,7 @@ func.func @stripe_mapping(%arg0: f32) {
       : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @named_mapping
@@ -580,7 +580,7 @@ func.func @alloc_simple() {
     sair.alloc : !sair.value<(), memref<42x42xf32>>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @alloc
@@ -597,7 +597,7 @@ func.func @alloc(%arg0: index) {
     sair.alloc[d0:%0, d1:%1] %2(d0), %3(d1) : !sair.value<d0:dyn_range x d1:dyn_range, memref<?x?xf32>>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @alloc_nosize
@@ -614,7 +614,7 @@ func.func @alloc_nosize(%arg0: index) {
     sair.alloc[d0:%0, d1:%1] : !sair.value<d0:dyn_range x d1:dyn_range, memref<42x42xf32>>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @free_simple
@@ -625,7 +625,7 @@ func.func @free_simple() {
     sair.free %0 : !sair.value<(), memref<42x42xf32>>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @sair_free
@@ -643,7 +643,7 @@ func.func @sair_free(%arg0: index) {
     sair.free[d0:%1, d1:%0] %4(d1, d0) : !sair.value<d0:dyn_range x d1:dyn_range, memref<?x?xf32>>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @free_nosize
@@ -661,7 +661,7 @@ func.func @free_nosize(%arg0: index) {
     sair.free[d0:%0, d1:%1] %4(d0, d1) : !sair.value<d0:dyn_range x d1:dyn_range, memref<42x42xf32>>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @storage_stripe
@@ -685,7 +685,7 @@ func.func @storage_stripe(%arg0: f32) {
     } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @storage_no_layout
@@ -703,7 +703,7 @@ func.func @storage_no_layout(%arg0: f32) {
     } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @placeholder
@@ -717,7 +717,7 @@ func.func @placeholder(%arg0: f32) {
     %3 = sair.copy[d0:%0, d1:%1] %2 : !sair.value<d0:dyn_range x d1:dyn_range(d0), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @placeholder_with_loop_nest
@@ -740,7 +740,7 @@ func.func @placeholder_with_loop_nest(%arg0: f32) {
     } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @free_with_mapping
@@ -756,14 +756,14 @@ func.func @free_with_mapping() {
       : !sair.value<d0:dyn_range x d1:dyn_range(d0), memref<f32>>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @mapping_any_expr
 func.func @mapping_any_expr() {
   // CHECK: "foo"() {bar = #sair.mapping_expr<?>} : () -> ()
   "foo"() {bar = #sair.mapping_expr<?>} : () -> ()
-  return
+  func.return
 }
 
 // CHECK-LABEL: @sequence_attr
@@ -780,7 +780,7 @@ func.func @sequence_attr() {
       : !sair.value<d0:static_range<42>, memref<f32>>
     sair.exit
   }
-  return
+  func.return
 }
 
 // Should not error on fby's "then" operand having the same sequence number
@@ -800,7 +800,7 @@ func.func @sequence_same_fby_then(%arg0: f32) {
     } : #sair.shape<d0:static_range<42>>, (f32) -> (f32)
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @static_range_type
@@ -851,5 +851,5 @@ func.func @attribute_printing(%arg0: f32, %arg1: index) {
     sair.placeholder { check = "roundtrip" } : !sair.dyn_range
     sair.exit
   }
-  return
+  func.return
 }

@@ -12,7 +12,7 @@ func.func @memory_space_is_set() {
     } : #sair.shape<()>, () -> f32
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @preserve_memory_space
@@ -32,7 +32,7 @@ func.func @preserve_memory_space() {
     } : #sair.shape<()>, () -> f32
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @multi_dim
@@ -75,7 +75,7 @@ func.func @multi_dim(%arg0: f32, %arg1: memref<8x8xf32>) {
     }  : #sair.shape<d0:dyn_range x d1:dyn_range>, memref<8x8xf32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @to_memref_proj_fby
@@ -112,7 +112,7 @@ func.func @to_memref_proj_fby(%arg0: f32, %arg1: memref<f32>) {
     } : #sair.shape<()>, memref<f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @propagate_storage
@@ -132,7 +132,7 @@ func.func @propagate_storage(%arg0: f32) {
     } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @non_rectangular
@@ -166,7 +166,7 @@ func.func @non_rectangular_shape(%arg0: f32, %arg1: index) {
     } : !sair.value<d0:dyn_range x d1:dyn_range(d0), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @buffer_reuse
@@ -207,5 +207,5 @@ func.func @buffer_reuse(%arg0: f32) {
     } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
-  return
+  func.return
 }

@@ -13,5 +13,5 @@ func.func @default_loop_nest(%arg0: f32) {
     } : !sair.value<d0:static_range<16> x d1:static_range<16>, f32>
     sair.exit
   }
-  return
+  func.return
 }

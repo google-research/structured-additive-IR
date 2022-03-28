@@ -21,7 +21,7 @@ func.func @copy(%arg0 : memref<?x?xf32>) {
     }  : !sair.value<d0:dyn_range x d1:dyn_range, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @alloc
@@ -52,7 +52,7 @@ func.func @alloc(%arg0: index) {
     } : !sair.value<d0:dyn_range x d1:dyn_range, memref<?x?xf32>>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @sair_free
@@ -85,7 +85,7 @@ func.func @sair_free(%arg0: index) {
     }: !sair.value<d0:dyn_range x d1:dyn_range, memref<?x?xf32>>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @load_from_memref
@@ -116,7 +116,7 @@ func.func @load_from_memref(%arg0 : memref<?x?xf32>) {
     } : memref<?x?xf32> -> !sair.value<d0:static_range<8, 2> x d1:static_range<8, 2> x d2:dyn_range(d0), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @store_to_memref
@@ -145,5 +145,5 @@ func.func @store_to_memref(%arg0 : f32, %arg1 : memref<?x?xf32>) {
     } : #sair.shape<d0:static_range<8> x d1:static_range<8> x d2:static_range<8>>, memref<?x?xf32>
     sair.exit
   }
-  return
+  func.return
 }

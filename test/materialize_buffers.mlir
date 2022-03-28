@@ -34,7 +34,7 @@ func.func @from_to_memref(%arg0: memref<?xf32>, %arg1: memref<?xf32>) {
     } : #sair.shape<d0:dyn_range>, memref<?xf32>
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @static_shape
@@ -78,7 +78,7 @@ func.func @static_shape(%arg0: f32) {
     %4 = sair.proj_last of[d0:%1] %3(d0) { instances = [{}] } : #sair.shape<d0:static_range<16, 2>>, f32
     sair.exit %4 { instances = [{}] } : f32
   } : f32
-  return
+  func.return
 }
 
 // CHECK-LABEL: @dynamic_shape
@@ -114,7 +114,7 @@ func.func @dynamic_shape(%arg0: f32, %arg1: index, %arg2: index) {
     } : !sair.value<d0:dyn_range, f32>
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @loop_nest
@@ -207,7 +207,7 @@ func.func @loop_nest(%arg0: f32) {
     // CHECK:   : #sair.shape<d0:static_range<16, 4> x d1:dyn_range(d0) x d2:static_range<16>>, memref<?xf32>
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @sequence_attr
@@ -269,5 +269,5 @@ func.func @sequence_attr(%arg0: f32) {
     // CHECK-SAME: sequence = 9
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }

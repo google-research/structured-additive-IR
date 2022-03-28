@@ -9,7 +9,7 @@ func.func @no_expansion_pattern(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -24,5 +24,5 @@ func.func @copies(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }

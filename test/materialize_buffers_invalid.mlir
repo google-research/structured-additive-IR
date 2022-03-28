@@ -21,7 +21,7 @@ func.func @partial_layout(%arg0: f32) {
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 
 // -----
@@ -35,7 +35,7 @@ func.func @missing_memory_space(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 
 // -----
@@ -52,7 +52,7 @@ func.func @missing_layout(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 
 // -----
@@ -65,5 +65,5 @@ func.func @copies(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }

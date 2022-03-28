@@ -28,6 +28,6 @@ func.func @from_memref_in_memory(%arg0: memref<?xf32>, %arg1: f32) {
     } : #sair.shape<d0:dyn_range>, (f32) -> (f32)
     sair.exit
   }
-  return
+  func.return
 }
 

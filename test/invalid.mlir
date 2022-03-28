@@ -53,7 +53,7 @@ func.func @operand_mapping_dim_not_mapped(%arg0: f32) {
     %3 = sair.copy %2(none) : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -69,7 +69,7 @@ func.func @operand_mapping_dim_not_mapped_raw(%arg0: f32) {
     } : (!sair.value<d0:static_range<8>, f32>) -> !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -88,7 +88,7 @@ func.func @dyn_range_op_invalid_type(%arg0 : !sair.value<(), index>) {
     %1 = sair.dyn_range[d0:%arg0] %arg0 : !sair.dyn_range<d0:dyn_range>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -100,7 +100,7 @@ func.func @domain_unexpected_num_dims(%arg0 : !sair.value<(), index>) {
     %1 = sair.dyn_range[d0:%0, d1:%0] %arg0 : !sair.dyn_range<d0:dyn_range>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -113,7 +113,7 @@ func.func @domain_unexpected_dimension_type(%arg0 : !sair.value<(), index>) {
     %1 = sair.dyn_range[d0:%0, d1:%0] %arg0 : !sair.dyn_range<d0:dyn_range x d1:dyn_range(d0)>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -125,7 +125,7 @@ func.func @domain_dim_redefinition(%arg0 : !sair.value<(), index>) {
     %1 = sair.dyn_range[d0:%0, d0:%0] %arg0 : !sair.dyn_range<dyn_range x dyn_range>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -142,7 +142,7 @@ func.func @fby_cycle(%arg0: f32) {
     %4 = sair.fby %1 then[d0:%0] %3(d0) : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -165,7 +165,7 @@ func.func @copy_cycle(%arg0: f32) {
     %6 = sair.copy[d0:%0] %5(d0) {instances = [{}]} : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -181,7 +181,7 @@ func.func @mixed_cycle(%arg0: f32) {
     %3 = sair.fby %1 then[d0:%0] %2(d0) : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -198,7 +198,7 @@ func.func @domain_cycle(%arg0: f32, %arg1: index) {
     %4 = sair.copy[d0:%1, d1:%3] %0 : !sair.value<d0:static_range<42> x d1:dyn_range(d0), index>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -211,7 +211,7 @@ func.func @invalid_mapping(%arg0 : !sair.dyn_range,
     %0 = sair.dyn_range[d0: %arg0, d1:%arg0] %arg1(d0, d1) : !sair.dyn_range<d0:dyn_range x d1:dyn_range>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -231,7 +231,7 @@ func.func @copy_exected_same_element_type(%arg0 : f32) {
       : (!sair.value<(), f32>) -> (!sair.value<(), i32>)
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -244,7 +244,7 @@ func.func @invalid_use_domain_size(%arg0 : f32) {
       : (!sair.value<(), f32>) -> (!sair.value<(), f32>)
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -255,7 +255,7 @@ func.func @copy_expected_value() {
     sair.copy : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -272,7 +272,7 @@ func.func @from_memref_exected_same_element_type(%arg0 : memref<f32>) {
     } : (!sair.value<(), memref<f32>>) -> (!sair.value<(), i32>)
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -285,7 +285,7 @@ func.func @load_from_memref_exected_same_element_type(%arg0 : memref<f32>) {
       : memref<f32> -> !sair.value<(), i32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -298,7 +298,7 @@ func.func @load_from_memref_rank_mismatch(%arg0 : memref<?xf32>) {
       : memref<?xf32> -> !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -311,7 +311,7 @@ func.func @load_from_memref_layout_partially_specified(%arg0 : memref<?xf32>) {
       : memref<?xf32> -> !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -329,7 +329,7 @@ func.func @hyper_rectangular_domain(%arg0: index, %arg1 : memref<?x?xf32>) {
     } : #sair.shape<d0:static_range<8> x d1:dyn_range(d0)>, memref<?x?xf32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -343,7 +343,7 @@ func.func @from_memref_rank(%arg0 : memref<?xf32>) {
     } : #sair.shape<()>, memref<?xf32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -359,7 +359,7 @@ func.func @map_wrong_body_argument_count(%arg0 : f32) {
     } : #sair.shape<d0:static_range<8>>, (f32) -> ()
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -375,7 +375,7 @@ func.func @map_wrong_body_argument_type(%arg0 : f32) {
     } : #sair.shape<d0:static_range<8>>, (f32) -> ()
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -391,7 +391,7 @@ func.func @map_wrong_body_argument_trailing_type(%arg0 : f32) {
     } : #sair.shape<d0:static_range<8>>, (f32) -> ()
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -405,7 +405,7 @@ func.func @map_wrong_terminator() {
     } : #sair.shape<()>, () -> ()
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -421,7 +421,7 @@ func.func @map_wrong_terminator_operand() {
     } : #sair.shape<()>, () -> (i32)
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -435,7 +435,7 @@ func.func @map_wrong_trailing_arg_count() {
     } : #sair.shape<d0:static_range<8>>, (f32) -> ()
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -451,7 +451,7 @@ func.func @map_reduce_wrong_trailing_arg_count(%arg0 : f32) {
     // expected-error @-1 {{expected 1 arguments in the trailing function type}}
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -466,7 +466,7 @@ func.func @map_reduce_wrong_trailing_res_count(%arg0 : f32) {
     // expected-error @-1 {{expected 1 results in the trailing function type}}
     sair.exit
   }
-  return
+  func.return
 }
 
 
@@ -484,7 +484,7 @@ func.func @map_reduce_wrong_body_argument_count(%arg0 : f32) {
     } : #sair.shape<d0:static_range<8> x d1:static_range<8>>, (f32) -> f32
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -502,7 +502,7 @@ func.func @map_reduce_wrong_terminator_type(%arg0 : f32) {
     } : #sair.shape<d0:static_range<8> x d1:static_range<8>>, (f32) -> f32
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -525,7 +525,7 @@ func.func @map_reduce_init_accessing_reduction(%arg0 : f32) {
        -> !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -544,7 +544,7 @@ func.func @map_reduce_unexpected_shape() {
     } : () -> !sair.value<d0:dyn_range, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -557,7 +557,7 @@ func.func @from_scalar_element_type() {
     sair.from_scalar %0 : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -569,7 +569,7 @@ func.func @from_scalar_element_type_generic_form() {
     "sair.from_scalar" (%0) : (index) -> !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -581,7 +581,7 @@ func.func @sair_program_non_sair_op() {
     %0 = arith.constant 0 : index
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -589,7 +589,7 @@ func.func @sair_program_non_sair_op() {
 func.func @sair_op_outside_sair_program() {
   // expected-error @+1 {{expected to be immediately contained in a 'sair.program'}}
   %0 = sair.static_range : !sair.static_range<42>
-  return
+  func.return
 }
 
 // -----
@@ -600,7 +600,7 @@ func.func @sair_value_defined_outside_sair_program(%arg0: !sair.value<(), f32>) 
     %0 = sair.copy %arg0 : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -613,7 +613,7 @@ func.func @sair_dimension_defined_outside_sair_program(%arg0: !sair.dyn_range) {
     %2 = sair.copy[d0:%arg0] %1 : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -623,7 +623,7 @@ func.func @sair_program_wrong_terminator() {
   sair.program {
     sair.static_range : !sair.static_range<8>
   }
-  return
+  func.return
 }
 
 // -----
@@ -633,7 +633,7 @@ func.func @sair_exit_wrong_num_operands() {
     // expected-error @+1 {{expected 1 operands, found 0}}
     sair.exit
   } : f32
-  return
+  func.return
 }
 
 // -----
@@ -645,7 +645,7 @@ func.func @sair_exit_wrong_type() {
     // expected-error @+1 {{sair.exit operands must match the return type of the sair.program: expected 'f32', found 'i32'}}
     sair.exit %1 : i32
   } : f32
-  return
+  func.return
 }
 
 // -----
@@ -758,7 +758,7 @@ func.func @loop_step_increasing(%arg0: f32) {
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -787,7 +787,7 @@ func.func @loop_fusion_different_prefix(%arg0: f32) {
     } : !sair.value<d0:static_range<8> x d1:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -814,7 +814,7 @@ func.func @loop_fusion_not_contiguous(%arg0: f32) {
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -828,7 +828,7 @@ func.func @iter_field_missing(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -850,7 +850,7 @@ func.func @loop_definition_mismatch(%arg0: f32) {
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -872,7 +872,7 @@ func.func @init_nested_in_reduction_loop(%arg0: f32) {
     } : #sair.shape<d0:static_range<8>>, () -> (f32)
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -892,7 +892,7 @@ func.func @dimension_defined_in_loop_nest(%arg0: index, %arg1: f32) {
     } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -911,7 +911,7 @@ func.func @proj_last_dependency(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -940,7 +940,7 @@ func.func @mapped_dimensions(%arg0: f32) {
     } : !sair.value<d0:static_range<8> x d1:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -975,7 +975,7 @@ func.func @dimension_size_loop_nest(%arg0: index, %arg1: f32) {
     } : !sair.value<d0:static_range<8> x d1:dyn_range, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -994,7 +994,7 @@ func.func @fby_must_fuse(%arg0: f32) {
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1020,7 +1020,7 @@ func.func @fby_of_proj_dependency(%arg0: f32) {
       : #sair.shape<d0:static_range<8> x d1:static_range<8>>, f32
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1045,7 +1045,7 @@ func.func @fby_of_fby_dependency(%arg0: f32) {
       : #sair.shape<d0:static_range<8> x d1:static_range<8>>, f32
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1061,7 +1061,7 @@ func.func @fby_dim_out_of_range(%arg0: f32) {
       : !sair.value<d0:static_range<8> x d1:static_range<8> x d2:static_range<8> x d3:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1082,7 +1082,7 @@ func.func @wrong_order_for_remat(%arg0: index) {
     } : !sair.value<d0:dyn_range , index>
     sair.exit
   }
-  return
+  func.return
 }
 
 
@@ -1112,7 +1112,7 @@ func.func @loop_unification_failed(%arg0: f32) {
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1136,7 +1136,7 @@ func.func @loop_unification_failed_subexpr(%arg0: f32) {
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1156,7 +1156,7 @@ func.func @incompatible_loop_iterators(%arg0: f32) {
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1203,7 +1203,7 @@ func.func @alloc_dim_sizes_mismatch(%arg0: index) {
     sair.alloc %idx : !sair.value<(), memref<42xi32>>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1227,7 +1227,7 @@ func.func @loop_crosses_subdomain_boundaries(%arg0: f32) {
       : #sair.shape<d0:static_range<4, 4> x d1:dyn_range(d0)>, f32
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1244,7 +1244,7 @@ func.func @storage_wrong_number_of_entries(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1261,7 +1261,7 @@ func.func @storage_invalid_attr(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1281,7 +1281,7 @@ func.func @invalid_memory_space(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1301,7 +1301,7 @@ func.func @index_variable_in_memory(%arg0: index) {
     } : !sair.value<(), index>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1321,7 +1321,7 @@ func.func @buffer_must_have_name_if_in_memory(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1342,7 +1342,7 @@ func.func @storage_1D_buffer_register(%arg0: f32) {
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1362,7 +1362,7 @@ func.func @storage_unknown_loop_name(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1384,7 +1384,7 @@ func.func @fby_operand_different_storage(%arg0: f32) {
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1412,7 +1412,7 @@ func.func @fby_operand_different_storage2(%arg0: f32) {
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1443,7 +1443,7 @@ func.func @buffer_different_element_type(%arg0: f32, %arg1: i32) {
     } : !sair.value<(), i32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1474,7 +1474,7 @@ func.func @buffer_layout_incompatible(%arg0: f32) {
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1505,7 +1505,7 @@ func.func @buffer_rank_differs(%arg0: f32) {
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1545,7 +1545,7 @@ func.func @layout_depends_on_loops(%arg0: f32, %arg1: index) {
 
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1569,7 +1569,7 @@ func.func @layout_depends_indexed_loop(%arg0: f32) {
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1610,7 +1610,7 @@ func.func @buffer_used_before_dimension_def(%arg0: f32, %arg1: index) {
     } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1652,7 +1652,7 @@ func.func @buffer_used_before_dimension_def(%arg0: f32, %arg1: index) {
     } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1669,7 +1669,7 @@ func.func @placeholder_loop_nest_unspecified(%arg0: f32) {
     } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1688,7 +1688,7 @@ func.func @partial_layout(%arg0: f32) {
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1704,7 +1704,7 @@ func.func @buffer_name_already_used(%arg0: memref<f32>, %arg1: memref<f32>) {
       : #sair.shape<()>, memref<f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1733,7 +1733,7 @@ func.func @buffer_used_before_def(%arg0: f32, %arg1: memref<f32>) {
     } : #sair.shape<()>, memref<f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1763,7 +1763,7 @@ func.func @buffer_used_before_def_seq(%arg0: f32, %arg1: memref<f32>) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1787,7 +1787,7 @@ func.func @to_memref_buffer_name(%arg0: f32, %arg1: memref<f32>) {
     } : #sair.shape<()>, memref<f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1815,7 +1815,7 @@ func.func @to_memref_layout(%arg0: f32, %arg1: memref<?x?xf32>) {
     } : #sair.shape<d0:static_range<8> x d1:static_range<8>>, memref<?x?xf32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1838,7 +1838,7 @@ func.func @two_results_same_buffer() {
     } : #sair.shape<()>, () -> (f32, f32)
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1862,7 +1862,7 @@ func.func @storage_must_cover_dimensions(%arg0: f32) {
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1898,7 +1898,7 @@ func.func @inplace_update_different_layout(%arg0: f32) {
     } : !sair.value<d0:static_range<8> x d1:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1912,7 +1912,7 @@ func.func @unknown_operand_mapping(%arg0: f32) {
     %3 = sair.copy %2(?) : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1928,7 +1928,7 @@ func.func @unknown_loop_nest(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1946,7 +1946,7 @@ func.func @unknown_layout(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1973,7 +1973,7 @@ func.func @from_memref_overwrite(%arg0 : memref<f32>) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -1995,7 +1995,7 @@ func.func @to_memref_overwrite(%arg0: memref<f32>, %arg1: f32) {
       : #sair.shape<()>, memref<f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2021,7 +2021,7 @@ func.func @fby_init_overwrite(%arg0 : f32) {
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2050,7 +2050,7 @@ func.func @fby_value_overwrite(%arg0 : f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2068,7 +2068,7 @@ func.func @sequence_inversion_two_compute() {
     } : !sair.value<(), memref<f32>>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2088,7 +2088,7 @@ func.func @sequence_inversion_negative_value() {
     } : !sair.value<(), memref<f32>>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2110,7 +2110,7 @@ func.func @sequence_inversion_proj_any(%arg0: f32) {
     } : !sair.value<d0:static_range<42>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2132,7 +2132,7 @@ func.func @sequence_inversion_proj_last(%arg0: f32) {
     } : !sair.value<d0:static_range<42>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2157,7 +2157,7 @@ func.func @sequence_inversion_fby(%arg0: f32) {
     } : #sair.shape<d0:static_range<42>>, (f32) -> (f32)
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2185,7 +2185,7 @@ func.func @sequence_inversion_fby_then(%arg0: f32) {
     } : #sair.shape<d0:static_range<42>>, (f32) -> (f32)
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2215,7 +2215,7 @@ func.func @sequence_same_fby_then_different_source(%arg0: f32) {
     } : #sair.shape<d0:static_range<42>>, (f32) -> (f32)
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2235,7 +2235,7 @@ func.func @sequence_inversion_from_memref(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2259,7 +2259,7 @@ func.func @sequence_inversion_domain(%arg0: index) {
 
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2290,7 +2290,7 @@ func.func @sequence_inversion_implicit_sequence_domain(%arg0: index) {
 
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2315,7 +2315,7 @@ func.func @sequence_inversion_placeholder(%arg0: index) {
     } : !sair.value<d0:dyn_range x d1:dyn_range(d0) x d2:dyn_range(d0, d1), index>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2344,7 +2344,7 @@ func.func @invalid_mapping_shape_in_operand(%arg0: f32, %arg1: index) {
       : !sair.value<d0:static_range<4, 2> x d1:dyn_range(d0), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2368,7 +2368,7 @@ func.func @invalid_mapping_shape_in_operand_raw(%arg0: f32, %arg1: index) {
       -> !sair.value<d0:static_range<4, 2> x d1:dyn_range(d0), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2384,7 +2384,7 @@ func.func @invalid_operand_shape(%arg0: f32) {
       -> !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2410,7 +2410,7 @@ func.func @use_def_partial_invalid(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2432,7 +2432,7 @@ func.func @storage_invalid_shape(%arg0: f32) {
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2478,7 +2478,7 @@ func.func @sequence_attr(%arg0: f32) {
     } : !sair.value<d0:static_range<16>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2511,7 +2511,7 @@ func.func @mismatching_unroll() {
     } : #sair.shape<d0:static_range<3>>, () -> ()
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2544,7 +2544,7 @@ func.func @mismatching_unroll_missing() {
     } : #sair.shape<d0:static_range<3>>, () -> ()
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2558,7 +2558,7 @@ func.func @invalid_expansion_pattern_name(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2572,7 +2572,7 @@ func.func @invalid_expansion_pattern(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2585,7 +2585,7 @@ func.func @copies_arity(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2600,7 +2600,7 @@ func.func @copies_invalid_loop_nest(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2613,7 +2613,7 @@ func.func @copies_invalid_expansion(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2627,7 +2627,7 @@ func.func @non_existent_self_instance(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2640,7 +2640,7 @@ func.func @non_existent_self_copy(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2653,7 +2653,7 @@ func.func @copy_of_in_instance(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2667,7 +2667,7 @@ func.func @producer_cannot_have_copies(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2684,7 +2684,7 @@ func.func @producer_cannot_have_copies(%arg0: f32) {
     } : !sair.value<d0:static_range<4>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2700,7 +2700,7 @@ func.func @producer_cannot_have_copies(%arg0: f32) {
     } : !sair.value<d0:static_range<4>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2719,7 +2719,7 @@ func.func @non_existent_copy(%arg0: f32) {
     } : !sair.value<d0:static_range<4>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2736,7 +2736,7 @@ func.func @non_existent_instance(%arg0: f32) {
     } : !sair.value<d0:static_range<4>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2750,7 +2750,7 @@ func.func @producer_cannot_have_copies(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -2760,7 +2760,7 @@ func.func @sair_exit_multi_instance() {
     // expected-error@below {{op has at most one instance}}
     sair.exit {instances = [{}, {}]}
   }
-  return
+  func.return
 }
 
 // -----
@@ -2770,7 +2770,7 @@ func.func @sair_exit_no_instance() {
     // expected-error@below {{op must have an instance}}
     sair.exit {instances = []}
   }
-  return
+  func.return
 }
 
 // -----
@@ -2785,5 +2785,5 @@ func.func @malformed_instances(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit { instances = [{operands = []}] }
   }
-  return
+  func.return
 }

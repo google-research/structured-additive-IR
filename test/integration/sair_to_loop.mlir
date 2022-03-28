@@ -8,7 +8,7 @@ func @empty_program() {
     // CHECK-NOT: sair.exit
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @copy_to_memref
@@ -36,7 +36,7 @@ func @copy_to_memref(%arg0: memref<8xf32>, %arg1: memref<8xf32>) {
     // CHECK-NOT: sair.exit
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @matmul
@@ -118,5 +118,5 @@ func @matmul(%arg0: memref<8x8xf32>,
     sair.exit
   }
   // CHECK: return
-  return
+  func.return
 }

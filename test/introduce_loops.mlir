@@ -39,7 +39,7 @@ func.func @map(%arg0: index) {
     } : #sair.shape<d0:dyn_range x d1:static_range<8>>, () -> ()
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @proj_last
@@ -61,7 +61,7 @@ func.func @proj_last(%arg0: f32) {
     // CHECK: sair.exit %[[V0]]
     sair.exit %3 { instances = [{}] } : f32
   } : f32
-  return
+  func.return
 }
 
 func.func @bar(%arg0: f32) -> f32 { return %arg0 : f32 }
@@ -83,13 +83,13 @@ func.func @fby(%arg0: f32) {
     } {
     // CHECK: ^bb0(%[[V2:.*]]: f32):
       ^bb0(%arg1: index, %5: f32):
-        %6 = call @bar(%5) : (f32) -> f32
+        %6 = func.call @bar(%5) : (f32) -> f32
         sair.return %6 : f32
     } : #sair.shape<d0:static_range<8>>, (f32) -> (f32)
     %4 = sair.proj_last of[d0:%0] %3(d0) { instances = [{}] } : #sair.shape<d0:static_range<8>>, f32
     sair.exit %4 { instances = [{}] } : f32
   } : f32
-  return
+  func.return
 }
 
 // CHECK-LABEL: @fuse
@@ -138,7 +138,7 @@ func.func @fuse(%arg0: f32) {
     } : #sair.shape<d0:static_range<8> x d1:static_range<4>>, (f32, f32) -> ()
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @fuse_reorder
@@ -193,7 +193,7 @@ func.func @fuse_reorder(%arg0: f32) {
       }]
     } {
     ^bb0(%arg1: index, %arg2: index, %arg3: f32):
-      %7 = call @bar(%arg3) : (f32) -> f32
+      %7 = func.call @bar(%arg3) : (f32) -> f32
       sair.return %7 : f32
     } : #sair.shape<d0:static_range<8> x d1:static_range<16>>, (f32) -> (f32)
     sair.map[d0:%0, d1:%1] attributes {
@@ -213,7 +213,7 @@ func.func @fuse_reorder(%arg0: f32) {
     } : #sair.shape<d0:static_range<8> x d1:static_range<16>>, () -> ()
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @dependent_dims
@@ -264,7 +264,7 @@ func.func @dependent_dims() {
     // CHECK: sair.exit
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 
 func.func private @baz()
@@ -290,7 +290,7 @@ func.func @full_unroll() {
     } : #sair.shape<d0:static_range<3>>, () -> ()
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @partial_unroll
@@ -319,7 +319,7 @@ func.func @partial_unroll() {
     } : #sair.shape<d0:static_range<5>>, () -> ()
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @dyn_range_unroll
@@ -349,7 +349,7 @@ func.func @dyn_range_unroll(%sz: index) {
     } : #sair.shape<d0:dyn_range>, () -> ()
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @nested_unroll
@@ -375,6 +375,6 @@ func.func @nested_unroll() {
     } : #sair.shape<d0:static_range<2> x d1:static_range<2> x d2:static_range<2>>, () -> ()
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 

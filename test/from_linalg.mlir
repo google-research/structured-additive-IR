@@ -46,7 +46,7 @@ func.func @pointwise(%arg0: memref<1x2x3xf32>, %arg1: memref<2x3x1xf32>) {
 
   // CHECK: sair.to_memref %{{.*}} memref[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]] %[[v2]](d2, d1, d0)
   // CHECK:   : #sair.shape<d0:static_range<2> x d1:static_range<3> x d2:static_range<1>>, memref<2x3x1xf32>
-  return
+  func.return
 }
 
 // CHECK-LABEL: @dynamic
@@ -95,7 +95,7 @@ func.func @dynamic(%arg0: memref<?x2x?xf32>, %arg1: memref<2x?x?xf32>) {
 
   // CHECK: sair.to_memref %{{.*}} memref[d0:%[[s0]], d1:%[[s1]], d2:%[[s2]]] %[[v2]](d2, d1, d0)
   // CHECK:   : #sair.shape<d0:static_range<2> x d1:dyn_range x d2:dyn_range>, memref<2x?x?xf32>
-  return
+  func.return
 }
 
 
@@ -149,7 +149,7 @@ func.func @reductions(%arg0: memref<2x3x4x5x6xf32>, %arg1: memref<2x4x6xf32>) {
 
   // CHECK: sair.to_memref %{{.*}}[d0:%[[r0]], d1:%[[r1]], d2:%[[r2]]] %[[RES]](d0, d1, d2)
   // CHECK:   : #sair.shape<d0:static_range<2> x d1:static_range<4> x d2:static_range<6>>, memref<2x4x6xf32>
-  return
+  func.return
 }
 
 // CHECK-LABEL: @indices
@@ -172,5 +172,5 @@ func.func @indices(%arg0: memref<1x2x3xf32>, %arg1: memref<2x3x1xf32>) {
     %6 = arith.sitofp %5 : i32 to f32
     linalg.yield %6 : f32
   }
-  return
+  func.return
 }

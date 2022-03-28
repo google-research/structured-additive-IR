@@ -65,5 +65,5 @@ func @main(%arg0: memref<512x512xf32>, %arg1: memref<512x512xf32>, %arg2: memref
       : #sair.shape<d0:static_range<512> x d1:static_range<512>>, memref<512x512xf32>
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }

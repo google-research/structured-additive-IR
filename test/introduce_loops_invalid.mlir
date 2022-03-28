@@ -14,7 +14,7 @@ func.func @must_lower_to_map() {
     } : #sair.shape<d0:static_range<8>>, () -> ()
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 
 // -----
@@ -31,7 +31,7 @@ func.func @missing_loop_nest_attribute() {
     } : #sair.shape<d0:static_range<8>>, () -> ()
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 
 // -----
@@ -50,7 +50,7 @@ func.func @proj_any_must_be_eliminated() {
     %3 = sair.proj_any of[d0:%0] %1(d0) { instances = [{}] } : #sair.shape<d0:static_range<8>>, f32
     sair.exit %3 { instances = [{}] } : f32
   } : f32
-  return
+  func.return
 }
 
 // -----
@@ -72,7 +72,7 @@ func.func @strip_mined_loop() {
     } : #sair.shape<d0:static_range<8>>, () -> ()
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 
 // -----
@@ -93,7 +93,7 @@ func.func @unable_to_create_default_value() {
     %4 = sair.proj_last of[d0:%1] %2(d0) { instances = [{}] } : #sair.shape<d0:static_range<8>>, memref<f32>
     sair.exit %4 { instances = [{}] } : memref<f32>
   } : memref<f32>
-  return
+  func.return
 }
 
 // -----
@@ -116,7 +116,7 @@ func.func @proj_of_fby(%arg0: f32) {
     %4 = sair.proj_last of[d0:%1] %2(d0) { instances = [{}] } : #sair.shape<d0:static_range<8>>, f32
     sair.exit %4 { instances = [{}] } : f32
   } : f32
-  return
+  func.return
 }
 
 // -----
@@ -143,7 +143,7 @@ func.func @size_not_in_register(%arg0: index) {
     } : #sair.shape<d0:dyn_range>, () -> ()
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 
 // -----
@@ -171,7 +171,7 @@ func.func @placeholder() {
     } : #sair.shape<d0:static_range<8>>, () -> ()
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 
 // -----
@@ -184,5 +184,5 @@ func.func @copies(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }

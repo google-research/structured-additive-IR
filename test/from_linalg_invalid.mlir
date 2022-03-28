@@ -20,7 +20,7 @@ func.func @reductions(%arg0: memref<2x3x4x5x6xf32>, %arg1: memref<2x4x6xf32>) {
     linalg.yield %0 : f32
   }
 
-  return
+  func.return
 }
 
 // -----
@@ -42,5 +42,5 @@ func.func @shape_mismatch(%arg0: memref<?xf32>, %arg1: memref<2xf32>) {
     %1 = arith.addf %a0, %a1 : f32
     linalg.yield %1 : f32
   }
-  return
+  func.return
 }

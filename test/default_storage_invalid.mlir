@@ -9,7 +9,7 @@ func.func @expected_loop_nest(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -31,7 +31,7 @@ func.func @index_to_memory(%arg0: index) {
     } : !sair.value<d0:dyn_range, index>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -62,7 +62,7 @@ func.func @non_rectangular_shape(%arg0: f32, %arg1: index) {
     } : !sair.value<d0:dyn_range x d1:dyn_range(d0), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -82,7 +82,7 @@ func.func @incomplete_loop_nest(%arg0: memref<4xf32>, %arg1: index) {
       : #sair.shape<d0:dyn_range>, memref<4xf32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -113,6 +113,6 @@ func.func @increase_external_buffer_rank(%arg0: memref<f32>, %arg1: index) {
     } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
-  return
+  func.return
 }
 

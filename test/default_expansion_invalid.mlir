@@ -9,5 +9,5 @@ func.func @main() {
     } : #sair.shape<()>, () -> ()
     sair.exit
   }
-  return
+  func.return
 }

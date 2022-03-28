@@ -20,7 +20,7 @@ func.func @source_not_normalized(%arg0: f32) {
     } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -45,7 +45,7 @@ func.func @result_not_normalized(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -70,7 +70,7 @@ func.func @cannot_lower(%arg0: f32) {
     } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -84,7 +84,7 @@ func.func @copies(%arg0: f32) {
     } : #sair.shape<()>, f32
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -98,5 +98,5 @@ func.func @instances(%arg0: f32) {
     } : #sair.shape<()>, f32
     sair.exit
   }
-  return
+  func.return
 }

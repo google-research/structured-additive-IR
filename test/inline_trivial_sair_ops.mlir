@@ -62,5 +62,5 @@ func.func @do_nothing() {
     } : #sair.shape<()>, (f32) -> f32
     sair.exit
   }
-  return
+  func.return
 }

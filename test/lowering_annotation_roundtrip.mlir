@@ -12,5 +12,5 @@ func.func @memory_space() {
     } : #sair.shape<()>, () -> (f32, f32)
     sair.exit
   }
-  return
+  func.return
 }

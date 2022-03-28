@@ -5,7 +5,7 @@ func.func @no_instances(%arg0: f32) {
     // expected-error@below {{expected ops to have instances}}
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -18,7 +18,7 @@ func.func @user_of_zero_instance(%arg0: f32) {
     sair.copy %0 : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -29,7 +29,7 @@ func.func @no_operands(%arg0: f32) {
     %0 = sair.from_scalar %arg0 { instances = [{}] } : !sair.value<(), f32>
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 
 // -----
@@ -44,7 +44,7 @@ func.func @no_operands_copies(%arg0: f32) {
       copies = [[{}, {}]] } : !sair.value<(), f32>
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 
 // -----
@@ -57,7 +57,7 @@ func.func @unit_operand(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit { instances = [{operands = []}] }
   }
-  return
+  func.return
 }
 
 // -----
@@ -71,5 +71,5 @@ func.func @unit_copy(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit { instances = [{operands = []}] }
   }
-  return
+  func.return
 }

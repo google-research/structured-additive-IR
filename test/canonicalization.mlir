@@ -1,7 +1,7 @@
 // RUN: sair-opt %s -canonicalize | FileCheck %s
 
 func.func @use(%arg0: f32) {
-  return
+  func.return
 }
 
 // CHECK-LABEL: @deduplicate_map_input
@@ -21,7 +21,7 @@ func.func @deduplicate_map_input(%arg0: f32) {
     } : #sair.shape<()>, (f32, f32) -> ()
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @deduplicate_map_input_instances
@@ -45,7 +45,7 @@ func.func @deduplicate_map_input_instances(%arg0: f32) {
     } : #sair.shape<()>, (f32, f32) -> ()
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @deduplicate_map_output
@@ -63,7 +63,7 @@ func.func @deduplicate_map_output() {
     // CHECK: sair.exit %[[V0]], %[[V0]] : f32, f32
     sair.exit %0, %1 : f32, f32
   } : f32, f32
-  return
+  func.return
 }
 
 // CHECK-LABEL: @fold_empty_proj
@@ -119,7 +119,7 @@ func.func @merge_proj(%arg0: f32) {
     // CHECK: sair.exit %[[V1]]
     sair.exit %5 : f32
   } : f32
-  return
+  func.return
 }
 
 // CHECK-LABEL: @remove_cyclic_fby
@@ -140,7 +140,7 @@ func.func @remove_cyclic_fby(%arg0: f32, %arg1: memref<?x?x?xf32>) {
     }  : #sair.shape<d0:dyn_range x d1:dyn_range x d2:dyn_range x d3:dyn_range>, memref<?x?x?xf32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @remove_useless_dims_fby
@@ -162,7 +162,7 @@ func.func @remove_useless_dims_fby(%arg0: f32) {
       : #sair.shape<d0:dyn_range x d1:dyn_range x d2:dyn_range x d3:dyn_range x d4:dyn_range>, f32
     sair.exit %5 : f32
   } : f32
-  return
+  func.return
 }
 
 // CHECK-LABEL: @remove_useless_dims_proj
@@ -184,7 +184,7 @@ func.func @remove_useless_dims_proj(%arg0: f32) {
       : #sair.shape<d0:dyn_range x d1:dyn_range x d2:dyn_range>, f32
     sair.exit %4 : f32
   } : f32
-  return
+  func.return
 }
 
 // CHECK-LABEL: @remove_useless_dims_proj_dependent
@@ -212,7 +212,7 @@ func.func @remove_useless_dims_proj_dependent(%arg0: f32, %arg1: index) {
       : #sair.shape<d0:dyn_range x d1:dyn_range x d2:dyn_range>, f32
     sair.exit %10 : f32
   } : f32
-  return
+  func.return
 }
 
 // CHECK-LABEL: @mappings
@@ -230,7 +230,7 @@ func.func @mappings(%arg0: f32) {
     %4 = sair.proj_last of[d0:%1] %3(d0) : #sair.shape<d0:dyn_range>, f32
     sair.exit %4 : f32
   } : f32
-  return
+  func.return
 }
 
 // CHECK-LABEL: @sequence
@@ -259,5 +259,5 @@ func.func @sequence(%arg0 : f32, %arg1 : index) {
     %7 = sair.proj_last of[d0:%2, d1:%4] %6(d0, d1) : #sair.shape<d0:dyn_range x d1:dyn_range(d0)>, f32
     sair.exit %7 : f32
   } : f32
-  return
+  func.return
 }

@@ -9,7 +9,7 @@ func.func @dimension_use_before_def(%arg0 : f32) {
     %2 = sair.static_range : !sair.static_range<8>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -20,7 +20,7 @@ func.func @operand_use_before_def(%arg0 : f32) {
     %1 = sair.from_scalar %arg0 : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -40,7 +40,7 @@ func.func @reordered_remat(%arg0: f32) {
     } : !sair.value<d0:static_range<8>, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -64,7 +64,7 @@ func.func @buffer_def_explicit_seq(%arg0: f32, %arg1: memref<f32>) {
     } : #sair.shape<()>, memref<f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -86,7 +86,7 @@ func.func @buffer_def_implicit_seq(%arg0: f32, %arg1: memref<f32>) {
     } : !sair.value<(), f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // -----
@@ -122,5 +122,5 @@ func.func @buffer_dimension_def_seq(%arg0: f32, %arg1: index) {
     } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
-  return
+  func.return
 }

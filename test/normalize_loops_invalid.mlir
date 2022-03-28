@@ -16,7 +16,7 @@ func.func @from_memref(%arg0: index) {
     }  : #sair.shape<d0:static_range<4> x d1:dyn_range>, memref<?xf32>
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 
 // -----
@@ -29,7 +29,7 @@ func.func @memrefs_must_be_introduced(%arg0: f32) {
     %2 = sair.proj_last of[d0:%1] %0 { instances = [{}] } : #sair.shape<d0:static_range<8>>, f32
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 
 // -----
@@ -42,5 +42,5 @@ func.func @copies(%arg0: f32) {
     } : !sair.value<(), f32>
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }

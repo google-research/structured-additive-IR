@@ -23,7 +23,7 @@ func.func @eliminate(%arg0: f32) {
     } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @convert_to_proj_last
@@ -52,5 +52,5 @@ func.func @convert_to_proj_last(%arg0: f32) {
     } : !sair.value<d0:dyn_range, f32>
     sair.exit
   }
-  return
+  func.return
 }

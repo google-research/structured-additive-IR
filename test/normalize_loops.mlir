@@ -34,7 +34,7 @@ func.func @identity(%arg0: index, %arg1: f32) {
     // CHECK: sair.exit %[[V4]]
     sair.exit %6 { instances = [{}] } : f32
   } : f32
-  return
+  func.return
 }
 
 // CHECK-LABEL: @stripe
@@ -80,7 +80,7 @@ func.func @stripe() {
     // CHECK: sair.exit %[[V9]]
     sair.exit %2 { instances = [{}] } : index
   } : index
-  return
+  func.return
 }
 
 // CHECK-LABEL: @unstripe
@@ -110,7 +110,7 @@ func.func @unstripe(%arg0: f32) {
     // CHECK: sair.exit %[[V1]]
     sair.exit %3 { instances = [{}] } : f32
   } : f32
-  return
+  func.return
 }
 
 // CHECK-LABEL: @load_store_memref
@@ -181,7 +181,7 @@ func.func @load_store_memref(%arg0: index) {
     } : !sair.value<d0:static_range<4>, memref<?xf32>>
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 // In the generic form, the function (symbol) name is an attribute and is
 // printed after the body region.
@@ -223,7 +223,7 @@ func.func @remat(%arg0: f32) {
     %4 = sair.proj_last of[d0:%1] %3(d0) { instances = [{}] } : #sair.shape<d0:static_range<8>>, f32
     sair.exit %4 { instances = [{}] } : f32
   } : f32
-  return
+  func.return
 }
 // In the generic form, the function (symbol) name is an attribute and is
 // printed after the body region.
@@ -298,7 +298,7 @@ func.func @sequence_attr(%arg0: f32) {
     } : #sair.shape<d0:static_range<16>>, (f32) -> ()
     sair.exit { instances = [{}] }
   }
-  return
+  func.return
 }
 
 // CHECK-LABEL: @unroll_preserved
@@ -327,7 +327,7 @@ func.func @unroll_preserved(%arg0: index, %arg1: f32) {
       : #sair.shape<d0:static_range<8> x d1:dyn_range>, f32
     sair.exit %6 { instances = [{}] } : f32
   } : f32
-  return
+  func.return
 }
 
 // CHECK-LABEL: @unroll_propagated
@@ -359,5 +359,5 @@ func.func @unroll_propagated() {
     %2 = sair.proj_any of[d0:%0] %1(d0) { instances = [{}] } : #sair.shape<d0:static_range<62>>, index
     sair.exit %2 { instances = [{}] } : index
   } : index
-  return
+  func.return
 }
