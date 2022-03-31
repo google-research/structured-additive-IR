@@ -1,6 +1,6 @@
 // RUN: sair-opt %s -sair-introduce-loops | FileCheck %s
 
-func.func @foo(%arg0: index, %arg1: index) { return }
+func.func @foo(%arg0: index, %arg1: index) { func.return }
 
 // CHECK-LABEL: @map
 // CHECK: %[[ARG0:.*]]: index
@@ -29,7 +29,7 @@ func.func @map(%arg0: index) {
         // CHECK-DAG:   %[[C2:.*]] = arith.constant 0 : index
         // CHECK-DAG:   %[[C3:.*]] = arith.constant 1 : index
         // CHECK:   scf.for %[[V2:.*]] = %[[C2]] to %[[ARG1]] step %[[C3]] {
-        // CHECK:     call @foo(%[[V2]], %[[V1]]) : (index, index) -> ()
+        // CHECK:     func.call @foo(%[[V2]], %[[V1]]) : (index, index) -> ()
                       func.call @foo(%arg1, %arg2) : (index, index) -> ()
         // CHECK:   }
         // CHECK: }
@@ -64,7 +64,7 @@ func.func @proj_last(%arg0: f32) {
   func.return
 }
 
-func.func @bar(%arg0: f32) -> f32 { return %arg0 : f32 }
+func.func @bar(%arg0: f32) -> f32 { func.return %arg0 : f32 }
 
 // CHECK-LABEL: @fby
 func.func @fby(%arg0: f32) {
@@ -112,7 +112,7 @@ func.func @fuse(%arg0: f32) {
       ^bb0(%arg1: index, %arg2: index):
         // CHECK: scf.for %[[I0:.*]] = %{{.*}} to %{{.*}}
         // CHECK: scf.for %[[I1:.*]] = %{{.*}} to %{{.*}}
-        // CHECK: call @foo(%[[I0]], %[[I1]])
+        // CHECK: func.call @foo(%[[I0]], %[[I1]])
         func.call @foo(%arg1, %arg2) : (index, index) -> ()
         // CHECK: %[[V1:.*]] = arith.constant
         %4 = arith.constant 1.0 : f32
@@ -128,11 +128,11 @@ func.func @fuse(%arg0: f32) {
       }]
     } {
       ^bb0(%arg1:index, %arg2: index, %arg3: f32, %arg4: f32):
-        // CHECK: call @foo(%[[I1]], %[[I0]])
+        // CHECK: func.call @foo(%[[I1]], %[[I0]])
         func.call @foo(%arg1, %arg2) : (index, index) -> ()
-        // CHECK: call @bar(%[[ARG0]])
+        // CHECK: func.call @bar(%[[ARG0]])
         func.call @bar(%arg3) : (f32) -> f32
-        // CHECK: call @bar(%[[V1]])
+        // CHECK: func.call @bar(%[[V1]])
         func.call @bar(%arg4) : (f32) -> f32
         sair.return
     } : #sair.shape<d0:static_range<8> x d1:static_range<4>>, (f32, f32) -> ()
@@ -156,16 +156,16 @@ func.func @fuse_reorder(%arg0: f32) {
     // CHECK: ^{{.*}}(%[[ARG:.*]]: f32):
     // CHECK:   scf.for %[[IV1:.*]] = {{.*}} {
     // CHECK:     scf.for {{.*}} {
-    // CHECK:       call @bar(%[[ARG]])
+    // CHECK:       func.call @bar(%[[ARG]])
     // CHECK:     }
     // CHECK:     scf.for %[[IV2:.*]] = {{.*}} {
-    // CHECK:       call @foo(%[[IV1]], %[[IV2]])
-    // CHECK-NOT:   call @bar
+    // CHECK:       func.call @foo(%[[IV1]], %[[IV2]])
+    // CHECK-NOT:   func.call @bar
     // CHECK:       constant 1
     // CHECK:       addf %[[ARG]]
     // CHECK:       index_cast
     // CHECK:       sitofp
-    // CHECK:       call @bar
+    // CHECK:       func.call @bar
     // CHECK:     }
     // CHECK:   }
     %3 = sair.map[d0:%0, d1:%1] %2 attributes {
@@ -253,7 +253,7 @@ func.func @dependent_dims() {
       }]
     } {
       ^bb0(%arg0: index, %arg1: index):
-          // CHECK: call @foo(%[[V3]], %[[V7]])
+          // CHECK: func.call @foo(%[[V3]], %[[V7]])
         func.call @foo(%arg0, %arg1) : (index, index) -> ()
         sair.return
     } : #sair.shape<d0:static_range<64, 8> x d1:dyn_range(d0)>, () -> ()
@@ -276,7 +276,7 @@ func.func @full_unroll() {
     // CHECK: sair.map
     // CHECK-SAME: loop_nest = []
     // CHECK-NOT: scf.for
-    // CHECK-COUNT-3: call @baz()
+    // CHECK-COUNT-3: func.call @baz()
     sair.map[d0:%0] attributes {
       instances = [{
         loop_nest = [
@@ -301,11 +301,11 @@ func.func @partial_unroll() {
     // CHECK-SAME: loop_nest = []
     // CHECK: %[[STEP:.*]] = arith.constant 2 : index
     // CHECK: scf.for %{{.*}} = %{{.*}} to %{{.*}} step %[[STEP]] {
-    // CHECK-COUNT-2: call @baz()
+    // CHECK-COUNT-2: func.call @baz()
     // CHECK: }
     // Epilogue loop is simplified.
     // CHECK-NOT: scf.for
-    // CHECK: call @baz()
+    // CHECK: func.call @baz()
     sair.map[d0:%0] attributes {
       instances = [{
         loop_nest = [
@@ -330,11 +330,11 @@ func.func @dyn_range_unroll(%sz: index) {
     // CHECK: sair.map
     // CHECK-SAME: loop_nest = []
     // CHECK: scf.for {{.*}} {
-    // CHECK-COUNT-2: call @baz()
+    // CHECK-COUNT-2: func.call @baz()
     // CHECK: }
     // Epilogue loop.
     // CHECK: scf.for {{.*}} {
-    // CHECK: call @baz()
+    // CHECK: func.call @baz()
     // CHECK: }
     sair.map[d0:%1] attributes {
       instances = [{
@@ -359,7 +359,7 @@ func.func @nested_unroll() {
     // CHECK: sair.map
     // CHECK-SAME: loop_nest = []
     // CHECK-NOT: scf.for
-    // CHECK-COUNT-8: call @baz()
+    // CHECK-COUNT-8: func.call @baz()
     sair.map[d0:%0, d1:%0, d2:%0] attributes {
       instances = [{
         loop_nest = [

@@ -1,7 +1,7 @@
 // RUN: sair-opt -sair-default-lowering-attributes -convert-sair-to-llvm %s | mlir-cpu-runner -e from_scalar | FileCheck %s
 // RUN: sair-opt -sair-default-lowering-attributes -convert-sair-to-llvm %s | mlir-cpu-runner -e from_to_memref | FileCheck %s
 
-// All functions should return 1.0 on success.
+// All functions should func.return 1.0 on success.
 // CHECK: 1.0
 
 // Helper function that returns 1.0 if the two memrefs are equal and 0.0

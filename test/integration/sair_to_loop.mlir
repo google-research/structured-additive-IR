@@ -117,6 +117,6 @@ func.func @matmul(%arg0: memref<8x8xf32>,
       : #sair.shape<d0:static_range<8> x d1:static_range<8>>, memref<8x8xf32>
     sair.exit
   }
-  // CHECK: return
+  // CHECK: func.return
   func.return
 }
