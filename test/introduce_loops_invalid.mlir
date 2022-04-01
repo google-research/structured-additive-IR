@@ -121,7 +121,7 @@ func.func @proj_of_fby(%arg0: f32) {
 
 // -----
 
-func.func @foo() { return }
+func.func @foo() { func.return }
 
 func.func @size_not_in_register(%arg0: index) {
   sair.program {
