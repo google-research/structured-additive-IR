@@ -1,4 +1,4 @@
-// RUN: sair-opt -sair-materialize-instances -split-input-file -verify-diagnostics
+// RUN: sair-opt -sair-materialize-instances -split-input-file -verify-diagnostics %s
 
 func.func @no_instances(%arg0: f32) {
   sair.program {
