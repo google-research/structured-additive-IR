@@ -15,6 +15,7 @@
 #ifndef SAIR_TEST_PASSES_H_
 #define SAIR_TEST_PASSES_H_
 
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
 
 namespace sair {
