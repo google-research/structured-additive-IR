@@ -214,7 +214,8 @@ class MaterializeInstancesPass
 
 }  // namespace
 
-std::unique_ptr<mlir::OperationPass<FuncOp>> CreateMaterializeInstancesPass() {
+std::unique_ptr<mlir::OperationPass<mlir::func::FuncOp>>
+CreateMaterializeInstancesPass() {
   return std::make_unique<MaterializeInstancesPass>();
 }
 }  // namespace sair
