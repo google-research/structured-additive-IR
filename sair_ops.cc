@@ -1122,8 +1122,7 @@ ParseResult SairMapOp::parse(mlir::OpAsmParser &parser,
   DomainShapeAttr domain_shape;
   mlir::FunctionType function_type;
   llvm::SMLoc type_loc;
-  if (parser.parseRegion(*body, llvm::None, llvm::None) ||
-      parser.parseColon() ||
+  if (parser.parseRegion(*body) || parser.parseColon() ||
       parser.parseAttribute(domain_shape, SairDialect::kShapeAttrName,
                             result.attributes) ||
       parser.parseComma() || parser.getCurrentLocation(&type_loc) ||
@@ -1403,8 +1402,7 @@ ParseResult SairMapReduceOp::parse(mlir::OpAsmParser &parser,
   DomainShapeAttr domain_shape;
   mlir::FunctionType function_type;
   llvm::SMLoc type_loc;
-  if (parser.parseRegion(*body, llvm::None, llvm::None) ||
-      parser.parseColon() ||
+  if (parser.parseRegion(*body) || parser.parseColon() ||
       parser.parseAttribute(domain_shape, SairDialect::kShapeAttrName,
                             result.attributes) ||
       parser.parseComma() || parser.getCurrentLocation(&type_loc) ||
@@ -1546,8 +1544,7 @@ mlir::ParseResult SairProgramOp::parse(mlir::OpAsmParser &parser,
                                        mlir::OperationState &result) {
   mlir::Region *body = result.addRegion();
   if (parser.parseOptionalAttrDictWithKeyword(result.attributes) ||
-      parser.parseRegion(*body, /*arguments=*/llvm::None,
-                         /*argTypes=*/llvm::None) ||
+      parser.parseRegion(*body) ||
       parser.parseOptionalColonTypeList(result.types)) {
     return mlir::failure();
   }
