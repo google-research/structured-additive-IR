@@ -202,53 +202,25 @@ def SairOperandsAttr
     : TypedArrayAttrBase<SairCopyOrInstanceAttr,
                          "array of Sair copy or instance attributes">;
 
-// Helper to define a struct attribute with some additional constraints. The
-// attribute passed to constraints has the struct type.
-class SairStructAttr<string name,
-                     list<StructFieldAttr> fields,
-                     list<AttrConstraint> constraints = []>
-  : Confined<
-      StructAttr<name, SairDialect, fields>,
-      !foreach(c, constraints, AttrConstraint<
-        SubstLeaves<"$_self", "$_self.cast<" # name # ">()", c.predicate>,
-        c.summary>
-      )>;
-
 // An attribute describing a loop to generate when lowering an operation.
-def SairLoopAttr : SairStructAttr<"LoopAttr", [
-  // Name of the loop to generate.
-  StructFieldAttr<"name", StrAttr>,
-  StructFieldAttr<"iter", SairMappingExpr>,
-  StructFieldAttr<"unroll", OptionalAttr<Confined<I64Attr, [IntPositive]>>>,
-]>;
+def SairLoopAttr
+  : Attr<CPred<"$_self.isa<::sair::LoopAttr>()">, "LoopAttr">;
 
 // A loop nest to generate when lowering an operation.
 def SairLoopNestAttr
   : OptionalAttr<TypedArrayAttrBase<SairLoopAttr, "array of LoopAttr">>;
 
 // An attribute that specifies how a value is stored in a buffer.
-def SairBufferAttr : SairStructAttr<"BufferAttr", [
-  StructFieldAttr<"space", StrAttr>,
-  StructFieldAttr<"name", OptionalAttr<StrAttr>>,
-  StructFieldAttr<"layout", OptionalAttr<SairNamedMappingAttr>>,
-]>;
+def SairBufferAttr
+  : Attr<CPred<"$_self.isa<::sair::BufferAttr>()">, "BufferAttr">;
 
 // An attribute that specifies how results of a sair operation are stored in
 // memory.
 def SairStorageAttr : OptionalAttr<ArrayAttr>;
 
 // An attribute that specifies how to implement an operation.
-def SairDecisionsAttr : SairStructAttr<"DecisionsAttr", [
-  StructFieldAttr<"sequence", OptionalAttr<I64Attr>>,
-  StructFieldAttr<
-    "loop_nest",
-    OptionalAttr<TypedArrayAttrBase<SairLoopAttr, "array of LoopAttr">>
-  >,
-  StructFieldAttr<"storage", OptionalAttr<ArrayAttr>>,
-  StructFieldAttr<"expansion", OptionalAttr<StrAttr>>,
-  StructFieldAttr<"copy_of", OptionalAttr<SairCopyOrInstanceAttr>>,
-  StructFieldAttr<"operands", OptionalAttr<SairOperandsAttr>>
-]>;
+def SairDecisionsAttr
+  : Attr<CPred<"$_self.isa<::sair::DecisionsAttr>()">, "DecisionsAttr">;
 
 // An attribute that specifies instances of an operation.
 def SairInstancesAttr

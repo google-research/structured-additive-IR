@@ -24,6 +24,7 @@
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/AttributeSupport.h"
 #include "mlir/IR/Attributes.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OpDefinition.h"
@@ -1430,9 +1431,308 @@ mlir::ArrayAttr EraseOperandFromDecisions(mlir::ArrayAttr decisions,
   return mlir::ArrayAttr::get(decisions.getContext(),
                               llvm::to_vector<1>(range));
 }
+
+LoopAttr LoopAttr::get(mlir::StringAttr name, MappingExpr iter,
+                       mlir::IntegerAttr unroll, mlir::MLIRContext *context) {
+  llvm::SmallVector<mlir::NamedAttribute, 3> fields;
+  assert(name);
+  auto name_id = mlir::StringAttr::get(context, "name");
+  fields.emplace_back(name_id, name);
+
+  assert(iter);
+  auto iter_id = mlir::StringAttr::get(context, "iter");
+  fields.emplace_back(iter_id, iter);
+
+  if (unroll) {
+    auto unroll_id = mlir::StringAttr::get(context, "unroll");
+    fields.emplace_back(unroll_id, unroll);
+  }
+
+  mlir::Attribute dict = mlir::DictionaryAttr::get(context, fields);
+  return dict.dyn_cast<LoopAttr>();
+}
+
+bool LoopAttr::classof(mlir::Attribute attr) {
+  if (!attr) return false;
+  auto derived = attr.dyn_cast<mlir::DictionaryAttr>();
+  if (!derived) return false;
+
+  auto name = derived.get("name");
+  if (!name.isa_and_nonnull<mlir::StringAttr>()) return false;
+
+  auto iter = derived.get("iter");
+  if (!iter.isa_and_nonnull<sair::MappingExpr>()) return false;
+
+  auto unroll = derived.get("unroll");
+  if (!unroll) return derived.size() == 2;
+
+  auto intUnroll = unroll.dyn_cast<mlir::IntegerAttr>();
+  if (!intUnroll || !intUnroll.getType().isSignlessInteger(64) ||
+      !intUnroll.getValue().isStrictlyPositive()) {
+    return false;
+  }
+
+  return derived.size() == 3;
+}
+
+mlir::StringAttr LoopAttr::name() const {
+  auto derived = this->cast<mlir::DictionaryAttr>();
+  auto name = derived.get("name");
+  assert(name && "attribute not found.");
+  assert(name.isa<mlir::StringAttr>() && "incorrect Attribute type found.");
+  return name.cast<mlir::StringAttr>();
+}
+
+MappingExpr LoopAttr::iter() const {
+  auto derived = this->cast<mlir::DictionaryAttr>();
+  auto iter = derived.get("iter");
+  assert(iter && "attribute not found.");
+  assert(iter.isa<MappingExpr>() && "incorrect Attribute type found.");
+  return iter.cast<MappingExpr>();
+}
+
+mlir::IntegerAttr LoopAttr::unroll() const {
+  auto derived = this->cast<mlir::DictionaryAttr>();
+  auto unroll = derived.get("unroll");
+  if (!unroll) return nullptr;
+  assert(unroll.isa<mlir::IntegerAttr>() && "incorrect Attribute type found.");
+  return unroll.cast<mlir::IntegerAttr>();
+}
+
+BufferAttr BufferAttr::get(mlir::StringAttr space, mlir::StringAttr name,
+                           NamedMappingAttr layout,
+                           mlir::MLIRContext *context) {
+  llvm::SmallVector<mlir::NamedAttribute, 3> fields;
+
+  assert(space);
+  auto space_id = mlir::StringAttr::get(context, "space");
+  fields.emplace_back(space_id, space);
+
+  if (name) {
+    auto name_id = mlir::StringAttr::get(context, "name");
+    fields.emplace_back(name_id, name);
+  }
+
+  if (layout) {
+    auto layout_id = mlir::StringAttr::get(context, "layout");
+    fields.emplace_back(layout_id, layout);
+  }
+
+  mlir::Attribute dict = mlir::DictionaryAttr::get(context, fields);
+  return dict.dyn_cast<BufferAttr>();
+}
+
+bool BufferAttr::classof(mlir::Attribute attr) {
+  if (!attr) return false;
+  auto derived = attr.dyn_cast<mlir::DictionaryAttr>();
+  if (!derived) return false;
+  int num_absent_attrs = 0;
+
+  auto space = derived.get("space");
+  if (!space.isa_and_nonnull<mlir::StringAttr>()) return false;
+
+  auto name = derived.get("name");
+  if (!name) {
+    ++num_absent_attrs;
+  } else if (!name.isa<mlir::StringAttr>()) {
+    return false;
+  }
+
+  auto layout = derived.get("layout");
+  if (!layout) {
+    ++num_absent_attrs;
+  } else if (!layout.isa<NamedMappingAttr>()) {
+    return false;
+  }
+
+  return derived.size() + num_absent_attrs == 3;
+}
+
+mlir::StringAttr BufferAttr::space() const {
+  auto derived = this->cast<mlir::DictionaryAttr>();
+  auto space = derived.get("space");
+  assert(space && "attribute not found.");
+  assert(space.isa<mlir::StringAttr>() && "incorrect Attribute type found.");
+  return space.cast<mlir::StringAttr>();
+}
+
+mlir::StringAttr BufferAttr::name() const {
+  auto derived = this->cast<mlir::DictionaryAttr>();
+  auto name = derived.get("name");
+  if (!name) return nullptr;
+  assert(name.isa<mlir::StringAttr>() && "incorrect Attribute type found.");
+  return name.cast<mlir::StringAttr>();
+}
+
+NamedMappingAttr BufferAttr::layout() const {
+  auto derived = this->cast<mlir::DictionaryAttr>();
+  auto layout = derived.get("layout");
+  if (!layout) return nullptr;
+  assert(layout.isa<NamedMappingAttr>() && "incorrect Attribute type found.");
+  return layout.cast<NamedMappingAttr>();
+}
+
+DecisionsAttr DecisionsAttr::get(mlir::IntegerAttr sequence,
+                                 mlir::ArrayAttr loop_nest,
+                                 mlir::ArrayAttr storage,
+                                 mlir::StringAttr expansion,
+                                 mlir::Attribute copy_of,
+                                 mlir::ArrayAttr operands,
+                                 mlir::MLIRContext *context) {
+  llvm::SmallVector<mlir::NamedAttribute, 6> fields;
+
+  if (sequence) {
+    auto sequence_id = mlir::StringAttr::get(context, "sequence");
+    fields.emplace_back(sequence_id, sequence);
+  }
+
+  if (loop_nest) {
+    auto loop_nest_id = mlir::StringAttr::get(context, "loop_nest");
+    fields.emplace_back(loop_nest_id, loop_nest);
+  }
+
+  if (storage) {
+    auto storage_id = mlir::StringAttr::get(context, "storage");
+    fields.emplace_back(storage_id, storage);
+  }
+
+  if (expansion) {
+    auto expansion_id = mlir::StringAttr::get(context, "expansion");
+    fields.emplace_back(expansion_id, expansion);
+  }
+
+  if (copy_of) {
+    auto copy_of_id = mlir::StringAttr::get(context, "copy_of");
+    fields.emplace_back(copy_of_id, copy_of);
+  }
+
+  if (operands) {
+    auto operands_id = mlir::StringAttr::get(context, "operands");
+    fields.emplace_back(operands_id, operands);
+  }
+
+  mlir::Attribute dict = mlir::DictionaryAttr::get(context, fields);
+  return dict.dyn_cast<DecisionsAttr>();
+}
+
+bool DecisionsAttr::classof(mlir::Attribute attr) {
+  if (!attr) return false;
+  auto derived = attr.dyn_cast<mlir::DictionaryAttr>();
+  if (!derived) return false;
+  int num_absent_attrs = 0;
+
+  auto sequence = derived.get("sequence");
+  if (!sequence) {
+    ++num_absent_attrs;
+  } else {
+    auto int_sequence = sequence.dyn_cast<mlir::IntegerAttr>();
+    if (!int_sequence || !int_sequence.getType().isSignlessInteger(64)) {
+      return false;
+    }
+  }
+
+  auto loop_nest = derived.get("loop_nest");
+  if (!loop_nest) {
+    ++num_absent_attrs;
+  } else {
+    auto loop_nest_attr = loop_nest.dyn_cast<mlir::ArrayAttr>();
+    if (!loop_nest_attr) return false;
+    if (llvm::any_of(loop_nest_attr, [](mlir::Attribute attr) {
+          return !attr.isa_and_nonnull<LoopAttr>();
+        })) {
+      return false;
+    }
+  }
+
+  auto storage = derived.get("storage");
+  if (!storage) {
+    ++num_absent_attrs;
+  } else if (!storage.isa<mlir::ArrayAttr>()) {
+    return false;
+  }
+
+  auto expansion = derived.get("expansion");
+  if (!expansion) {
+    ++num_absent_attrs;
+  } else if (!expansion.isa<mlir::StringAttr>()) {
+    return false;
+  }
+
+  auto copy_of = derived.get("copy_of");
+  if (!copy_of) {
+    ++num_absent_attrs;
+  } else if (!copy_of.isa<CopyAttr, InstanceAttr, mlir::UnitAttr>()) {
+    return false;
+  }
+
+  auto operands = derived.get("operands");
+  if (!operands) {
+    ++num_absent_attrs;
+  } else {
+    auto operands_attr = operands.dyn_cast<mlir::ArrayAttr>();
+    if (llvm::any_of(operands_attr, [](mlir::Attribute attr) {
+          return !attr.isa_and_nonnull<CopyAttr, InstanceAttr,
+                                       mlir::UnitAttr>();
+        })) {
+      return false;
+    }
+  }
+
+  return derived.size() + num_absent_attrs == 6;
+}
+
+mlir::IntegerAttr DecisionsAttr::sequence() const {
+  auto derived = this->cast<mlir::DictionaryAttr>();
+  auto sequence = derived.get("sequence");
+  if (!sequence) return nullptr;
+  assert(sequence.isa<mlir::IntegerAttr>() &&
+         "incorrect Attribute type found.");
+  return sequence.cast<mlir::IntegerAttr>();
+}
+
+mlir::ArrayAttr DecisionsAttr::loop_nest() const {
+  auto derived = this->cast<mlir::DictionaryAttr>();
+  auto loop_nest = derived.get("loop_nest");
+  if (!loop_nest) return nullptr;
+  assert(loop_nest.isa<mlir::ArrayAttr>() && "incorrect Attribute type found.");
+  return loop_nest.cast<mlir::ArrayAttr>();
+}
+
+mlir::ArrayAttr DecisionsAttr::storage() const {
+  auto derived = this->cast<mlir::DictionaryAttr>();
+  auto storage = derived.get("storage");
+  if (!storage) return nullptr;
+  assert(storage.isa<mlir::ArrayAttr>() && "incorrect Attribute type found.");
+  return storage.cast<mlir::ArrayAttr>();
+}
+
+mlir::StringAttr DecisionsAttr::expansion() const {
+  auto derived = this->cast<mlir::DictionaryAttr>();
+  auto expansion = derived.get("expansion");
+  if (!expansion) return nullptr;
+  assert(expansion.isa<mlir::StringAttr>() &&
+         "incorrect Attribute type found.");
+  return expansion.cast<mlir::StringAttr>();
+}
+
+mlir::Attribute DecisionsAttr::copy_of() const {
+  auto derived = this->cast<mlir::DictionaryAttr>();
+  auto copy_of = derived.get("copy_of");
+  if (!copy_of) return nullptr;
+  assert(copy_of.isa<mlir::Attribute>() && "incorrect Attribute type found.");
+  return copy_of.cast<mlir::Attribute>();
+}
+
+mlir::ArrayAttr DecisionsAttr::operands() const {
+  auto derived = this->cast<mlir::DictionaryAttr>();
+  auto operands = derived.get("operands");
+  if (!operands) return nullptr;
+  assert(operands.isa<mlir::ArrayAttr>() && "incorrect Attribute type found.");
+  return operands.cast<mlir::ArrayAttr>();
+}
+
 }  // namespace sair
 
-#include "sair_structs.cc.inc"
 #define GET_ATTRDEF_CLASSES
 #include "sair_attributes.cc.inc"
 
