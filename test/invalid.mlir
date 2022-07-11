@@ -5,7 +5,7 @@ func.func @invalid_type() -> !sair.foo
 
 // -----
 
-// expected-error @+1 {{unexpected nul or EOF}}
+// expected-error @+1 {{unbalanced}}
 func.func @unfinished_range_dep() -> !sair.dyn_range<d0:dyn_range, d1:dyn_range
 
 // -----
