@@ -1738,7 +1738,7 @@ mlir::ArrayAttr DecisionsAttr::operands() const {
 
 mlir::OptionalParseResult sair::detail::ParseGeneratedAttribute(
     mlir::MLIRContext *context, mlir::AsmParser &parser,
-    llvm::StringRef mnemonic, mlir::Type type, mlir::Attribute &attribute) {
+    llvm::StringRef *mnemonic, mlir::Type type, mlir::Attribute &attribute) {
   return generatedAttributeParser(parser, mnemonic, type, attribute);
 }
 

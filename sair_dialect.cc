@@ -247,10 +247,9 @@ mlir::Attribute sair::SairDialect::parseAttribute(
   }
 
   llvm::StringRef keyword;
-  if (parser.parseKeyword(&keyword)) return nullptr;
   mlir::Attribute attribute;
   mlir::OptionalParseResult parse_result = detail::ParseGeneratedAttribute(
-      parser.getBuilder().getContext(), parser, keyword, type, attribute);
+      parser.getBuilder().getContext(), parser, &keyword, type, attribute);
   if (parse_result.hasValue()) {
     if (parse_result.getValue().succeeded()) return attribute;
     return mlir::Attribute();

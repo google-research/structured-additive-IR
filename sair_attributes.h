@@ -656,9 +656,11 @@ mlir::ArrayAttr EraseOperandFromDecisions(mlir::ArrayAttr decisions,
                                           int operand);
 
 namespace detail {
-mlir::OptionalParseResult ParseGeneratedAttribute(
-    mlir::MLIRContext *context, mlir::AsmParser &parser,
-    llvm::StringRef mnemonic, mlir::Type type, mlir::Attribute &attribute);
+mlir::OptionalParseResult ParseGeneratedAttribute(mlir::MLIRContext *context,
+                                                  mlir::AsmParser &parser,
+                                                  llvm::StringRef *mnemonic,
+                                                  mlir::Type type,
+                                                  mlir::Attribute &attribute);
 
 mlir::LogicalResult PrintGeneratedAttribute(mlir::Attribute attribute,
                                             mlir::AsmPrinter &printer);
