@@ -164,7 +164,7 @@ static mlir::LogicalResult VerifyDecisionsWellFormed(mlir::Location loc,
 }
 
 static mlir::LogicalResult VerifyInstancesAttr(SairOp op) {
-  if (!op.instances().hasValue()) return success();
+  if (!op.instances().has_value()) return success();
 
   for (int decision_index = 0, e = op.NumInstances(); decision_index < e;
        ++decision_index) {

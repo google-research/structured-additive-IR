@@ -88,7 +88,7 @@ class Driver : public mlir::PatternRewriter {
 
       for (const auto &pattern :
            canonicalization_patterns_.getNativePatterns()) {
-        if (pattern->getRootKind().hasValue() &&
+        if (pattern->getRootKind().has_value() &&
             pattern->getRootKind() != operation->getName()) {
           continue;
         }

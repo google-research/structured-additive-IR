@@ -274,7 +274,7 @@ class SairSameElementType<string lhs, string rhs>
 // Ensures that a Sair op has at most one instance specified.
 def SingleInstance: PredOpTrait<
     "op has at most one instance",
-    CPred<"!cast<SairOp>($_op).instances().hasValue() || "
+    CPred<"!cast<SairOp>($_op).instances().has_value() || "
           "cast<SairOp>($_op).instances()->getValue().size() <= 1">>;
 
 //===----------------------------------------------------------------------===//
@@ -406,7 +406,7 @@ def SairOpInterface : OpInterface<"SairOp"> {
       "Returns the number of instances of the operation",
       "int", "NumInstances", (ins), [{}], [{
         llvm::Optional<mlir::ArrayAttr> instances = $_op.instances();
-        if (!instances.hasValue()) return 0;
+        if (!instances.has_value()) return 0;
         return instances.getValue().size();
       }]>,
     InterfaceMethod<
@@ -439,7 +439,7 @@ def SairOpInterface : OpInterface<"SairOp"> {
       "void", "AddInstance", (ins "DecisionsAttr":$value),
       [{}], [{
         llvm::SmallVector<mlir::Attribute> instances;
-        if ($_op.instances().hasValue()) {
+        if ($_op.instances().has_value()) {
           instances = llvm::to_vector<4>(
             $_op.instances().getValue().getValue());
         }

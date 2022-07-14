@@ -55,7 +55,7 @@ mlir::LogicalResult CreateInstancesAndCopies(Operation *container) {
   // operations with empty instance lists and no uses.
   llvm::SmallVector<SairOp> ops;
   auto result = container->walk([&](SairOp sair_op) -> mlir::WalkResult {
-    if (!sair_op.instances().hasValue()) {
+    if (!sair_op.instances().has_value()) {
       sair_op->emitError() << "expected ops to have instances";
       return mlir::WalkResult::interrupt();
     }
@@ -68,7 +68,8 @@ mlir::LogicalResult CreateInstancesAndCopies(Operation *container) {
 
       for (Operation *user : sair_op->getUsers()) {
         auto sair_user = cast<SairOp>(user);
-        if (sair_user.instances().hasValue() && sair_user.NumInstances() != 0) {
+        if (sair_user.instances().has_value() &&
+            sair_user.NumInstances() != 0) {
           continue;
         }
         auto diag =
@@ -126,7 +127,7 @@ mlir::LogicalResult CreateInstancesAndCopies(Operation *container) {
             source.getType().cast<ValueType>().Shape().NumDimensions();
         llvm::Optional<unsigned> copied_instance = FindCopiedInstance(
             value_producer.GetCopies(i), en.index(), value_producer->getLoc());
-        if (!copied_instance.hasValue()) return mlir::failure();
+        if (!copied_instance.has_value()) return mlir::failure();
         mlir::ArrayAttr instance_operand_attr =
             sair_op.GetDecisions(*copied_instance).operands();
         SmallVector<mlir::Attribute> operand_attrs;

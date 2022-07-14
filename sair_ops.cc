@@ -962,7 +962,7 @@ mlir::LogicalResult SairExitOp::verify() {
     }
   }
 
-  if (op.instances().hasValue() && op.instances().getValue().empty()) {
+  if (op.instances().has_value() && op.instances().getValue().empty()) {
     return op.emitOpError() << "must have an instance";
   }
 
