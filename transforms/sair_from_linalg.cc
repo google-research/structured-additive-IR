@@ -569,7 +569,7 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
   llvm::SmallVector<mlir::Attribute, 4> operand_mappings;
   mlir::AffineMap subscripts_to_loops;
   if (mlir::failed(
-          ConvertOperandMappings(op.indexing_maps(), sair_to_linalg_loops,
+          ConvertOperandMappings(op.getIndexingMaps(), sair_to_linalg_loops,
                                  operand_mappings, subscripts_to_loops))) {
     return mlir::failure();
   }
@@ -590,7 +590,7 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
   // new IR.
   llvm::SmallVector<mlir::Attribute, 4> result_mappings;
   llvm::ArrayRef<mlir::Attribute> all_indexing_maps =
-      op.indexing_maps().getValue();
+      op.getIndexingMaps().getValue();
   int num_outputs = op.getNumOutputs();
   if (mlir::failed(
           ConvertResultMappings(all_indexing_maps.take_back(num_outputs),
