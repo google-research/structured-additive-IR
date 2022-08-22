@@ -178,7 +178,7 @@ ParseResult SairDynRangeOp::parse(mlir::OpAsmParser &parser,
       ArrayAttr::get(parser.getBuilder().getContext(), mapping_attrs));
   result.addAttribute(
       SairDynRangeOp::getOperandSegmentSizeAttr(),
-      builder.getI32VectorAttr({static_cast<int32_t>(domain.size()),
+      builder.getDenseI32ArrayAttr({static_cast<int32_t>(domain.size()),
                                 static_cast<int32_t>(operands.size() - 1), 1}));
 
   for (auto [operand, mapping] : llvm::zip(operands, mappings)) {
@@ -300,7 +300,7 @@ ParseResult SairFromMemRefOp::parse(mlir::OpAsmParser &parser,
   // comes from a trait. However, we cannot call a trait method directly.
   result.addAttribute(
       SairFromMemRefOp::getOperandSegmentSizeAttr(),
-      parser.getBuilder().getI32VectorAttr(
+      parser.getBuilder().getDenseI32ArrayAttr(
           {static_cast<int32_t>(parallel_domain_size),
            static_cast<int32_t>(domain.size() - parallel_domain_size),
            static_cast<int32_t>(1)}));
@@ -383,7 +383,7 @@ ParseResult SairToMemRefOp::parse(mlir::OpAsmParser &parser,
   // comes from a trait. However, we cannot call a trait method directly.
   result.addAttribute(
       SairFromMemRefOp::getOperandSegmentSizeAttr(),
-      parser.getBuilder().getI32VectorAttr(
+      parser.getBuilder().getDenseI32ArrayAttr(
           {static_cast<int32_t>(parallel_domain_size),
            static_cast<int32_t>(domain.size() - parallel_domain_size),
            static_cast<int32_t>(1), static_cast<int32_t>(1)}));
@@ -468,7 +468,7 @@ mlir::ParseResult parseProjectionOp(mlir::OpAsmParser &parser,
   // it expects specifically int32_t.
   int num_projection_dimensions = domain.size() - num_parallel_dimensions;
   result.addAttribute(SairProjAnyOp::getOperandSegmentSizeAttr(),
-                      parser.getBuilder().getI32VectorAttr(
+                      parser.getBuilder().getDenseI32ArrayAttr(
                           {static_cast<int32_t>(num_parallel_dimensions),
                            static_cast<int32_t>(num_projection_dimensions),
                            static_cast<int32_t>(1)}));
@@ -575,7 +575,7 @@ mlir::ParseResult SairAllocOp::parse(mlir::OpAsmParser &parser,
   }
 
   result.attributes.append(SairAllocOp::getOperandSegmentSizeAttr(),
-                           parser.getBuilder().getI32VectorAttr(
+                           parser.getBuilder().getDenseI32ArrayAttr(
                                {static_cast<int32_t>(domain.size()),
                                 static_cast<int32_t>(values.size())}));
   result.attributes.append(SairOp::kMappingAttrName,
@@ -661,7 +661,7 @@ mlir::ParseResult SairFbyOp::parse(mlir::OpAsmParser &parser,
   // it expects specifically int32_t.
   result.addAttribute(
       SairMapOp::getOperandSegmentSizeAttr(),
-      parser.getBuilder().getI32VectorAttr(
+      parser.getBuilder().getDenseI32ArrayAttr(
           {static_cast<int32_t>(num_parallel_dimensions),
            static_cast<int32_t>(domain.size() - num_parallel_dimensions), 1,
            1}));
@@ -1160,7 +1160,7 @@ ParseResult SairMapOp::parse(mlir::OpAsmParser &parser,
   // it expects specifically int32_t.
   result.addAttribute(
       SairMapOp::getOperandSegmentSizeAttr(),
-      builder.getI32VectorAttr({static_cast<int32_t>(domain.size()),
+      builder.getDenseI32ArrayAttr({static_cast<int32_t>(domain.size()),
                                 static_cast<int32_t>(operands.size())}));
 
   return mlir::success();
@@ -1203,7 +1203,7 @@ void SairMapOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,
   }
 
   auto operand_segment_sizes =
-      builder.getI32VectorAttr({static_cast<int32_t>(domain.size()),
+      builder.getDenseI32ArrayAttr({static_cast<int32_t>(domain.size()),
                                 static_cast<int32_t>(inputs.size())});
   result.addAttribute(SairMapOp::getOperandSegmentSizeAttr(),
                       operand_segment_sizes);
@@ -1461,7 +1461,7 @@ ParseResult SairMapReduceOp::parse(mlir::OpAsmParser &parser,
        num_reduction_init_operands,
        static_cast<int32_t>(operands.size()) - num_reduction_init_operands});
   result.addAttribute(SairMapOp::getOperandSegmentSizeAttr(),
-                      builder.getI32VectorAttr(segment_sizes));
+                      builder.getDenseI32ArrayAttr(segment_sizes));
 
   return mlir::success();
 }
