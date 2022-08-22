@@ -52,7 +52,7 @@ def SairDynRangeOp : SairOp<"dyn_range",
     SairMappingArrayAttr:$mapping_array,
     Optional<SairValueOf<Index>>:$lower_bound,
     SairValueOf<Index>:$upper_bound,
-    DefaultValuedAttr<ConfinedAttr<IndexAttr, [IntPositive]>, "1">:$step,
+    DefaultValuedOptionalAttr<ConfinedAttr<IndexAttr, [IntPositive]>, "1">:$step,
     OptionalAttr<SairInstancesAttr>:$instances
   );
 
