@@ -77,6 +77,7 @@ add_mlir_library(sair_lowering
   LINK_LIBS PUBLIC
   MLIRAffine
   MLIRAffineToStandard
+  MLIRArithmetic
   MLIRIR
   MLIRLLVMCommonConversion
   MLIRLLVMIR

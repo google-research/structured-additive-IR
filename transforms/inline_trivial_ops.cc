@@ -15,18 +15,23 @@
 #include <memory>
 
 #include "llvm/ADT/SmallVector.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Builders.h"
-#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/RegionUtils.h"
+#include "sair_dialect.h"
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
-#include "transforms/lowering_pass_classes.h"
 
 namespace sair {
+
+#define GEN_PASS_DEF_INLINETRIVIALSAIROPSPASS
+#include "transforms/lowering.h.inc"
+
 namespace {
 
 // Checks if the given Sair Op is trivial and can be simplified. Sair Ops are
@@ -123,7 +128,7 @@ bool InlineTrivialSairOp(mlir::func::FuncOp function) {
 
 // MLIR pass that replaces trivial Sair ops with the content of their body.
 class InlineTrivialSairOpsPass
-    : public InlineTrivialSairOpsPassBase<InlineTrivialSairOpsPass> {
+    : public impl::InlineTrivialSairOpsPassBase<InlineTrivialSairOpsPass> {
   void runOnOperation() override {
     mlir::func::FuncOp function = getOperation();
     // Iteratively find the first trivial Sair Op and inline it, which may

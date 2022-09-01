@@ -18,13 +18,12 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
-#include "mlir/Dialect/Affine/LoopUtils.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/SCF/Utils/Utils.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
-#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/Operation.h"
@@ -38,15 +37,18 @@
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/RegionUtils.h"
 #include "sair_attributes.h"
+#include "sair_dialect.h"
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
 #include "sair_types.h"
 #include "sequence.h"
 #include "storage.h"
-#include "transforms/lowering_pass_classes.h"
-#include "util.h"
 
 namespace sair {
+
+#define GEN_PASS_DEF_INTRODUCELOOPSPASS
+#include "transforms/lowering.h.inc"
+
 namespace {
 
 // Adds canonicalization patterns from Ops to `list.
@@ -824,7 +826,7 @@ mlir::LogicalResult IntroduceLoopOrFuse(
 // process. Fails if operations operand depend on any dimension,  if operations
 // have results with more than 1 dimension or if dimensions are not defined in
 // the same sair.program.
-class IntroduceLoops : public IntroduceLoopsPassBase<IntroduceLoops> {
+class IntroduceLoops : public impl::IntroduceLoopsPassBase<IntroduceLoops> {
   // Introduce loops for a sair.program operation.
   void IntroduceProgramLoops(SairProgramOp program) {
     auto &sequence_analysis = getChildAnalysis<SequenceAnalysis>(program);

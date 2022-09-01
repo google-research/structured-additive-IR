@@ -20,24 +20,24 @@
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
-#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/OperationSupport.h"
 #include "mlir/Pass/Pass.h"
 #include "sair_attributes.h"
 #include "sair_dialect.h"
 #include "sair_ops.h"
 #include "storage.h"
-#include "transforms/domain_utils.h"
-#include "transforms/lowering_pass_classes.h"
-#include "util.h"
 
 namespace sair {
+
+#define GEN_PASS_DEF_LOWERTOMAPPASS
+#include "transforms/lowering.h.inc"
+
 namespace {
 
-class LowerToMap : public LowerToMapPassBase<LowerToMap> {
+class LowerToMap : public impl::LowerToMapPassBase<LowerToMap> {
   // Converts sair.copy operations into sair.map operations. This is a hook for
   // the MLIR pass infrastructure.
   void runOnOperation() override {

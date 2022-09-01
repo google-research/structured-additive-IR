@@ -15,6 +15,8 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/MLIRContext.h"
@@ -22,10 +24,12 @@
 #include "sair_attributes.h"
 #include "sair_dialect.h"
 #include "sair_ops.h"
-#include "transforms/lowering_pass_classes.h"
-#include "util.h"
 
 namespace sair {
+
+#define GEN_PASS_DEF_LOWERMAPREDUCEPASS
+#include "transforms/lowering.h.inc"
+
 namespace {
 
 // Creates an `instances` attribute (array of decisions) that has as many
@@ -204,7 +208,7 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
   op.erase();
 }
 
-class LowerMapReduce : public LowerMapReducePassBase<LowerMapReduce> {
+class LowerMapReduce : public impl::LowerMapReducePassBase<LowerMapReduce> {
   // Converts
   //
   // <res> = sair.map_reduce[<D0>] <inits> reduce[<D1>] <values> <body>

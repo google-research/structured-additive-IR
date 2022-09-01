@@ -20,7 +20,8 @@
 
 namespace sair {
 
-#define GEN_PASS_CLASSES
+#define GEN_PASS_DEF_TESTDOMAINSHAPEPASS
+#define GEN_PASS_DEF_TESTMAPPINGEXPRSPASS
 #include "test/passes.h.inc"
 
 // Retrieves the attribute `name` from `op` and converts it into a vector of
@@ -50,7 +51,7 @@ mlir::ArrayAttr GetArrayAttr(llvm::SmallVectorImpl<T> &attributes,
 // Walks a module and dispatch each operation to an mapping expression
 // method call based on the operation name.
 class TestMappingExprsPass
-    : public TestMappingExprsPassBase<TestMappingExprsPass> {
+    : public impl::TestMappingExprsPassBase<TestMappingExprsPass> {
  public:
   mlir::Attribute DispatchTest(llvm::StringRef op_name, MappingExpr expr,
                                mlir::Operation *op) {
@@ -134,7 +135,7 @@ CreateTestMappingExprsPass() {
 // Walks a module and dispatch each operation to a DomainShapeAttr method call
 // based on the operation name.
 class TestDomainShapePass
-    : public TestDomainShapePassBase<TestDomainShapePass> {
+    : public impl::TestDomainShapePassBase<TestDomainShapePass> {
  public:
   mlir::Attribute DispatchTest(llvm::StringRef op_name, DomainShapeAttr shape,
                                mlir::Operation *op) {

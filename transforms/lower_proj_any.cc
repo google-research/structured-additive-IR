@@ -12,16 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "mlir/IR/BuiltinOps.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Pass/Pass.h"
 #include "loop_nest.h"
+#include "sair_dialect.h"
 #include "sair_ops.h"
-#include "transforms/lowering_pass_classes.h"
 
 namespace sair {
+
+#define GEN_PASS_DEF_LOWERPROJANYPASS
+#include "transforms/lowering.h.inc"
+
 namespace {
 
-class LowerProjAny : public LowerProjAnyPassBase<LowerProjAny> {
+class LowerProjAny : public impl::LowerProjAnyPassBase<LowerProjAny> {
   // Eliminates proj_any operations or lowers them to proj_last operations.
   void runOnOperation() override {
     mlir::MLIRContext *context = &getContext();

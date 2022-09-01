@@ -36,10 +36,11 @@
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/Passes.h"
 #include "sair_dialect.h"
-#include "transforms/default_lowering_attributes.h"
-#include "transforms/lowering_pass_classes.h"
 
 namespace sair {
+
+#define GEN_PASS_DEF_LOWERTOLLVM
+#include "transforms/lowering.h.inc"
 
 namespace {
 // Converts a SairUndefOp into LLVM's counterpart.
@@ -63,7 +64,7 @@ class LowerUndef : public ConvertOpToLLVMPattern<SairUndefOp> {
 };
 
 // A pass that converts Standard ops and SairUndefOp to the LLVM dialect.
-class LowerToLLVMPass : public LowerToLLVMBase<LowerToLLVMPass> {
+class LowerToLLVMPass : public impl::LowerToLLVMBase<LowerToLLVMPass> {
  public:
   void runOnOperation() override {
     auto module = getOperation();

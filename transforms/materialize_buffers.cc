@@ -14,17 +14,21 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
-#include "mlir/IR/BuiltinOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Pass/Pass.h"
 #include "loop_nest.h"
+#include "sair_dialect.h"
 #include "sair_op_interfaces.h"
 #include "sequence.h"
 #include "storage.h"
 #include "transforms/domain_utils.h"
-#include "transforms/lowering_pass_classes.h"
 #include "util.h"
 
 namespace sair {
+
+#define GEN_PASS_DEF_MATERIALIZEBUFFERSPASS
+#include "transforms/lowering.h.inc"
+
 namespace {
 
 // Creates a loop-nest that maps pointwise to the domain with given loop names.
@@ -345,7 +349,7 @@ void InsertStore(ComputeOp op, int result_pos, const Buffer &buffer,
 
 // Implements storage attributes by replacing Sair values with memrefs.
 class MaterializeBuffers
-    : public MaterializeBuffersPassBase<MaterializeBuffers> {
+    : public impl::MaterializeBuffersPassBase<MaterializeBuffers> {
   void RunOnProgram(SairProgramOp program) {
     mlir::MLIRContext *context = &getContext();
     mlir::OpBuilder builder(context);

@@ -24,9 +24,12 @@
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
 #include "transforms/lowering.h"
-#include "transforms/lowering_pass_classes.h"
 
 namespace sair {
+
+#define GEN_PASS_DEF_MATERIALIZEINSTANCESPASS
+#include "transforms/lowering.h.inc"
+
 namespace {
 
 // Traverses `result_copies` attributes (expects DecisionsAttr to be the
@@ -204,7 +207,7 @@ mlir::LogicalResult CreateInstancesAndCopies(Operation *container) {
 // Pass that creates clones of an operation or copies of its results as
 // requested by the respective attributes.
 class MaterializeInstancesPass
-    : public MaterializeInstancesPassBase<MaterializeInstancesPass> {
+    : public impl::MaterializeInstancesPassBase<MaterializeInstancesPass> {
  public:
   void runOnOperation() override {
     if (mlir::failed(CreateInstancesAndCopies(getOperation()))) {

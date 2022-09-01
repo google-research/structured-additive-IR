@@ -12,16 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Pass/Pass.h"
 #include "loop_nest.h"
+#include "sair_dialect.h"
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
 #include "sequence.h"
 #include "storage.h"
 #include "transforms/domain_utils.h"
-#include "transforms/lowering_pass_classes.h"
 #include "util.h"
 
 namespace sair {
+
+#define GEN_PASS_DEF_NORMALIZELOOPSPASS
+#include "transforms/lowering.h.inc"
+
 namespace {
 
 // Creates a range operation for loop `loop` of `loop_nest`. Appends
@@ -320,7 +327,8 @@ void NormalizeLoops(SairOp op, const IterationSpace &iteration_space,
 
 // Pass that rewrites operation domains so that each loop corresponds to a
 // single dimension.
-class NormalizeLoopsPass : public NormalizeLoopsPassBase<NormalizeLoopsPass> {
+class NormalizeLoopsPass
+    : public impl::NormalizeLoopsPassBase<NormalizeLoopsPass> {
  public:
   mlir::LogicalResult RunOpProgram(SairProgramOp program,
                                    mlir::OpBuilder &builder) {

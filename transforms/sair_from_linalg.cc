@@ -22,14 +22,11 @@
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
-#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Operation.h"
-#include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Support/LLVM.h"
-#include "mlir/Transforms/DialectConversion.h"
 #include "sair_attributes.h"
 #include "sair_dialect.h"
 #include "sair_ops.h"
@@ -662,13 +659,13 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
   return mlir::success();
 }
 
-#define GEN_PASS_CLASSES
+#define GEN_PASS_DEF_SAIRFROMLINALGPASS
 #include "transforms/sair_from_linalg.h.inc"
 
 // A pass converting Linalg (indexed) generic operations to Sair equivalents in
 // the given function.
 class LinalgToSairConversion
-    : public SairFromLinalgPassBase<LinalgToSairConversion> {
+    : public impl::SairFromLinalgPassBase<LinalgToSairConversion> {
  public:
   // Runs the pass on a function.
   void runOnOperation() override;
