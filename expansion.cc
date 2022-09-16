@@ -63,10 +63,10 @@ mlir::LogicalResult MapExpansionPattern::Match(SairMapOp op) const {
 llvm::SmallVector<mlir::Value> MapExpansionPattern::Emit(
     SairMapOp op, MapBodyBuilder &map_body, mlir::OpBuilder &builder) const {
   mlir::Block *new_block = builder.getInsertionBlock();
-  for (int i = 0, e = op.domain().size(); i < e; ++i) {
+  for (int i = 0, e = op.getDomain().size(); i < e; ++i) {
     op.block().getArgument(i).replaceAllUsesWith(map_body.index(i));
   }
-  for (int i = 0, e = op.inputs().size(); i < e; ++i) {
+  for (int i = 0, e = op.getInputs().size(); i < e; ++i) {
     op.block_inputs()[i].replaceAllUsesWith(map_body.block_input(i));
   }
   new_block->getOperations().splice(new_block->begin(),
@@ -206,8 +206,9 @@ mlir::LogicalResult LoadExpansionPattern::Match(SairLoadFromMemRefOp op) const {
 llvm::SmallVector<mlir::Value> LoadExpansionPattern::Emit(
     SairLoadFromMemRefOp op, MapBodyBuilder &map_body,
     mlir::OpBuilder &builder) const {
-  llvm::SmallVector<mlir::Value> indices = LoadStoreIndices(
-      op.getLoc(), op.DomainWithDependencies(), op.layout(), map_body, builder);
+  llvm::SmallVector<mlir::Value> indices =
+      LoadStoreIndices(op.getLoc(), op.DomainWithDependencies(), op.getLayout(),
+                       map_body, builder);
   auto load = builder.create<mlir::memref::LoadOp>(
       op.getLoc(), map_body.block_input(0), indices);
   return {load};
@@ -234,8 +235,9 @@ mlir::LogicalResult StoreExpansionPattern::Match(SairStoreToMemRefOp op) const {
 llvm::SmallVector<mlir::Value> StoreExpansionPattern::Emit(
     SairStoreToMemRefOp op, MapBodyBuilder &map_body,
     mlir::OpBuilder &builder) const {
-  llvm::SmallVector<mlir::Value> indices = LoadStoreIndices(
-      op.getLoc(), op.DomainWithDependencies(), op.layout(), map_body, builder);
+  llvm::SmallVector<mlir::Value> indices =
+      LoadStoreIndices(op.getLoc(), op.DomainWithDependencies(), op.getLayout(),
+                       map_body, builder);
   builder.create<mlir::memref::StoreOp>(op.getLoc(), map_body.block_input(1),
                                         map_body.block_input(0), indices);
   return {};

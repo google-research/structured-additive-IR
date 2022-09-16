@@ -79,7 +79,7 @@ class LowerToMap : public impl::LowerToMapPassBase<LowerToMap> {
           map_body.sair_values(), sair_op.shape(),
           /*instances=*/builder.getArrayAttr({new_decisions}),
           /*copies=*/nullptr);
-      map_op.body().takeBody(map_body.region());
+      map_op.getBody().takeBody(map_body.region());
 
       op->replaceAllUsesWith(map_op);
       op->erase();

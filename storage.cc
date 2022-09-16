@@ -362,7 +362,7 @@ mlir::LogicalResult StorageAnalysis::ComputeValueStorages(
     OpInstance op_instance(cast<SairOp>(op.getOperation()));
     const IterationSpace &iter_space = iteration_spaces.Get(op_instance);
     MappingAttr layout = iter_space.mapping().Inverse().Compose(op.Layout());
-    ValueStorage storage(memory_space, op.buffer_nameAttr(), layout);
+    ValueStorage storage(memory_space, op.getBufferNameAttr(), layout);
     return SetStorage(op_instance.Result(0), storage, fusion_analysis,
                       iteration_spaces);
   });
@@ -383,7 +383,7 @@ mlir::LogicalResult StorageAnalysis::ComputeValueStorages(
     OpInstance op_instance(cast<SairOp>(op.getOperation()));
     const IterationSpace &iter_space = iteration_spaces.Get(op_instance);
     MappingAttr layout = iter_space.mapping().Inverse().Compose(op.Layout());
-    ValueStorage operand_storage(memory_space, op.buffer_nameAttr(), layout);
+    ValueStorage operand_storage(memory_space, op.getBufferNameAttr(), layout);
     auto value = OperandInstance(op.Value(), op_instance).GetValue();
     if (!value.has_value()) return mlir::success();
     ValueStorage storage =
@@ -911,7 +911,7 @@ static mlir::LogicalResult VerifyValueNotOverwritten(
       // Find outermost loop that iterate along fby dimensions.
       MappingAttr mapping_to_loops = iter_space.MappingToLoops();
       auto it = llvm::find_if(mapping_to_loops, [&](MappingExpr expr) {
-        return expr.MinDomainSize() >= fby.parallel_domain().size();
+        return expr.MinDomainSize() >= fby.getParallelDomain().size();
       });
       int first_carry_loop = std::distance(mapping_to_loops.begin(), it);
 

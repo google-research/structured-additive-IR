@@ -38,7 +38,7 @@ namespace {
 // trivial if they have a body region with 0D shape and all their operands are
 // 0D Sair values constructed from known scalars.
 bool IsTrivialSairMap(SairMapOp op) {
-  if (!op.shape().Is0d()) return false;
+  if (!op.getShape().Is0d()) return false;
   for (const ValueOperand operand : op.ValueOperands()) {
     assert(operand.GetType().Shape().Is0d());
 
@@ -77,7 +77,8 @@ bool InlineTrivialSairOp(mlir::func::FuncOp function) {
   source_values.reserve(trivial_op_operands.size());
   for (const ValueOperand operand : trivial_op_operands) {
     mlir::Operation *defining_operation = operand.value().getDefiningOp();
-    source_values.push_back(cast<SairFromScalarOp>(defining_operation).value());
+    source_values.push_back(
+        cast<SairFromScalarOp>(defining_operation).getValue());
   }
 
   // Use the sources of the 0d value directly.
@@ -87,7 +88,8 @@ bool InlineTrivialSairOp(mlir::func::FuncOp function) {
        llvm::zip(source_values, trivial_op.block().getArguments())) {
     mlir::Value source = std::get<0>(pair);
     mlir::Value block_argument = std::get<1>(pair);
-    mlir::replaceAllUsesInRegionWith(block_argument, source, trivial_op.body());
+    mlir::replaceAllUsesInRegionWith(block_argument, source,
+                                     trivial_op.getBody());
   }
 
   // Move the body contents immediately before the Sair program.
@@ -142,16 +144,17 @@ class InlineTrivialSairOpsPass
     // trivial if it only contains sair.from_scalar operations apart from its
     // terminator.
     function.walk([](SairProgramOp op) {
-      for (mlir::Operation &sair_op : op.body().front().without_terminator()) {
+      for (mlir::Operation &sair_op :
+           op.getBody().front().without_terminator()) {
         if (!isa<SairFromScalarOp>(&sair_op)) return;
       }
-      mlir::Operation *exit_op = op.body().front().getTerminator();
+      mlir::Operation *exit_op = op.getBody().front().getTerminator();
       for (int i = 0, e = op.getNumResults(); i < e; ++i) {
         // The defining operation of sair.exit operands are defined in the same
         // block than the sair.exit operation. This is checked by SairOpTrait.
         SairFromScalarOp from_scalar_op = llvm::cast<SairFromScalarOp>(
             exit_op->getOperand(i).getDefiningOp());
-        op.getResult(i).replaceAllUsesWith(from_scalar_op.value());
+        op.getResult(i).replaceAllUsesWith(from_scalar_op.getValue());
       }
       op.erase();
     });

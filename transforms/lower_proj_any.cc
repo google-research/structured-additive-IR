@@ -37,7 +37,7 @@ class LowerProjAny : public impl::LowerProjAnyPassBase<LowerProjAny> {
       const auto &iteration_spaces =
           getChildAnalysis<IterationSpaceAnalysis>(op->getParentOp());
 
-      auto source = cast<SairOp>(op.value().getDefiningOp());
+      auto source = cast<SairOp>(op.getValue().getDefiningOp());
       if (op.HasCopies()) {
         return source.emitError() << "copies must be materialized before "
                                      "lowering proj_any operations";
@@ -54,7 +54,8 @@ class LowerProjAny : public impl::LowerProjAnyPassBase<LowerProjAny> {
       }
 
       int domain_size = op.domain().size();
-      for (OpOperand &use : llvm::make_early_inc_range(op.result().getUses())) {
+      for (OpOperand &use :
+           llvm::make_early_inc_range(op.getResult().getUses())) {
         SairOp user = cast<SairOp>(use.getOwner());
         ValueOperand operand(&use);
         const IterationSpace &user_space =
@@ -75,7 +76,7 @@ class LowerProjAny : public impl::LowerProjAnyPassBase<LowerProjAny> {
 
         // Projection can be fully eliminated.
         if (num_common_loops == mapping.size()) {
-          operand.set_value(op.value());
+          operand.set_value(op.getValue());
           operand.SetMapping(mapping.Compose(op.Value().Mapping()));
           continue;
         }
@@ -102,8 +103,8 @@ class LowerProjAny : public impl::LowerProjAnyPassBase<LowerProjAny> {
 
         auto proj_last = builder.create<SairProjLastOp>(
             op.getLoc(), proj_type, parallel_domain, projection_domain,
-            builder.getArrayAttr({proj_mapping}), op.value(), proj_shape,
-            /*instances=*/op.instancesAttr(),
+            builder.getArrayAttr({proj_mapping}), op.getValue(), proj_shape,
+            /*instances=*/op.getInstancesAttr(),
             /*copies=*/nullptr);
 
         operand.set_value(proj_last);

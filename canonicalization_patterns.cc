@@ -35,7 +35,7 @@ MappingAttr ExtendWithIdentity(MappingAttr old_mapping, int domain_size,
 // Redirects `use` to the `init` operand of `op` if `op` has an empty sequential
 // domain. Returns true if any change was made.
 bool SimplifyFbyOp(ValueOperand &use, SairFbyOp op) {
-  if (!op.sequential_domain().empty()) return false;
+  if (!op.getSequentialDomain().empty()) return false;
   use.SubstituteValue(op.Init().Get());
   return true;
 }
@@ -46,27 +46,28 @@ bool SimplifyFbyOp(ValueOperand &use, SairFbyOp op) {
 template <typename ProjOp>
 bool SimplifyProjOp(ValueOperand &use, ProjOp op,
                     mlir::PatternRewriter &rewriter) {
-  if (op.projection_domain().empty()) {
+  if (op.getProjectionDomain().empty()) {
     use.SubstituteValue(op.Value().Get());
     return true;
   }
 
-  ProjOp prev_op = op.value().template getDefiningOp<ProjOp>();
+  ProjOp prev_op = op.getValue().template getDefiningOp<ProjOp>();
   if (prev_op == nullptr) return false;
   if (prev_op.GetCopies(0).size() != 0) return false;
 
   llvm::SmallVector<mlir::Value, 4> projection_domain;
-  projection_domain.reserve(op.projection_domain().size() +
-                            prev_op.projection_domain().size());
-  llvm::append_range(projection_domain, op.projection_domain());
-  llvm::append_range(projection_domain, prev_op.projection_domain());
+  projection_domain.reserve(op.getProjectionDomain().size() +
+                            prev_op.getProjectionDomain().size());
+  llvm::append_range(projection_domain, op.getProjectionDomain());
+  llvm::append_range(projection_domain, prev_op.getProjectionDomain());
 
   llvm::SmallVector<DomainShapeDim, 4> shape_dims;
-  shape_dims.reserve(op.shape().NumDimensions() +
-                     prev_op.projection_domain().size());
-  llvm::append_range(shape_dims, op.shape().Dimensions());
-  llvm::ArrayRef<DomainShapeDim> prev_shape_dims = prev_op.shape().Dimensions();
-  llvm::append_range(shape_dims, prev_op.shape().Dimensions().drop_front(
+  shape_dims.reserve(op.getShape().NumDimensions() +
+                     prev_op.getProjectionDomain().size());
+  llvm::append_range(shape_dims, op.getShape().Dimensions());
+  llvm::ArrayRef<DomainShapeDim> prev_shape_dims =
+      prev_op.getShape().Dimensions();
+  llvm::append_range(shape_dims, prev_op.getShape().Dimensions().drop_front(
                                      prev_op.results_rank()));
   DomainShapeAttr shape = DomainShapeAttr::get(op.getContext(), shape_dims);
 
@@ -77,11 +78,11 @@ bool SimplifyProjOp(ValueOperand &use, ProjOp op,
   mlir::ArrayAttr mapping_array = rewriter.getArrayAttr({new_mapping});
 
   rewriter.setInsertionPoint(op);
-  ProjOp new_op =
-      rewriter.create<ProjOp>(op.getLoc(), op.getType(), op.parallel_domain(),
-                              projection_domain, mapping_array, prev_op.value(),
-                              shape, op.instancesAttr(), op.copiesAttr());
-  use.set_value(new_op.result());
+  ProjOp new_op = rewriter.create<ProjOp>(
+      op.getLoc(), op.getType(), op.getParallelDomain(), projection_domain,
+      mapping_array, prev_op.getValue(), shape, op.getInstancesAttr(),
+      op.getCopiesAttr());
+  use.set_value(new_op.getResult());
 
   return true;
 }
@@ -135,7 +136,7 @@ mlir::LogicalResult DeduplicateMapInputsOutputs(
     SairMapOp op, mlir::PatternRewriter &rewriter) {
   if (op.HasCopies()) return mlir::failure();
 
-  int domain_size = op.domain().size();
+  int domain_size = op.getDomain().size();
   llvm::SmallVector<mlir::Value> new_operands;
   llvm::SmallVector<mlir::Attribute> new_mappings;
 
@@ -221,20 +222,20 @@ mlir::LogicalResult DeduplicateMapInputsOutputs(
 
   rewriter.setInsertionPoint(op);
   mlir::ArrayAttr new_instances = MkArrayAttrMapper<DecisionsAttr>(
-      MapStorage(MkArrayAttrFilter(remaining_outputs)))(op.instancesAttr());
+      MapStorage(MkArrayAttrFilter(remaining_outputs)))(op.getInstancesAttr());
   for (int operand : llvm::reverse(block_args_to_erase)) {
     new_instances = EraseOperandFromDecisions(new_instances, operand);
   }
   mlir::ArrayAttr new_copies =
-      MkArrayAttrFilter(remaining_outputs)(op.copiesAttr());
+      MkArrayAttrFilter(remaining_outputs)(op.getCopiesAttr());
   SairMapOp new_op = rewriter.create<SairMapOp>(
-      op.getLoc(), new_result_types, op.domain(),
-      rewriter.getArrayAttr(new_mappings), new_operands, op.shape(),
+      op.getLoc(), new_result_types, op.getDomain(),
+      rewriter.getArrayAttr(new_mappings), new_operands, op.getShape(),
       new_instances, new_copies);
-  new_op.body().takeBody(op.body());
+  new_op.getBody().takeBody(op.getBody());
 
   for (auto [old_res, new_res] :
-       llvm::zip(old_results_to_keep, new_op.results())) {
+       llvm::zip(old_results_to_keep, new_op.getResults())) {
     old_res.replaceAllUsesWith(new_res);
   }
 
@@ -253,10 +254,10 @@ class RemoveCyclicFby : public OpRewritePattern<SairFbyOp> {
   mlir::LogicalResult matchAndRewrite(
       SairFbyOp op, PatternRewriter &rewriter) const override {
     // Only apply to cycling followed-by with identity mappings.
-    if (op.result() != op.value() || !op.Value().Mapping().IsIdentity())
+    if (op.getResult() != op.getValue() || !op.Value().Mapping().IsIdentity())
       return mlir::failure();
 
-    UpdateValueUses(op.result(), op.Init().Get());
+    UpdateValueUses(op.getResult(), op.Init().Get());
     op.erase();
 
     return mlir::success();
@@ -314,10 +315,10 @@ class RemoveUnreferencedDims : public OpRewritePattern<OpTy> {
     MappingAttr mapping;
     llvm::SmallVector<mlir::Value> parallel_dimensions, projection_dimensions;
     RemoveUnusedDomainDimensions(op.getContext(), used_dimensions,
-                                 op.parallel_domain(), op.projection_domain(),
-                                 parallel_dimensions, projection_dimensions,
-                                 mapping);
-    DomainShapeAttr new_shape = op.shape().AccessedShape(mapping);
+                                 op.getParallelDomain(),
+                                 op.getProjectionDomain(), parallel_dimensions,
+                                 projection_dimensions, mapping);
+    DomainShapeAttr new_shape = op.getShape().AccessedShape(mapping);
     SairOp new_op =
         op.ReCreateWithNewDomain({parallel_dimensions, projection_dimensions},
                                  new_shape, mapping.Inverse(), rewriter);
@@ -351,11 +352,11 @@ class RemoveUnreferencedDims<SairFbyOp> : public OpRewritePattern<SairFbyOp> {
     MappingAttr direct_mapping;
     llvm::SmallVector<mlir::Value> parallel_dimensions, sequential_dimensions;
     RemoveUnusedDomainDimensions(op.getContext(), used_dimensions,
-                                 op.parallel_domain(), op.sequential_domain(),
-                                 parallel_dimensions, sequential_dimensions,
-                                 direct_mapping);
+                                 op.getParallelDomain(),
+                                 op.getSequentialDomain(), parallel_dimensions,
+                                 sequential_dimensions, direct_mapping);
 
-    DomainShapeAttr new_shape = op.shape().AccessedShape(direct_mapping);
+    DomainShapeAttr new_shape = op.getShape().AccessedShape(direct_mapping);
     SairOp new_op =
         op.ReCreateWithNewDomain({parallel_dimensions, sequential_dimensions},
                                  new_shape, direct_mapping.Inverse(), rewriter);

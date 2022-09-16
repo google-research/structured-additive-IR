@@ -242,7 +242,7 @@ mlir::LogicalResult RegisterOperations(
     Driver &driver) {
   // Add non-compute ops. These will be canonicalized by the driver and their
   // relative order doesn't matter.
-  for (mlir::Operation &operation : program.body().front()) {
+  for (mlir::Operation &operation : program.getBody().front()) {
     if (isa<SairProjAnyOp>(operation)) {
       return operation.emitError() << "sair.proj_any operations must be "
                                       "eliminated before introducing loops";
@@ -374,20 +374,20 @@ mlir::ArrayAttr EraseDimensionFromLoopNest(
 void EraseDimension(SairProjLastOp op, int dimension, mlir::Value new_value,
                     Driver &driver) {
   mlir::OpBuilder::InsertionGuard guard(driver);
-  assert(dimension >= op.parallel_domain().size());
+  assert(dimension >= op.getParallelDomain().size());
 
-  int dim_pos = dimension - op.parallel_domain().size();
+  int dim_pos = dimension - op.getParallelDomain().size();
   MappingAttr mapping = EraseDimension(op.Value().Mapping(), dimension);
 
   driver.setInsertionPoint(op);
   driver.replaceOpWithNewOp<SairProjLastOp>(
       op, /*result_type=*/op.getType(),
-      /*parallel_domain=*/op.parallel_domain(),
-      /*projection_domain=*/EraseValue(op.projection_domain(), dim_pos),
+      /*parallel_domain=*/op.getParallelDomain(),
+      /*projection_domain=*/EraseValue(op.getProjectionDomain(), dim_pos),
       /*mapping_array*/ driver.getArrayAttr({mapping}),
       /*value=*/new_value,
-      /*shape=*/EraseDimension(op.shape(), dimension),
-      /*instances=*/EraseOperandFromDecisions(op.instancesAttr(), dimension),
+      /*shape=*/EraseDimension(op.getShape(), dimension),
+      /*instances=*/EraseOperandFromDecisions(op.getInstancesAttr(), dimension),
       /*copies=*/nullptr);
 }
 
@@ -396,24 +396,24 @@ void EraseDimension(SairProjLastOp op, int dimension, mlir::Value new_value,
 void EraseDimension(SairFbyOp op, int dimension, mlir::Value new_value,
                     Driver &driver) {
   mlir::OpBuilder::InsertionGuard guard(driver);
-  assert(dimension >= op.parallel_domain().size());
+  assert(dimension >= op.getParallelDomain().size());
 
   ValueType type = op.getType().cast<ValueType>();
   mlir::Type element_type = type.ElementType();
   DomainShapeAttr shape = EraseDimension(type.Shape(), dimension);
-  int dim_pos = dimension - op.parallel_domain().size();
+  int dim_pos = dimension - op.getParallelDomain().size();
   MappingAttr mapping = EraseDimension(op.Value().Mapping(), dimension);
 
   driver.setInsertionPoint(op);
   driver.replaceOpWithNewOp<SairFbyOp>(
       op,
       /*result_type=*/ValueType::get(shape, element_type),
-      /*parallel_domain=*/op.parallel_domain(),
-      /*sequential_domain=*/EraseValue(op.sequential_domain(), dim_pos),
+      /*parallel_domain=*/op.getParallelDomain(),
+      /*sequential_domain=*/EraseValue(op.getSequentialDomain(), dim_pos),
       /*mapping_array*/
       driver.getArrayAttr({op.Init().Mapping(), mapping}),
-      /*init=*/op.init(), /*value=*/new_value,
-      /*instances=*/EraseOperandFromDecisions(op.instancesAttr(), dimension),
+      /*init=*/op.getInit(), /*value=*/new_value,
+      /*instances=*/EraseOperandFromDecisions(op.getInstancesAttr(), dimension),
       /*copies=*/nullptr);
 }
 
@@ -500,7 +500,7 @@ mlir::LogicalResult UpdateLoopUser(SairMapOp old_op, SairMapOp new_op,
     }
 
     SairFbyOp fby_op = cast<SairFbyOp>(use.getOwner());
-    assert(fby_op.value() == old_value);
+    assert(fby_op.getValue() == old_value);
 
     for (mlir::Operation *fby_user : fby_op.getResult().getUsers()) {
       if (fby_user == old_op || fby_user == new_op) continue;
@@ -526,7 +526,7 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
   LoopAttr loop = loop_nest.back().cast<LoopAttr>();
 
   int dimension = loop.iter().cast<MappingDimExpr>().dimension();
-  mlir::Operation *dimension_op = op.domain()[dimension].getDefiningOp();
+  mlir::Operation *dimension_op = op.getDomain()[dimension].getDefiningOp();
   if (isa<SairPlaceholderOp>(dimension_op)) {
     return dimension_op->emitError()
            << "placeholders must be replaced by actual dimensions before "
@@ -535,14 +535,14 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
 
   RangeOp range = cast<RangeOp>(dimension_op);
   MappingAttr range_mapping =
-      op.shape().Dimension(dimension).dependency_mapping().ResizeUseDomain(
-          op.domain().size() - 1);
+      op.getShape().Dimension(dimension).dependency_mapping().ResizeUseDomain(
+          op.getDomain().size() - 1);
 
   // Get the inputs of the new operation.
-  llvm::SmallVector<mlir::Value, 4> inputs = op.inputs();
+  llvm::SmallVector<mlir::Value, 4> inputs = op.getInputs();
   llvm::SmallVector<mlir::Attribute, 4> mappings;
   mappings.reserve(mappings.size());
-  for (mlir::Attribute attr : op.mapping_array()) {
+  for (mlir::Attribute attr : op.getMappingArray()) {
     MappingAttr mapping = attr.cast<MappingAttr>();
     mappings.push_back(EraseDimension(mapping, dimension));
   }
@@ -590,13 +590,13 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
   SairMapOp new_op = driver.create<SairMapOp>(
       op.getLoc(),
       /*result_types=*/EraseDimension(op.getResultTypes(), dimension),
-      /*domain=*/EraseValue(op.domain(), dimension),
+      /*domain=*/EraseValue(op.getDomain(), dimension),
       /*mappings_array=*/driver.getArrayAttr(mappings),
       /*inputs=*/inputs,
-      /*shape=*/EraseDimension(op.shape(), dimension),
+      /*shape=*/EraseDimension(op.getShape(), dimension),
       /*instances=*/driver.getArrayAttr({new_decisions}),
       /*copies=*/nullptr);
-  new_op.body().takeBody(op.body());
+  new_op.getBody().takeBody(op.getBody());
 
   // Position of the sair.map in the results of the scf.for operation.
   llvm::SmallVector<int, 4> results_pos(op.getNumResults(), -1);
@@ -612,14 +612,14 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
     if (fby == nullptr) continue;
 
     mlir::Value value =
-        new_op.block().getArgument(operand.position() + op.domain().size());
+        new_op.block().getArgument(operand.position() + op.getDomain().size());
     iter_args_init.push_back(value);
     iter_args.push_back(value);
 
     // Find the corresponding result.
     int result_pos = -1;
     for (int i = 0, e = op.getNumResults(); i < e; ++i) {
-      if (fby.value() != op.getResult(i)) continue;
+      if (fby.getValue() != op.getResult(i)) continue;
       result_pos = i;
       break;
     }
@@ -650,7 +650,7 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
   }
 
   // Create the scf.for operation.
-  mlir::Value old_index = new_op.body().getArgument(dimension);
+  mlir::Value old_index = new_op.getBody().getArgument(dimension);
   mlir::scf::ForOp for_op = CreateForOp(
       op.getLoc(), lower_bound, upper_bound, step, old_index, iter_args_init,
       iter_args, iter_args_result, results_pos, driver);
@@ -659,7 +659,7 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
             for_op, loop.unroll().getValue().getZExtValue())))
       return failure();
   }
-  new_op.body().eraseArgument(dimension);
+  new_op.getBody().eraseArgument(dimension);
 
   // Erase the old operation.
   driver.eraseOp(op);
@@ -683,9 +683,9 @@ void Fuse(SairMapOp first_op, llvm::ArrayRef<mlir::Attribute> first_loop_nest,
 
   // Map loop indexes of second_op to loop indexes of first_op.
   llvm::SmallVector<MappingExpr, 4> first_to_second_mapping;
-  first_to_second_mapping.append(second_op.domain().size(),
+  first_to_second_mapping.append(second_op.getDomain().size(),
                                  MappingNoneExpr::get(context));
-  second_block_args.append(second_op.domain().size(), nullptr);
+  second_block_args.append(second_op.getDomain().size(), nullptr);
   for (auto [first_attr, second_attr] :
        llvm::zip(first_loop_nest, second_loop_nest)) {
     MappingExpr first_iter = first_attr.cast<LoopAttr>().iter();
@@ -698,11 +698,12 @@ void Fuse(SairMapOp first_op, llvm::ArrayRef<mlir::Attribute> first_loop_nest,
   }
 
   // Gather operands for the new operation.
-  llvm::append_range(inputs, first_op.inputs());
-  MappingAttr first_to_second_mapping_attr = MappingAttr::get(
-      driver.getContext(), first_op.domain().size(), first_to_second_mapping);
+  llvm::append_range(inputs, first_op.getInputs());
+  MappingAttr first_to_second_mapping_attr =
+      MappingAttr::get(driver.getContext(), first_op.getDomain().size(),
+                       first_to_second_mapping);
 
-  llvm::append_range(mappings, first_op.mapping_array());
+  llvm::append_range(mappings, first_op.getMappingArray());
   for (ValueOperand operand : second_op.ValueOperands()) {
     if (operand.value().getDefiningOp() == first_op) {
       auto it = llvm::find(first_op.getResults(), operand.value());
@@ -762,18 +763,18 @@ void Fuse(SairMapOp first_op, llvm::ArrayRef<mlir::Attribute> first_loop_nest,
       /*copy_of=*/first_decisions.copy_of(),
       /*operands=*/
       GetInstanceZeroOperands(context,
-                              first_op.domain().size() + inputs.size()),
+                              first_op.getDomain().size() + inputs.size()),
       context);
   SairMapOp new_op = driver.create<SairMapOp>(
       /*location=*/first_op.getLoc(),
       /*result_types=*/result_types,
-      /*domain=*/first_op.domain(),
+      /*domain=*/first_op.getDomain(),
       /*mappings_array=*/driver.getArrayAttr(mappings),
       /*inputs=*/inputs,
-      /*shape=*/first_op.shape(),
+      /*shape=*/first_op.getShape(),
       /*instances=*/driver.getArrayAttr({new_decisions}),
       /*copies=*/nullptr);
-  new_op.body().takeBody(first_op.body());
+  new_op.getBody().takeBody(first_op.getBody());
   driver.replaceOp(first_op,
                    new_op.getResults().take_front(first_op.getNumResults()));
   driver.replaceOp(second_op,

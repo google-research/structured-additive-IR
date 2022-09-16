@@ -313,7 +313,7 @@ void EmitValueToMemRef(mlir::Location loc, SairProgramOp program,
     mlir::Value from_scalar;
     {
       mlir::OpBuilder::InsertionGuard guard(rewriter);
-      rewriter.setInsertionPointToStart(&program.body().front());
+      rewriter.setInsertionPointToStart(&program.getBody().front());
       from_scalar =
           rewriter.create<SairFromScalarOp>(loc, memref_value_type, memrefs[i]);
     }
@@ -596,7 +596,7 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
   }
 
   auto sair_program = rewriter.create<SairProgramOp>(loc);
-  rewriter.setInsertionPointToStart(&sair_program.body().front());
+  rewriter.setInsertionPointToStart(&sair_program.getBody().front());
   StorageAnalysis storage_analysis(sair_program);
 
   // Convert input and input/output MemRefs used by Linalg to Sair values.

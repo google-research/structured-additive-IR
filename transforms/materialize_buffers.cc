@@ -135,7 +135,7 @@ std::pair<mlir::SmallVector<int64_t>, ValueRange> GetMemRefShape(
         buffer.location(), map_types, /*domain=*/domain,
         /*inputs=*/map_body.sair_values(), /*shape=*/shape,
         /*instances=*/builder.getArrayAttr({decisions}), /*copies=*/nullptr);
-    map_op.body().takeBody(map_body.region());
+    map_op.getBody().takeBody(map_body.region());
     sizes = map_op.getResults();
   } else {
     builder.restoreInsertionPoint(map_point);
@@ -358,7 +358,7 @@ class MaterializeBuffers
     auto fusion_analysis = getChildAnalysis<LoopFusionAnalysis>(program);
     auto iteration_spaces = getChildAnalysis<IterationSpaceAnalysis>(program);
 
-    builder.setInsertionPointToStart(&program.body().front());
+    builder.setInsertionPointToStart(&program.getBody().front());
     for (auto &[name, buffer] : storage_analysis.buffers()) {
       ValueAccess memref;
       // Allocate or retrieve the buffer.

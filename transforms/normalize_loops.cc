@@ -128,7 +128,7 @@ void CreateRange(const IterationSpaceAnalysis &iter_spaces, SairOp op,
     sequence_analysis.Insert(
         ComputeOpInstance::Unique(cast<ComputeOp>(map_op.getOperation())),
         insertion_point);
-    map_op.body().takeBody(map_body.region());
+    map_op.getBody().takeBody(map_body.region());
     auto identity_mapping = MappingAttr::GetIdentity(context, range_rank);
     llvm::SmallVector<mlir::Attribute> range_mappings(scalar_results.size(),
                                                       identity_mapping);

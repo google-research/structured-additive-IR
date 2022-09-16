@@ -686,15 +686,15 @@ void PrintValueAccessList(const ValueOperandRange operands,
 
 // Prints the range operation.
 void SairDynRangeOp::print(OpAsmPrinter &printer) {
-  PrintDomain(domain(), printer);
+  PrintDomain(getDomain(), printer);
   printer << " ";
   if (LowerBound().is_value()) {
     PrintValueAccess(ValueOperands()[0], printer);
     printer << ", ";
   }
   PrintValueAccess(ValueOperands().back(), printer);
-  if (step() != 1) {
-    printer << " " << RangeOp::kStepAttrName << " " << step();
+  if (getStep() != 1) {
+    printer << " " << RangeOp::kStepAttrName << " " << getStep();
   }
   printer.printOptionalAttrDict(
       getOperation()->getAttrs(),
@@ -710,14 +710,14 @@ void SairStaticRangeOp::print(OpAsmPrinter &printer) {
 }
 
 void SairPlaceholderOp::print(mlir::OpAsmPrinter &printer) {
-  PrintDomain(domain(), printer);
+  PrintDomain(getDomain(), printer);
   printer.printOptionalAttrDict(getOperation()->getAttrs());
-  printer << " : " << range().getType();
+  printer << " : " << getRange().getType();
 }
 
 // Prints the copy operation.
 void SairCopyOp::print(OpAsmPrinter &printer) {
-  PrintDomain(domain(), printer);
+  PrintDomain(getDomain(), printer);
   printer << " ";
   PrintValueAccess(Value(), printer);
   printer.printOptionalAttrDict(getOperation()->getAttrs(),
@@ -727,29 +727,29 @@ void SairCopyOp::print(OpAsmPrinter &printer) {
 
 // Prints the sair.from_scalar operation.
 void SairFromScalarOp::print(OpAsmPrinter &printer) {
-  printer << " " << value();
+  printer << " " << getValue();
   printer.printOptionalAttrDict(getOperation()->getAttrs());
   printer << " : " << getType();
 }
 
 // Prints the from_memref operation.
 void SairFromMemRefOp::print(OpAsmPrinter &printer) {
-  PrintDomain(parallel_domain(), printer);
+  PrintDomain(getParallelDomain(), printer);
   printer << " ";
   PrintValueAccess(MemRef(), printer);
   printer << " memref";
-  PrintDomain(memref_domain(), printer, parallel_domain().size());
+  PrintDomain(getMemrefDomain(), printer, getParallelDomain().size());
   // It is irrelevant which Op class we use to get the attribute name because it
   // comes from a trait. However, we cannot call a trait method directly.
   printer.printOptionalAttrDict(getOperation()->getAttrs(),
                                 {SairFromMemRefOp::getOperandSegmentSizeAttr(),
                                  SairOp::kMappingAttrName});
-  printer << " : " << shape() << ", " << MemRefType();
+  printer << " : " << getShape() << ", " << MemRefType();
 }
 
 // Prints the load_from_memref operation.
 void SairLoadFromMemRefOp::print(OpAsmPrinter &printer) {
-  PrintDomain(domain(), printer);
+  PrintDomain(getDomain(), printer);
   printer << " ";
   PrintValueAccess(MemRef(), printer);
   printer.printOptionalAttrDict(getOperation()->getAttrs(),
@@ -759,11 +759,11 @@ void SairLoadFromMemRefOp::print(OpAsmPrinter &printer) {
 
 // Prints the to_memref operation.
 void SairToMemRefOp::print(OpAsmPrinter &printer) {
-  PrintDomain(parallel_domain(), printer);
+  PrintDomain(getParallelDomain(), printer);
   printer << " ";
   PrintValueAccess(MemRef(), printer);
   printer << " memref";
-  PrintDomain(memref_domain(), printer, parallel_domain().size());
+  PrintDomain(getMemrefDomain(), printer, getParallelDomain().size());
   printer << " ";
   PrintValueAccess(Value(), printer);
   // It is irrelevant which Op class we use to get the attribute name because it
@@ -772,12 +772,12 @@ void SairToMemRefOp::print(OpAsmPrinter &printer) {
       getOperation()->getAttrs(),
       {SairFromMemRefOp::getOperandSegmentSizeAttr(),
        SairDialect::kShapeAttrName, SairOp::kMappingAttrName});
-  printer << " : " << shape() << ", " << MemRefType();
+  printer << " : " << getShape() << ", " << MemRefType();
 }
 
 // Prints the store_to_memref operation.
 void SairStoreToMemRefOp::print(OpAsmPrinter &printer) {
-  PrintDomain(domain(), printer);
+  PrintDomain(getDomain(), printer);
   printer << " ";
   PrintValueAccess(MemRef(), printer);
   printer << ", ";
@@ -785,23 +785,23 @@ void SairStoreToMemRefOp::print(OpAsmPrinter &printer) {
   printer.printOptionalAttrDict(
       getOperation()->getAttrs(),
       {SairOp::kMappingAttrName, SairDialect::kShapeAttrName});
-  printer << " : " << shape() << ", " << MemRefType();
+  printer << " : " << getShape() << ", " << MemRefType();
 }
 
 namespace {
 // Prints a projection operation.
 template<typename Op>
 void PrintProjectionOp(Op op, OpAsmPrinter &printer) {
-  PrintDomain(op.parallel_domain(), printer);
+  PrintDomain(op.getParallelDomain(), printer);
   printer << " " << kOfKeyword;
-  PrintDomain(op.projection_domain(), printer, op.parallel_domain().size());
+  PrintDomain(op.getProjectionDomain(), printer, op.getParallelDomain().size());
   printer << " ";
   PrintValueAccess(op.Value(), printer);
   printer.printOptionalAttrDict(
       op->getAttrs(), {SairFromMemRefOp::getOperandSegmentSizeAttr(),
                        SairDialect::kShapeAttrName, SairOp::kMappingAttrName});
-  printer << " : " << op.shape() << ", "
-          << op.result().getType().template cast<ValueType>().ElementType();
+  printer << " : " << op.getShape() << ", "
+          << op.getResult().getType().template cast<ValueType>().ElementType();
 }
 }  // namespace
 
@@ -832,7 +832,7 @@ void SairExitOp::print(OpAsmPrinter &printer) {
   PrintValueAccessList(ValueOperands(), printer);
   printer.printOptionalAttrDict(getOperation()->getAttrs(),
                                 {SairOp::kMappingAttrName});
-  if (inputs().empty()) return;
+  if (getInputs().empty()) return;
   printer << " : ";
   llvm::interleaveComma(
       getOperands().getTypes(), printer, [&](mlir::Type type) {
@@ -842,11 +842,11 @@ void SairExitOp::print(OpAsmPrinter &printer) {
 
 // Prints the sair.fby operation.
 void SairFbyOp::print(OpAsmPrinter &printer) {
-  PrintDomain(parallel_domain(), printer);
+  PrintDomain(getParallelDomain(), printer);
   printer << " ";
   PrintValueAccess(Init(), printer);
   printer << " " << SairFbyOp::kThenKeyword;
-  PrintDomain(sequential_domain(), printer, parallel_domain().size());
+  PrintDomain(getSequentialDomain(), printer, getParallelDomain().size());
   printer << " ";
   PrintValueAccess(Value(), printer);
 
@@ -860,7 +860,7 @@ void SairFbyOp::print(OpAsmPrinter &printer) {
 }
 
 void SairAllocOp::print(mlir::OpAsmPrinter &printer) {
-  PrintDomain(domain(), printer);
+  PrintDomain(getDomain(), printer);
   if (!ValueOperands().empty()) printer << " ";
   llvm::interleaveComma(ValueOperands(), printer, [&](ValueOperand value) {
     PrintValueAccess(value, printer);
@@ -868,11 +868,11 @@ void SairAllocOp::print(mlir::OpAsmPrinter &printer) {
   printer.printOptionalAttrDict(
       getOperation()->getAttrs(),
       {SairOp::kMappingAttrName, SairAllocOp::getOperandSegmentSizeAttr()});
-  printer << " : " << result().getType();
+  printer << " : " << getResult().getType();
 }
 
 void SairFreeOp::print(mlir::OpAsmPrinter &printer) {
-  PrintDomain(domain(), printer);
+  PrintDomain(getDomain(), printer);
   printer << " ";
   PrintValueAccess(Value(), printer);
   printer.printOptionalAttrDict(getOperation()->getAttrs(),
@@ -933,10 +933,11 @@ static mlir::LogicalResult VerifyFromToMemRef(mlir::Operation *op,
 mlir::LogicalResult SairFromScalarOp::verify() {
   SairFromScalarOp op = *this;
   mlir::Type expected_type =
-      op.result().getType().cast<ValueType>().ElementType();
-  if (op.value().getType() != expected_type) {
-    return op.emitError() << "expects different type: '" << op.value().getType()
-                          << "' vs '" << expected_type << "'";
+      op.getResult().getType().cast<ValueType>().ElementType();
+  if (op.getValue().getType() != expected_type) {
+    return op.emitError() << "expects different type: '"
+                          << op.getValue().getType() << "' vs '"
+                          << expected_type << "'";
   }
   return mlir::success();
 }
@@ -962,7 +963,7 @@ mlir::LogicalResult SairExitOp::verify() {
     }
   }
 
-  if (op.instances().has_value() && op.instances().getValue().empty()) {
+  if (op.getInstances().has_value() && op.getInstances().getValue().empty()) {
     return op.emitOpError() << "must have an instance";
   }
 
@@ -971,7 +972,7 @@ mlir::LogicalResult SairExitOp::verify() {
 
 mlir::LogicalResult SairAllocOp::verify() {
   SairAllocOp op = *this;
-  if (op.dynamic_sizes().size() != op.MemType().getNumDynamicDims()) {
+  if (op.getDynamicSizes().size() != op.MemType().getNumDynamicDims()) {
     return op.emitError() << "expected " << op.MemType().getNumDynamicDims()
                           << " dynamic size operands";
   }
@@ -980,22 +981,22 @@ mlir::LogicalResult SairAllocOp::verify() {
 
 mlir::LogicalResult SairLoadFromMemRefOp::verify() {
   return VerifyLoadFromStoreToMemRef(*this, MemRefType(),
-                                     getType().cast<ValueType>(), layout());
+                                     getType().cast<ValueType>(), getLayout());
 }
 
 mlir::LogicalResult SairStoreToMemRefOp::verify() {
   return VerifyLoadFromStoreToMemRef(*this, MemRefType(), Value().GetType(),
-                                     layout());
+                                     getLayout());
 }
 
 mlir::LogicalResult SairFromMemRefOp::verify() {
-  return VerifyFromToMemRef(*this, parallel_domain().size(), shape(), memref(),
-                            result());
+  return VerifyFromToMemRef(*this, getParallelDomain().size(), getShape(),
+                            getMemref(), getResult());
 }
 
 mlir::LogicalResult SairToMemRefOp::verify() {
-  return VerifyFromToMemRef(*this, parallel_domain().size(), shape(), memref(),
-                            value());
+  return VerifyFromToMemRef(*this, getParallelDomain().size(), getShape(),
+                            getMemref(), getValue());
 }
 
 template <typename OpTy>
@@ -1003,7 +1004,7 @@ llvm::SmallBitVector FromToMemRefLikeDimsDependingOnOperands(OpTy op,
                                                              int sair_operand) {
   llvm::SmallBitVector mask(op.domain().size());
   if (sair_operand == 0) {
-    mask.set(op.parallel_domain().size(), op.domain().size());
+    mask.set(op.getParallelDomain().size(), op.domain().size());
   }
   return mask;
 }
@@ -1237,7 +1238,7 @@ void ExtractElementTypes(mlir::ValueRange values,
 
 // Prints a Sair MapOp using the 'printer' provided.
 void SairMapOp::print(OpAsmPrinter &printer) {
-  PrintDomain(domain(), printer);
+  PrintDomain(getDomain(), printer);
   printer << " ";
 
   PrintValueAccessList(ValueOperands(), printer);
@@ -1249,16 +1250,16 @@ void SairMapOp::print(OpAsmPrinter &printer) {
        SairOp::kMappingAttrName});
 
   printer << ' ';
-  printer.printRegion(body());
+  printer.printRegion(getBody());
   printer << " : ";
-  printer.printAttribute(shape());
+  printer.printAttribute(getShape());
   printer << ", ";
 
   // Print operand and result element types as a single function type.
   llvm::SmallVector<mlir::Type, 4> input_types;
-  ExtractElementTypes(inputs(), input_types);
+  ExtractElementTypes(getInputs(), input_types);
   llvm::SmallVector<mlir::Type, 4> output_types;
-  ExtractElementTypes(results(), output_types);
+  ExtractElementTypes(getResults(), output_types);
   printer.printFunctionalType(input_types, output_types);
 }
 
@@ -1328,7 +1329,7 @@ mlir::LogicalResult SairMapOp::verify() {
   SairMapOp op = *this;
   // Check body region argument types.
   llvm::SmallVector<mlir::Type, 4> types;
-  ExtractElementTypes(op.inputs(), types);
+  ExtractElementTypes(op.getInputs(), types);
   auto sair_op = cast<SairOp>(op.getOperation());
   if (mlir::failed(VerifyBodyArgsTypes(sair_op, types))) {
     return mlir::failure();
@@ -1344,8 +1345,8 @@ mlir::LogicalResult SairMapOp::verify() {
 
 llvm::SmallBitVector SairMapReduceOp::DimsDependingOnOperand(int sair_operand) {
   llvm::SmallBitVector mask(domain().size());
-  if (sair_operand < inits().size()) {
-    mask.set(parallel_domain().size(), domain().size());
+  if (sair_operand < getInits().size()) {
+    mask.set(getParallelDomain().size(), domain().size());
   }
   return mask;
 }
@@ -1469,14 +1470,14 @@ ParseResult SairMapReduceOp::parse(mlir::OpAsmParser &parser,
 // Prints a Sair MapReduce operation using the "printer" provided.
 void SairMapReduceOp::print(mlir::OpAsmPrinter &printer) {
   // Print the parallel part of the domain.
-  PrintDomain(parallel_domain(), printer);
+  PrintDomain(getParallelDomain(), printer);
   printer << " ";
-  int num_inits = inits().size();
+  int num_inits = getInits().size();
   PrintValueAccessList(ValueOperands().take_front(num_inits), printer);
 
   // Print the reduction part of the domain.
   printer << " " << SairMapReduceOp::kReduceKeyword;
-  PrintDomain(reduction_domain(), printer, parallel_domain().size());
+  PrintDomain(getReductionDomain(), printer, getParallelDomain().size());
   printer << " ";
   PrintValueAccessList(ValueOperands().drop_front(num_inits), printer);
 
@@ -1486,18 +1487,18 @@ void SairMapReduceOp::print(mlir::OpAsmPrinter &printer) {
       {SairMapOp::getOperandSegmentSizeAttr(), SairDialect::kShapeAttrName,
        SairOp::kMappingAttrName});
   printer << " ";
-  printer.printRegion(body());
+  printer.printRegion(getBody());
 
   // Print the trailing type using operand and result element types as a single
   // functional type.
   printer << " : ";
-  printer.printAttribute(shape());
+  printer.printAttribute(getShape());
   printer << ", ";
 
   llvm::SmallVector<mlir::Type, 4> input_types;
   llvm::SmallVector<mlir::Type, 4> init_types;
-  ExtractElementTypes(inputs(), input_types);
-  ExtractElementTypes(inits(), init_types);
+  ExtractElementTypes(getInputs(), input_types);
+  ExtractElementTypes(getInits(), init_types);
   printer.printFunctionalType(input_types, init_types);
 }
 
@@ -1515,8 +1516,8 @@ mlir::LogicalResult SairMapReduceOp::verify() {
   SairMapReduceOp op = *this;
   // Check body region argument types.
   llvm::SmallVector<mlir::Type, 4> types;
-  ExtractElementTypes(op.inits(), types);
-  ExtractElementTypes(op.inputs(), types);
+  ExtractElementTypes(op.getInits(), types);
+  ExtractElementTypes(op.getInputs(), types);
   auto sair_op = cast<SairOp>(op.getOperation());
   if (mlir::failed(VerifyBodyArgsTypes(sair_op, types))) {
     return mlir::failure();
@@ -1531,7 +1532,7 @@ mlir::LogicalResult SairMapReduceOp::verify() {
 
 llvm::SmallBitVector SairProjLastOp::ResultsDimDependencies() {
   llvm::SmallBitVector mask(domain().size());
-  mask.set(parallel_domain().size(), domain().size());
+  mask.set(getParallelDomain().size(), domain().size());
   return mask;
 }
 
@@ -1556,9 +1557,9 @@ void SairProgramOp::print(mlir::OpAsmPrinter &printer) {
   printer << " ";
   printer.printOptionalAttrDictWithKeyword(getOperation()->getAttrs());
   printer << " ";
-  printer.printRegion(body(), /*printEntryBlockArgs=*/false,
+  printer.printRegion(getBody(), /*printEntryBlockArgs=*/false,
                       /*printBlockTerminators=*/true);
-  if (results().empty()) return;
+  if (getResults().empty()) return;
   printer << " : ";
   llvm::interleaveComma(getResultTypes(), printer,
                         [&](mlir::Type type) { printer.printType(type); });
@@ -1569,7 +1570,7 @@ void SairProgramOp::print(mlir::OpAsmPrinter &printer) {
 // attributes that operate across operations: buffer, sequence and loop_nest.
 mlir::LogicalResult SairProgramOp::verify() {
   SairProgramOp program = *this;
-  mlir::Block *body = &program.body().front();
+  mlir::Block *body = &program.getBody().front();
   for (mlir::Operation &nested_operation : *body) {
     if (!isa<SairOp>(nested_operation)) {
       return program.emitOpError("expected only Sair operations in the body")
@@ -1619,7 +1620,7 @@ void SairProgramOp::build(mlir::OpBuilder &builder,
 
 mlir::WalkResult SairProgramOp::TryWalkComputeOpInstances(
     llvm::function_ref<mlir::WalkResult(ComputeOpInstance &)> walker) {
-  for (mlir::Operation &operation : body().front()) {
+  for (mlir::Operation &operation : getBody().front()) {
     auto compute_op = dyn_cast<ComputeOp>(&operation);
     if (compute_op != nullptr) {
       auto sair_op = cast<SairOp>(&operation);
@@ -1657,7 +1658,7 @@ void SairProgramOp::WalkComputeOpInstances(
 
 mlir::WalkResult SairProgramOp::TryWalkOpInstances(
     llvm::function_ref<mlir::WalkResult(OpInstance &)> walker) {
-  for (mlir::Operation &operation : body().front()) {
+  for (mlir::Operation &operation : getBody().front()) {
     auto compute_op = dyn_cast<ComputeOp>(&operation);
     if (compute_op != nullptr) {
       auto sair_op = cast<SairOp>(&operation);
@@ -1727,7 +1728,7 @@ OperandRange ChainOperandRanges(OperandRange first, OperandRange second) {
 llvm::SmallBitVector SairFbyOp::DimsDependingOnOperand(int sair_operand) {
   llvm::SmallBitVector mask(domain().size());
   if (sair_operand == 0) {
-    mask.set(parallel_domain().size(), domain().size());
+    mask.set(getParallelDomain().size(), domain().size());
   }
   return mask;
 }
@@ -1735,65 +1736,65 @@ llvm::SmallBitVector SairFbyOp::DimsDependingOnOperand(int sair_operand) {
 llvm::SmallBitVector SairFbyOp::CarryingDimensions(int sair_operand) {
   llvm::SmallBitVector mask(domain().size());
   if (sair_operand == 1) {
-    mask.set(parallel_domain().size(), domain().size());
+    mask.set(getParallelDomain().size(), domain().size());
   }
   return mask;
 }
 
 llvm::SmallVector<int, 2> SairDynRangeOp::SubDomains() {
-  return {static_cast<int>(domain().size())};
+  return {static_cast<int>(getDomain().size())};
 }
 
 llvm::SmallVector<int, 2> SairPlaceholderOp::SubDomains() {
-  return {static_cast<int>(domain().size())};
+  return {static_cast<int>(getDomain().size())};
 }
 
 llvm::SmallVector<int, 2> SairCopyOp::SubDomains() {
-  return {static_cast<int>(domain().size())};
+  return {static_cast<int>(getDomain().size())};
 }
 
 llvm::SmallVector<int, 2> SairFromScalarOp::SubDomains() { return {}; }
 
 llvm::SmallVector<int, 2> SairFromMemRefOp::SubDomains() {
-  return {static_cast<int>(parallel_domain().size()),
-          static_cast<int>(memref_domain().size())};
+  return {static_cast<int>(getParallelDomain().size()),
+          static_cast<int>(getMemrefDomain().size())};
 }
 
 llvm::SmallVector<int, 2> SairLoadFromMemRefOp::SubDomains() {
-  return {static_cast<int>(domain().size())};
+  return {static_cast<int>(getDomain().size())};
 }
 
 llvm::SmallVector<int, 2> SairToMemRefOp::SubDomains() {
-  return {static_cast<int>(parallel_domain().size()),
-          static_cast<int>(memref_domain().size())};
+  return {static_cast<int>(getParallelDomain().size()),
+          static_cast<int>(getMemrefDomain().size())};
 }
 
 llvm::SmallVector<int, 2> SairStoreToMemRefOp::SubDomains() {
-  return {static_cast<int>(domain().size())};
+  return {static_cast<int>(getDomain().size())};
 }
 
 llvm::SmallVector<int, 2> SairMapOp::SubDomains() {
-  return {static_cast<int>(domain().size())};
+  return {static_cast<int>(getDomain().size())};
 }
 
 llvm::SmallVector<int, 2> SairMapReduceOp::SubDomains() {
-  return {static_cast<int>(parallel_domain().size()),
-          static_cast<int>(reduction_domain().size())};
+  return {static_cast<int>(getParallelDomain().size()),
+          static_cast<int>(getReductionDomain().size())};
 }
 
 llvm::SmallVector<int, 2> SairProjLastOp::SubDomains() {
-  return {static_cast<int>(parallel_domain().size()),
-          static_cast<int>(projection_domain().size())};
+  return {static_cast<int>(getParallelDomain().size()),
+          static_cast<int>(getProjectionDomain().size())};
 }
 
 llvm::SmallVector<int, 2> SairProjAnyOp::SubDomains() {
-  return {static_cast<int>(parallel_domain().size()),
-          static_cast<int>(projection_domain().size())};
+  return {static_cast<int>(getParallelDomain().size()),
+          static_cast<int>(getProjectionDomain().size())};
 }
 
 llvm::SmallVector<int, 2> SairFbyOp::SubDomains() {
-  return {static_cast<int>(parallel_domain().size()),
-          static_cast<int>(sequential_domain().size())};
+  return {static_cast<int>(getParallelDomain().size()),
+          static_cast<int>(getSequentialDomain().size())};
 }
 
 llvm::SmallVector<int, 2> SairStaticRangeOp::SubDomains() { return {}; }
@@ -1801,11 +1802,11 @@ llvm::SmallVector<int, 2> SairStaticRangeOp::SubDomains() { return {}; }
 llvm::SmallVector<int, 2> SairExitOp::SubDomains() { return {}; }
 
 llvm::SmallVector<int, 2> SairAllocOp::SubDomains() {
-  return {static_cast<int>(domain().size())};
+  return {static_cast<int>(getDomain().size())};
 }
 
 llvm::SmallVector<int, 2> SairFreeOp::SubDomains() {
-  return {static_cast<int>(domain().size())};
+  return {static_cast<int>(getDomain().size())};
 }
 
 DomainShapeAttr SairFreeOp::shape() {
@@ -1867,14 +1868,15 @@ SairOp SairCopyOp::ReCreateWithNewDomain(
   assert(new_domains.size() == 1);
   assert(!HasCopies());
   mlir::ArrayAttr new_mappings =
-      ComposeMappings(new_to_old_mapping, mapping_array());
+      ComposeMappings(new_to_old_mapping, getMappingArray());
   auto new_type =
       ValueType::get(new_shape, getType().cast<ValueType>().ElementType());
 
-  auto new_instances = ComposeInstances(new_to_old_mapping, instancesAttr());
-  auto new_op = builder.create<SairCopyOp>(getLoc(), new_type, new_domains[0],
-                                           new_mappings, value(), new_instances,
-                                           /*copies=*/nullptr);
+  auto new_instances = ComposeInstances(new_to_old_mapping, getInstancesAttr());
+  auto new_op =
+      builder.create<SairCopyOp>(getLoc(), new_type, new_domains[0],
+                                 new_mappings, getValue(), new_instances,
+                                 /*copies=*/nullptr);
   return llvm::cast<SairOp>(new_op.getOperation());
 }
 
@@ -1900,15 +1902,15 @@ SairOp SairLoadFromMemRefOp::ReCreateWithNewDomain(
   assert(new_domains.size() == 1);
   assert(!HasCopies());
   mlir::ArrayAttr new_mappings =
-      ComposeMappings(new_to_old_mapping, mapping_array());
+      ComposeMappings(new_to_old_mapping, getMappingArray());
 
-  MappingAttr new_layout = new_to_old_mapping.Compose(layout());
+  MappingAttr new_layout = new_to_old_mapping.Compose(getLayout());
   auto return_type =
       ValueType::get(new_shape, getType().cast<ValueType>().ElementType());
-  auto new_instances = ComposeInstances(new_to_old_mapping, instancesAttr());
+  auto new_instances = ComposeInstances(new_to_old_mapping, getInstancesAttr());
   auto new_op = builder.create<SairLoadFromMemRefOp>(
-      getLoc(), return_type, new_domains[0], new_mappings, memref(), new_layout,
-      new_instances, /*copies=*/nullptr);
+      getLoc(), return_type, new_domains[0], new_mappings, getMemref(),
+      new_layout, new_instances, /*copies=*/nullptr);
   return llvm::cast<SairOp>(new_op.getOperation());
 }
 
@@ -1927,12 +1929,12 @@ SairOp SairStoreToMemRefOp::ReCreateWithNewDomain(
   assert(!HasCopies());
 
   mlir::ArrayAttr new_mappings =
-      ComposeMappings(new_to_old_mapping, mapping_array());
-  MappingAttr new_layout = new_to_old_mapping.Compose(layout());
-  auto new_instances = ComposeInstances(new_to_old_mapping, instancesAttr());
+      ComposeMappings(new_to_old_mapping, getMappingArray());
+  MappingAttr new_layout = new_to_old_mapping.Compose(getLayout());
+  auto new_instances = ComposeInstances(new_to_old_mapping, getInstancesAttr());
   auto new_op = builder.create<SairStoreToMemRefOp>(
-      getLoc(), new_domains[0], new_mappings, memref(), value(), new_layout,
-      new_shape, new_instances, /*copies=*/nullptr);
+      getLoc(), new_domains[0], new_mappings, getMemref(), getValue(),
+      new_layout, new_shape, new_instances, /*copies=*/nullptr);
   return llvm::cast<SairOp>(new_op.getOperation());
 }
 
@@ -1968,16 +1970,16 @@ SairOp SairMapOp::ReCreateWithNewDomain(
   assert(!HasCopies());
 
   mlir::ArrayAttr new_mappings =
-      ComposeMappings(new_to_old_mapping, mapping_array());
+      ComposeMappings(new_to_old_mapping, getMappingArray());
   llvm::SmallVector<mlir::Type, 4> new_return_types;
   new_return_types.reserve(getResults().size());
   for (mlir::Type type : getResultTypes()) {
     new_return_types.push_back(
         ValueType::get(new_shape, type.cast<ValueType>().ElementType()));
   }
-  auto new_instances = ComposeInstances(new_to_old_mapping, instancesAttr());
+  auto new_instances = ComposeInstances(new_to_old_mapping, getInstancesAttr());
   auto new_op = builder.create<SairMapOp>(
-      getLoc(), new_return_types, new_domains[0], new_mappings, inputs(),
+      getLoc(), new_return_types, new_domains[0], new_mappings, getInputs(),
       new_shape, new_instances, /*copies=*/nullptr);
   MoveMapBody(getLoc(), block(), new_op.block(), new_to_old_mapping, builder);
   return llvm::cast<SairOp>(new_op.getOperation());
@@ -1991,7 +1993,7 @@ SairOp SairMapReduceOp::ReCreateWithNewDomain(
   assert(!HasCopies());
 
   mlir::ArrayAttr new_mappings =
-      ComposeMappings(new_to_old_mapping, mapping_array());
+      ComposeMappings(new_to_old_mapping, getMappingArray());
   llvm::SmallVector<mlir::Type, 4> new_return_types;
   new_return_types.reserve(getResults().size());
   for (mlir::Type type : getResultTypes()) {
@@ -1999,10 +2001,10 @@ SairOp SairMapReduceOp::ReCreateWithNewDomain(
         ValueType::get(new_shape.Prefix(new_domains[0].size()),
                        type.cast<ValueType>().ElementType()));
   }
-  auto new_instances = ComposeInstances(new_to_old_mapping, instancesAttr());
+  auto new_instances = ComposeInstances(new_to_old_mapping, getInstancesAttr());
   auto new_op = builder.create<SairMapReduceOp>(
       getLoc(), new_return_types, new_domains[0], new_domains[1], new_mappings,
-      inits(), inputs(), new_shape, new_instances, /*copies=*/nullptr);
+      getInits(), getInputs(), new_shape, new_instances, /*copies=*/nullptr);
   // Create the map body.
   llvm::SmallVector<mlir::Type> block_arg_types(new_shape.NumDimensions(),
                                                 builder.getIndexType());
@@ -2012,7 +2014,7 @@ SairOp SairMapReduceOp::ReCreateWithNewDomain(
     block_arg_types.push_back(operand.GetType().ElementType());
   }
   mlir::OpBuilder::InsertionGuard guard(builder);
-  builder.createBlock(&new_op.body(), {}, block_arg_types,
+  builder.createBlock(&new_op.getBody(), {}, block_arg_types,
                       SmallVector<Location>(block_arg_types.size(), getLoc()));
   MoveMapBody(getLoc(), block(), new_op.block(), new_to_old_mapping, builder);
   return llvm::cast<SairOp>(new_op.getOperation());
@@ -2026,13 +2028,13 @@ SairOp SairProjLastOp::ReCreateWithNewDomain(
   assert(!HasCopies());
 
   mlir::ArrayAttr new_mappings =
-      ComposeMappings(new_to_old_mapping, mapping_array());
+      ComposeMappings(new_to_old_mapping, getMappingArray());
   auto new_return_type =
       ValueType::get(new_shape.Prefix(new_domains[0].size()),
                      getType().cast<ValueType>().ElementType());
   auto new_op = builder.create<SairProjLastOp>(
       getLoc(), new_return_type, new_domains[0], new_domains[1], new_mappings,
-      value(), new_shape, /*instances=*/nullptr, /*copies=*/nullptr);
+      getValue(), new_shape, /*instances=*/nullptr, /*copies=*/nullptr);
   return llvm::cast<SairOp>(new_op.getOperation());
 }
 
@@ -2044,13 +2046,13 @@ SairOp SairProjAnyOp::ReCreateWithNewDomain(
   assert(!HasCopies());
 
   mlir::ArrayAttr new_mappings =
-      ComposeMappings(new_to_old_mapping, mapping_array());
+      ComposeMappings(new_to_old_mapping, getMappingArray());
   auto new_return_type =
       ValueType::get(new_shape.Prefix(new_domains[0].size()),
                      getType().cast<ValueType>().ElementType());
   auto new_op = builder.create<SairProjAnyOp>(
       getLoc(), new_return_type, new_domains[0], new_domains[1], new_mappings,
-      value(), new_shape, /*instances=*/nullptr, /*copies=*/nullptr);
+      getValue(), new_shape, /*instances=*/nullptr, /*copies=*/nullptr);
   return llvm::cast<SairOp>(new_op.getOperation());
 }
 
@@ -2061,12 +2063,12 @@ SairOp SairFbyOp::ReCreateWithNewDomain(
   assert(new_domains.size() == 2);
 
   mlir::ArrayAttr new_mappings =
-      ComposeMappings(new_to_old_mapping, mapping_array());
+      ComposeMappings(new_to_old_mapping, getMappingArray());
   auto new_return_type =
       ValueType::get(new_shape, getType().cast<ValueType>().ElementType());
   auto new_op = builder.create<SairFbyOp>(
       getLoc(), new_return_type, new_domains[0], new_domains[1], new_mappings,
-      init(), value(), /*instances=*/nullptr, /*copies=*/nullptr);
+      getInit(), getValue(), /*instances=*/nullptr, /*copies=*/nullptr);
   return llvm::cast<SairOp>(new_op.getOperation());
 }
 
@@ -2086,12 +2088,12 @@ SairOp SairAllocOp::ReCreateWithNewDomain(
   assert(!HasCopies());
 
   mlir::ArrayAttr new_mappings =
-      ComposeMappings(new_to_old_mapping, mapping_array());
+      ComposeMappings(new_to_old_mapping, getMappingArray());
   auto new_return_type = ValueType::get(new_shape, MemType());
-  auto new_instances = ComposeInstances(new_to_old_mapping, instancesAttr());
+  auto new_instances = ComposeInstances(new_to_old_mapping, getInstancesAttr());
   auto new_op = builder.create<SairAllocOp>(
-      getLoc(), new_return_type, new_domains[0], new_mappings, dynamic_sizes(),
-      new_instances, /*copies=*/nullptr);
+      getLoc(), new_return_type, new_domains[0], new_mappings,
+      getDynamicSizes(), new_instances, /*copies=*/nullptr);
   return llvm::cast<SairOp>(new_op.getOperation());
 }
 
@@ -2102,10 +2104,10 @@ SairOp SairFreeOp::ReCreateWithNewDomain(
   assert(new_domains.size() == 1);
 
   mlir::ArrayAttr new_mappings =
-      ComposeMappings(new_to_old_mapping, mapping_array());
-  auto new_instances = ComposeInstances(new_to_old_mapping, instancesAttr());
+      ComposeMappings(new_to_old_mapping, getMappingArray());
+  auto new_instances = ComposeInstances(new_to_old_mapping, getInstancesAttr());
   auto new_op = builder.create<SairFreeOp>(
-      getLoc(), new_domains[0], new_mappings, value(), new_instances);
+      getLoc(), new_domains[0], new_mappings, getValue(), new_instances);
   return llvm::cast<SairOp>(new_op.getOperation());
 }
 
