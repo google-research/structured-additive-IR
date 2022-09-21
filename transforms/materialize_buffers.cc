@@ -80,10 +80,10 @@ std::pair<mlir::SmallVector<int64_t>, ValueRange> GetMemRefShape(
   llvm::SmallVector<mlir::Value> scalar_sizes;
 
   auto loops_to_domain =
-      loop_nest.DomainToLoops().Inverse().Resize(buffer.domain().size());
+      loop_nest.DomainToLoops().Inverse().Resize(buffer.getDomain().size());
   builder.setInsertionPointToStart(&map_body.block());
   auto buffer_domain = llvm::to_vector<4>(llvm::map_range(
-      buffer.domain(), [](ValueAccessInstance instance) -> ValueAccess {
+      buffer.getDomain(), [](ValueAccessInstance instance) -> ValueAccess {
         return {.value = instance.value.GetValue(),
                 .mapping = instance.mapping};
       }));
@@ -221,7 +221,7 @@ void InsertLoad(ComputeOp op, int operand_pos, const Buffer &buffer,
   builder.setInsertionPoint(op);
 
   auto sair_op = cast<SairOp>(op.getOperation());
-  int op_domain_size = sair_op.domain().size();
+  int op_domain_size = sair_op.getDomain().size();
   ValueOperand operand = sair_op.ValueOperands()[operand_pos];
 
   auto op_instance = OpInstance::Unique(sair_op);

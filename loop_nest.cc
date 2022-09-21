@@ -373,7 +373,7 @@ class LoopNestState {
 static mlir::LogicalResult VerifyLoopsOpen(
     const OpInstance &op, const LoopNestState &loop_nest_state,
     const LoopNestConstraintsAnalysis &loop_constaints_analysis) {
-  for (ResultInstance dimension : op.domain()) {
+  for (ResultInstance dimension : op.getDomain()) {
     const auto &constraints =
         loop_constaints_analysis.GetConstraints(dimension);
     if (mlir::failed(
@@ -502,7 +502,7 @@ static mlir::LogicalResult VerifyLoopRanges(
   for (mlir::Attribute attr : loop_nest) {
     LoopAttr loop = attr.cast<LoopAttr>();
     const LoopFusionClass &fusion_class = fusion_analysis.GetClass(loop.name());
-    for (const auto &dimension : fusion_class.domain()) {
+    for (const auto &dimension : fusion_class.getDomain()) {
       if (sequence_analysis.IsBefore(op, dimension.value.defining_op())) {
         mlir::InFlightDiagnostic diag =
             op.EmitError() << "rematerialized loop " << loop.name()
@@ -657,7 +657,7 @@ mlir::LogicalResult LoopFusionAnalysis::Init(
   for (auto &[name, fusion_class] : fusion_classes_) {
     DomainShapeDim loop_shape = fusion_class.NestedShape().Dimensions().back();
     int max_dependency = loop_shape.DependencyMask().find_last();
-    for (const auto &dimension : fusion_class.domain()) {
+    for (const auto &dimension : fusion_class.getDomain()) {
       max_dependency = std::max(max_dependency,
                                 dimension.mapping.DependencyMask().find_last());
     }
@@ -788,9 +788,9 @@ int LoopNest::size() const {
   return fusion_class_->loop_nest().size() + 1;
 }
 
-llvm::ArrayRef<ValueAccessInstance> LoopNest::domain() const {
+llvm::ArrayRef<ValueAccessInstance> LoopNest::getDomain() const {
   if (empty()) return {};
-  return fusion_class_->domain();
+  return fusion_class_->getDomain();
 }
 
 MappingAttr LoopNest::DomainToLoops() const {

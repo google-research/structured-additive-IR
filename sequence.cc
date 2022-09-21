@@ -264,7 +264,7 @@ llvm::SetVector<ComputeOpInstance> ComputeOpFrontier(
       add_and_recurse(operand.GetValue());
     }
   }
-  for (ResultInstance operand : op.domain()) {
+  for (ResultInstance operand : op.getDomain()) {
     add_and_recurse(operand);
   }
   return frontier;
@@ -484,7 +484,7 @@ static mlir::LogicalResult FindEdgesToCut(
   OpGraph predecessors;
   program.WalkOpInstances([&](const OpInstance &op) {
     predecessors.insert(op);
-    for (ResultInstance operand : op.domain()) {
+    for (ResultInstance operand : op.getDomain()) {
       predecessors[op].insert(operand.defining_op());
     }
     for (OperandInstance operand : op.Operands()) {

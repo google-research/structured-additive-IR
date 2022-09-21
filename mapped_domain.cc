@@ -21,7 +21,7 @@ namespace sair {
 MappedDomain::MappedDomain(mlir::Location loc, llvm::StringRef kind,
                            mlir::StringAttr name, const LoopNest &loop_nest)
     : AttrLocation(loc, kind, name) {
-  llvm::append_range(domain_, loop_nest.domain());
+  llvm::append_range(domain_, loop_nest.getDomain());
   loop_nest_ = loop_nest.LoopNames();
   mapping_ = MappingAttr::get(context(), domain_.size(), {});
   loops_mapping_ = loop_nest.DomainToLoops();
@@ -143,7 +143,7 @@ void MappedDomain::SetLoopNest(const LoopNest &new_loop_nest) {
 
   // Compute dimensions from the domain to keep.
   llvm::SmallBitVector to_keep = mapping_.DependencyMask();
-  to_keep.set(0, new_loop_nest.domain().size());
+  to_keep.set(0, new_loop_nest.getDomain().size());
 
   // Create a mapping to rename dimensions.
   auto none = MappingNoneExpr::get(context());

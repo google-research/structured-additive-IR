@@ -158,7 +158,7 @@ class LoopNest {
   bool empty() const { return fusion_class_ == nullptr; }
 
   // Domain used to define loop ranges.
-  llvm::ArrayRef<ValueAccessInstance> domain() const;
+  llvm::ArrayRef<ValueAccessInstance> getDomain() const;
 
   // Mapping from domain to loops.
   MappingAttr DomainToLoops() const;

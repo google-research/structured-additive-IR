@@ -488,7 +488,7 @@ mlir::LogicalResult UpdateLoopUser(SairMapOp old_op, SairMapOp new_op,
   auto uses = llvm::make_early_inc_range(old_value.getUses());
   for (mlir::OpOperand &use : uses) {
     SairOp user = cast<SairOp>(use.getOwner());
-    int operand_position = use.getOperandNumber() - user.domain().size();
+    int operand_position = use.getOperandNumber() - user.getDomain().size();
 
     MappingAttr mapping = user.ValueOperands()[operand_position].Mapping();
     int user_dimension =

@@ -34,7 +34,7 @@ class MappedDomain : public AttrLocation {
                const LoopNest &loop_nest);
 
   // Source domain. This is prefixed by the loop nest domain.
-  llvm::ArrayRef<ValueAccessInstance> domain() const { return domain_; }
+  llvm::ArrayRef<ValueAccessInstance> getDomain() const { return domain_; }
 
   // Mapping from the source domain to the new domain.
   MappingAttr mapping() const { return mapping_; }

@@ -99,7 +99,7 @@ class StaticRangeType
   int size() const;
 
   // Range step.
-  int step() const;
+  int getStep() const;
 
   static mlir::LogicalResult verify(
       llvm::function_ref<mlir::InFlightDiagnostic()> emit_error, int size,

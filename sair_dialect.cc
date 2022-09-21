@@ -314,8 +314,8 @@ void PrintMappingExpr(MappingExpr expr, llvm::raw_ostream &os) {
 // Prints the static range type.
 void Print(StaticRangeType type, mlir::DialectAsmPrinter &os) {
   os << StaticRangeType::Name() << "<" << type.size();
-  if (type.step() != 1) {
-    os << ", " << type.step();
+  if (type.getStep() != 1) {
+    os << ", " << type.getStep();
   }
   os << ">";
 }

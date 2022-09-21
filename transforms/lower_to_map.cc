@@ -57,7 +57,7 @@ class LowerToMap : public impl::LowerToMapPassBase<LowerToMap> {
         return op.emitError() << "no target expansion pattern specified";
       }
 
-      MapBodyBuilder map_body(sair_op.domain().size(), op->getContext());
+      MapBodyBuilder map_body(sair_op.getDomain().size(), op->getContext());
       builder.setInsertionPointToStart(&map_body.block());
       for (ValueOperand operand : sair_op.ValueOperands()) {
         map_body.AddOperand(operand.Get());
@@ -75,8 +75,8 @@ class LowerToMap : public impl::LowerToMapPassBase<LowerToMap> {
           builder.getStringAttr(kMapExpansionPattern), decisions.copy_of(),
           decisions.operands(), context);
       SairMapOp map_op = builder.create<SairMapOp>(
-          op.getLoc(), op->getResultTypes(), sair_op.domain(),
-          map_body.sair_values(), sair_op.shape(),
+          op.getLoc(), op->getResultTypes(), sair_op.getDomain(),
+          map_body.sair_values(), sair_op.getShape(),
           /*instances=*/builder.getArrayAttr({new_decisions}),
           /*copies=*/nullptr);
       map_op.getBody().takeBody(map_body.region());

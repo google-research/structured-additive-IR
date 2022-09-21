@@ -878,7 +878,7 @@ void SairFreeOp::print(mlir::OpAsmPrinter &printer) {
   printer.printOptionalAttrDict(getOperation()->getAttrs(),
                                 {SairOp::kMappingAttrName});
   mlir::Type element_type = Value().GetType().ElementType();
-  printer << " : " << ValueType::get(shape(), element_type);
+  printer << " : " << ValueType::get(getShape(), element_type);
 }
 
 namespace {
@@ -1002,9 +1002,9 @@ mlir::LogicalResult SairToMemRefOp::verify() {
 template <typename OpTy>
 llvm::SmallBitVector FromToMemRefLikeDimsDependingOnOperands(OpTy op,
                                                              int sair_operand) {
-  llvm::SmallBitVector mask(op.domain().size());
+  llvm::SmallBitVector mask(op.getDomain().size());
   if (sair_operand == 0) {
-    mask.set(op.getParallelDomain().size(), op.domain().size());
+    mask.set(op.getParallelDomain().size(), op.getDomain().size());
   }
   return mask;
 }
@@ -1273,7 +1273,7 @@ static mlir::LogicalResult VerifyBodyArgsTypes(SairOp op,
   mlir::Operation *operation = op.getOperation();
   mlir::Block *body = &operation->getRegion(0).front();
   mlir::TypeRange body_arg_types = body->getArgumentTypes();
-  int num_domain_dimensions = op.domain().size();
+  int num_domain_dimensions = op.getDomain().size();
 
   int expected_num_body_args = num_domain_dimensions + operand_types.size();
   if (body_arg_types.size() != expected_num_body_args) {
@@ -1344,9 +1344,9 @@ mlir::LogicalResult SairMapOp::verify() {
 }
 
 llvm::SmallBitVector SairMapReduceOp::DimsDependingOnOperand(int sair_operand) {
-  llvm::SmallBitVector mask(domain().size());
+  llvm::SmallBitVector mask(getDomain().size());
   if (sair_operand < getInits().size()) {
-    mask.set(getParallelDomain().size(), domain().size());
+    mask.set(getParallelDomain().size(), getDomain().size());
   }
   return mask;
 }
@@ -1531,8 +1531,8 @@ mlir::LogicalResult SairMapReduceOp::verify() {
 }
 
 llvm::SmallBitVector SairProjLastOp::ResultsDimDependencies() {
-  llvm::SmallBitVector mask(domain().size());
-  mask.set(getParallelDomain().size(), domain().size());
+  llvm::SmallBitVector mask(getDomain().size());
+  mask.set(getParallelDomain().size(), getDomain().size());
   return mask;
 }
 
@@ -1726,17 +1726,17 @@ OperandRange ChainOperandRanges(OperandRange first, OperandRange second) {
 }
 
 llvm::SmallBitVector SairFbyOp::DimsDependingOnOperand(int sair_operand) {
-  llvm::SmallBitVector mask(domain().size());
+  llvm::SmallBitVector mask(getDomain().size());
   if (sair_operand == 0) {
-    mask.set(getParallelDomain().size(), domain().size());
+    mask.set(getParallelDomain().size(), getDomain().size());
   }
   return mask;
 }
 
 llvm::SmallBitVector SairFbyOp::CarryingDimensions(int sair_operand) {
-  llvm::SmallBitVector mask(domain().size());
+  llvm::SmallBitVector mask(getDomain().size());
   if (sair_operand == 1) {
-    mask.set(getParallelDomain().size(), domain().size());
+    mask.set(getParallelDomain().size(), getDomain().size());
   }
   return mask;
 }
@@ -1809,7 +1809,7 @@ llvm::SmallVector<int, 2> SairFreeOp::SubDomains() {
   return {static_cast<int>(getDomain().size())};
 }
 
-DomainShapeAttr SairFreeOp::shape() {
+DomainShapeAttr SairFreeOp::getShape() {
   ValueOperand value = Value();
   return value.GetType().Shape().AccessedShape(value.Mapping().Inverse());
 }

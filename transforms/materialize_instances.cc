@@ -58,7 +58,7 @@ mlir::LogicalResult CreateInstancesAndCopies(Operation *container) {
   // operations with empty instance lists and no uses.
   llvm::SmallVector<SairOp> ops;
   auto result = container->walk([&](SairOp sair_op) -> mlir::WalkResult {
-    if (!sair_op.instances().has_value()) {
+    if (!sair_op.getInstances().has_value()) {
       sair_op->emitError() << "expected ops to have instances";
       return mlir::WalkResult::interrupt();
     }
@@ -71,7 +71,7 @@ mlir::LogicalResult CreateInstancesAndCopies(Operation *container) {
 
       for (Operation *user : sair_op->getUsers()) {
         auto sair_user = cast<SairOp>(user);
-        if (sair_user.instances().has_value() &&
+        if (sair_user.getInstances().has_value() &&
             sair_user.NumInstances() != 0) {
           continue;
         }
@@ -149,7 +149,7 @@ mlir::LogicalResult CreateInstancesAndCopies(Operation *container) {
             mlir::ArrayAttr::get(context, operand_attrs), context);
         mlir::Value copy = builder.create<SairCopyOp>(
             value_producer->getLoc(), source.getType(),
-            sair_op.domain().take_front(rank),
+            sair_op.getDomain().take_front(rank),
             builder.getArrayAttr(MappingAttr::GetIdentity(context, rank)),
             source, builder.getArrayAttr(copy_decisions),
             /*copies=*/nullptr);

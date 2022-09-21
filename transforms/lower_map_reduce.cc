@@ -112,7 +112,7 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
     mlir::ArrayAttr instances = CreateOperandsOnlyInstances(
         op, [&](int instance, llvm::ArrayRef<mlir::Attribute> old_operand_attrs,
                 llvm::SmallVectorImpl<mlir::Attribute> &operand_attrs) {
-          int domain_size = op.domain().size();
+          int domain_size = op.getDomain().size();
           llvm::append_range(operand_attrs,
                              old_operand_attrs.take_front(domain_size));
           operand_attrs.append({old_operand_attrs[domain_size + i],
@@ -191,7 +191,7 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
     mlir::ArrayAttr instances = CreateOperandsOnlyInstances(
         op, [&](int instance, llvm::ArrayRef<mlir::Attribute> old_operand_attrs,
                 llvm::SmallVectorImpl<mlir::Attribute> &operand_attrs) {
-          int domain_size = op.domain().size();
+          int domain_size = op.getDomain().size();
           llvm::append_range(operand_attrs,
                              old_operand_attrs.take_front(domain_size));
           operand_attrs.push_back(InstanceAttr::get(ctx, instance));

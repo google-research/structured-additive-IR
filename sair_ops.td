@@ -63,10 +63,10 @@ def SairDynRangeOp : SairOp<"dyn_range",
   DerivedAttr shape = SairResultDomainShapeAttr;
 
   let extraClassDeclaration = [{
-    int Step() { return step().getSExtValue(); }
+    int Step() { return getStep().getSExtValue(); }
 
     ValueOrConstant LowerBound() {
-      if (lower_bound() != nullptr) return ValueOperands()[0].Get();
+      if (getLowerBound() != nullptr) return ValueOperands()[0].Get();
       return mlir::IntegerAttr::get(mlir::IndexType::get(getContext()), 0);
     }
 
@@ -94,7 +94,7 @@ def SairStaticRangeOp : SairOp<"static_range", [NoSideEffect, SairRangeOp]> {
   DerivedAttr shape = SairEmptyDomainShapeAttr;
 
   let extraClassDeclaration = [{
-    int Step() { return getType().cast<StaticRangeType>().step(); }
+    int Step() { return getType().cast<StaticRangeType>().getStep(); }
 
     int Size() { return getType().cast<StaticRangeType>().size(); }
 
@@ -136,7 +136,7 @@ def SairPlaceholderOp : SairOp<"placeholder", [NoSideEffect]> {
 def SairCopyOp : SairOp<"copy", [
     NoSideEffect,
     SairComputeOp,
-    SairSameElementType<"value", "result">,
+    SairSameElementType<"getValue", "getResult">,
     SairValueProducerOp]> {
   let summary = "Creates a copy of a Sair value in a new iteration domain";
 
@@ -252,8 +252,8 @@ def SairFromMemRefOp : SairOp<"from_memref", [
   let extraClassDeclaration = [{
     ValueOperand MemRef() { return ValueOperands()[0]; }
 
-    OperandRange domain() {
-      return ChainOperandRanges(parallel_domain(), memref_domain());
+    OperandRange getDomain() {
+      return ChainOperandRanges(getParallelDomain(), getMemrefDomain());
     }
 
     llvm::SmallBitVector DimsDependingOnOperand(int sair_operand);
@@ -359,8 +359,8 @@ def SairToMemRefOp : SairOp<"to_memref", [
 
     ValueOperand Value() { return ValueOperands()[1]; }
 
-    OperandRange domain() {
-      return ChainOperandRanges(parallel_domain(), memref_domain());
+    OperandRange getDomain() {
+      return ChainOperandRanges(getParallelDomain(), getMemrefDomain());
     }
 
     llvm::SmallBitVector DimsDependingOnOperand(int sair_operand);
@@ -492,10 +492,10 @@ def SairMapOp : SairOp<"map", [
   let extraClassDeclaration = [{
     // Returns the arguments of the body block holding inputs values.
     llvm::MutableArrayRef<mlir::BlockArgument> block_inputs() {
-      return block().getArguments().drop_front(domain().size());
+      return block().getArguments().drop_front(getDomain().size());
     }
 
-    mlir::Block& block() { return body().front(); }
+    mlir::Block& block() { return getBody().front(); }
   }];
 
   let hasCustomAssemblyFormat = 1;
@@ -556,19 +556,19 @@ def SairMapReduceOp : SairOp<"map_reduce", [
   let extraClassDeclaration = [{
     constexpr static ::llvm::StringRef kReduceKeyword = "reduce";
 
-    OperandRange domain() {
-      return ChainOperandRanges(parallel_domain(), reduction_domain());
+    OperandRange getDomain() {
+      return ChainOperandRanges(getParallelDomain(), getReductionDomain());
     }
 
     ValueOperandRange Inits() {
-      return ValueOperands().take_front(inits().size());
+      return ValueOperands().take_front(getInits().size());
     }
 
     llvm::SmallBitVector DimsDependingOnOperand(int sair_operand);
 
-    int results_rank() { return parallel_domain().size(); }
+    int results_rank() { return getParallelDomain().size(); }
 
-    mlir::Block& block() { return body().front(); }
+    mlir::Block& block() { return getBody().front(); }
   }];
 
   let hasCustomAssemblyFormat = 1;
@@ -579,7 +579,7 @@ class SairProjectionOp<string name> : SairOp<name, [
     AttrSizedOperandSegments,
     NoSideEffect,
     SairInferIterationSpaceOp,
-    SairSameElementType<"value", "result">,
+    SairSameElementType<"getValue", "getResult">,
     SairValueProducerOp]> {
   let arguments = (ins
     Variadic<SairDimension>:$parallel_domain,
@@ -594,10 +594,10 @@ class SairProjectionOp<string name> : SairOp<name, [
   let results = (outs SairValue:$result);
 
   code commonDeclarations = [{
-    int results_rank() { return parallel_domain().size(); }
+    int results_rank() { return getParallelDomain().size(); }
 
-    OperandRange domain() {
-      return ChainOperandRanges(parallel_domain(), projection_domain());
+    OperandRange getDomain() {
+      return ChainOperandRanges(getParallelDomain(), getProjectionDomain());
     }
 
     ValueOperand Value() { return ValueOperands()[0]; }
@@ -650,8 +650,8 @@ def SairFbyOp : SairOp<"fby", [
     AttrSizedOperandSegments,
     NoSideEffect,
     SairInferIterationSpaceOp,
-    SairSameElementType<"value", "init">,
-    SairSameElementType<"value", "result">,
+    SairSameElementType<"getValue", "getInit">,
+    SairSameElementType<"getValue", "getResult">,
     SairValueProducerOp]> {
   let summary = "Creates a loop-carried variable.";
 
@@ -686,8 +686,8 @@ def SairFbyOp : SairOp<"fby", [
   let extraClassDeclaration = [{
     constexpr static ::llvm::StringRef kThenKeyword = "then";
 
-    OperandRange domain() {
-      return ChainOperandRanges(parallel_domain(), sequential_domain());
+    OperandRange getDomain() {
+      return ChainOperandRanges(getParallelDomain(), getSequentialDomain());
     }
 
     llvm::SmallBitVector DimsDependingOnOperand(int sair_operand);

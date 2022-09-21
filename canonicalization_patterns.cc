@@ -73,7 +73,7 @@ bool SimplifyProjOp(ValueOperand &use, ProjOp op,
 
   MappingAttr new_mapping =
       ExtendWithIdentity(op.Value().Mapping(), shape_dims.size(),
-                         prev_op.domain().size())
+                         prev_op.getDomain().size())
           .Compose(prev_op.Value().Mapping());
   mlir::ArrayAttr mapping_array = rewriter.getArrayAttr({new_mapping});
 
@@ -306,7 +306,7 @@ class RemoveUnreferencedDims : public OpRewritePattern<OpTy> {
   mlir::LogicalResult matchAndRewrite(
       OpTy op, PatternRewriter &rewriter) const override {
     // Collect dimensions that appear in the mapping.
-    llvm::SmallBitVector used_dimensions(op.domain().size());
+    llvm::SmallBitVector used_dimensions(op.getDomain().size());
     used_dimensions |= op.Value().Mapping().DependencyMask();
     if (used_dimensions.all()) return mlir::failure();
     if (op.HasCopies()) return mlir::failure();
@@ -342,7 +342,7 @@ class RemoveUnreferencedDims<SairFbyOp> : public OpRewritePattern<SairFbyOp> {
   mlir::LogicalResult matchAndRewrite(
       SairFbyOp op, PatternRewriter &rewriter) const override {
     // Collect dimensions that appear in mappings.
-    llvm::SmallBitVector used_dimensions(op.domain().size());
+    llvm::SmallBitVector used_dimensions(op.getDomain().size());
     used_dimensions |= op.Value().Mapping().DependencyMask();
     used_dimensions |= op.Init().Mapping().DependencyMask();
     if (used_dimensions.all()) return mlir::failure();

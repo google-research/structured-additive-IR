@@ -56,13 +56,13 @@ bool operator!=(const ValueAccess &lhs, const ValueAccess &rhs) {
 
 ValueOperand::ValueOperand(mlir::OpOperand *operand) : operand_(operand) {
   auto owner = cast<SairOp>(operand->getOwner());
-  index_ = operand->getOperandNumber() - owner.domain().size();
+  index_ = operand->getOperandNumber() - owner.getDomain().size();
   assert(index_ >= 0 && "expected domain operands before value operands");
 }
 
 MappingAttr ValueOperand::Mapping() const {
   return cast<SairOp>(operand_->getOwner())
-      .mapping_array()
+      .getMappingArray()
       .getValue()[index_]
       .template cast<::sair::MappingAttr>();
 }
@@ -164,12 +164,13 @@ static mlir::LogicalResult VerifyDecisionsWellFormed(mlir::Location loc,
 }
 
 static mlir::LogicalResult VerifyInstancesAttr(SairOp op) {
-  if (!op.instances().has_value()) return success();
+  if (!op.getInstances().has_value()) return success();
 
   for (int decision_index = 0, e = op.NumInstances(); decision_index < e;
        ++decision_index) {
     // Ignore incorrect types here, they will be caught by the op verifier.
-    mlir::Attribute decision_attr = op.instances()->getValue()[decision_index];
+    mlir::Attribute decision_attr =
+        op.getInstances()->getValue()[decision_index];
     DecisionsAttr decisions = decision_attr.dyn_cast<DecisionsAttr>();
     if (!decisions) continue;
 
@@ -178,7 +179,7 @@ static mlir::LogicalResult VerifyInstancesAttr(SairOp op) {
     }
 
     if (mlir::failed(VerifyDecisionsWellFormed(
-            op->getLoc(), op.shape(), op->getResultTypes(), decisions))) {
+            op->getLoc(), op.getShape(), op->getResultTypes(), decisions))) {
       return mlir::failure();
     }
 
@@ -223,7 +224,7 @@ static mlir::LogicalResult VerifyInstancesAttr(SairOp op) {
       if (!defining_op) continue;
 
       llvm::Optional<mlir::ArrayAttr> defining_op_instances =
-          defining_op.instances();
+          defining_op.getInstances();
       if (!defining_op_instances) continue;
       if (instance.getValue() >= defining_op_instances->size()) {
         return op->emitError()
@@ -235,7 +236,7 @@ static mlir::LogicalResult VerifyInstancesAttr(SairOp op) {
 
   if (isa<ComputeOp>(op.getOperation())) return mlir::success();
 
-  for (mlir::Attribute attr : op.instances()->getValue()) {
+  for (mlir::Attribute attr : op.getInstances()->getValue()) {
     DecisionsAttr decisions = attr.dyn_cast<DecisionsAttr>();
     if (!decisions) continue;
     if (decisions.sequence() != nullptr || decisions.loop_nest() != nullptr ||
@@ -258,20 +259,20 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
   }
 
   // Assert that the domain has the right shape.
-  assert(llvm::size(sair_op.domain()) == sair_op.shape().NumDimensions());
+  assert(llvm::size(sair_op.getDomain()) == sair_op.getShape().NumDimensions());
 #ifndef NDEBUG
   for (auto pair :
-       llvm::zip(sair_op.domain(), sair_op.shape().Dimensions())) {
+       llvm::zip(sair_op.getDomain(), sair_op.getShape().Dimensions())) {
     assert(std::get<0>(pair).getType() == std::get<1>(pair).type());
   }
 #endif
 
   // Assert that operands start with the domain.
-  assert(sair_op.domain().empty() ||
-         sair_op.domain().begin() == op->operand_begin());
+  assert(sair_op.getDomain().empty() ||
+         sair_op.getDomain().begin() == op->operand_begin());
 
   // Check that the domain is defined locally.
-  for (mlir::Value dimension : sair_op.domain()) {
+  for (mlir::Value dimension : sair_op.getDomain()) {
     mlir::Operation *defining_op = dimension.getDefiningOp();
     if (defining_op == nullptr || defining_op->getParentOp() != program) {
       return op->emitError()
@@ -289,7 +290,7 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
       return mlir::emitError(op->getLoc())
              << "missing " << SairOp::kMappingAttrName << " attribute";
     }
-    for (mlir::Attribute attr : sair_op.mapping_array()) {
+    for (mlir::Attribute attr : sair_op.getMappingArray()) {
       MappingAttr mapping = attr.cast<MappingAttr>();
       if (mapping.HasNoneExprs() || mapping.HasUnknownExprs()) {
         return mlir::emitError(op->getLoc())
@@ -308,17 +309,17 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
              << "sair values must be defined in the region they are used";
     }
 
-    if (v.Mapping().UseDomainSize() != sair_op.domain().size()) {
+    if (v.Mapping().UseDomainSize() != sair_op.getDomain().size()) {
       return mlir::emitError(op->getLoc()) << "invalid use domain size";
     }
 
     AttrLocation mapping_loc(op->getLoc(), "operand mapping");
     if (mlir::failed(
-            VerifyMappingShape(mapping_loc, v.Mapping(), sair_op.shape()))) {
+            VerifyMappingShape(mapping_loc, v.Mapping(), sair_op.getShape()))) {
       return mlir::failure();
     }
 
-    auto expected_shape = sair_op.shape().AccessedShape(v.Mapping());
+    auto expected_shape = sair_op.getShape().AccessedShape(v.Mapping());
     auto given_shape =
         v.value().getType().template cast<::sair::ValueType>().Shape();
     if (expected_shape != given_shape) {
@@ -335,7 +336,7 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
 
   // Check that returned Sair values have the right shape.
   ::sair::DomainShapeAttr results_shape =
-      sair_op.shape().Prefix(sair_op.results_rank());
+      sair_op.getShape().Prefix(sair_op.results_rank());
   for (mlir::Value result : op->getResults()) {
     auto type = result.getType().cast<ShapedType>();
     if (type.Shape() != results_shape) {
@@ -358,7 +359,7 @@ mlir::LogicalResult VerifyValueProducerOp(mlir::Operation *operation) {
            << "the `copies` attribute must have one entry per operation result";
   }
 
-  DomainShapeAttr shape = sair_op.shape().Prefix(sair_op.results_rank());
+  DomainShapeAttr shape = sair_op.getShape().Prefix(sair_op.results_rank());
   for (int i = 0, e = op->getNumResults(); i < e; ++i) {
     for (mlir::Attribute attr : op.GetCopies(i)) {
       auto decisions = attr.cast<DecisionsAttr>();
@@ -379,7 +380,7 @@ mlir::LogicalResult VerifyValueProducerOp(mlir::Operation *operation) {
         }
       }
       if (auto instance = decisions.copy_of().dyn_cast<InstanceAttr>()) {
-        llvm::Optional<mlir::ArrayAttr> instances = sair_op.instances();
+        llvm::Optional<mlir::ArrayAttr> instances = sair_op.getInstances();
         if (instances && instance.getValue() >= instances->size()) {
           return op.emitError() << "'copy_of' refers to non-existent instance";
         }
@@ -391,7 +392,7 @@ mlir::LogicalResult VerifyValueProducerOp(mlir::Operation *operation) {
 
 void SetMapping(SairOp op, int position, ::sair::MappingAttr mapping) {
   llvm::SmallVector<mlir::Attribute, 4> new_array =
-      llvm::to_vector<4>(op.mapping_array());
+      llvm::to_vector<4>(op.getMappingArray());
   new_array[position] = mapping;
   mlir::ArrayAttr new_attr = mlir::ArrayAttr::get(op.getContext(), new_array);
   op->setAttr(SairOp::kMappingAttrName, new_attr);
@@ -479,9 +480,9 @@ DomainShapeAttr OpInstance::GetShape() const {
   if (is_copy()) {
     auto sair_op =
         llvm::cast<SairOp>(op_.get<ValueProducerOp>().getOperation());
-    return sair_op.shape().Prefix(sair_op.results_rank());
+    return sair_op.getShape().Prefix(sair_op.results_rank());
   } else {
-    return op_.get<SairOp>().shape();
+    return op_.get<SairOp>().getShape();
   }
 }
 
@@ -491,7 +492,7 @@ int OpInstance::domain_size() const {
         llvm::cast<SairOp>(op_.get<ValueProducerOp>().getOperation());
     return sair_op.results_rank();
   } else {
-    return op_.get<SairOp>().domain().size();
+    return op_.get<SairOp>().getDomain().size();
   }
 }
 
@@ -502,7 +503,7 @@ ResultInstance OpInstance::domain(int i) const {
   } else {
     op = llvm::cast<SairOp>(GetDuplicatedOp());
   }
-  mlir::Value dim = op.domain()[i];
+  mlir::Value dim = op.getDomain()[i];
   OpInstance dim_op(llvm::cast<SairOp>(dim.getDefiningOp()));
   return ResultInstance(dim_op, dim.cast<OpResult>().getResultNumber());
 }
@@ -510,9 +511,9 @@ ResultInstance OpInstance::domain(int i) const {
 ValueRange OpInstance::GetDomainValues() const {
   if (is_copy()) {
     auto op = llvm::cast<SairOp>(GetCopiedValue().getDefiningOp());
-    return op.domain().take_front(domain_size());
+    return op.getDomain().take_front(domain_size());
   } else {
-    return llvm::cast<SairOp>(GetDuplicatedOp()).domain();
+    return llvm::cast<SairOp>(GetDuplicatedOp()).getDomain();
   }
 }
 

@@ -24,8 +24,8 @@ namespace sair {
 // Returns the layout of from_memref or to_memref operation value.
 static MappingAttr FromToMemRefLayout(FromToMemRefOp op,
                                       const IterationSpace &iter_space) {
-  int rank = op.memref_domain().size();
-  int parallel_domain_size = op.parallel_domain().size();
+  int rank = op.getMemrefDomain().size();
+  int parallel_domain_size = op.getParallelDomain().size();
   auto domain_to_layout = MappingAttr::GetIdentity(op.getContext(), rank)
                               .ShiftRight(parallel_domain_size);
   return iter_space.mapping().Inverse().Compose(domain_to_layout);
@@ -182,7 +182,7 @@ static mlir::LogicalResult UnifyBufferShape(
   // define a new domain that maps to loop nest dimensions when possible and
   // directly to operation dimensions otherwise.
   llvm::SmallVector<ValueAccessInstance> domain;
-  llvm::append_range(domain, op_loop_nest.domain());
+  llvm::append_range(domain, op_loop_nest.getDomain());
 
   auto none = MappingNoneExpr::get(context);
   llvm::SmallVector<MappingExpr> constraints(op.domain_size(), none);
@@ -291,7 +291,7 @@ static mlir::LogicalResult DeclareBuffers(
       program.walk([&](FromToMemRefOp op) -> mlir::WalkResult {
         auto sair_op = cast<SairOp>(op.getOperation());
         OpInstance op_instance(sair_op);
-        auto name = mlir::StringAttr::get(op.getContext(), op.buffer_name());
+        auto name = mlir::StringAttr::get(op.getContext(), op.getBufferName());
         const IterationSpace &iter_space = iteration_spaces.Get(op_instance);
         const LoopNest &loop_nest =
             fusion_analysis.GetLoopNest(iter_space.loop_names());
@@ -642,7 +642,7 @@ static mlir::LogicalResult CheckMallocInsertionPoint(
   llvm::ArrayRef<mlir::StringAttr> write_loops =
       iteration_spaces.Get(first_write).loop_names();
   for (int dim : used_dimensions.set_bits()) {
-    OpInstance dimension_op = buffer.domain()[dim].value.defining_op();
+    OpInstance dimension_op = buffer.getDomain()[dim].value.defining_op();
     if (sequence_analysis.IsBefore(first_write, dimension_op)) {
       mlir::InFlightDiagnostic diag =
           first_write.EmitError()

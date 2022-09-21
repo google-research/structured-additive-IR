@@ -53,7 +53,7 @@ class LowerProjAny : public impl::LowerProjAnyPassBase<LowerProjAny> {
         return source.emitError() << "operation iteration space not normalized";
       }
 
-      int domain_size = op.domain().size();
+      int domain_size = op.getDomain().size();
       for (OpOperand &use :
            llvm::make_early_inc_range(op.getResult().getUses())) {
         SairOp user = cast<SairOp>(use.getOwner());
@@ -71,7 +71,7 @@ class LowerProjAny : public impl::LowerProjAnyPassBase<LowerProjAny> {
         auto value_mapping =
             operand.Mapping().Resize(domain_size).Compose(op.Value().Mapping());
         MappingAttr mapping = loops_mapping.Resize(value_mapping.size())
-                                  .ResizeUseDomain(user.domain().size())
+                                  .ResizeUseDomain(user.getDomain().size())
                                   .Unify(value_mapping);
 
         // Projection can be fully eliminated.
@@ -93,11 +93,11 @@ class LowerProjAny : public impl::LowerProjAnyPassBase<LowerProjAny> {
         }
 
         // Create a proj_last operation.
-        auto proj_shape = source.shape().Prefix(mapping.size());
+        auto proj_shape = source.getShape().Prefix(mapping.size());
         auto proj_type = ValueType::get(proj_shape.Prefix(num_common_loops),
                                         op.Value().GetType().ElementType());
-        auto parallel_domain = source.domain().take_front(num_common_loops);
-        auto projection_domain = source.domain().slice(
+        auto parallel_domain = source.getDomain().take_front(num_common_loops);
+        auto projection_domain = source.getDomain().slice(
             num_common_loops, mapping.size() - num_common_loops);
         auto proj_mapping = MappingAttr::GetIdentity(context, mapping.size());
 

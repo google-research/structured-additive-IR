@@ -32,7 +32,7 @@ def SairDialect : Dialect {
 
   let cppNamespace = "::sair";
 
-  let emitAccessorPrefix = kEmitAccessorPrefix_Both;
+  let emitAccessorPrefix = kEmitAccessorPrefix_Prefixed;
   let useDefaultAttributePrinterParser = 0;
 }
 
@@ -274,8 +274,8 @@ class SairSameElementType<string lhs, string rhs>
 // Ensures that a Sair op has at most one instance specified.
 def SingleInstance: PredOpTrait<
     "op has at most one instance",
-    CPred<"!cast<SairOp>($_op).instances().has_value() || "
-          "cast<SairOp>($_op).instances()->getValue().size() <= 1">>;
+    CPred<"!cast<SairOp>($_op).getInstances().has_value() || "
+          "cast<SairOp>($_op).getInstances()->getValue().size() <= 1">>;
 
 //===----------------------------------------------------------------------===//
 // Sair Interfaces
@@ -293,23 +293,23 @@ def SairOpInterface : OpInterface<"SairOp"> {
   let methods = [
     InterfaceMethod<
       "Returns the shape of the iteration domain of the operation",
-      "DomainShapeAttr", "shape"
+      "DomainShapeAttr", "getShape"
     >,
     InterfaceMethod<
       "Returns the dimensions that compose the domain of the operation",
-      "mlir::Operation::operand_range", "domain", (ins), [{}], [{
+      "mlir::Operation::operand_range", "getDomain", (ins), [{}], [{
         return mlir::OperandRange(nullptr, 0);
       }]
     >,
     InterfaceMethod<
       "Returns the number of dimensions in the domains of produced Sair values",
       "int", "results_rank", (ins), [{}], [{
-        return cast<ConcreteOp>(this->getOperation()).shape().NumDimensions();
+        return cast<ConcreteOp>(this->getOperation()).getShape().NumDimensions();
       }]
     >,
     InterfaceMethod<
       "Returns the mappings for the !sair.value operands",
-      "mlir::ArrayAttr", "mapping_array", (ins), [{}], [{
+      "mlir::ArrayAttr", "getMappingArray", (ins), [{}], [{
         return mlir::ArrayAttr::get(this->getOperation()->getContext(), {});
       }]
     >,
@@ -331,9 +331,9 @@ def SairOpInterface : OpInterface<"SairOp"> {
       "llvm::SmallVector<ValueAccess>", "DomainWithDependencies", (ins), [{}], [{
         ConcreteOp op($_op);
         llvm::SmallVector<ValueAccess> result;
-        result.reserve(op.domain().size());
+        result.reserve(op.getDomain().size());
         for (auto [value, shape_dim] :
-             llvm::zip(op.domain(), op.shape().Dimensions())) {
+             llvm::zip(op.getDomain(), op.getShape().Dimensions())) {
           result.push_back({value, shape_dim.dependency_mapping()});
         }
         return result;
@@ -345,7 +345,7 @@ def SairOpInterface : OpInterface<"SairOp"> {
         dimensions.}],
       "llvm::SmallBitVector", "DimsDependingOnOperand",
       (ins "int":$sair_operand), [{}], [{
-        int size = cast<ConcreteOp>(this->getOperation()).domain().size();
+        int size = cast<ConcreteOp>(this->getOperation()).getDomain().size();
         return llvm::SmallBitVector(size);
       }]
     >,
@@ -353,7 +353,7 @@ def SairOpInterface : OpInterface<"SairOp"> {
       [{Returns the dimensions that must finish before using results}],
       "llvm::SmallBitVector", "ResultsDimDependencies",
       (ins), [{}], [{
-        int size = cast<ConcreteOp>(this->getOperation()).domain().size();
+        int size = cast<ConcreteOp>(this->getOperation()).getDomain().size();
         return llvm::SmallBitVector(size);
       }]
     >,
@@ -367,7 +367,7 @@ def SairOpInterface : OpInterface<"SairOp"> {
         dependencies accross iterations for the given !sair.value operand}],
       "llvm::SmallBitVector", "CarryingDimensions",
       (ins "int":$sair_operand), [{}], [{
-        return llvm::SmallBitVector($_op.domain().size());
+        return llvm::SmallBitVector($_op.getDomain().size());
       }]
     >,
     InterfaceMethod<
@@ -393,7 +393,7 @@ def SairOpInterface : OpInterface<"SairOp"> {
     >,
     InterfaceMethod<
       [{Returns the instances attribute if present, llvm::None otherwise.}],
-      "llvm::Optional<mlir::ArrayAttr>", "instances", (ins), [{}],
+      "llvm::Optional<mlir::ArrayAttr>", "getInstances", (ins), [{}],
       [{
         // PlacehoderOp is a special op that gets introduced during code
         // generation and is not expected to have external decisions.
@@ -405,14 +405,14 @@ def SairOpInterface : OpInterface<"SairOp"> {
     InterfaceMethod<
       "Returns the number of instances of the operation",
       "int", "NumInstances", (ins), [{}], [{
-        llvm::Optional<mlir::ArrayAttr> instances = $_op.instances();
+        llvm::Optional<mlir::ArrayAttr> instances = $_op.getInstances();
         if (!instances.has_value()) return 0;
         return instances.getValue().size();
       }]>,
     InterfaceMethod<
       "Returns lowering decisions for all instances as an array attribute",
       "mlir::ArrayAttr", "GetAllDecisions", (ins), [{}], [{
-        llvm::Optional<mlir::ArrayAttr> instances = $_op.instances();
+        llvm::Optional<mlir::ArrayAttr> instances = $_op.getInstances();
         if (!instances) return mlir::ArrayAttr();
         return instances.getValue();
       }]
@@ -420,7 +420,7 @@ def SairOpInterface : OpInterface<"SairOp"> {
     InterfaceMethod<
       "Returns lowering decisions for the given operation instance",
       "DecisionsAttr", "GetDecisions", (ins "int":$instance), [{}], [{
-        mlir::ArrayAttr instances = $_op.instances().getValue();
+        mlir::ArrayAttr instances = $_op.getInstances().getValue();
         return instances.getValue()[instance].cast<DecisionsAttr>();
       }]
     >,
@@ -429,9 +429,9 @@ def SairOpInterface : OpInterface<"SairOp"> {
       "void", "SetDecisions", (ins "int":$instance, "DecisionsAttr":$value),
       [{}], [{
         auto instances = llvm::to_vector<4>(
-          $_op.instances().getValue().getValue());
+          $_op.getInstances().getValue().getValue());
         instances[instance] = value;
-        $_op.instancesAttr(mlir::ArrayAttr::get($_op.getContext(), instances));
+        $_op.setInstancesAttr(mlir::ArrayAttr::get($_op.getContext(), instances));
       }]
     >,
     InterfaceMethod<
@@ -439,12 +439,12 @@ def SairOpInterface : OpInterface<"SairOp"> {
       "void", "AddInstance", (ins "DecisionsAttr":$value),
       [{}], [{
         llvm::SmallVector<mlir::Attribute> instances;
-        if ($_op.instances().has_value()) {
+        if ($_op.getInstances().has_value()) {
           instances = llvm::to_vector<4>(
-            $_op.instances().getValue().getValue());
+            $_op.getInstances().getValue().getValue());
         }
         instances.push_back(value);
-        $_op.instancesAttr(mlir::ArrayAttr::get($_op.getContext(), instances));
+        $_op.setInstancesAttr(mlir::ArrayAttr::get($_op.getContext(), instances));
       }]
     >
   ];
@@ -503,7 +503,7 @@ def SairValueProducerOp : OpInterface<"ValueProducerOp"> {
     InterfaceMethod<
       "List of copies of the given result. This is an array of DecisionAttr.",
       "llvm::ArrayRef<mlir::Attribute>", "GetCopies", (ins "int":$result), [{}], [{
-          auto all_copies = $_op.copiesAttr();
+          auto all_copies = $_op.getCopiesAttr();
           if (all_copies == nullptr) return {};
           return all_copies.getValue()[result]
             .template cast<mlir::ArrayAttr>().getValue();
@@ -511,7 +511,7 @@ def SairValueProducerOp : OpInterface<"ValueProducerOp"> {
     InterfaceMethod<
       "Indicates if the operation has any copy set in its `copies` attribute`",
       "bool", "HasCopies", (ins), [{}], [{
-        auto all_copies = $_op.copiesAttr();
+        auto all_copies = $_op.getCopiesAttr();
         if (all_copies == nullptr) return false;
         return llvm::any_of(all_copies.getValue(), [](mlir::Attribute attr) {
           return !attr.cast<mlir::ArrayAttr>().empty();
@@ -521,14 +521,14 @@ def SairValueProducerOp : OpInterface<"ValueProducerOp"> {
       "Set decisions for the given copy of the given result.",
       "void", "SetCopy",
       (ins "int":$result, "int":$copy, "DecisionsAttr":$decisions), [{}], [{
-        auto all_copies = llvm::to_vector<4>($_op.copies().getValue());
+        auto all_copies = llvm::to_vector<4>($_op.getCopies().getValue());
         auto result_copies_attr = all_copies[result].template cast<mlir::ArrayAttr>();
         auto result_copies = llvm::to_vector<4>(result_copies_attr.getValue());
 
         result_copies[copy] = decisions;
         mlir::MLIRContext *context = $_op.getContext();
         all_copies[result] = mlir::ArrayAttr::get(context, result_copies);
-        $_op.copiesAttr(mlir::ArrayAttr::get(context, all_copies));
+        $_op.setCopiesAttr(mlir::ArrayAttr::get(context, all_copies));
       }]>
   ];
 
@@ -576,11 +576,11 @@ def SairFromToMemRefOp : OpInterface<"FromToMemRefOp"> {
 
   let methods = [
     InterfaceMethod<"Domain dimensions not mapping to memref dimensions",
-                    "ValueRange", "parallel_domain">,
+                    "ValueRange", "getParallelDomain">,
     InterfaceMethod<"Domain dimensions mapping to memref dimensions",
-                    "ValueRange", "memref_domain">,
+                    "ValueRange", "getMemrefDomain">,
     InterfaceMethod<"Memref accessed", "ValueOperand", "MemRef">,
-    InterfaceMethod<"Buffer name", "llvm::StringRef", "buffer_name">,
+    InterfaceMethod<"Buffer name", "llvm::StringRef", "getBufferName">,
     InterfaceMethod<"Memref type", "mlir::MemRefType", "MemRefType", (ins),
                     [{}], [{
                       return $_op.MemRef()
@@ -591,8 +591,8 @@ def SairFromToMemRefOp : OpInterface<"FromToMemRefOp"> {
     InterfaceMethod<"Mapping from value domain to layout", "MappingAttr",
                     "Layout", (ins), [{}], [{
                       return MappingAttr::GetIdentity(
-                                 $_op.getContext(), $_op.memref_domain().size())
-                          .ShiftRight($_op.parallel_domain().size());
+                                 $_op.getContext(), $_op.getMemrefDomain().size())
+                          .ShiftRight($_op.getParallelDomain().size());
                     }]>
   ];
 }

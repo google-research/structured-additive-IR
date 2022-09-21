@@ -53,7 +53,7 @@ class impl::ShapedTypeStorage : public mlir::TypeStorage {
   static unsigned hashKey(const KeyTy &key) { return hash_value(key); }
 
   // Returns the shape of the dimensions this range type depends upon.
-  DomainShapeAttr shape() const { return shape_; }
+  DomainShapeAttr getShape() const { return shape_; }
 
  protected:
   // Constructs a storage object from the provided key. Such objects must not be
@@ -88,7 +88,7 @@ DynRangeType DynRangeType::get(DomainShapeAttr shape) {
   return Base::get(shape.getContext(), shape);
 }
 
-DomainShapeAttr DynRangeType::Shape() const { return getImpl()->shape(); }
+DomainShapeAttr DynRangeType::Shape() const { return getImpl()->getShape(); }
 
 //===----------------------------------------------------------------------===//
 // StaticRangeType
@@ -113,7 +113,7 @@ class impl::StaticRangeTypeStorage : public mlir::TypeStorage {
   int size() const { return size_; }
 
   // Range step.
-  int step() const { return step_; }
+  int getStep() const { return step_; }
 
  private:
   StaticRangeTypeStorage(int size, int step) : size_(size), step_(step) {}
@@ -135,7 +135,7 @@ StaticRangeType StaticRangeType::getChecked(
 
 int StaticRangeType::size() const { return getImpl()->size(); }
 
-int StaticRangeType::step() const { return getImpl()->step(); }
+int StaticRangeType::getStep() const { return getImpl()->getStep(); }
 
 mlir::LogicalResult StaticRangeType::verify(
     llvm::function_ref<mlir::InFlightDiagnostic()> emit_error, int size,
@@ -208,7 +208,7 @@ ValueType ValueType::get(mlir::Type element_type) {
 // Forwards the request to the implementation class.
 mlir::Type ValueType::ElementType() const { return getImpl()->element_type(); }
 
-DomainShapeAttr ValueType::Shape() const { return getImpl()->shape(); }
+DomainShapeAttr ValueType::Shape() const { return getImpl()->getShape(); }
 
 ValueType ValueType::AccessedType(MappingAttr mapping) const {
   return ValueType::get(Shape().AccessedShape(mapping), ElementType());

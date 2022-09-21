@@ -56,7 +56,7 @@ void CreateRange(const IterationSpaceAnalysis &iter_spaces, SairOp op,
   MapBodyBuilder map_body(range_rank, context);
   builder.setInsertionPointToStart(&map_body.block());
   auto loops_domain = llvm::to_vector<4>(llvm::map_range(
-      loop_nest.domain(), [](ValueAccessInstance instance) -> ValueAccess {
+      loop_nest.getDomain(), [](ValueAccessInstance instance) -> ValueAccess {
         return {.value = instance.value.GetValue(),
                 .mapping = instance.mapping};
       }));
@@ -215,7 +215,7 @@ llvm::SmallVector<llvm::SmallVector<mlir::Value>> PartitionDomain(
   for (const auto &sub_domain : partitioned_mapping) {
     llvm::append_range(flattened_mapping, sub_domain);
   }
-  mapping = MappingAttr::get(context, op.domain().size(), flattened_mapping);
+  mapping = MappingAttr::get(context, op.getDomain().size(), flattened_mapping);
 
   llvm::SmallVector<DomainShapeDim> shape_dims;
   shape_dims.reserve(shape.NumDimensions());

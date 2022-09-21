@@ -530,7 +530,7 @@ func.func @map_reduce_init_accessing_reduction(%arg0 : f32) {
 
 // -----
 
-func.func @map_reduce_unexpected_shape() {
+func.func @map_reduce_unexpected_getShape() {
   sair.program {
     // expected-error @+1 {{unexpected shape}}
     "sair.map_reduce"() ({
@@ -2320,7 +2320,7 @@ func.func @sequence_inversion_placeholder(%arg0: index) {
 
 // -----
 
-func.func @invalid_mapping_shape_in_shape() {
+func.func @invalid_mapping_shape_in_getShape() {
   "foo"() {
     // expected-error @+1 {{in operation shape: operand 1 of unstripe in #sair.mapping_expr<unstripe(d0, d1, [4, 1])> has an invalid shape}}
     bar = #sair.shape<d0:dyn_range x d1:dyn_range x d2:dyn_range(unstripe(d0, d1, [4, 1]))>

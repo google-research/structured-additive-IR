@@ -468,8 +468,8 @@ class MappingUnknownExpr
 };
 
 // Applies stripe-mining to an expression. Iterates on its operand with step
-// `step()`, on a strip of size `size()`. If it iterates of the full expression,
-// `size()` is none.
+// `getStep()`, on a strip of size `size()`. If it iterates of the full
+// expression, `size()` is none.
 class MappingStripeExpr
     : public mlir::Attribute::AttrBase<MappingStripeExpr, mlir::Attribute,
                                        impl::MappingStripeExprStorage,

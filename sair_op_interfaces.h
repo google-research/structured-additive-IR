@@ -170,8 +170,8 @@ template<typename ConcreteType>
 ::sair::ValueOperandRange ValueOperands(ConcreteType op) {
   auto operands = op.getOperation()
                       ->getOpOperands()
-                      .drop_front(op.domain().size())
-                      .take_front(op.mapping_array().size());
+                      .drop_front(op.getDomain().size())
+                      .take_front(op.getMappingArray().size());
   return ::sair::ValueOperandRange(operands);
 }
 
@@ -260,7 +260,7 @@ class OpInstance {
   ResultInstance domain(int i) const;
 
   // Returns the domain of the operation as an iterator of ResultInstance.
-  auto domain() const;
+  auto getDomain() const;
 
   // Returns the domain of the operation as an iterator of ValueAccessInstance.
   auto DomainWithDependencies() const;
@@ -507,7 +507,7 @@ class OperandInstance {
   ValueOperand GetOriginalOperand() const;
 };
 
-inline auto OpInstance::domain() const {
+inline auto OpInstance::getDomain() const {
   return llvm::map_range(GetDomainValues(), [](mlir::Value v) {
     OpInstance dim_op = OpInstance(llvm::cast<SairOp>(v.getDefiningOp()));
     return ResultInstance(dim_op, v.cast<OpResult>().getResultNumber());
