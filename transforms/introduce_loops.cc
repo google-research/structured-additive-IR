@@ -165,7 +165,8 @@ class Driver : public mlir::PatternRewriter {
 
   // Hook called when an operation is being replaced by an other. Adds users of
   // the operation to work lists.
-  void notifyRootReplaced(mlir::Operation *op) override {
+  void notifyRootReplaced(mlir::Operation *op,
+                          ValueRange replacement) override {
     for (mlir::Value result : op->getResults()) {
       for (mlir::Operation *user : result.getUsers()) {
         AddOperation(user);

@@ -93,5 +93,7 @@ int main(int argc, char **argv) {
   return mlir::failed(
       mlir::MlirOptMain(outputFile->os(), std::move(inputFile), passPipeline,
                         registry, split_input_file, verify_diagnostics,
-                        /*verifyPasses=*/true, allowUnregisteredDialects));
+                        /*verifyPasses=*/true, allowUnregisteredDialects,
+                        /*preloadDialectsInContext=*/false,
+                        /*emitBytecode=*/false, /*implicitModule=*/true));
 }
