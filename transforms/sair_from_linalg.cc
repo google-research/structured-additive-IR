@@ -427,7 +427,7 @@ void MoveBodyBlock(mlir::AffineMap linalg_to_sair_loops,
 
   // Replace index operations with index values coming from block arguments.
   body.walk([&](mlir::linalg::IndexOp index_op) {
-    Value index = body.getArgument(index_op.dim());
+    Value index = body.getArgument(index_op.getDim());
     index_op.replaceAllUsesWith(index);
     index_op.erase();
   });
