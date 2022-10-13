@@ -17,6 +17,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
+#include "mlir/Dialect/Linalg/Utils/Utils.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Utils/StructuredOpsUtils.h"
 #include "mlir/IR/AffineMap.h"
@@ -463,10 +464,10 @@ void CreateResultTypes(mlir::Builder &rewriter, DomainShapeAttr shape,
 // parallel loops in Linalg notation and assigns "-1" to other kinds of loops.
 // Expects "attr" to be an array attribute containing string attributes with one
 // of two values corresponding to parallel or reduciton Linalg dimensions.
-void ComputePermutationMaps(mlir::ArrayAttr attr,
+void ComputePermutationMaps(mlir::MLIRContext *context,
+                            llvm::ArrayRef<llvm::StringRef> iterator_types,
                             mlir::AffineMap &linalg_to_sair_loops,
                             mlir::AffineMap &parallel_loop_positions) {
-  mlir::MLIRContext *context = attr.getContext();
   llvm::SmallVector<mlir::AffineExpr, 8> parallel_dimensions;
   llvm::SmallVector<mlir::AffineExpr, 4> reduction_dimensions;
 
@@ -474,17 +475,16 @@ void ComputePermutationMaps(mlir::ArrayAttr attr,
   auto ignore_this_dimension_expr = mlir::getAffineConstantExpr(-1, context);
   int num_visited_parallel_dims = 0;
 
-  inverse_dimensions.reserve(attr.size());
-  for (const auto &en : llvm::enumerate(attr)) {
-    mlir::Attribute dim = en.value();
+  inverse_dimensions.reserve(iterator_types.size());
+  for (const auto &en : llvm::enumerate(iterator_types)) {
+    llvm::StringRef dim = en.value();
     mlir::AffineExpr expr = mlir::getAffineDimExpr(en.index(), context);
-    llvm::StringRef type = dim.cast<StringAttr>().getValue();
-    if (type == mlir::getParallelIteratorTypeName()) {
+    if (mlir::linalg::isParallelIterator(dim)) {
       parallel_dimensions.push_back(expr);
       mlir::AffineExpr inverse_expr =
           mlir::getAffineDimExpr(num_visited_parallel_dims++, context);
       inverse_dimensions.push_back(inverse_expr);
-    } else if (type == mlir::getReductionIteratorTypeName()) {
+    } else if (mlir::linalg::isReductionIterator(dim)) {
       reduction_dimensions.push_back(expr);
       inverse_dimensions.push_back(ignore_this_dimension_expr);
     } else {
@@ -496,8 +496,8 @@ void ComputePermutationMaps(mlir::ArrayAttr attr,
       mlir::AffineMap::get(num_visited_parallel_dims, /*symbolCount=*/0,
                            inverse_dimensions, context);
   llvm::append_range(parallel_dimensions, reduction_dimensions);
-  linalg_to_sair_loops = mlir::AffineMap::get(attr.size(), /*symbolCount=*/0,
-                                              parallel_dimensions, context);
+  linalg_to_sair_loops = mlir::AffineMap::get(
+      iterator_types.size(), /*symbolCount=*/0, parallel_dimensions, context);
 }
 
 // Creates a Sair "map_reduce" operation from the partial results of Linalg to
@@ -556,8 +556,8 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
   // convention that reduction loops always come last.
   mlir::AffineMap parallel_to_positions;
   mlir::AffineMap linalg_to_sair_loops;
-  ComputePermutationMaps(op.iterator_types(), linalg_to_sair_loops,
-                         parallel_to_positions);
+  ComputePermutationMaps(op.getContext(), op.getIteratorTypesArray(),
+                         linalg_to_sair_loops, parallel_to_positions);
   mlir::AffineMap sair_to_linalg_loops =
       mlir::inversePermutation(linalg_to_sair_loops);
 

@@ -22,7 +22,7 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 include "sair_base.td"
 
 def SairDynRangeOp : SairOp<"dyn_range",
-    [NoSideEffect, SairRangeOp, AttrSizedOperandSegments]> {
+    [Pure, SairRangeOp, AttrSizedOperandSegments]> {
   let summary = "Defines an iteration dimension as the interval [0, $size-1].";
 
   let description = [{
@@ -76,7 +76,7 @@ def SairDynRangeOp : SairOp<"dyn_range",
   }];
 }
 
-def SairStaticRangeOp : SairOp<"static_range", [NoSideEffect, SairRangeOp]> {
+def SairStaticRangeOp : SairOp<"static_range", [Pure, SairRangeOp]> {
   let summary = "Defines an iteration dimension as a fixed-size interval.";
 
   let description = [{
@@ -110,7 +110,7 @@ def SairStaticRangeOp : SairOp<"static_range", [NoSideEffect, SairRangeOp]> {
   }];
 }
 
-def SairPlaceholderOp : SairOp<"placeholder", [NoSideEffect]> {
+def SairPlaceholderOp : SairOp<"placeholder", [Pure]> {
   let summary = "Placeholder for an iteration dimension";
 
   let description = [{
@@ -134,7 +134,7 @@ def SairPlaceholderOp : SairOp<"placeholder", [NoSideEffect]> {
 }
 
 def SairCopyOp : SairOp<"copy", [
-    NoSideEffect,
+    Pure,
     SairComputeOp,
     SairSameElementType<"getValue", "getResult">,
     SairValueProducerOp]> {
@@ -175,7 +175,7 @@ def SairCopyOp : SairOp<"copy", [
 }
 
 def SairFromScalarOp : SairOp<"from_scalar", [
-    NoSideEffect,
+    Pure,
     SairValueProducerOp]> {
   let description = [{Converts an SSA value into a 0-dimensional Sair value.}];
 
@@ -202,7 +202,7 @@ def SairFromScalarOp : SairOp<"from_scalar", [
 
 def SairFromMemRefOp : SairOp<"from_memref", [
     AttrSizedOperandSegments,
-    NoSideEffect,
+    Pure,
     SairFromToMemRefOp,
     SairInferIterationSpaceOp,
     SairValueProducerOp]> {
@@ -577,7 +577,7 @@ def SairMapReduceOp : SairOp<"map_reduce", [
 
 class SairProjectionOp<string name> : SairOp<name, [
     AttrSizedOperandSegments,
-    NoSideEffect,
+    Pure,
     SairInferIterationSpaceOp,
     SairSameElementType<"getValue", "getResult">,
     SairValueProducerOp]> {
@@ -648,7 +648,7 @@ def SairProjLastOp : SairProjectionOp<"proj_last"> {
 
 def SairFbyOp : SairOp<"fby", [
     AttrSizedOperandSegments,
-    NoSideEffect,
+    Pure,
     SairInferIterationSpaceOp,
     SairSameElementType<"getValue", "getInit">,
     SairSameElementType<"getValue", "getResult">,
@@ -791,7 +791,7 @@ def SairExitOp : SairOp<"exit", [SingleInstance, Terminator]> {
 
 // Note: this is not defined as SairOp because it is not expected inside
 // SairProgramOp and produces values of types other than sair::ValueType.
-def SairUndefOp : Op<SairDialect, "undef", [NoSideEffect]> {
+def SairUndefOp : Op<SairDialect, "undef", [Pure]> {
   let summary = "Produces an undefined value of any type";
 
   let description = [{
