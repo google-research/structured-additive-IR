@@ -414,7 +414,7 @@ void MoveBodyBlock(mlir::AffineMap linalg_to_sair_loops,
   bool has_reductions = source_op.getNumReductionLoops() != 0;
   if (has_reductions) {
     llvm::SmallVector<int, 8> permutation;
-    SegmentPermutation(source_op.getNumInputs(), source_op.getNumOutputs(),
+    SegmentPermutation(source_op.getNumDpsInputs(), source_op.getNumDpsInits(),
                        permutation);
     PermuteBlockArguments(permutation, 0, body);
   }
@@ -575,7 +575,7 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
   // only, but Sair does. Abort the conversion in case of incompatibility.
   int num_parallel_loops = op.getNumParallelLoops();
   int num_operands = op->getNumOperands();
-  for (int i = op.getNumInputs(); i < num_operands; ++i) {
+  for (int i = op.getNumDpsInputs(); i < num_operands; ++i) {
     auto mapping = operand_mappings[i].cast<MappingAttr>();
     if (mlir::failed(VerifyReductionMapping(mapping, num_parallel_loops))) {
       return mlir::failure();
@@ -588,7 +588,7 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
   llvm::SmallVector<mlir::Attribute, 4> result_mappings;
   llvm::ArrayRef<mlir::Attribute> all_indexing_maps =
       op.getIndexingMaps().getValue();
-  int num_outputs = op.getNumOutputs();
+  int num_outputs = op.getNumDpsInits();
   if (mlir::failed(
           ConvertResultMappings(all_indexing_maps.take_back(num_outputs),
                                 parallel_to_positions, result_mappings))) {
@@ -603,7 +603,7 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
   llvm::SmallVector<mlir::Value, 4> map_operands;
   llvm::SmallVector<llvm::SmallVector<mlir::Value, 4>, 4> result_ranges;
   llvm::SmallVector<mlir::Value> operands = op->getOperands();
-  EmitMemRefToValue(operands, op.getNumOutputs(), loc, sair_program,
+  EmitMemRefToValue(operands, op.getNumDpsInits(), loc, sair_program,
                     storage_analysis, rewriter, map_operands, result_ranges);
 
   // Prepare parameters of the Sair map operation.
@@ -621,7 +621,7 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
   auto result_shape =
       domain_shape.Prefix(domain_shape.NumDimensions() - num_reduction_dims);
   SmallVector<MemRefType> outputBufferTypes;
-  for (OpOperand *outputOperand : op.getOutputOperands())
+  for (OpOperand *outputOperand : op.getDpsInitOperands())
     outputBufferTypes.push_back(
         outputOperand->get().getType().cast<MemRefType>());
   CreateResultTypes(rewriter, result_shape, outputBufferTypes, result_types);
@@ -645,12 +645,12 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
   } else {
     map_op = CreateMapReduceOp(
         loc, result_types, domain_ranges, map_operands, operand_mappings,
-        domain_shape, num_reduction_dims, op.getNumOutputs(), rewriter);
+        domain_shape, num_reduction_dims, op.getNumDpsInits(), rewriter);
   }
   MoveBodyBlock(linalg_to_sair_loops, rewriter, map_op->getRegion(0), op);
 
   // Convert output values to input/output MemRefs used by Linalg.
-  llvm::SmallVector<mlir::Value> output_buffers = op.getOutputOperands();
+  llvm::SmallVector<mlir::Value> output_buffers = op.getDpsInitOperands();
   EmitValueToMemRef(loc, sair_program, map_op->getResults(), output_buffers,
                     result_mappings, result_ranges, storage_analysis, rewriter);
 
