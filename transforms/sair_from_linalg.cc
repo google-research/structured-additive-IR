@@ -464,10 +464,11 @@ void CreateResultTypes(mlir::Builder &rewriter, DomainShapeAttr shape,
 // parallel loops in Linalg notation and assigns "-1" to other kinds of loops.
 // Expects "attr" to be an array attribute containing string attributes with one
 // of two values corresponding to parallel or reduciton Linalg dimensions.
-void ComputePermutationMaps(mlir::MLIRContext *context,
-                            llvm::ArrayRef<llvm::StringRef> iterator_types,
-                            mlir::AffineMap &linalg_to_sair_loops,
-                            mlir::AffineMap &parallel_loop_positions) {
+void ComputePermutationMaps(
+    mlir::MLIRContext *context,
+    llvm::ArrayRef<mlir::utils::IteratorType> iterator_types,
+    mlir::AffineMap &linalg_to_sair_loops,
+    mlir::AffineMap &parallel_loop_positions) {
   llvm::SmallVector<mlir::AffineExpr, 8> parallel_dimensions;
   llvm::SmallVector<mlir::AffineExpr, 4> reduction_dimensions;
 
@@ -477,7 +478,7 @@ void ComputePermutationMaps(mlir::MLIRContext *context,
 
   inverse_dimensions.reserve(iterator_types.size());
   for (const auto &en : llvm::enumerate(iterator_types)) {
-    llvm::StringRef dim = en.value();
+    mlir::utils::IteratorType dim = en.value();
     mlir::AffineExpr expr = mlir::getAffineDimExpr(en.index(), context);
     if (mlir::linalg::isParallelIterator(dim)) {
       parallel_dimensions.push_back(expr);
@@ -540,7 +541,7 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
                                         mlir::OpBuilder &rewriter) {
   mlir::MLIRContext *context = op.getContext();
   // Only support Linalg on memrefs.
-  if (!op.hasBufferSemantics() || op.getNumWindowLoops() != 0) {
+  if (!op.hasBufferSemantics()) {
     return mlir::failure();
   }
 
