@@ -379,20 +379,20 @@ class NormalizeSequenceNumbers : public mlir::OpRewritePattern<SairProgramOp> {
     SequenceAnalysis sequence_analysis(op);
 
     bool changed = false;
-    rewriter.updateRootInPlace(op, [&] {
-      for (auto en : llvm::enumerate(sequence_analysis.Ops())) {
-        ComputeOpInstance nested_op = en.value();
-        int64_t inferred_sequence_number = en.index();
-        DecisionsAttr decisions = nested_op.GetDecisions();
-        if (decisions.sequence() == nullptr) continue;
-        int64_t current_sequence_number = decisions.sequence().getInt();
-        if (current_sequence_number != inferred_sequence_number) {
+    for (auto en : llvm::enumerate(sequence_analysis.Ops())) {
+      ComputeOpInstance nested_op = en.value();
+      int64_t inferred_sequence_number = en.index();
+      DecisionsAttr decisions = nested_op.GetDecisions();
+      if (decisions.sequence() == nullptr) continue;
+      int64_t current_sequence_number = decisions.sequence().getInt();
+      if (current_sequence_number != inferred_sequence_number) {
+        rewriter.updateRootInPlace(op, [&] {
           nested_op.SetDecisions(
               UpdateSequence(decisions, inferred_sequence_number));
-          changed = true;
-        }
+        });
+        changed = true;
       }
-    });
+    }
 
     return success(changed);
   }
