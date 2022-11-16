@@ -78,7 +78,7 @@ mlir::Value CreateSairRange(mlir::Location loc, const LoopBound &bound,
   mlir::MLIRContext *context = loc.getContext();
   auto domain_0d = DomainShapeAttr::get(context);
   auto shaped_type = bound.referenced_value.getType().cast<mlir::ShapedType>();
-  int dimension = shaped_type.getDimSize(bound.dimension);
+  int64_t dimension = shaped_type.getDimSize(bound.dimension);
 
   // If the shape is statically known, create a simple static range.
   if (!mlir::ShapedType::isDynamic(dimension)) {
