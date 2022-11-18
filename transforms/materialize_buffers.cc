@@ -102,7 +102,7 @@ std::pair<mlir::SmallVector<int64_t>, ValueRange> GetMemRefShape(
           params.end.get<mlir::Attribute>().cast<mlir::IntegerAttr>().getInt();
       memref_shape.push_back(llvm::divideCeil(end - beg, step));
     } else {
-      memref_shape.push_back(mlir::ShapedType::kDynamicSize);
+      memref_shape.push_back(mlir::ShapedType::kDynamic);
       // Handle dynamic dimensions.
       mlir::Value beg = Materialize(buffer.location(), params.begin, builder);
       mlir::Value end = Materialize(buffer.location(), params.end, builder);
