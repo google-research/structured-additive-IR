@@ -68,7 +68,7 @@ OptionalParseResult ParseOptionalValueAccess(
     int num_dimensions, mlir::OpAsmParser &parser,
     mlir::OpAsmParser::UnresolvedOperand &value, MappingAttr &mapping) {
   OptionalParseResult has_operand = parser.parseOptionalOperand(value);
-  if (!has_operand.hasValue() || mlir::failed(has_operand.getValue()))
+  if (!has_operand.has_value() || mlir::failed(has_operand.value()))
     return has_operand;
 
   llvm::SMLoc loc = parser.getCurrentLocation();
@@ -97,10 +97,10 @@ ParseResult ParseOperandList(
   MappingAttr first_mapping;
   OptionalParseResult has_first_operand = ParseOptionalValueAccess(
       num_dimensions, parser, first_operand, first_mapping);
-  if (!has_first_operand.hasValue()) {
+  if (!has_first_operand.has_value()) {
     return mlir::success();
   }
-  if (mlir::failed(has_first_operand.getValue())) {
+  if (mlir::failed(has_first_operand.value())) {
     return mlir::failure();
   }
 
@@ -558,11 +558,11 @@ mlir::ParseResult SairAllocOp::parse(mlir::OpAsmParser &parser,
 
   mlir::OptionalParseResult parse_result =
       ParseOptionalValueAccess(domain.size(), parser, value, pattern);
-  if (parse_result.hasValue() && mlir::failed(*parse_result)) {
+  if (parse_result.has_value() && mlir::failed(*parse_result)) {
     return failure();
   }
 
-  if (parse_result.hasValue() && mlir::succeeded(*parse_result)) {
+  if (parse_result.has_value() && mlir::succeeded(*parse_result)) {
     access_patterns.push_back(pattern);
     values.push_back(value);
     while (mlir::succeeded(parser.parseOptionalComma())) {
@@ -1049,11 +1049,11 @@ ParseResult ParseValueAccess(int num_dimensions, mlir::OpAsmParser &parser,
                              MappingAttr &mapping) {
   OptionalParseResult has_value_access =
       ParseOptionalValueAccess(num_dimensions, parser, value, mapping);
-  if (!has_value_access.hasValue()) {
+  if (!has_value_access.has_value()) {
     return parser.emitError(parser.getCurrentLocation())
            << "expected a sair value access";
   }
-  return has_value_access.getValue();
+  return has_value_access.value();
 }
 
 void PrintValueAccess(ValueOperand value, OpAsmPrinter &printer) {

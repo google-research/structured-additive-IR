@@ -250,8 +250,8 @@ mlir::Attribute sair::SairDialect::parseAttribute(
   mlir::Attribute attribute;
   mlir::OptionalParseResult parse_result = detail::ParseGeneratedAttribute(
       parser.getBuilder().getContext(), parser, &keyword, type, attribute);
-  if (parse_result.hasValue()) {
-    if (parse_result.getValue().succeeded()) return attribute;
+  if (parse_result.has_value()) {
+    if (parse_result.value().succeeded()) return attribute;
     return mlir::Attribute();
   }
 
