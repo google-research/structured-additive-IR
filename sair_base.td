@@ -406,20 +406,20 @@ def SairOpInterface : OpInterface<"SairOp"> {
       "int", "NumInstances", (ins), [{}], [{
         llvm::Optional<mlir::ArrayAttr> instances = $_op.getInstances();
         if (!instances.has_value()) return 0;
-        return instances.getValue().size();
+        return instances->size();
       }]>,
     InterfaceMethod<
       "Returns lowering decisions for all instances as an array attribute",
       "mlir::ArrayAttr", "GetAllDecisions", (ins), [{}], [{
         llvm::Optional<mlir::ArrayAttr> instances = $_op.getInstances();
         if (!instances) return mlir::ArrayAttr();
-        return instances.getValue();
+        return *instances;
       }]
     >,
     InterfaceMethod<
       "Returns lowering decisions for the given operation instance",
       "DecisionsAttr", "GetDecisions", (ins "int":$instance), [{}], [{
-        mlir::ArrayAttr instances = $_op.getInstances().getValue();
+        mlir::ArrayAttr instances = *$_op.getInstances();
         return instances.getValue()[instance].cast<DecisionsAttr>();
       }]
     >,
@@ -428,7 +428,7 @@ def SairOpInterface : OpInterface<"SairOp"> {
       "void", "SetDecisions", (ins "int":$instance, "DecisionsAttr":$value),
       [{}], [{
         auto instances = llvm::to_vector<4>(
-          $_op.getInstances().getValue().getValue());
+          $_op.getInstances()->getValue());
         instances[instance] = value;
         $_op.setInstancesAttr(mlir::ArrayAttr::get($_op.getContext(), instances));
       }]
@@ -440,7 +440,7 @@ def SairOpInterface : OpInterface<"SairOp"> {
         llvm::SmallVector<mlir::Attribute> instances;
         if ($_op.getInstances().has_value()) {
           instances = llvm::to_vector<4>(
-            $_op.getInstances().getValue().getValue());
+            $_op.getInstances()->getValue());
         }
         instances.push_back(value);
         $_op.setInstancesAttr(mlir::ArrayAttr::get($_op.getContext(), instances));
@@ -520,7 +520,7 @@ def SairValueProducerOp : OpInterface<"ValueProducerOp"> {
       "Set decisions for the given copy of the given result.",
       "void", "SetCopy",
       (ins "int":$result, "int":$copy, "DecisionsAttr":$decisions), [{}], [{
-        auto all_copies = llvm::to_vector<4>($_op.getCopies().getValue());
+        auto all_copies = llvm::to_vector<4>(*$_op.getCopies());
         auto result_copies_attr = all_copies[result].template cast<mlir::ArrayAttr>();
         auto result_copies = llvm::to_vector<4>(result_copies_attr.getValue());
 
