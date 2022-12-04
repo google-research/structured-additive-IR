@@ -818,9 +818,9 @@ void SairProjLastOp::print(OpAsmPrinter &printer) {
 // Prints the sair.return operation.
 void SairReturnOp::print(OpAsmPrinter &printer) {
   printer << " ";
-  printer.printOperands(operands());
+  printer.printOperands(getOperands());
   printer.printOptionalAttrDict(getOperation()->getAttrs());
-  if (operands().empty()) return;
+  if (getOperands().empty()) return;
   printer << " : ";
   llvm::interleaveComma(getOperands().getTypes(), printer,
                         [&](mlir::Type type) { printer.printType(type); });
@@ -1310,7 +1310,7 @@ static mlir::LogicalResult VerifyBodyTerminator(Operation *op) {
 
   llvm::SmallVector<mlir::Type, 4> result_types;
   ExtractElementTypes(op->getResults(), result_types);
-  mlir::TypeRange return_operand_types = return_op.operands().getTypes();
+  mlir::TypeRange return_operand_types = return_op.getOperands().getTypes();
   if (!std::equal(result_types.begin(), result_types.end(),
                   return_operand_types.begin(), return_operand_types.end())) {
     return op->emitOpError(

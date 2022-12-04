@@ -431,7 +431,7 @@ def SairReturnOp : Op<SairDialect, "return", [Terminator]> {
       OpBuilder<(ins),
       [{ return build($_builder, $_state, ValueRange()); }]>];
 
-  let arguments = (ins Variadic<AnyType>:$operands);
+  let arguments = (ins Variadic<AnyType>);
   let hasCustomAssemblyFormat = 1;
 }
 
