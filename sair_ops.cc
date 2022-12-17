@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <map>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -60,7 +61,7 @@ namespace sair {
 
 namespace {
 
-// Parses a Sair value access if present. Returns llvm::None if no Sair value
+// Parses a Sair value access if present. Returns std::nullopt if no Sair value
 // access is present, and a ParseResult indicating the parsing status otherwise.
 // Populates "value" and "mapping" with an operand placeholder and a
 // mapping attribute on success.
@@ -1116,7 +1117,7 @@ ParseResult SairMapOp::parse(mlir::OpAsmParser &parser,
   }
 
   // Parse the remaining part of the operation and build the domain shape. Note
-  // that 'llvm::None' is passed as region arguments and types to indicate to
+  // that 'std::nullopt' is passed as region arguments and types to indicate to
   // MLIR that the region is expected to have a named entry block that specifies
   // the names and types of those arguments.
   mlir::Region *body = result.addRegion();
@@ -1396,7 +1397,7 @@ ParseResult SairMapReduceOp::parse(mlir::OpAsmParser &parser,
       ArrayAttr::get(parser.getBuilder().getContext(), mapping_attrs));
 
   // Parse the remaining part of the operation and build the domain shape. Note
-  // that 'llvm::None' is passed as region arguments and types to indicate to
+  // that 'std::nullopt' is passed as region arguments and types to indicate to
   // MLIR that the region is expected to have a named entry block that specifies
   // the names and types of those arguments.
   mlir::Region *body = result.addRegion();

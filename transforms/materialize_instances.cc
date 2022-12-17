@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <memory>
+#include <optional>
 #include <tuple>
 
 #include "llvm/ADT/DenseMap.h"
@@ -41,7 +42,7 @@ llvm::Optional<unsigned> FindCopiedInstance(
   auto decisions = result_copies[position].cast<DecisionsAttr>();
   if (decisions.copy_of() == nullptr || decisions.copy_of().isa<UnitAttr>()) {
     mlir::emitError(location) << "expected the source of copy to be specified";
-    return llvm::None;
+    return std::nullopt;
   }
   if (auto instance = decisions.copy_of().dyn_cast<InstanceAttr>()) {
     return instance.getValue();

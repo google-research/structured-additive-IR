@@ -391,14 +391,14 @@ def SairOpInterface : OpInterface<"SairOp"> {
       }]
     >,
     InterfaceMethod<
-      [{Returns the instances attribute if present, llvm::None otherwise.}],
+      [{Returns the instances attribute if present, std::nullopt otherwise.}],
       "llvm::Optional<mlir::ArrayAttr>", "getInstances", (ins), [{}],
       [{
         // PlacehoderOp is a special op that gets introduced during code
         // generation and is not expected to have external decisions.
         static_assert(std::is_same<ConcreteOp, sair::SairPlaceholderOp>::value,
                       "Sair ops must have the 'instances' attribute");
-        return llvm::None;
+        return std::nullopt;
       }]
     >,
     InterfaceMethod<
