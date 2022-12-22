@@ -392,7 +392,7 @@ def SairOpInterface : OpInterface<"SairOp"> {
     >,
     InterfaceMethod<
       [{Returns the instances attribute if present, std::nullopt otherwise.}],
-      "llvm::Optional<mlir::ArrayAttr>", "getInstances", (ins), [{}],
+      "std::optional<mlir::ArrayAttr>", "getInstances", (ins), [{}],
       [{
         // PlacehoderOp is a special op that gets introduced during code
         // generation and is not expected to have external decisions.
@@ -404,14 +404,14 @@ def SairOpInterface : OpInterface<"SairOp"> {
     InterfaceMethod<
       "Returns the number of instances of the operation",
       "int", "NumInstances", (ins), [{}], [{
-        llvm::Optional<mlir::ArrayAttr> instances = $_op.getInstances();
+        std::optional<mlir::ArrayAttr> instances = $_op.getInstances();
         if (!instances.has_value()) return 0;
         return instances->size();
       }]>,
     InterfaceMethod<
       "Returns lowering decisions for all instances as an array attribute",
       "mlir::ArrayAttr", "GetAllDecisions", (ins), [{}], [{
-        llvm::Optional<mlir::ArrayAttr> instances = $_op.getInstances();
+        std::optional<mlir::ArrayAttr> instances = $_op.getInstances();
         if (!instances) return mlir::ArrayAttr();
         return *instances;
       }]

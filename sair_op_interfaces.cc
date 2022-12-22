@@ -15,6 +15,7 @@
 #include "sair_op_interfaces.h"
 
 #include <iterator>
+#include <optional>
 
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -223,7 +224,7 @@ static mlir::LogicalResult VerifyInstancesAttr(SairOp op) {
       auto defining_op = op->getOperand(en.index()).getDefiningOp<SairOp>();
       if (!defining_op) continue;
 
-      llvm::Optional<mlir::ArrayAttr> defining_op_instances =
+      std::optional<mlir::ArrayAttr> defining_op_instances =
           defining_op.getInstances();
       if (!defining_op_instances) continue;
       if (instance.getValue() >= defining_op_instances->size()) {
@@ -380,7 +381,7 @@ mlir::LogicalResult VerifyValueProducerOp(mlir::Operation *operation) {
         }
       }
       if (auto instance = decisions.copy_of().dyn_cast<InstanceAttr>()) {
-        llvm::Optional<mlir::ArrayAttr> instances = sair_op.getInstances();
+        std::optional<mlir::ArrayAttr> instances = sair_op.getInstances();
         if (instances && instance.getValue() >= instances->size()) {
           return op.emitError() << "'copy_of' refers to non-existent instance";
         }
