@@ -61,7 +61,7 @@ class ConcreteOpGraph {
   bool empty() const { return keys_.empty(); }
 
   // Returns a list of nodes in the graph.
-  llvm::ArrayRef<OpTy> keys() const { return llvm::makeArrayRef(keys_); }
+  llvm::ArrayRef<OpTy> keys() const { return llvm::ArrayRef(keys_); }
 
  private:
   llvm::SmallVector<OpTy> keys_;

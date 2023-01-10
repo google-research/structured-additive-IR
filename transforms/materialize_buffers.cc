@@ -110,7 +110,7 @@ std::pair<mlir::SmallVector<int64_t>, ValueRange> GetMemRefShape(
       auto d1 = mlir::getAffineDimExpr(1, context);
       auto map = mlir::AffineMap::get(2, 0, (d1 - d0).ceilDiv(step));
       scalar_sizes.push_back(builder.create<mlir::AffineApplyOp>(
-          buffer.location(), map, llvm::makeArrayRef({beg, end})));
+          buffer.location(), map, llvm::ArrayRef({beg, end})));
     }
   }
 
@@ -276,8 +276,8 @@ void InsertLoad(ComputeOp op, int operand_pos, const Buffer &buffer,
         ValueType::get(proj_shape.Prefix(op_domain_size), element_type);
     new_operand.value = builder.create<SairProjAnyOp>(
         op.getLoc(), proj_type,
-        llvm::makeArrayRef(proj_domain).take_front(op_domain_size),
-        llvm::makeArrayRef(proj_domain).drop_front(op_domain_size),
+        llvm::ArrayRef(proj_domain).take_front(op_domain_size),
+        llvm::ArrayRef(proj_domain).drop_front(op_domain_size),
         builder.getArrayAttr(proj_mapping), loaded, proj_shape,
         /*instances=*/
         GetInstanceZeroOperandsSingleInstance(context, proj_domain.size() + 1),

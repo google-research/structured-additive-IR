@@ -823,7 +823,7 @@ DomainShapeAttr LoopNest::NormalizedShape() const {
       continue;
     }
     auto dependencies =
-        llvm::makeArrayRef(normalized_shape_dims).take_front(num_dependencies);
+        llvm::ArrayRef(normalized_shape_dims).take_front(num_dependencies);
     auto dim_type =
         DynRangeType::get(DomainShapeAttr::get(context_, dependencies));
     auto dim_mapping = MappingAttr::GetIdentity(context_, num_dependencies,

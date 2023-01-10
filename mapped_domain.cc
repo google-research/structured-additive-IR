@@ -112,7 +112,7 @@ mlir::LogicalResult MappedDomain::UnifyMapping(
     ValueAccessInstance dimension = new_mapping_domain[dimension_id];
     auto constraints_mapping = MappingAttr::get(
         context(), domain_.size(),
-        llvm::makeArrayRef(constraints).take_front(dimension_id));
+        llvm::ArrayRef(constraints).take_front(dimension_id));
     dimension.mapping = constraints_mapping.Compose(dimension.mapping);
     if (!dimension.mapping.IsSurjective()) {
       return op.EmitError()
@@ -136,8 +136,8 @@ mlir::LogicalResult MappedDomain::UnifyMapping(
 
 void MappedDomain::SetLoopNest(const LoopNest &new_loop_nest) {
   assert(new_loop_nest.size() <= loop_nest_.size());
-  assert(llvm::makeArrayRef(new_loop_nest.LoopNames()) ==
-         llvm::makeArrayRef(loop_nest_).take_front(new_loop_nest.size()));
+  assert(llvm::ArrayRef(new_loop_nest.LoopNames()) ==
+         llvm::ArrayRef(loop_nest_).take_front(new_loop_nest.size()));
   loop_nest_.resize(new_loop_nest.size());
   loops_mapping_ = new_loop_nest.DomainToLoops();
 
@@ -157,7 +157,7 @@ void MappedDomain::SetLoopNest(const LoopNest &new_loop_nest) {
 
     auto renaming_mapping =
         MappingAttr::get(context(), new_domain.size(),
-                         llvm::makeArrayRef(renaming).take_front(dimension_id));
+                         llvm::ArrayRef(renaming).take_front(dimension_id));
     dimension.mapping = renaming_mapping.Compose(dimension.mapping);
     new_domain.push_back(dimension);
   }

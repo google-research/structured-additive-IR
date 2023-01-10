@@ -612,7 +612,7 @@ MappingExpr MappingUnStripeExpr::Canonicalize() const {
     int min_num_factors =
         std::min(new_factors.size(), stripe.factors().size());
     // Ensure factors are the same.
-    if (llvm::makeArrayRef(new_factors).take_back(min_num_factors) !=
+    if (llvm::ArrayRef(new_factors).take_back(min_num_factors) !=
         stripe.factors().take_back(min_num_factors)) {
       return false;
     }

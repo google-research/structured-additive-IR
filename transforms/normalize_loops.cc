@@ -47,7 +47,7 @@ void CreateRange(const IterationSpaceAnalysis &iter_spaces, SairOp op,
 
   // Find the loop nest and domain of the new operation.
   int range_rank = loop_shape.dependency_mapping().MinDomainSize();
-  auto range_domain = llvm::makeArrayRef(new_domain).take_front(range_rank);
+  auto range_domain = llvm::ArrayRef(new_domain).take_front(range_rank);
   ProgramPoint insertion_point = sequence_analysis.FindInsertionPoint(
       iter_spaces, OpInstance::Unique(op), range_rank);
 
@@ -307,8 +307,8 @@ void NormalizeLoops(SairOp op, const IterationSpace &iteration_space,
        llvm::zip(op->getResults(), new_op->getResults())) {
     auto proj_any = builder.create<SairProjAnyOp>(
         op.getLoc(), old_value.getType(),
-        llvm::makeArrayRef(proj_any_domain).take_front(op.results_rank()),
-        llvm::makeArrayRef(proj_any_domain).drop_front(op.results_rank()),
+        llvm::ArrayRef(proj_any_domain).take_front(op.results_rank()),
+        llvm::ArrayRef(proj_any_domain).drop_front(op.results_rank()),
         builder.getArrayAttr({result_mapping}), new_value, proj_any_shape,
         /*instances=*/
         GetInstanceZeroOperandsSingleInstance(op->getContext(),
