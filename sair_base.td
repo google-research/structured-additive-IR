@@ -33,6 +33,7 @@ def SairDialect : Dialect {
   let cppNamespace = "::sair";
 
   let useDefaultAttributePrinterParser = 0;
+  let useFoldAPI = kEmitFoldAdaptorFolder;
 }
 
 //===----------------------------------------------------------------------===//
