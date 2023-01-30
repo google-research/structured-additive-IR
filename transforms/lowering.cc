@@ -71,7 +71,7 @@ class LowerToLLVMPass : public impl::LowerToLLVMBase<LowerToLLVMPass> {
 
     RewritePatternSet patterns(&getContext());
     LLVMTypeConverter converter(&getContext());
-    populateMemRefToLLVMConversionPatterns(converter, patterns);
+    populateFinalizeMemRefToLLVMConversionPatterns(converter, patterns);
     populateFuncToLLVMConversionPatterns(converter, patterns);
     cf::populateControlFlowToLLVMConversionPatterns(converter, patterns);
     arith::populateArithToLLVMConversionPatterns(converter, patterns);
