@@ -41,6 +41,9 @@ class ShapedType : public mlir::Type {
 
   // Returns the shape of the type.
   DomainShapeAttr Shape() const;
+
+  // TODO(b/267597147): Replace this stub with correct implementation.
+  static bool classof(mlir::Type) { return true; }
 };
 
 // Base type for sair dimensions.
