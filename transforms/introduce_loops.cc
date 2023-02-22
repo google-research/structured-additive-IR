@@ -64,12 +64,14 @@ void getAllPatterns(mlir::RewritePatternSet &list, mlir::MLIRContext *ctx) {
 // of compute operations are updated in the analysis on every addition and
 // deletion. Note that the op attributes are not updated until `AssignInferred`
 // is called on `sequence_analysis`.
-class Driver : public mlir::PatternRewriter {
+class Driver : public mlir::PatternRewriter,
+               public mlir::RewriterBase::Listener {
  public:
   Driver(mlir::MLIRContext *ctx, SequenceAnalysis &sequence_analysis)
       : PatternRewriter(ctx),
         canonicalization_patterns_(ctx),
         sequence_analysis_(sequence_analysis) {
+    setListener(this);
     getAllPatterns<
 #define GET_OP_LIST
 #include "sair_ops.cc.inc"
@@ -165,8 +167,8 @@ class Driver : public mlir::PatternRewriter {
 
   // Hook called when an operation is being replaced by an other. Adds users of
   // the operation to work lists.
-  void notifyRootReplaced(mlir::Operation *op,
-                          ValueRange replacement) override {
+  void notifyOperationReplaced(mlir::Operation *op,
+                               ValueRange replacement) override {
     for (mlir::Value result : op->getResults()) {
       for (mlir::Operation *user : result.getUsers()) {
         AddOperation(user);
@@ -196,6 +198,7 @@ class Driver : public mlir::PatternRewriter {
   // Hook called after an operation is update in place. Adds its previous
   // operands to the work list.
   void finalizeRootUpdate(mlir::Operation *op) override {
+    RewriterBase::finalizeRootUpdate(op);
     auto it = pending_updates_.find(op);
     assert(it != pending_updates_.end());
     AddOperation(op);
