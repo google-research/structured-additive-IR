@@ -36,7 +36,7 @@ namespace {
 // Traverses `result_copies` attributes (expects DecisionsAttr to be the
 // underlying type for all attributes) starting from `position` where each copy
 // may refer to another copy and finds the instance that is being copied.
-llvm::Optional<unsigned> FindCopiedInstance(
+std::optional<unsigned> FindCopiedInstance(
     llvm::ArrayRef<mlir::Attribute> result_copies, unsigned position,
     mlir::Location location) {
   auto decisions = result_copies[position].cast<DecisionsAttr>();
@@ -129,7 +129,7 @@ mlir::LogicalResult CreateInstancesAndCopies(Operation *container) {
         mlir::Value source = value_producer->getResult(i);
         unsigned rank =
             source.getType().cast<ValueType>().Shape().NumDimensions();
-        llvm::Optional<unsigned> copied_instance = FindCopiedInstance(
+        std::optional<unsigned> copied_instance = FindCopiedInstance(
             value_producer.GetCopies(i), en.index(), value_producer->getLoc());
         if (!copied_instance.has_value()) return mlir::failure();
         mlir::ArrayAttr instance_operand_attr =
