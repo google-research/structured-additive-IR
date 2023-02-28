@@ -95,5 +95,5 @@ int main(int argc, char **argv) {
                         registry, split_input_file, verify_diagnostics,
                         /*verifyPasses=*/true, allowUnregisteredDialects,
                         /*preloadDialectsInContext=*/false,
-                        /*emitBytecode=*/false, /*implicitModule=*/true));
+                        /*emitBytecode=*/false, /*explicitModule=*/false));
 }
