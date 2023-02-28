@@ -15,9 +15,9 @@
 #ifndef SAIR_SAIR_OP_INTERFACES_H_
 #define SAIR_SAIR_OP_INTERFACES_H_
 
+#include <optional>
 #include <variant>
 
-#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/SmallBitVector.h"
 #include "mlir/IR/Builders.h"
