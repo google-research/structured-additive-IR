@@ -90,10 +90,15 @@ int main(int argc, char **argv) {
     return EXIT_FAILURE;
   }
 
-  return mlir::failed(
-      mlir::MlirOptMain(outputFile->os(), std::move(inputFile), passPipeline,
-                        registry, split_input_file, verify_diagnostics,
-                        /*verifyPasses=*/true, allowUnregisteredDialects,
-                        /*preloadDialectsInContext=*/false,
-                        /*emitBytecode=*/false, /*explicitModule=*/false));
+  return mlir::failed(mlir::MlirOptMain(
+      outputFile->os(), std::move(inputFile), registry,
+      MlirOptMainConfig{}
+          .splitInputFile(split_input_file)
+          .verifyDiagnostics(verify_diagnostics)
+          .verifyPasses(true)
+          .allowUnregisteredDialects(allowUnregisteredDialects)
+          .preloadDialectsInContext(false)
+          .emitBytecode(false)
+          .useExplicitModule(false)
+          .setPassPipelineParser(passPipeline)));
 }
