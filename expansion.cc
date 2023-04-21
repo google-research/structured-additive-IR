@@ -178,7 +178,7 @@ llvm::SmallVector<mlir::Value> LoadStoreIndices(
     AffineExpr expr = (layout_dim.AsAffineExpr() - s0).floorDiv(params.step);
     auto map = mlir::AffineMap::get(domain.size(), 1, expr);
     apply_args.back() = Materialize(loc, params.begin, builder);
-    auto index = builder.create<AffineApplyOp>(loc, map, apply_args);
+    auto index = builder.create<affine::AffineApplyOp>(loc, map, apply_args);
     indices.push_back(index);
   }
 

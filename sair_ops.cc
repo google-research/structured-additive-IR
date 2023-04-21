@@ -1950,7 +1950,7 @@ static void MoveMapBody(mlir::Location loc, mlir::Block &old_body,
   for (auto [index, expr] :
        llvm::zip(old_body.getArguments(), new_to_old_mapping.Dimensions())) {
     auto map = mlir::AffineMap::get(new_domain_size, 0, expr.AsAffineExpr());
-    auto new_index = builder.create<mlir::AffineApplyOp>(
+    auto new_index = builder.create<mlir::affine::AffineApplyOp>(
         loc, map, new_body.getArguments().take_front(new_domain_size));
     index.replaceAllUsesWith(new_index);
   }

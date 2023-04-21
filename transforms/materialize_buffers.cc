@@ -109,7 +109,7 @@ std::pair<mlir::SmallVector<int64_t>, ValueRange> GetMemRefShape(
       auto d0 = mlir::getAffineDimExpr(0, context);
       auto d1 = mlir::getAffineDimExpr(1, context);
       auto map = mlir::AffineMap::get(2, 0, (d1 - d0).ceilDiv(step));
-      scalar_sizes.push_back(builder.create<mlir::AffineApplyOp>(
+      scalar_sizes.push_back(builder.create<mlir::affine::AffineApplyOp>(
           buffer.location(), map, llvm::ArrayRef({beg, end})));
     }
   }

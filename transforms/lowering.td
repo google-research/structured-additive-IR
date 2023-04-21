@@ -31,7 +31,8 @@ def LowerToMapPass : Pass<"sair-lower-to-map", "mlir::func::FuncOp"> {
   let summary = "Lowers sair operations into sair.map operations";
   let constructor = [{ ::sair::CreateLowerToMapPass(); }];
   let dependentDialects = !listconcat(
-      Deps.dialects, ["::mlir::AffineDialect", "::mlir::memref::MemRefDialect"]);
+      Deps.dialects, ["::mlir::affine::AffineDialect",
+                      "::mlir::memref::MemRefDialect"]);
 }
 
 def LowerToLLVM : Pass<"sair-lower-to-llvm", "::mlir::ModuleOp"> {
@@ -49,7 +50,8 @@ def InlineTrivialSairOpsPass : Pass<"inline-trivial-sair-ops", "mlir::func::Func
 def MaterializeBuffersPass : Pass<"sair-materialize-buffers", "mlir::func::FuncOp"> {
   let summary = "Replace Sair values by buffers";
   let constructor = [{ ::sair::CreateMaterializeBuffersPass(); }];
-  let dependentDialects = !listconcat(Deps.dialects, ["::mlir::AffineDialect"]);
+  let dependentDialects = !listconcat(Deps.dialects,
+                                      ["::mlir::affine::AffineDialect"]);
 }
 
 def MaterializeInstancesPass : Pass<"sair-materialize-instances", "mlir::func::FuncOp"> {
@@ -67,7 +69,8 @@ def NormalizeLoopsPass : Pass<"sair-normalize-loops", "mlir::func::FuncOp"> {
   let summary =
     "Rewrites operation domains so that each loop corresponds to a dimension";
   let constructor = [{ ::sair::CreateNormalizeLoopsPass(); }];
-  let dependentDialects = !listconcat(Deps.dialects, ["::mlir::AffineDialect"]);
+  let dependentDialects = !listconcat(Deps.dialects,
+                                      ["::mlir::affine::AffineDialect"]);
 }
 
 def LowerProjAnyPass : Pass<"sair-lower-proj-any", "mlir::func::FuncOp"> {

@@ -118,8 +118,8 @@ RangeParameters RangeParameterBuilder::Get(MappingStripeExpr expr) {
   auto begin_map = mlir::AffineMap::get(
       current_domain_size(), 0,
       inverse_expr.operands()[expr.factors().size() - 2].AsAffineExpr());
-  mlir::Value begin =
-      builder_.create<mlir::AffineApplyOp>(loc_, begin_map, body_.indices());
+  mlir::Value begin = builder_.create<mlir::affine::AffineApplyOp>(
+      loc_, begin_map, body_.indices());
 
   // Compute the end index as `min(begin + size, operand_size)`.
   mlir::Type index_type = builder_.getIndexType();
