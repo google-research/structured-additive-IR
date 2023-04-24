@@ -18,6 +18,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/IR/BuiltinAttributeInterfaces.h"
 #include "mlir/IR/OperationSupport.h"
 #include "sair_op_interfaces.h"
 #include "sair_ops.h"
@@ -130,7 +131,7 @@ RangeParameters RangeParameterBuilder::Get(MappingStripeExpr expr) {
   mlir::Value operand_end;
   if (operand_parameters.end.is<mlir::Attribute>()) {
     operand_end = builder_.create<mlir::arith::ConstantOp>(
-        loc_, index_type, operand_parameters.end.get<mlir::Attribute>());
+        loc_, index_type, cast<TypedAttr>(operand_parameters.end.get<mlir::Attribute>()));
   } else {
     operand_end = operand_parameters.end.get<mlir::Value>();
   }
@@ -154,7 +155,7 @@ mlir::Value Materialize(mlir::Location loc, mlir::OpFoldResult value,
                         mlir::OpBuilder &builder) {
   if (value.is<mlir::Value>()) return value.get<mlir::Value>();
   return builder.create<mlir::arith::ConstantOp>(loc,
-                                                 value.get<mlir::Attribute>());
+                                                 cast<TypedAttr>(value.get<mlir::Attribute>()));
 }
 
 llvm::SmallVector<RangeParameters> GetRangeParameters(

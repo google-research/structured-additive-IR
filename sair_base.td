@@ -387,7 +387,7 @@ def SairOpInterface : OpInterface<"SairOp"> {
     InterfaceMethod<
       [{Indicates if the operation has exactly one instance and no copy.}],
       "bool", "HasExactlyOneInstance", (ins), [{}], [{
-        return sair::HasExactlyOneInstance(this->getOperation());
+        return sair::HasExactlyOneInstance(cast<SairOp>(this->getOperation()));
       }]
     >,
     InterfaceMethod<

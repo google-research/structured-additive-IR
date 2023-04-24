@@ -290,7 +290,8 @@ class impl::MappingStripeExprStorage : public mlir::AttributeStorage {
   static MappingStripeExprStorage *construct(
       mlir::AttributeStorageAllocator &allocator, const KeyTy &key) {
     return new (allocator.allocate<MappingStripeExprStorage>())
-        MappingStripeExprStorage(key.first, allocator.copyInto(key.second));
+        MappingStripeExprStorage(cast<MappingExpr>(key.first),
+                                 allocator.copyInto(key.second));
   }
 
   // Compares the MappingStripeExpr identification key with this object.
@@ -393,7 +394,7 @@ mlir::AffineExpr MappingStripeExpr::AsAffineExpr() const {
 }
 
 static MappingExpr GetCanonicalStripe(MappingExpr canonical_operand,
-                                        llvm::ArrayRef<int> factors) {
+                                      llvm::ArrayRef<int> factors) {
   if (factors.size() == 1 && factors.back() == 1) return canonical_operand;
 
   auto unstripe = canonical_operand.dyn_cast<MappingUnStripeExpr>();
@@ -609,18 +610,16 @@ MappingExpr MappingUnStripeExpr::Canonicalize() const {
   auto stiche_stripes = [&]() {
     auto stripe = new_operands.back().dyn_cast<MappingStripeExpr>();
     if (stripe == nullptr) return false;
-    int min_num_factors =
-        std::min(new_factors.size(), stripe.factors().size());
+    int min_num_factors = std::min(new_factors.size(), stripe.factors().size());
     // Ensure factors are the same.
     if (llvm::ArrayRef(new_factors).take_back(min_num_factors) !=
         stripe.factors().take_back(min_num_factors)) {
       return false;
     }
 
-
     // Find how many stripes we can stich together.
     int first_stripe = new_operands.size() - 1;
-    for(; first_stripe > 0; --first_stripe) {
+    for (; first_stripe > 0; --first_stripe) {
       auto other_stripe =
           new_operands[first_stripe - 1].dyn_cast<MappingStripeExpr>();
       if (other_stripe == nullptr ||
@@ -647,7 +646,8 @@ MappingExpr MappingUnStripeExpr::Canonicalize() const {
   };
 
   // Apply canonicalization rules.
-  while (collapse_unstripes() || stiche_stripes()) { }
+  while (collapse_unstripes() || stiche_stripes()) {
+  }
 
   if (new_factors.size() == 1 && new_factors.back() == 1)
     return new_operands[0];
