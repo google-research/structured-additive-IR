@@ -97,7 +97,6 @@ int main(int argc, char **argv) {
           .verifyDiagnostics(verify_diagnostics)
           .verifyPasses(true)
           .allowUnregisteredDialects(allowUnregisteredDialects)
-          .preloadDialectsInContext(false)
           .emitBytecode(false)
           .useExplicitModule(false)
           .setPassPipelineParser(passPipeline)));
