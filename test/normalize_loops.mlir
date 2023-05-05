@@ -188,6 +188,8 @@ func.func @load_store_memref(%arg0: index) {
 // GENERIC-LABEL: sym_name = "load_store_memref"
 
 // CHECK-LABEL: @remat
+// In the generic form, the function (symbol) name is an attribute
+// GENERIC-LABEL: sym_name = "remat"
 func.func @remat(%arg0: f32) {
   sair.program {
     // CHECK: %[[INIT:.*]] = sair.from_scalar
@@ -225,9 +227,6 @@ func.func @remat(%arg0: f32) {
   } : f32
   func.return
 }
-// In the generic form, the function (symbol) name is an attribute and is
-// printed after the body region.
-// GENERIC-LABEL: sym_name = "remat"
 
 
 func.func private @foo(index, f32)
