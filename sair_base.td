@@ -32,6 +32,7 @@ def SairDialect : Dialect {
 
   let cppNamespace = "::sair";
 
+  let usePropertiesForAttributes = 0;
   let useDefaultAttributePrinterParser = 0;
 }
 
