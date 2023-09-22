@@ -622,9 +622,8 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
   auto result_shape =
       domain_shape.Prefix(domain_shape.NumDimensions() - num_reduction_dims);
   SmallVector<MemRefType> outputBufferTypes;
-  for (OpOperand *outputOperand : op.getDpsInitOperands())
-    outputBufferTypes.push_back(
-        outputOperand->get().getType().cast<MemRefType>());
+  for (Value outputOperand : op.getDpsInits())
+    outputBufferTypes.push_back(outputOperand.getType().cast<MemRefType>());
   CreateResultTypes(rewriter, result_shape, outputBufferTypes, result_types);
 
   // Check that all operands shapes match.
@@ -651,7 +650,8 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
   MoveBodyBlock(linalg_to_sair_loops, rewriter, map_op->getRegion(0), op);
 
   // Convert output values to input/output MemRefs used by Linalg.
-  llvm::SmallVector<mlir::Value> output_buffers = op.getDpsInitOperands();
+  llvm::SmallVector<mlir::Value> output_buffers =
+      llvm::to_vector(op.getDpsInits());
   EmitValueToMemRef(loc, sair_program, map_op->getResults(), output_buffers,
                     result_mappings, result_ranges, storage_analysis, rewriter);
 
