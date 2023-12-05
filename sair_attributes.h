@@ -58,6 +58,8 @@ class MappingAttr
  public:
   using Base::Base;
 
+  static constexpr mlir::StringLiteral name = "sair.mapping";
+
   // Constructs an instance of MappingAttr in the given context.
   static MappingAttr get(mlir::MLIRContext *context, int domain_size,
                          llvm::ArrayRef<MappingExpr> mapping);
@@ -211,6 +213,8 @@ class NamedMappingAttr
  public:
   using Base::Base;
 
+  static constexpr mlir::StringLiteral name = "sair.named_mapping";
+
   // Constructs an instance of NamedMappingAttr.
   static NamedMappingAttr get(llvm::ArrayRef<mlir::StringAttr> names,
                               MappingAttr mapping);
@@ -285,6 +289,8 @@ class DomainShapeAttr
                                        impl::DomainShapeAttrStorage> {
  public:
   using Base::Base;
+
+  static constexpr mlir::StringLiteral name = "sair.domain_shape";
 
   // Constructs an instance of DomainShapeAttr in the given context. Defaults to
   // the zero-dimensional shape when no dimenion shapes are given.
@@ -366,6 +372,8 @@ class MappingDimExpr
  public:
   using Base::Base;
 
+  static constexpr mlir::StringLiteral name = "sair.mapping_dim_expr";
+
   // Creates an MappingDimExpr representing the given dimension.
   static MappingDimExpr get(int dimension, mlir::MLIRContext *context);
 
@@ -400,6 +408,8 @@ class MappingNoneExpr
                                        MappingExpr::Trait> {
  public:
   using Base::Base;
+
+  static constexpr mlir::StringLiteral name = "sair.mapping_none_expr";
 
   static constexpr llvm::StringRef kAttrName = "none";
 
@@ -437,6 +447,8 @@ class MappingUnknownExpr
                                        MappingExpr::Trait> {
  public:
   using Base::Base;
+
+  static constexpr mlir::StringLiteral name = "sair.mapping_unknown_expr";
 
   static constexpr llvm::StringRef kAttrName = "?";
 
@@ -477,6 +489,8 @@ class MappingStripeExpr
  public:
   using Base::Base;
 
+  static constexpr mlir::StringLiteral name = "sair.mapping_stripe_expr";
+
   static constexpr llvm::StringRef kAttrName = "stripe";
 
   static MappingStripeExpr get(MappingExpr operand,
@@ -516,6 +530,8 @@ class MappingUnStripeExpr
                                        MappingExpr::Trait> {
  public:
   using Base::Base;
+
+  static constexpr mlir::StringLiteral name = "sair.mapping_un_stripe_expr";
 
   static constexpr llvm::StringRef kAttrName = "unstripe";
 

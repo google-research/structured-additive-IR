@@ -66,6 +66,8 @@ class DynRangeType : public mlir::Type::TypeBase<DynRangeType, DimensionType,
   // Constructs RangeType from opaque types in MLIR TypeBase.
   using Base::Base;
 
+  static constexpr mlir::StringLiteral name = "sair.dyn_range";
+
   // Constructs an instance of RangeType in the provided context. This is a hook
   // for MLIR Builders.
   static DynRangeType get(DomainShapeAttr shape);
@@ -88,6 +90,8 @@ class StaticRangeType
                                   impl::StaticRangeTypeStorage> {
  public:
   using Base::Base;
+
+  static constexpr mlir::StringLiteral name = "sair.static_range";
 
   static StaticRangeType get(int size, int step, mlir::MLIRContext *context);
   static StaticRangeType getChecked(
@@ -122,6 +126,8 @@ class ValueType : public mlir::Type::TypeBase<ValueType, ShapedType,
  public:
   // Construct ValueType from opaque types in MLIR TypeBase.
   using Base::Base;
+
+  static constexpr mlir::StringLiteral name = "sair.value_type";
 
   // Construct an instance of ValueType in the provided context. This is a hook
   // for MLIR Builders.
