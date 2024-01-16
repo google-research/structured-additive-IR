@@ -541,7 +541,7 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
                                         mlir::OpBuilder &rewriter) {
   mlir::MLIRContext *context = op.getContext();
   // Only support Linalg on memrefs.
-  if (!op.hasBufferSemantics()) {
+  if (!op.hasPureBufferSemantics()) {
     return mlir::failure();
   }
 
