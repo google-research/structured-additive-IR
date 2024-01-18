@@ -179,7 +179,7 @@ class Driver : public mlir::PatternRewriter,
   // Hook called before an operation is updated in place. Saves the operations
   // that it depends on to add them to the work-list after the operation is
   // updated.
-  void startRootUpdate(mlir::Operation *op) override {
+  void startOpModification(mlir::Operation *op) override {
     // Gather ops defining the operands of `op` and store them until the update
     // is finalized. Duplicates will be eliminated when operations are actually
     // added to the work list.
@@ -197,8 +197,8 @@ class Driver : public mlir::PatternRewriter,
 
   // Hook called after an operation is update in place. Adds its previous
   // operands to the work list.
-  void finalizeRootUpdate(mlir::Operation *op) override {
-    RewriterBase::finalizeRootUpdate(op);
+  void finalizeOpModification(mlir::Operation *op) override {
+    RewriterBase::finalizeOpModification(op);
     auto it = pending_updates_.find(op);
     assert(it != pending_updates_.end());
     AddOperation(op);
@@ -208,9 +208,9 @@ class Driver : public mlir::PatternRewriter,
     pending_updates_.erase(it);
   }
 
-  // Hook called when an in-place update that was announced by `startRootUpdate`
-  // is cancelled.
-  void cancelRootUpdate(mlir::Operation *op) override {
+  // Hook called when an in-place update that was announced by
+  // `startOpModification` is cancelled.
+  void cancelOpModification(mlir::Operation *op) override {
     pending_updates_.erase(op);
   }
 

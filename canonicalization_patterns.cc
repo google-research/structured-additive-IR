@@ -103,7 +103,7 @@ class SimplifySairOperands : public RewritePattern {
     if (sair_op == nullptr) return mlir::failure();
 
     bool simplified = false;
-    rewriter.startRootUpdate(op);
+    rewriter.startOpModification(op);
     for (ValueOperand operand : sair_op.ValueOperands()) {
       mlir::Operation *defining_op = operand.value().getDefiningOp();
       if (auto proj_last = dyn_cast<SairProjLastOp>(defining_op)) {
@@ -122,9 +122,9 @@ class SimplifySairOperands : public RewritePattern {
       }
     }
     if (simplified) {
-      rewriter.finalizeRootUpdate(op);
+      rewriter.finalizeOpModification(op);
     } else {
-      rewriter.cancelRootUpdate(op);
+      rewriter.cancelOpModification(op);
     }
 
     return mlir::success(simplified);
@@ -386,7 +386,7 @@ class NormalizeSequenceNumbers : public mlir::OpRewritePattern<SairProgramOp> {
       if (decisions.sequence() == nullptr) continue;
       int64_t current_sequence_number = decisions.sequence().getInt();
       if (current_sequence_number != inferred_sequence_number) {
-        rewriter.updateRootInPlace(op, [&] {
+        rewriter.modifyOpInPlace(op, [&] {
           nested_op.SetDecisions(
               UpdateSequence(decisions, inferred_sequence_number));
         });
