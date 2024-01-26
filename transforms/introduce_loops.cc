@@ -123,7 +123,8 @@ class Driver : public mlir::PatternRewriter,
 
  private:
   // Hook called when a new operation is created.
-  void notifyOperationInserted(mlir::Operation *op) override {
+  void notifyOperationInserted(mlir::Operation *op,
+                               InsertPoint previous) override {
     AddOperation(op);
 
     // This hook is called after the op has been inserted in the block so we can
