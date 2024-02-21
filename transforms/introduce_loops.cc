@@ -85,7 +85,7 @@ class Driver : public mlir::PatternRewriter,
       mlir::Operation *operation = *simplify_work_list_.begin();
       simplify_work_list_.erase(simplify_work_list_.begin());
       if (mlir::isOpTriviallyDead(operation)) {
-        notifyOperationRemoved(operation);
+        notifyOperationErased(operation);
         operation->erase();
         continue;
       }
@@ -142,7 +142,7 @@ class Driver : public mlir::PatternRewriter,
 
   // Hook called when an opertion is erased. Removes the operation from work
   // lists and adds its operands instead.
-  void notifyOperationRemoved(mlir::Operation *op) override {
+  void notifyOperationErased(mlir::Operation *op) override {
     for (mlir::Value operand : op->getOperands()) {
       mlir::Operation *defining_op = operand.getDefiningOp();
       if (defining_op == nullptr) continue;
