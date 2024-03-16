@@ -30,6 +30,7 @@
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Support/FileUtilities.h"
 #include "mlir/Support/LogicalResult.h"
+#include "mlir/Support/ToolUtilities.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "sair_dialect.h"
 #include "sair_registration.h"
@@ -42,11 +43,20 @@ int main(int argc, char **argv) {
       "o", llvm::cl::desc("Output filename"), llvm::cl::value_desc("filename"),
       llvm::cl::init("-"));
 
-  llvm::cl::opt<bool> split_input_file(
-      "split-input-file",
-      llvm::cl::desc("Split the input file into pieces and process each chunk "
-                     "independently"),
-      llvm::cl::init(false));
+  llvm::cl::opt<std::string> split_input_file(
+      "split-input-file", llvm::cl::ValueOptional,
+      llvm::cl::callback([&](const std::string &str) {
+        // Implicit value: use default marker if flag was used without value.
+        if (str.empty()) split_input_file.setValue(kDefaultSplitMarker);
+      }),
+      llvm::cl::desc("Split the input file into chunks using the given or "
+                     "default marker and process each chunk independently"),
+      llvm::cl::init(""));
+
+  llvm::cl::opt<std::string> output_split_marker(
+      "output-split-marker",
+      llvm::cl::desc("Split marker to use for merging the ouput"),
+      llvm::cl::init(kDefaultSplitMarker));
 
   llvm::cl::opt<bool> verify_diagnostics(
       "verify-diagnostics",
@@ -94,6 +104,7 @@ int main(int argc, char **argv) {
       outputFile->os(), std::move(inputFile), registry,
       MlirOptMainConfig{}
           .splitInputFile(split_input_file)
+          .outputSplitMarker(output_split_marker)
           .verifyDiagnostics(verify_diagnostics)
           .verifyPasses(true)
           .allowUnregisteredDialects(allowUnregisteredDialects)
