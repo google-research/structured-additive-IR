@@ -108,7 +108,7 @@ class StaticRangeType
   // Range step.
   int getStep() const;
 
-  static mlir::LogicalResult verify(
+  static mlir::LogicalResult verifyInvariants(
       llvm::function_ref<mlir::InFlightDiagnostic()> emit_error, int size,
       int step);
 };

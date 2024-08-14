@@ -137,7 +137,7 @@ int StaticRangeType::size() const { return getImpl()->size(); }
 
 int StaticRangeType::getStep() const { return getImpl()->getStep(); }
 
-mlir::LogicalResult StaticRangeType::verify(
+mlir::LogicalResult StaticRangeType::verifyInvariants(
     llvm::function_ref<mlir::InFlightDiagnostic()> emit_error, int size,
     int step) {
   if (size < 1 || step < 1) {
