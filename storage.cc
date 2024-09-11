@@ -396,7 +396,7 @@ mlir::LogicalResult StorageAnalysis::ComputeValueStorages(
   // Ensure all sair values have an entry.
   program.WalkOpInstances([&](const OpInstance &op) {
     for (ResultInstance result : op.Results()) {
-      value_storages_.FindAndConstruct(result);
+      value_storages_.try_emplace(result);
     }
   });
 
