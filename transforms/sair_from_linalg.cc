@@ -195,7 +195,7 @@ mlir::LogicalResult ConvertOperandMappings(
   // Concatenate all maps and try to invert them. The inversion only works for
   // permutation maps.
   mlir::AffineMap loops_to_all_subscripts =
-      mlir::concatAffineMaps(loops_to_subscripts);
+      mlir::concatAffineMaps(loops_to_subscripts, indexing_maps.getContext());
   if (loops_to_all_subscripts.isPermutation()) {
     return mlir::failure();
   }
