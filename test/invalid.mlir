@@ -96,7 +96,7 @@ func.func @dyn_range_op_invalid_type(%arg0 : !sair.value<(), index>) {
 func.func @domain_unexpected_num_dims(%arg0 : !sair.value<(), index>) {
   sair.program {
     %0 = sair.dyn_range %arg0 : !sair.dyn_range
-    // expected-error @+1 {{2 operands present, but expected 1}}
+    // expected-error @+1 {{number of operands and types do not match: got 2 operands and 1 types}}
     %1 = sair.dyn_range[d0:%0, d1:%0] %arg0 : !sair.dyn_range<d0:dyn_range>
     sair.exit
   }
