@@ -108,7 +108,7 @@ void CreateSairToLoopConversionPipeline(mlir::OpPassManager *pm) {
 void CreateSairToLLVMConversionPipeline(mlir::OpPassManager *pm) {
   CreateSairToLoopConversionPipeline(pm);
   pm->addPass(mlir::createLowerAffinePass());
-  pm->addPass(mlir::createConvertSCFToCFPass());
+  pm->addPass(mlir::createSCFToControlFlowPass());
   pm->addPass(CreateLowerToLLVMPass());
 }
 
