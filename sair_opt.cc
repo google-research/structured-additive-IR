@@ -58,11 +58,24 @@ int main(int argc, char **argv) {
       llvm::cl::desc("Split marker to use for merging the ouput"),
       llvm::cl::init(kDefaultSplitMarker));
 
-  llvm::cl::opt<bool> verify_diagnostics(
-      "verify-diagnostics",
-      llvm::cl::desc("Check that emitted diagnostics match expected-* lines on "
-                     "the corresponding line"),
-      llvm::cl::init(false));
+  llvm::cl::opt<mlir::SourceMgrDiagnosticVerifierHandler::Level>
+      verify_diagnostics{
+          "verify-diagnostics", llvm::cl::ValueOptional,
+          llvm::cl::desc(
+              "Check that emitted diagnostics match expected-* lines on the "
+              "corresponding line"),
+          llvm::cl::values(
+              clEnumValN(
+                  mlir::SourceMgrDiagnosticVerifierHandler::Level::All, "all",
+                  "Check all diagnostics (expected, unexpected, near-misses)"),
+              // Implicit value: when passed with no arguments, e.g.
+              // `--verify-diagnostics` or `--verify-diagnostics=`.
+              clEnumValN(
+                  mlir::SourceMgrDiagnosticVerifierHandler::Level::All, "",
+                  "Check all diagnostics (expected, unexpected, near-misses)"),
+              clEnumValN(
+                  mlir::SourceMgrDiagnosticVerifierHandler::Level::OnlyExpected,
+                  "only-expected", "Check only expected diagnostics"))};
 
   llvm::cl::opt<bool> allowUnregisteredDialects(
       "allow-unregistered-dialect",
