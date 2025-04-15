@@ -18,6 +18,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Casting.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -280,7 +281,7 @@ mlir::LogicalResult RegisterOperations(
     }
 
     for (mlir::Attribute attr : op.Loops()) {
-      LoopAttr loop = attr.cast<LoopAttr>();
+      LoopAttr loop = llvm::cast<LoopAttr>(attr);
       if (!loop.iter().isa<MappingDimExpr>()) {
         return map_op.emitError()
                << "loop must not rematerialize or be strip-mined";
@@ -307,7 +308,7 @@ llvm::SmallVector<mlir::Value, 4> EraseValue(mlir::ValueRange range,
 MappingAttr EraseDimension(MappingAttr mapping, int dimension) {
   mlir::SmallVector<MappingExpr, 4> dimensions;
   for (MappingExpr expr : mapping) {
-    MappingDimExpr dim_expr = expr.cast<MappingDimExpr>();
+    MappingDimExpr dim_expr = llvm::cast<MappingDimExpr>(expr);
     if (dim_expr.dimension() < dimension) {
       dimensions.push_back(expr);
       continue;
@@ -344,7 +345,7 @@ llvm::SmallVector<mlir::Type, 4> EraseDimension(mlir::TypeRange types,
   llvm::SmallVector<mlir::Type, 4> res;
   res.reserve(types.size());
   for (mlir::Type type : types) {
-    ValueType value_type = type.cast<ValueType>();
+    ValueType value_type = llvm::cast<ValueType>(type);
     DomainShapeAttr shape = EraseDimension(value_type.Shape(), dimension);
     res.push_back(ValueType::get(shape, value_type.ElementType()));
   }
@@ -359,10 +360,10 @@ mlir::ArrayAttr EraseDimensionFromLoopNest(
   llvm::SmallVector<mlir::Attribute, 4> new_loop_nest;
   new_loop_nest.reserve(loop_nest.size());
   for (mlir::Attribute attr : loop_nest) {
-    LoopAttr loop = attr.cast<LoopAttr>();
+    LoopAttr loop = llvm::cast<LoopAttr>(attr);
     // This cast is always legal as `RegisterOperations` checks that loop
     // iterators are MappingDimExprs.
-    int old_dimension = loop.iter().cast<MappingDimExpr>().dimension();
+    int old_dimension = llvm::cast<MappingDimExpr>(loop.iter()).dimension();
     if (old_dimension < dimension) {
       new_loop_nest.push_back(loop);
       continue;
@@ -403,7 +404,7 @@ void EraseDimension(SairFbyOp op, int dimension, mlir::Value new_value,
   mlir::OpBuilder::InsertionGuard guard(driver);
   assert(dimension >= op.getParallelDomain().size());
 
-  ValueType type = op.getType().cast<ValueType>();
+  ValueType type = llvm::cast<ValueType>(op.getType());
   mlir::Type element_type = type.ElementType();
   DomainShapeAttr shape = EraseDimension(type.Shape(), dimension);
   int dim_pos = dimension - op.getParallelDomain().size();
@@ -498,7 +499,7 @@ mlir::LogicalResult UpdateLoopUser(SairMapOp old_op, SairMapOp new_op,
 
     MappingAttr mapping = user.ValueOperands()[operand_position].Mapping();
     int user_dimension =
-        mapping.Dimension(dimension).cast<MappingDimExpr>().dimension();
+        llvm::cast<MappingDimExpr>(mapping.Dimension(dimension)).dimension();
 
     if (auto proj_last = dyn_cast<SairProjLastOp>(use.getOwner())) {
       EraseDimension(proj_last, user_dimension, new_value, driver);
@@ -529,9 +530,9 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
   auto *sair_dialect = static_cast<SairDialect *>(op->getDialect());
   llvm::ArrayRef<mlir::Attribute> loop_nest =
       ComputeOpInstance::Unique(cast<ComputeOp>(op.getOperation())).Loops();
-  LoopAttr loop = loop_nest.back().cast<LoopAttr>();
+  LoopAttr loop = llvm::cast<LoopAttr>(loop_nest.back());
 
-  int dimension = loop.iter().cast<MappingDimExpr>().dimension();
+  int dimension = llvm::cast<MappingDimExpr>(loop.iter()).dimension();
   mlir::Operation *dimension_op = op.getDomain()[dimension].getDefiningOp();
   if (isa<SairPlaceholderOp>(dimension_op)) {
     return dimension_op->emitError()
@@ -549,7 +550,7 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
   llvm::SmallVector<mlir::Attribute, 4> mappings;
   mappings.reserve(mappings.size());
   for (mlir::Attribute attr : op.getMappingArray()) {
-    MappingAttr mapping = attr.cast<MappingAttr>();
+    MappingAttr mapping = llvm::cast<MappingAttr>(attr);
     mappings.push_back(EraseDimension(mapping, dimension));
   }
 
@@ -695,10 +696,11 @@ void Fuse(SairMapOp first_op, llvm::ArrayRef<mlir::Attribute> first_loop_nest,
   second_block_args.append(second_op.getDomain().size(), nullptr);
   for (auto [first_attr, second_attr] :
        llvm::zip(first_loop_nest, second_loop_nest)) {
-    MappingExpr first_iter = first_attr.cast<LoopAttr>().iter();
-    int first_dimension = first_iter.cast<MappingDimExpr>().dimension();
+    MappingExpr first_iter = llvm::cast<LoopAttr>(first_attr).iter();
+    int first_dimension = llvm::cast<MappingDimExpr>(first_iter).dimension();
     int second_dimension =
-        second_attr.cast<LoopAttr>().iter().cast<MappingDimExpr>().dimension();
+        llvm::cast<MappingDimExpr>(second_attr.cast<LoopAttr>().iter())
+            .dimension();
     first_to_second_mapping[second_dimension] = first_iter;
     second_block_args[second_dimension] =
         first_op.block().getArgument(first_dimension);
@@ -792,8 +794,8 @@ void Fuse(SairMapOp first_op, llvm::ArrayRef<mlir::Attribute> first_loop_nest,
 bool CanFuse(mlir::ArrayAttr lhs, mlir::ArrayAttr rhs) {
   if (lhs == nullptr || rhs == nullptr) return false;
   if (lhs.empty() || rhs.empty()) return lhs == rhs;
-  LoopAttr lhs_inner_loop = lhs.getValue().back().cast<LoopAttr>();
-  LoopAttr rhs_inner_loop = rhs.getValue().back().cast<LoopAttr>();
+  LoopAttr lhs_inner_loop = llvm::cast<LoopAttr>(lhs.getValue().back());
+  LoopAttr rhs_inner_loop = llvm::cast<LoopAttr>(rhs.getValue().back());
   return lhs_inner_loop.name() == rhs_inner_loop.name();
 }
 

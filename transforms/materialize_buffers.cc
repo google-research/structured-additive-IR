@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/Casting.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Pass/Pass.h"
@@ -95,11 +96,11 @@ std::pair<mlir::SmallVector<int64_t>, ValueRange> GetMemRefShape(
     if (params.begin.is<mlir::Attribute>() &&
         params.end.is<mlir::Attribute>()) {
       // Handle constant dimension.
-      int beg = params.begin.get<mlir::Attribute>()
-                    .cast<mlir::IntegerAttr>()
+      int beg =
+          llvm::cast<mlir::IntegerAttr>(params.begin.get<mlir::Attribute>())
+              .getInt();
+      int end = llvm::cast<mlir::IntegerAttr>(params.end.get<mlir::Attribute>())
                     .getInt();
-      int end =
-          params.end.get<mlir::Attribute>().cast<mlir::IntegerAttr>().getInt();
       memref_shape.push_back(llvm::divideCeil(end - beg, step));
     } else {
       memref_shape.push_back(mlir::ShapedType::kDynamic);

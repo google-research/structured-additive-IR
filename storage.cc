@@ -15,6 +15,7 @@
 #include "storage.h"
 
 #include "llvm/ADT/SmallString.h"
+#include "llvm/Support/Casting.h"
 #include "loop_nest.h"
 #include "sair_dialect.h"
 #include "sequence.h"
@@ -86,7 +87,7 @@ mlir::LogicalResult VerifyStorageAttrWellFormed(
   llvm::DenseSet<mlir::Attribute> buffer_names;
   for (auto [attr, type] : llvm::zip(storage, result_types)) {
     if (attr.isa<UnitAttr>()) continue;
-    BufferAttr buffer = attr.dyn_cast<BufferAttr>();
+    BufferAttr buffer = llvm::dyn_cast<BufferAttr>(attr);
     if (buffer == nullptr) {
       return mlir::emitError(loc)
              << "storage attribute must be an array of buffers "
@@ -98,7 +99,7 @@ mlir::LogicalResult VerifyStorageAttrWellFormed(
       return mlir::emitError(loc) << "invalid memory space " << buffer.space();
     }
 
-    auto element_type = type.cast<ValueType>().ElementType();
+    auto element_type = llvm::cast<ValueType>(type).ElementType();
     if (buffer.space() == sair_dialect->memory_attr() &&
         element_type.isa<mlir::IndexType, mlir::MemRefType>()) {
       return mlir::emitError(loc)
@@ -239,7 +240,7 @@ static mlir::LogicalResult DeclareBuffer(
     llvm::DenseSet<mlir::Attribute> &buffers_with_rank_set) {
   if (attr == nullptr || attr.name() == nullptr) return mlir::success();
   mlir::Type element_type =
-      op.Result(result).GetType().cast<ValueType>().ElementType();
+      llvm::cast<ValueType>(op.Result(result).GetType()).ElementType();
   const IterationSpace &iter_space = iteration_spaces.Get(op);
   const LoopNest &loop_nest =
       loop_analysis.GetLoopNest(iter_space.loop_names());
@@ -684,7 +685,7 @@ mlir::LogicalResult StorageAnalysis::VerifyAndMinimizeBufferLoopNests(
     const IterationSpaceAnalysis &iteration_spaces,
     const SequenceAnalysis &sequence_analysis) {
   for (auto &[name_attr, buffer] : buffers_) {
-    mlir::StringAttr name = name_attr.cast<mlir::StringAttr>();
+    mlir::StringAttr name = llvm::cast<mlir::StringAttr>(name_attr);
     MappingAttr mapping = buffer.NestedMapping();
     DomainShapeAttr domain_shape = buffer.DomainShape();
 
@@ -730,7 +731,8 @@ void StorageAnalysis::CreateBuffer(
     const LoopFusionAnalysis &fusion_analysis,
     const IterationSpaceAnalysis &iteration_spaces) {
   mlir::StringAttr buffer_name = GetFreshBufferName();
-  mlir::Type element_type = value.GetType().cast<ValueType>().ElementType();
+  mlir::Type element_type =
+      llvm::cast<ValueType>(value.GetType()).ElementType();
   LoopNest loop_nest = fusion_analysis.GetLoopNest(loop_names);
   buffers_.try_emplace(buffer_name, value.defining_op().getLoc(), buffer_name,
                        element_type, loop_nest);
@@ -963,7 +965,7 @@ mlir::LogicalResult VerifyValuesNotOverwritten(
   // Ensure that no operation is writting in buffers between the moment
   // where a value is written and the moment where a value is read.
   for (const auto &[name_attr, buffer] : storage_analysis.buffers()) {
-    auto buffer_name = name_attr.cast<mlir::StringAttr>();
+    auto buffer_name = llvm::cast<mlir::StringAttr>(name_attr);
     for (auto [op, operand_pos] : buffer.reads()) {
       const IterationSpace &iter_space = iteration_spaces.Get(op);
       auto operand = op.Operand(operand_pos).GetValue();

@@ -16,6 +16,7 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/Casting.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
@@ -113,9 +114,8 @@ RangeParameters RangeParameterBuilder::Get(MappingStripeExpr expr) {
   // Compute the begin index. For this, look for the unstripe operation
   // corresponding to `this` in the inverse mapping, and find the
   // expression of the outer stripe dimension.
-  auto inverse_expr = expr.operand()
-                          .FindInInverse(current_to_source_.Dimensions())
-                          .cast<MappingUnStripeExpr>();
+  auto inverse_expr = llvm::cast<MappingUnStripeExpr>(
+      expr.operand().FindInInverse(current_to_source_.Dimensions()));
   auto begin_map = mlir::AffineMap::get(
       current_domain_size(), 0,
       inverse_expr.operands()[expr.factors().size() - 2].AsAffineExpr());
@@ -225,7 +225,7 @@ mlir::ValueRange MapBodyBuilder::block_inputs() {
 
 mlir::Value MapBodyBuilder::AddOperand(ValueAccess operand) {
   operands_.push_back(operand);
-  auto value_type = operand.value.getType().cast<ValueType>();
+  auto value_type = llvm::cast<ValueType>(operand.value.getType());
   return block().addArgument(value_type.ElementType(), operand.value.getLoc());
 }
 

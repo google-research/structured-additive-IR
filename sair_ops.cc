@@ -592,7 +592,7 @@ mlir::ParseResult SairAllocOp::parse(mlir::OpAsmParser &parser,
 
   auto index_type = parser.getBuilder().getIndexType();
   for (auto [value, mapping_attr] : llvm::zip(values, access_patterns)) {
-    auto mapping = mapping_attr.cast<MappingAttr>();
+    auto mapping = llvm::cast<MappingAttr>(mapping_attr);
     if (mlir::failed(ResolveOperand(value, mapping, resultType.Shape(),
                                     index_type, parser, result))) {
       return failure();
@@ -837,7 +837,7 @@ void SairExitOp::print(OpAsmPrinter &printer) {
   printer << " : ";
   llvm::interleaveComma(
       getOperands().getTypes(), printer, [&](mlir::Type type) {
-        printer.printType(type.cast<ValueType>().ElementType());
+        printer.printType(llvm::cast<ValueType>(type).ElementType());
       });
 }
 
@@ -905,9 +905,9 @@ static mlir::LogicalResult VerifyFromToMemRef(mlir::Operation *op,
                                               DomainShapeAttr shape,
                                               mlir::Value memref,
                                               mlir::Value value) {
-  auto memref_type =
-      memref.getType().cast<ValueType>().ElementType().cast<MemRefType>();
-  auto value_type = value.getType().cast<ValueType>();
+  auto memref_type = llvm::cast<mlir::MemRefType>(
+      memref.getType().cast<ValueType>().ElementType());
+  auto value_type = llvm::cast<ValueType>(value.getType());
   if (memref_type.getElementType() != value_type.ElementType()) {
     return op->emitError()
            << "memref and value must have the same element type";
@@ -934,7 +934,7 @@ static mlir::LogicalResult VerifyFromToMemRef(mlir::Operation *op,
 mlir::LogicalResult SairFromScalarOp::verify() {
   SairFromScalarOp op = *this;
   mlir::Type expected_type =
-      op.getResult().getType().cast<ValueType>().ElementType();
+      llvm::cast<ValueType>(op.getResult().getType()).ElementType();
   if (op.getValue().getType() != expected_type) {
     return op.emitError() << "expects different type: '"
                           << op.getValue().getType() << "' vs '"
@@ -954,7 +954,7 @@ mlir::LogicalResult SairExitOp::verify() {
   }
 
   for (auto p : llvm::zip(op.getOperandTypes(), program_op.getResultTypes())) {
-    mlir::Type given_type = std::get<0>(p).cast<ValueType>().ElementType();
+    mlir::Type given_type = llvm::cast<ValueType>(std::get<0>(p)).ElementType();
     mlir::Type expected_type = std::get<1>(p);
     if (expected_type != given_type) {
       return op.emitError()
@@ -981,8 +981,8 @@ mlir::LogicalResult SairAllocOp::verify() {
 }
 
 mlir::LogicalResult SairLoadFromMemRefOp::verify() {
-  return VerifyLoadFromStoreToMemRef(*this, MemRefType(),
-                                     getType().cast<ValueType>(), getLayout());
+  return VerifyLoadFromStoreToMemRef(
+      *this, MemRefType(), llvm::cast<ValueType>(getType()), getLayout());
 }
 
 mlir::LogicalResult SairStoreToMemRefOp::verify() {
@@ -1078,8 +1078,8 @@ void PrintDomain(mlir::Operation::operand_range dimensions,
 }
 
 bool IsSameElementType(mlir::Value lhs, mlir::Value rhs) {
-  return lhs.getType().cast<ValueType>().ElementType() ==
-         rhs.getType().cast<ValueType>().ElementType();
+  return llvm::cast<ValueType>(lhs.getType()).ElementType() ==
+         llvm::cast<ValueType>(rhs.getType()).ElementType();
 }
 
 // Parses a Sair MapOp. The expected syntax is as folows.
@@ -1217,7 +1217,8 @@ void SairMapOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,
     block->addArgument(builder.getIndexType(), result.location);
   }
   for (mlir::Value input : inputs) {
-    mlir::Type element_type = input.getType().cast<ValueType>().ElementType();
+    mlir::Type element_type =
+        llvm::cast<ValueType>(input.getType()).ElementType();
     block->addArgument(element_type, result.location);
   }
 }
@@ -1232,7 +1233,7 @@ void ExtractElementTypes(mlir::ValueRange values,
   mlir::TypeRange types = values.getTypes();
   result.reserve(types.size());
   for (mlir::Type type : types) {
-    auto value_type = type.cast<ValueType>().ElementType();
+    auto value_type = llvm::cast<ValueType>(type).ElementType();
     result.push_back(value_type);
   }
 }
@@ -1871,7 +1872,7 @@ SairOp SairCopyOp::ReCreateWithNewDomain(
   mlir::ArrayAttr new_mappings =
       ComposeMappings(new_to_old_mapping, getMappingArray());
   auto new_type =
-      ValueType::get(new_shape, getType().cast<ValueType>().ElementType());
+      ValueType::get(new_shape, llvm::cast<ValueType>(getType()).ElementType());
 
   auto new_instances = ComposeInstances(new_to_old_mapping, getInstancesAttr());
   auto new_op =
@@ -1907,7 +1908,7 @@ SairOp SairLoadFromMemRefOp::ReCreateWithNewDomain(
 
   MappingAttr new_layout = new_to_old_mapping.Compose(getLayout());
   auto return_type =
-      ValueType::get(new_shape, getType().cast<ValueType>().ElementType());
+      ValueType::get(new_shape, llvm::cast<ValueType>(getType()).ElementType());
   auto new_instances = ComposeInstances(new_to_old_mapping, getInstancesAttr());
   auto new_op = builder.create<SairLoadFromMemRefOp>(
       getLoc(), return_type, new_domains[0], new_mappings, getMemref(),
@@ -1976,7 +1977,7 @@ SairOp SairMapOp::ReCreateWithNewDomain(
   new_return_types.reserve(getResults().size());
   for (mlir::Type type : getResultTypes()) {
     new_return_types.push_back(
-        ValueType::get(new_shape, type.cast<ValueType>().ElementType()));
+        ValueType::get(new_shape, llvm::cast<ValueType>(type).ElementType()));
   }
   auto new_instances = ComposeInstances(new_to_old_mapping, getInstancesAttr());
   auto new_op = builder.create<SairMapOp>(
@@ -2000,7 +2001,7 @@ SairOp SairMapReduceOp::ReCreateWithNewDomain(
   for (mlir::Type type : getResultTypes()) {
     new_return_types.push_back(
         ValueType::get(new_shape.Prefix(new_domains[0].size()),
-                       type.cast<ValueType>().ElementType()));
+                       llvm::cast<ValueType>(type).ElementType()));
   }
   auto new_instances = ComposeInstances(new_to_old_mapping, getInstancesAttr());
   auto new_op = builder.create<SairMapReduceOp>(
@@ -2032,7 +2033,7 @@ SairOp SairProjLastOp::ReCreateWithNewDomain(
       ComposeMappings(new_to_old_mapping, getMappingArray());
   auto new_return_type =
       ValueType::get(new_shape.Prefix(new_domains[0].size()),
-                     getType().cast<ValueType>().ElementType());
+                     llvm::cast<ValueType>(getType()).ElementType());
   auto new_op = builder.create<SairProjLastOp>(
       getLoc(), new_return_type, new_domains[0], new_domains[1], new_mappings,
       getValue(), new_shape, /*instances=*/nullptr, /*copies=*/nullptr);
@@ -2050,7 +2051,7 @@ SairOp SairProjAnyOp::ReCreateWithNewDomain(
       ComposeMappings(new_to_old_mapping, getMappingArray());
   auto new_return_type =
       ValueType::get(new_shape.Prefix(new_domains[0].size()),
-                     getType().cast<ValueType>().ElementType());
+                     llvm::cast<ValueType>(getType()).ElementType());
   auto new_op = builder.create<SairProjAnyOp>(
       getLoc(), new_return_type, new_domains[0], new_domains[1], new_mappings,
       getValue(), new_shape, /*instances=*/nullptr, /*copies=*/nullptr);
@@ -2066,7 +2067,7 @@ SairOp SairFbyOp::ReCreateWithNewDomain(
   mlir::ArrayAttr new_mappings =
       ComposeMappings(new_to_old_mapping, getMappingArray());
   auto new_return_type =
-      ValueType::get(new_shape, getType().cast<ValueType>().ElementType());
+      ValueType::get(new_shape, llvm::cast<ValueType>(getType()).ElementType());
   auto new_op = builder.create<SairFbyOp>(
       getLoc(), new_return_type, new_domains[0], new_domains[1], new_mappings,
       getInit(), getValue(), /*instances=*/nullptr, /*copies=*/nullptr);

@@ -22,6 +22,7 @@
 #include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/Casting.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/SMLoc.h"
 #include "llvm/Support/raw_ostream.h"
@@ -289,15 +290,15 @@ void PrintMappingExpr(MappingExpr expr, llvm::raw_ostream &os) {
     os << MappingNoneExpr::kAttrName;
   } else if (expr.isa<MappingUnknownExpr>()) {
     os << MappingUnknownExpr::kAttrName;
-  } else if (auto dim_expr = expr.dyn_cast<MappingDimExpr>()) {
+  } else if (auto dim_expr = llvm::dyn_cast<MappingDimExpr>(expr)) {
     os << "d" << dim_expr.dimension();
-  } else if (auto stripe_expr = expr.dyn_cast<MappingStripeExpr>()) {
+  } else if (auto stripe_expr = llvm::dyn_cast<MappingStripeExpr>(expr)) {
     os << MappingStripeExpr::kAttrName << "(";
     PrintMappingExpr(stripe_expr.operand(), os);
     os << ", [";
     llvm::interleaveComma(stripe_expr.factors(), os);
     os << "])";
-  } else if (auto unstripe_expr = expr.dyn_cast<MappingUnStripeExpr>()) {
+  } else if (auto unstripe_expr = llvm::dyn_cast<MappingUnStripeExpr>(expr)) {
     os << MappingUnStripeExpr::kAttrName << "(";
     for (auto operand : unstripe_expr.operands()) {
       PrintMappingExpr(operand, os);
@@ -322,7 +323,7 @@ void Print(StaticRangeType type, mlir::DialectAsmPrinter &os) {
 
 void PrintDomainShapeDim(const DomainShapeDim &dimension,
                          mlir::DialectAsmPrinter &os) {
-  if (auto static_range = dimension.type().dyn_cast<StaticRangeType>()) {
+  if (auto static_range = llvm::dyn_cast<StaticRangeType>(dimension.type())) {
     Print(static_range, os);
   } else if (dimension.type().isa<DynRangeType>()) {
     os << DynRangeType::Name();
@@ -399,13 +400,13 @@ void PrintMapping(MappingAttr mapping, llvm::raw_ostream &os) {
 // Prints the Sair type using MLIR printing facilities.
 void SairDialect::printType(mlir::Type type,
                             mlir::DialectAsmPrinter &os) const {
-  if (auto range_type = type.dyn_cast<DynRangeType>()) {
+  if (auto range_type = llvm::dyn_cast<DynRangeType>(type)) {
     return Print(range_type, os);
-  } else if (auto static_range_type = type.dyn_cast<StaticRangeType>()) {
+  } else if (auto static_range_type = llvm::dyn_cast<StaticRangeType>(type)) {
     return Print(static_range_type, os);
   }
 
-  Print(type.cast<ValueType>(), &os);
+  Print(llvm::cast<ValueType>(type), &os);
 }
 
 // Prints the Sair attribute using MLIR printing facilities.

@@ -22,6 +22,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/Casting.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/MLIRContext.h"
@@ -233,7 +234,8 @@ static mlir::LogicalResult CreateBufferIfNeeded(
   const ValueStorage &storage = storage_analysis.GetStorage(*value);
   if (storage.space() != nullptr) return mlir::success();
   if (FitsInRegisters(operand, iteration_spaces)) return mlir::success();
-  mlir::Type element_type = value->GetType().cast<ValueType>().ElementType();
+  mlir::Type element_type =
+      llvm::cast<ValueType>(value->GetType()).ElementType();
   if (element_type.isa<mlir::IndexType>()) {
     return value->defining_op().EmitError()
            << "cannot generate default storage for multi-dimensional index "
@@ -360,7 +362,7 @@ mlir::ArrayAttr GetDefaultLoopNest(int num_dimensions,
   mlir::MLIRContext *context = fusion_analysis.getContext();
   llvm::SmallVector<MappingExpr, 4> iter_exprs;
   for (mlir::Attribute attr : prefix) {
-    LoopAttr loop = attr.cast<LoopAttr>();
+    LoopAttr loop = llvm::cast<LoopAttr>(attr);
     iter_exprs.push_back(loop.iter());
   }
 

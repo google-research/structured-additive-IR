@@ -17,6 +17,7 @@
 #include <tuple>
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/Support/Casting.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Pass/Pass.h"
@@ -39,16 +40,17 @@ namespace {
 std::optional<unsigned> FindCopiedInstance(
     llvm::ArrayRef<mlir::Attribute> result_copies, unsigned position,
     mlir::Location location) {
-  auto decisions = result_copies[position].cast<DecisionsAttr>();
+  auto decisions = llvm::cast<DecisionsAttr>(result_copies[position]);
   if (decisions.copy_of() == nullptr || decisions.copy_of().isa<UnitAttr>()) {
     mlir::emitError(location) << "expected the source of copy to be specified";
     return std::nullopt;
   }
-  if (auto instance = decisions.copy_of().dyn_cast<InstanceAttr>()) {
+  if (auto instance = llvm::dyn_cast<InstanceAttr>(decisions.copy_of())) {
     return instance.getValue();
   }
   return FindCopiedInstance(
-      result_copies, decisions.copy_of().cast<CopyAttr>().getValue(), location);
+      result_copies, llvm::cast<CopyAttr>(decisions.copy_of()).getValue(),
+      location);
 }
 
 // In the given container operation, clones operations that have multiple
@@ -107,7 +109,8 @@ mlir::LogicalResult CreateInstancesAndCopies(Operation *container) {
       for (mlir::Value result : sair_op->getResults()) {
         mapping.try_emplace(
             std::make_pair(result, InstanceAttr::get(context, i)),
-            clone->getResult(result.cast<OpResult>().getResultNumber()));
+            clone->getResult(
+                llvm::cast<mlir::OpResult>(result).getResultNumber()));
       }
 
       // Keep only one instance in the cloned op and drop `copy_of`.
@@ -125,10 +128,10 @@ mlir::LogicalResult CreateInstancesAndCopies(Operation *container) {
     // produced. Create such copies.
     for (int i = 0, e = value_producer->getNumResults(); i < e; ++i) {
       for (auto en : llvm::enumerate(value_producer.GetCopies(i))) {
-        DecisionsAttr decisions = en.value().cast<DecisionsAttr>();
+        DecisionsAttr decisions = llvm::cast<DecisionsAttr>(en.value());
         mlir::Value source = value_producer->getResult(i);
         unsigned rank =
-            source.getType().cast<ValueType>().Shape().NumDimensions();
+            llvm::cast<ValueType>(source.getType()).Shape().NumDimensions();
         std::optional<unsigned> copied_instance = FindCopiedInstance(
             value_producer.GetCopies(i), en.index(), value_producer->getLoc());
         if (!copied_instance.has_value()) return mlir::failure();

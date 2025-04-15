@@ -18,6 +18,7 @@
 #include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/Casting.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/AffineExpr.h"
@@ -55,7 +56,7 @@ mlir::Diagnostic &operator<<(mlir::Diagnostic &diag, const AttrLocation &loc) {
 MappingExpr MappingExpr::SubstituteDims(
     mlir::ArrayRef<MappingExpr> exprs) const {
   return Map([&](MappingExpr sub_expr) -> MappingExpr {
-    auto dim_expr = sub_expr.dyn_cast<MappingDimExpr>();
+    auto dim_expr = llvm::dyn_cast<MappingDimExpr>(sub_expr);
     if (dim_expr == nullptr) return sub_expr;
     if (dim_expr.dimension() >= exprs.size()) {
       return MappingNoneExpr::get(getContext());
@@ -88,7 +89,7 @@ bool MappingExpr::HasUnknownExprs() const {
 
 void MappingExpr::SetDependenciesInMask(llvm::SmallBitVector &mask) const {
   Walk([&](MappingExpr sub_expr) {
-    auto dim_expr = sub_expr.dyn_cast<MappingDimExpr>();
+    auto dim_expr = llvm::dyn_cast<MappingDimExpr>(sub_expr);
     if (dim_expr == nullptr) return;
     mask.set(dim_expr.dimension());
   });
@@ -97,7 +98,7 @@ void MappingExpr::SetDependenciesInMask(llvm::SmallBitVector &mask) const {
 int MappingExpr::MinDomainSize() const {
   int min_domain_size = 0;
   Walk([&](MappingExpr sub_expr) {
-    auto dim_expr = sub_expr.dyn_cast<MappingDimExpr>();
+    auto dim_expr = llvm::dyn_cast<MappingDimExpr>(sub_expr);
     if (dim_expr == nullptr) return;
     min_domain_size = std::max(min_domain_size, dim_expr.dimension() + 1);
   });
@@ -133,7 +134,7 @@ mlir::LogicalResult UnificationConstraints(
               ResolveNoneAndUnknownUnification(sub_lhs, sub_rhs);
           if (trivial_resolve != nullptr) return trivial_resolve;
 
-          auto dim_expr = sub_lhs.dyn_cast<MappingDimExpr>();
+          auto dim_expr = llvm::dyn_cast<MappingDimExpr>(sub_lhs);
           if (dim_expr == nullptr) return MappingExpr();
 
           MappingExpr &constraint = constraints[dim_expr.dimension() - shift];
@@ -346,7 +347,8 @@ MappingExpr MappingStripeExpr::Unify(
     MappingExpr other_expr,
     llvm::function_ref<MappingExpr(MappingExpr, MappingExpr)> on_mismatch)
     const {
-  MappingStripeExpr other_stripe = other_expr.dyn_cast<MappingStripeExpr>();
+  MappingStripeExpr other_stripe =
+      llvm::dyn_cast<MappingStripeExpr>(other_expr);
   if (other_stripe == nullptr || factors() != other_stripe.factors()) {
     return on_mismatch(*this, other_expr);
   }
@@ -384,7 +386,7 @@ MappingExpr MappingStripeExpr::FindInInverse(
   if (operand_inverse.isa<MappingUnknownExpr, MappingNoneExpr>()) {
     return operand_inverse;
   }
-  auto unstripe_expr = operand_inverse.cast<MappingUnStripeExpr>();
+  auto unstripe_expr = llvm::cast<MappingUnStripeExpr>(operand_inverse);
   return unstripe_expr.operands()[factors().size() - 1];
 }
 
@@ -397,7 +399,7 @@ static MappingExpr GetCanonicalStripe(MappingExpr canonical_operand,
                                       llvm::ArrayRef<int> factors) {
   if (factors.size() == 1 && factors.back() == 1) return canonical_operand;
 
-  auto unstripe = canonical_operand.dyn_cast<MappingUnStripeExpr>();
+  auto unstripe = llvm::dyn_cast<MappingUnStripeExpr>(canonical_operand);
   if (unstripe == nullptr) {
     return MappingStripeExpr::get(canonical_operand, factors);
   }
@@ -519,7 +521,7 @@ MappingExpr MappingUnStripeExpr::Unify(
     llvm::function_ref<MappingExpr(MappingExpr, MappingExpr)> on_mismatch)
     const {
   MappingUnStripeExpr other_unstripe =
-      other_expr.dyn_cast<MappingUnStripeExpr>();
+      llvm::dyn_cast<MappingUnStripeExpr>(other_expr);
   if (other_unstripe == nullptr) return on_mismatch(*this, other_expr);
 
   llvm::SmallVector<MappingExpr> new_operands;
@@ -567,7 +569,7 @@ MappingExpr MappingUnStripeExpr::FindInInverse(
   for (int i = 0, e = operands().size(); i < e; ++i) {
     operand_inverse = operands()[i].FindInInverse(inverse);
     if (operand_inverse.isa<MappingUnknownExpr, MappingNoneExpr>()) continue;
-    return operand_inverse.cast<MappingStripeExpr>().operand();
+    return llvm::cast<MappingStripeExpr>(operand_inverse).operand();
   }
   // Unstripe has at least one operand.
   return operand_inverse;
@@ -592,7 +594,7 @@ MappingExpr MappingUnStripeExpr::Canonicalize() const {
   // If the last argument is an unstripe, it can be collapsed in the current
   // expression.
   auto collapse_unstripes = [&]() {
-    auto unstripe = new_operands.back().dyn_cast<MappingUnStripeExpr>();
+    auto unstripe = llvm::dyn_cast<MappingUnStripeExpr>(new_operands.back());
     if (unstripe == nullptr) return false;
     // Stripe factors must be strictly decreasing.
     if (new_factors.size() > 1 &&
@@ -608,7 +610,7 @@ MappingExpr MappingUnStripeExpr::Canonicalize() const {
 
   // Stiches stripe expressions that have the same operand.
   auto stiche_stripes = [&]() {
-    auto stripe = new_operands.back().dyn_cast<MappingStripeExpr>();
+    auto stripe = llvm::dyn_cast<MappingStripeExpr>(new_operands.back());
     if (stripe == nullptr) return false;
     int min_num_factors = std::min(new_factors.size(), stripe.factors().size());
     // Ensure factors are the same.
@@ -621,7 +623,7 @@ MappingExpr MappingUnStripeExpr::Canonicalize() const {
     int first_stripe = new_operands.size() - 1;
     for (; first_stripe > 0; --first_stripe) {
       auto other_stripe =
-          new_operands[first_stripe - 1].dyn_cast<MappingStripeExpr>();
+          llvm::dyn_cast<MappingStripeExpr>(new_operands[first_stripe - 1]);
       if (other_stripe == nullptr ||
           other_stripe.operand() != stripe.operand()) {
         break;
@@ -750,7 +752,7 @@ MappingAttr MappingAttr::FromAffineMap(mlir::AffineMap map) {
   dimensions.reserve(map.getNumResults());
   for (mlir::AffineExpr expr : map.getResults()) {
     dimensions.push_back(MappingDimExpr::get(
-        expr.cast<mlir::AffineDimExpr>().getPosition(), map.getContext()));
+        llvm::cast<mlir::AffineDimExpr>(expr).getPosition(), map.getContext()));
   }
   return get(map.getContext(), map.getNumDims(), dimensions);
 }
@@ -816,7 +818,7 @@ MappingAttr MappingAttr::MakeFullySpecified() const {
 
 bool MappingAttr::IsIdentity() const {
   for (auto en : llvm::enumerate(getImpl()->mapping())) {
-    auto dim_expr = en.value().dyn_cast<MappingDimExpr>();
+    auto dim_expr = llvm::dyn_cast<MappingDimExpr>(en.value());
     if (dim_expr == nullptr || dim_expr.dimension() != en.index()) return false;
   }
   return true;
@@ -1019,7 +1021,7 @@ class impl::NamedMappingAttrStorage : public mlir::AttributeStorage {
   // constructed directly but rather created by MLIR's type system within an
   // arena allocator by calling ::construct.
   explicit NamedMappingAttrStorage(KeyTy key)
-      : names_(key.first), mapping_(key.second.cast<MappingAttr>()) {}
+      : names_(key.first), mapping_(llvm::cast<MappingAttr>(key.second)) {}
 
   llvm::ArrayRef<mlir::StringAttr> names_;
   MappingAttr mapping_;
@@ -1194,7 +1196,7 @@ static DomainShapeDim StripeAccessedShape(MappingStripeExpr expr,
   mlir::MLIRContext *context = expr.getContext();
   auto inverse_subexpr =
       expr.operand().FindInInverse(inverted_mapping.Dimensions());
-  auto unstripe_expr = inverse_subexpr.dyn_cast<MappingUnStripeExpr>();
+  auto unstripe_expr = llvm::dyn_cast<MappingUnStripeExpr>(inverse_subexpr);
 
   // Append dependencies to larger stripes to the dependency mapping.
   llvm::SmallVector<MappingExpr, 4> dependency_mapping_exprs;
@@ -1208,7 +1210,7 @@ static DomainShapeDim StripeAccessedShape(MappingStripeExpr expr,
   // Handle the case where we are striping a static range and the result is also
   // a static range.
   if (expr.factors().size() == 1) {
-    if (auto static_range = type.dyn_cast<StaticRangeType>()) {
+    if (auto static_range = llvm::dyn_cast<StaticRangeType>(type)) {
       int new_step = static_range.getStep() * expr.factors().front();
       type = StaticRangeType::get(static_range.size(), new_step, context);
     }
@@ -1235,7 +1237,7 @@ static DomainShapeDim UnStripeAccessedShape(MappingUnStripeExpr expr,
                                             DomainShapeDim inner_shape,
                                             MappingAttr inverted_mapping) {
   if (inner_shape.type().isa<DynRangeType>()) return inner_shape;
-  auto type = inner_shape.type().cast<StaticRangeType>();
+  auto type = llvm::cast<StaticRangeType>(inner_shape.type());
   int new_step = type.getStep() / expr.factors().front();
   return DomainShapeDim(
       StaticRangeType::get(type.size(), new_step, expr.getContext()),
@@ -1449,12 +1451,12 @@ LoopAttr LoopAttr::get(mlir::StringAttr name, MappingExpr iter,
   }
 
   mlir::Attribute dict = mlir::DictionaryAttr::get(context, fields);
-  return dict.dyn_cast<LoopAttr>();
+  return llvm::dyn_cast<LoopAttr>(dict);
 }
 
 bool LoopAttr::classof(mlir::Attribute attr) {
   if (!attr) return false;
-  auto derived = attr.dyn_cast<mlir::DictionaryAttr>();
+  auto derived = llvm::dyn_cast<mlir::DictionaryAttr>(attr);
   if (!derived) return false;
 
   auto name = derived.get("name");
@@ -1466,7 +1468,7 @@ bool LoopAttr::classof(mlir::Attribute attr) {
   auto unroll = derived.get("unroll");
   if (!unroll) return derived.size() == 2;
 
-  auto intUnroll = unroll.dyn_cast<mlir::IntegerAttr>();
+  auto intUnroll = llvm::dyn_cast<mlir::IntegerAttr>(unroll);
   if (!intUnroll || !intUnroll.getType().isSignlessInteger(64) ||
       !intUnroll.getValue().isStrictlyPositive()) {
     return false;
@@ -1476,27 +1478,27 @@ bool LoopAttr::classof(mlir::Attribute attr) {
 }
 
 mlir::StringAttr LoopAttr::name() const {
-  auto derived = this->cast<mlir::DictionaryAttr>();
+  auto derived = llvm::cast<mlir::DictionaryAttr>(*this);
   auto name = derived.get("name");
   assert(name && "attribute not found.");
   assert(name.isa<mlir::StringAttr>() && "incorrect Attribute type found.");
-  return name.cast<mlir::StringAttr>();
+  return llvm::cast<mlir::StringAttr>(name);
 }
 
 MappingExpr LoopAttr::iter() const {
-  auto derived = this->cast<mlir::DictionaryAttr>();
+  auto derived = llvm::cast<mlir::DictionaryAttr>(*this);
   auto iter = derived.get("iter");
   assert(iter && "attribute not found.");
   assert(iter.isa<MappingExpr>() && "incorrect Attribute type found.");
-  return iter.cast<MappingExpr>();
+  return llvm::cast<MappingExpr>(iter);
 }
 
 mlir::IntegerAttr LoopAttr::unroll() const {
-  auto derived = this->cast<mlir::DictionaryAttr>();
+  auto derived = llvm::cast<mlir::DictionaryAttr>(*this);
   auto unroll = derived.get("unroll");
   if (!unroll) return nullptr;
   assert(unroll.isa<mlir::IntegerAttr>() && "incorrect Attribute type found.");
-  return unroll.cast<mlir::IntegerAttr>();
+  return llvm::cast<mlir::IntegerAttr>(unroll);
 }
 
 BufferAttr BufferAttr::get(mlir::StringAttr space, mlir::StringAttr name,
@@ -1519,12 +1521,12 @@ BufferAttr BufferAttr::get(mlir::StringAttr space, mlir::StringAttr name,
   }
 
   mlir::Attribute dict = mlir::DictionaryAttr::get(context, fields);
-  return dict.dyn_cast<BufferAttr>();
+  return llvm::dyn_cast<BufferAttr>(dict);
 }
 
 bool BufferAttr::classof(mlir::Attribute attr) {
   if (!attr) return false;
-  auto derived = attr.dyn_cast<mlir::DictionaryAttr>();
+  auto derived = llvm::dyn_cast<mlir::DictionaryAttr>(attr);
   if (!derived) return false;
   int num_absent_attrs = 0;
 
@@ -1549,27 +1551,27 @@ bool BufferAttr::classof(mlir::Attribute attr) {
 }
 
 mlir::StringAttr BufferAttr::space() const {
-  auto derived = this->cast<mlir::DictionaryAttr>();
+  auto derived = llvm::cast<mlir::DictionaryAttr>(*this);
   auto space = derived.get("space");
   assert(space && "attribute not found.");
   assert(space.isa<mlir::StringAttr>() && "incorrect Attribute type found.");
-  return space.cast<mlir::StringAttr>();
+  return llvm::cast<mlir::StringAttr>(space);
 }
 
 mlir::StringAttr BufferAttr::name() const {
-  auto derived = this->cast<mlir::DictionaryAttr>();
+  auto derived = llvm::cast<mlir::DictionaryAttr>(*this);
   auto name = derived.get("name");
   if (!name) return nullptr;
   assert(name.isa<mlir::StringAttr>() && "incorrect Attribute type found.");
-  return name.cast<mlir::StringAttr>();
+  return llvm::cast<mlir::StringAttr>(name);
 }
 
 NamedMappingAttr BufferAttr::layout() const {
-  auto derived = this->cast<mlir::DictionaryAttr>();
+  auto derived = llvm::cast<mlir::DictionaryAttr>(*this);
   auto layout = derived.get("layout");
   if (!layout) return nullptr;
   assert(layout.isa<NamedMappingAttr>() && "incorrect Attribute type found.");
-  return layout.cast<NamedMappingAttr>();
+  return llvm::cast<NamedMappingAttr>(layout);
 }
 
 DecisionsAttr DecisionsAttr::get(mlir::IntegerAttr sequence,
@@ -1612,12 +1614,12 @@ DecisionsAttr DecisionsAttr::get(mlir::IntegerAttr sequence,
   }
 
   mlir::Attribute dict = mlir::DictionaryAttr::get(context, fields);
-  return dict.dyn_cast<DecisionsAttr>();
+  return llvm::dyn_cast<DecisionsAttr>(dict);
 }
 
 bool DecisionsAttr::classof(mlir::Attribute attr) {
   if (!attr) return false;
-  auto derived = attr.dyn_cast<mlir::DictionaryAttr>();
+  auto derived = llvm::dyn_cast<mlir::DictionaryAttr>(attr);
   if (!derived) return false;
   int num_absent_attrs = 0;
 
@@ -1625,7 +1627,7 @@ bool DecisionsAttr::classof(mlir::Attribute attr) {
   if (!sequence) {
     ++num_absent_attrs;
   } else {
-    auto int_sequence = sequence.dyn_cast<mlir::IntegerAttr>();
+    auto int_sequence = llvm::dyn_cast<mlir::IntegerAttr>(sequence);
     if (!int_sequence || !int_sequence.getType().isSignlessInteger(64)) {
       return false;
     }
@@ -1635,7 +1637,7 @@ bool DecisionsAttr::classof(mlir::Attribute attr) {
   if (!loop_nest) {
     ++num_absent_attrs;
   } else {
-    auto loop_nest_attr = loop_nest.dyn_cast<mlir::ArrayAttr>();
+    auto loop_nest_attr = llvm::dyn_cast<mlir::ArrayAttr>(loop_nest);
     if (!loop_nest_attr) return false;
     if (llvm::any_of(loop_nest_attr, [](mlir::Attribute attr) {
           return !attr.isa_and_nonnull<LoopAttr>();
@@ -1669,7 +1671,7 @@ bool DecisionsAttr::classof(mlir::Attribute attr) {
   if (!operands) {
     ++num_absent_attrs;
   } else {
-    auto operands_attr = operands.dyn_cast<mlir::ArrayAttr>();
+    auto operands_attr = llvm::dyn_cast<mlir::ArrayAttr>(operands);
     if (llvm::any_of(operands_attr, [](mlir::Attribute attr) {
           return !attr.isa_and_nonnull<CopyAttr, InstanceAttr,
                                        mlir::UnitAttr>();
@@ -1682,53 +1684,53 @@ bool DecisionsAttr::classof(mlir::Attribute attr) {
 }
 
 mlir::IntegerAttr DecisionsAttr::sequence() const {
-  auto derived = this->cast<mlir::DictionaryAttr>();
+  auto derived = llvm::cast<mlir::DictionaryAttr>(*this);
   auto sequence = derived.get("sequence");
   if (!sequence) return nullptr;
   assert(sequence.isa<mlir::IntegerAttr>() &&
          "incorrect Attribute type found.");
-  return sequence.cast<mlir::IntegerAttr>();
+  return llvm::cast<mlir::IntegerAttr>(sequence);
 }
 
 mlir::ArrayAttr DecisionsAttr::loop_nest() const {
-  auto derived = this->cast<mlir::DictionaryAttr>();
+  auto derived = llvm::cast<mlir::DictionaryAttr>(*this);
   auto loop_nest = derived.get("loop_nest");
   if (!loop_nest) return nullptr;
   assert(loop_nest.isa<mlir::ArrayAttr>() && "incorrect Attribute type found.");
-  return loop_nest.cast<mlir::ArrayAttr>();
+  return llvm::cast<mlir::ArrayAttr>(loop_nest);
 }
 
 mlir::ArrayAttr DecisionsAttr::storage() const {
-  auto derived = this->cast<mlir::DictionaryAttr>();
+  auto derived = llvm::cast<mlir::DictionaryAttr>(*this);
   auto storage = derived.get("storage");
   if (!storage) return nullptr;
   assert(storage.isa<mlir::ArrayAttr>() && "incorrect Attribute type found.");
-  return storage.cast<mlir::ArrayAttr>();
+  return llvm::cast<mlir::ArrayAttr>(storage);
 }
 
 mlir::StringAttr DecisionsAttr::expansion() const {
-  auto derived = this->cast<mlir::DictionaryAttr>();
+  auto derived = llvm::cast<mlir::DictionaryAttr>(*this);
   auto expansion = derived.get("expansion");
   if (!expansion) return nullptr;
   assert(expansion.isa<mlir::StringAttr>() &&
          "incorrect Attribute type found.");
-  return expansion.cast<mlir::StringAttr>();
+  return llvm::cast<mlir::StringAttr>(expansion);
 }
 
 mlir::Attribute DecisionsAttr::copy_of() const {
-  auto derived = this->cast<mlir::DictionaryAttr>();
+  auto derived = llvm::cast<mlir::DictionaryAttr>(*this);
   auto copy_of = derived.get("copy_of");
   if (!copy_of) return nullptr;
   assert(copy_of.isa<mlir::Attribute>() && "incorrect Attribute type found.");
-  return copy_of.cast<mlir::Attribute>();
+  return llvm::cast<mlir::Attribute>(copy_of);
 }
 
 mlir::ArrayAttr DecisionsAttr::operands() const {
-  auto derived = this->cast<mlir::DictionaryAttr>();
+  auto derived = llvm::cast<mlir::DictionaryAttr>(*this);
   auto operands = derived.get("operands");
   if (!operands) return nullptr;
   assert(operands.isa<mlir::ArrayAttr>() && "incorrect Attribute type found.");
-  return operands.cast<mlir::ArrayAttr>();
+  return llvm::cast<mlir::ArrayAttr>(operands);
 }
 
 }  // namespace sair

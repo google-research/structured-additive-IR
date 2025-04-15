@@ -24,6 +24,7 @@
 #include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Casting.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -42,7 +43,7 @@
 namespace sair {
 
 mlir::Type ValueAccess::ElementType() const {
-  return value.getType().cast<ValueType>().ElementType();
+  return llvm::cast<ValueType>(value.getType()).ElementType();
 }
 
 bool operator==(const ValueAccess &lhs, const ValueAccess &rhs) {
@@ -60,10 +61,8 @@ ValueOperand::ValueOperand(mlir::OpOperand *operand) : operand_(operand) {
 }
 
 MappingAttr ValueOperand::Mapping() const {
-  return cast<SairOp>(operand_->getOwner())
-      .getMappingArray()
-      .getValue()[index_]
-      .template cast<::sair::MappingAttr>();
+  return llvm::cast<MappingAttr>(
+      cast<SairOp>(operand_->getOwner()).getMappingArray().getValue()[index_]);
 }
 
 void ValueOperand::SubstituteValue(ValueAccess new_value) {
@@ -138,7 +137,7 @@ static mlir::LogicalResult VerifyDecisionsWellFormed(mlir::Location loc,
     }
     loop_names.reserve(loop_nest.size());
     for (mlir::Attribute attr : loop_nest.getValue()) {
-      loop_names.insert(attr.cast<LoopAttr>().name());
+      loop_names.insert(llvm::cast<LoopAttr>(attr).name());
     }
   }
 
@@ -170,7 +169,7 @@ static mlir::LogicalResult VerifyInstancesAttr(SairOp op) {
     // Ignore incorrect types here, they will be caught by the op verifier.
     mlir::Attribute decision_attr =
         op.getInstances()->getValue()[decision_index];
-    DecisionsAttr decisions = decision_attr.dyn_cast<DecisionsAttr>();
+    DecisionsAttr decisions = llvm::dyn_cast<DecisionsAttr>(decision_attr);
     if (!decisions) continue;
 
     if (decisions.copy_of() != nullptr) {
@@ -194,7 +193,7 @@ static mlir::LogicalResult VerifyInstancesAttr(SairOp op) {
     for (auto en : llvm::enumerate(decisions.operands().getValue())) {
       mlir::Attribute operand_instance = en.value();
       if (operand_instance.isa<mlir::UnitAttr>()) continue;
-      if (auto copy = operand_instance.dyn_cast<CopyAttr>()) {
+      if (auto copy = llvm::dyn_cast<CopyAttr>(operand_instance)) {
         Value operand = op->getOperand(en.index());
         auto defining_op = operand.getDefiningOp<ValueProducerOp>();
         if (!defining_op) {
@@ -204,7 +203,9 @@ static mlir::LogicalResult VerifyInstancesAttr(SairOp op) {
                                     "cannot have copies";
         }
         if (copy.getValue() >=
-            defining_op.GetCopies(operand.cast<OpResult>().getResultNumber())
+            defining_op
+                .GetCopies(
+                    llvm::cast<mlir::OpResult>(operand).getResultNumber())
                 .size()) {
           return op->emitError()
                  << "operand #" << en.index() << " of instance #"
@@ -215,7 +216,7 @@ static mlir::LogicalResult VerifyInstancesAttr(SairOp op) {
 
       // Ignore incorrect attribute types here, they will be caught by the op
       // verifier later.
-      auto instance = operand_instance.dyn_cast<InstanceAttr>();
+      auto instance = llvm::dyn_cast<InstanceAttr>(operand_instance);
       if (!instance) continue;
 
       // There may be no defining op for operands of some non-compute ops.
@@ -236,7 +237,7 @@ static mlir::LogicalResult VerifyInstancesAttr(SairOp op) {
   if (isa<ComputeOp>(op.getOperation())) return mlir::success();
 
   for (mlir::Attribute attr : op.getInstances()->getValue()) {
-    DecisionsAttr decisions = attr.dyn_cast<DecisionsAttr>();
+    DecisionsAttr decisions = llvm::dyn_cast<DecisionsAttr>(attr);
     if (!decisions) continue;
     if (decisions.sequence() != nullptr || decisions.loop_nest() != nullptr ||
         decisions.storage() != nullptr || decisions.expansion() != nullptr) {
@@ -290,7 +291,7 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
              << "missing " << SairOp::kMappingAttrName << " attribute";
     }
     for (mlir::Attribute attr : sair_op.getMappingArray()) {
-      MappingAttr mapping = attr.cast<MappingAttr>();
+      MappingAttr mapping = llvm::cast<MappingAttr>(attr);
       if (mapping.HasNoneExprs() || mapping.HasUnknownExprs()) {
         return mlir::emitError(op->getLoc())
                << "all dimensions of the accessed domain must be mapped";
@@ -319,8 +320,7 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
     }
 
     auto expected_shape = sair_op.getShape().AccessedShape(v.Mapping());
-    auto given_shape =
-        v.value().getType().template cast<::sair::ValueType>().Shape();
+    auto given_shape = llvm::cast<ValueType>(v.value().getType()).Shape();
     if (expected_shape != given_shape) {
       return op->emitError() << "invalid operand shape: expected "
                              << expected_shape << ", got " << given_shape;
@@ -337,7 +337,7 @@ mlir::LogicalResult VerifySairOp(Operation *op) {
   ::sair::DomainShapeAttr results_shape =
       sair_op.getShape().Prefix(sair_op.results_rank());
   for (mlir::Value result : op->getResults()) {
-    auto type = result.getType().cast<ShapedType>();
+    auto type = llvm::cast<ShapedType>(result.getType());
     if (type.Shape() != results_shape) {
       return op->emitError() << "unexpected shape: expected " << results_shape
                              << ", got " << type.Shape();
@@ -361,7 +361,7 @@ mlir::LogicalResult VerifyValueProducerOp(mlir::Operation *operation) {
   DomainShapeAttr shape = sair_op.getShape().Prefix(sair_op.results_rank());
   for (int i = 0, e = op->getNumResults(); i < e; ++i) {
     for (mlir::Attribute attr : op.GetCopies(i)) {
-      auto decisions = attr.cast<DecisionsAttr>();
+      auto decisions = llvm::cast<DecisionsAttr>(attr);
       if (mlir::failed(VerifyDecisionsWellFormed(
               op.getLoc(), shape, {op->getResultTypes()[i]}, decisions))) {
         return mlir::failure();
@@ -373,12 +373,12 @@ mlir::LogicalResult VerifyValueProducerOp(mlir::Operation *operation) {
           decisions.copy_of().isa<mlir::UnitAttr>()) {
         continue;
       }
-      if (auto copy = decisions.copy_of().dyn_cast<CopyAttr>()) {
+      if (auto copy = llvm::dyn_cast<CopyAttr>(decisions.copy_of())) {
         if (copy.getValue() >= op.GetCopies(i).size()) {
           return op.emitError() << "'copy_of' refers to non-existent copy";
         }
       }
-      if (auto instance = decisions.copy_of().dyn_cast<InstanceAttr>()) {
+      if (auto instance = llvm::dyn_cast<InstanceAttr>(decisions.copy_of())) {
         std::optional<mlir::ArrayAttr> instances = sair_op.getInstances();
         if (instances && instance.getValue() >= instances->size()) {
           return op.emitError() << "'copy_of' refers to non-existent instance";
@@ -504,7 +504,8 @@ ResultInstance OpInstance::domain(int i) const {
   }
   mlir::Value dim = op.getDomain()[i];
   OpInstance dim_op(llvm::cast<SairOp>(dim.getDefiningOp()));
-  return ResultInstance(dim_op, dim.cast<OpResult>().getResultNumber());
+  return ResultInstance(dim_op,
+                        llvm::cast<mlir::OpResult>(dim).getResultNumber());
 }
 
 ValueRange OpInstance::GetDomainValues() const {
@@ -569,7 +570,7 @@ DecisionsAttr ComputeOpInstance::GetDecisions() const {
   }
   llvm::ArrayRef<mlir::Attribute> copies =
       GetValueProducer().GetCopies(result());
-  return copies[index()].cast<DecisionsAttr>();
+  return llvm::cast<DecisionsAttr>(copies[index()]);
 }
 
 void ComputeOpInstance::SetDecisions(DecisionsAttr decisions) {
@@ -599,7 +600,7 @@ BufferAttr ComputeOpInstance::Storage(int result) const {
       decisions.storage()[result].isa<mlir::UnitAttr>()) {
     return nullptr;
   }
-  return decisions.storage()[result].cast<BufferAttr>();
+  return llvm::cast<BufferAttr>(decisions.storage()[result]);
 }
 
 void ComputeOpInstance::SetStorage(int result, BufferAttr storage) {
@@ -624,13 +625,13 @@ ComputeOp ComputeOpInstance::GetComputeOp() const {
 }
 
 ResultInstance ResultInstance::Unique(mlir::Value value) {
-  OpResult result = value.cast<OpResult>();
+  OpResult result = llvm::cast<mlir::OpResult>(value);
   OpInstance producer = OpInstance::Unique(cast<SairOp>(result.getOwner()));
   return ResultInstance(producer, result.getResultNumber());
 }
 
 ShapedType ResultInstance::GetType() const {
-  return GetValue().getType().cast<ShapedType>();
+  return llvm::cast<ShapedType>(GetValue().getType());
 }
 
 mlir::Value ResultInstance::GetValue() const {
@@ -698,7 +699,7 @@ std::optional<ResultInstance> OperandInstance::GetValue() const {
     value = owner.ValueOperands()[operand_position_].value();
   }
 
-  auto result = value.cast<OpResult>();
+  auto result = llvm::cast<mlir::OpResult>(value);
   mlir::Operation *defining_op = result.getOwner();
 
   // TODO(ulysse): allow specifying the instance use in operands. For now, we

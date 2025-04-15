@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "llvm/Support/Casting.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Pass/Pass.h"
@@ -71,8 +72,8 @@ void CreateRange(const IterationSpaceAnalysis &iter_spaces, SairOp op,
   // instead.
   mlir::Value range;
   bool is_beg_zero = range_parameters.begin.is<mlir::Attribute>() &&
-                     range_parameters.begin.get<mlir::Attribute>()
-                             .cast<mlir::IntegerAttr>()
+                     llvm::cast<mlir::IntegerAttr>(
+                         range_parameters.begin.get<mlir::Attribute>())
                              .getInt() == 0;
   auto step =
       mlir::IntegerAttr::get(builder.getIndexType(), range_parameters.step);

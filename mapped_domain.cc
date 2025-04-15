@@ -14,6 +14,7 @@
 
 #include "mapped_domain.h"
 
+#include "llvm/Support/Casting.h"
 #include "loop_nest.h"
 
 namespace sair {
@@ -31,7 +32,7 @@ DomainShapeAttr MappedDomain::DomainShape() const {
   llvm::SmallVector<DomainShapeDim> shape_dims;
   shape_dims.reserve(domain_.size());
   for (const ValueAccessInstance &access : domain_) {
-    auto type = access.value.GetType().cast<DimensionType>();
+    auto type = llvm::cast<DimensionType>(access.value.GetType());
     shape_dims.emplace_back(type, access.mapping);
   }
   return DomainShapeAttr::get(context(), shape_dims);
@@ -64,7 +65,7 @@ mlir::LogicalResult MappedDomain::ResolveUnification(
     constraint = MappingDimExpr::get(domain_.size(), context());
     assert(dimension.mapping.IsSurjective());
     domain_.push_back(dimension);
-  } else if (auto dim_expr = constraint.dyn_cast<MappingDimExpr>()) {
+  } else if (auto dim_expr = llvm::dyn_cast<MappingDimExpr>(constraint)) {
     // If the dimension must be unified with an existing dimension, ensure that
     // they match.
     const ValueAccessInstance &old_dimension = domain_[dim_expr.dimension()];

@@ -15,6 +15,7 @@
 #include "transforms/sair_from_linalg.h"
 
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/Casting.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/Utils/Utils.h"
@@ -56,7 +57,7 @@ struct LoopBound {
 LoopBound FindLoopBound(mlir::ValueRange operands, int map_position) {
   int num_seen_dimensions = 0;
   for (const mlir::Value &operand : operands) {
-    auto type = operand.getType().cast<MemRefType>();
+    auto type = llvm::cast<mlir::MemRefType>(operand.getType());
     int rank = type.getRank();
     int position_in_memref = map_position - num_seen_dimensions;
     if (position_in_memref < rank) {
@@ -77,7 +78,8 @@ mlir::Value CreateSairRange(mlir::Location loc, const LoopBound &bound,
                             mlir::OpBuilder &rewriter) {
   mlir::MLIRContext *context = loc.getContext();
   auto domain_0d = DomainShapeAttr::get(context);
-  auto shaped_type = bound.referenced_value.getType().cast<mlir::ShapedType>();
+  auto shaped_type =
+      llvm::cast<mlir::ShapedType>(bound.referenced_value.getType());
   int64_t dimension = shaped_type.getDimSize(bound.dimension);
 
   // If the shape is statically known, create a simple static range.
@@ -122,7 +124,8 @@ void CollectLoopBounds(int num_loops, mlir::AffineMap subscripts_to_loops,
                        llvm::SmallVectorImpl<LoopBound> &loop_bounds) {
   loop_bounds.reserve(num_loops);
   for (int i = 0; i < num_loops; ++i) {
-    auto expr = subscripts_to_loops.getResult(i).cast<mlir::AffineDimExpr>();
+    auto expr =
+        llvm::cast<mlir::AffineDimExpr>(subscripts_to_loops.getResult(i));
     LoopBound bound = FindLoopBound(operands, expr.getPosition());
     loop_bounds.push_back(bound);
   }
@@ -132,7 +135,7 @@ void CollectLoopBounds(int num_loops, mlir::AffineMap subscripts_to_loops,
 // dimensions of the given "shaped_value". Appends the bounds to "loop_bounds".
 llvm::SmallVector<LoopBound, 4> LoopBoundsOnShapedType(
     mlir::Value shaped_value) {
-  auto type = shaped_value.getType().cast<mlir::ShapedType>();
+  auto type = llvm::cast<mlir::ShapedType>(shaped_value.getType());
   int rank = type.getRank();
 
   llvm::SmallVector<LoopBound, 4> loop_bounds;
@@ -162,7 +165,7 @@ void CreateSairDomain(mlir::Location loc, llvm::ArrayRef<LoopBound> dimensions,
     sair_dimensions.push_back(
         CreateSairRange(loc, bound, sair_program, rewriter));
     auto mapping = MappingAttr::get(context, sair_dimension_shapes.size(), {});
-    auto type = sair_dimensions.back().getType().cast<DimensionType>();
+    auto type = llvm::cast<DimensionType>(sair_dimensions.back().getType());
     sair_dimension_shapes.emplace_back(type, mapping);
   }
 }
@@ -186,7 +189,7 @@ mlir::LogicalResult ConvertOperandMappings(
   llvm::SmallVector<mlir::AffineMap, 4> loops_to_subscripts;
   loops_to_subscripts.reserve(num_operands);
   for (mlir::Attribute attr : indexing_maps.getValue()) {
-    mlir::AffineMap indexing = attr.cast<AffineMapAttr>().getValue();
+    mlir::AffineMap indexing = llvm::cast<mlir::AffineMapAttr>(attr).getValue();
     indexing = indexing.compose(sair_to_linalg_loops);
     operand_mappings.push_back(MappingAttr::FromAffineMap(indexing));
     loops_to_subscripts.push_back(indexing);
@@ -216,7 +219,7 @@ mlir::LogicalResult ConvertResultMappings(
   // are not invertible, return failure.
   mappings.reserve(indexing_maps.size());
   for (mlir::Attribute attr : indexing_maps) {
-    mlir::AffineMap indexing = attr.cast<AffineMapAttr>().getValue();
+    mlir::AffineMap indexing = llvm::cast<mlir::AffineMapAttr>(attr).getValue();
     indexing = indexing.compose(parallel_to_positions);
     mlir::AffineMap inverted = mlir::inversePermutation(indexing);
     if (!inverted) {
@@ -250,7 +253,7 @@ void EmitMemRefToValue(
   for (auto en : llvm::enumerate(operands)) {
     int position = en.index();
     mlir::Value operand = en.value();
-    auto type = operand.getType().cast<mlir::ShapedType>();
+    auto type = llvm::cast<mlir::ShapedType>(operand.getType());
 
     llvm::SmallVector<LoopBound, 4> bounds = LoopBoundsOnShapedType(operand);
     llvm::SmallVector<mlir::Value> ranges;
@@ -306,9 +309,9 @@ void EmitValueToMemRef(mlir::Location loc, SairProgramOp program,
     auto mapping_array = ArrayAttr::get(
         context,
         {MappingAttr::GetIdentity(context, 0, ranges[i].size()), mappings[i]});
-    auto value_type = sair_values[i].getType().cast<ValueType>();
+    auto value_type = llvm::cast<ValueType>(sair_values[i].getType());
     auto shape = value_type.Shape().AccessedShape(
-        mappings[i].cast<MappingAttr>().Inverse());
+        llvm::cast<MappingAttr>(mappings[i]).Inverse());
     auto memref_value_type =
         ValueType::get(DomainShapeAttr::get(context), memrefs[i].getType());
     mlir::Value from_scalar;
@@ -451,7 +454,8 @@ void CreateResultTypes(mlir::Builder &rewriter, DomainShapeAttr shape,
   int num_results = types.size();
   result_types.reserve(num_results);
   for (Type type : types) {
-    mlir::Type element_type = type.cast<mlir::ShapedType>().getElementType();
+    mlir::Type element_type =
+        llvm::cast<mlir::ShapedType>(type).getElementType();
     result_types.push_back(ValueType::get(shape, element_type));
   }
 }
@@ -577,7 +581,7 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
   int num_parallel_loops = op.getNumParallelLoops();
   int num_operands = op->getNumOperands();
   for (int i = op.getNumDpsInputs(); i < num_operands; ++i) {
-    auto mapping = operand_mappings[i].cast<MappingAttr>();
+    auto mapping = llvm::cast<MappingAttr>(operand_mappings[i]);
     if (mlir::failed(VerifyReductionMapping(mapping, num_parallel_loops))) {
       return mlir::failure();
     }
@@ -623,13 +627,14 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
       domain_shape.Prefix(domain_shape.NumDimensions() - num_reduction_dims);
   SmallVector<MemRefType> outputBufferTypes;
   for (Value outputOperand : op.getDpsInits())
-    outputBufferTypes.push_back(outputOperand.getType().cast<MemRefType>());
+    outputBufferTypes.push_back(
+        llvm::cast<mlir::MemRefType>(outputOperand.getType()));
   CreateResultTypes(rewriter, result_shape, outputBufferTypes, result_types);
 
   // Check that all operands shapes match.
   for (auto [value, mapping] : llvm::zip(map_operands, operand_mappings)) {
-    DomainShapeAttr shape = value.getType().cast<ValueType>().Shape();
-    if (domain_shape.AccessedShape(mapping.cast<MappingAttr>()) != shape) {
+    DomainShapeAttr shape = llvm::cast<ValueType>(value.getType()).Shape();
+    if (domain_shape.AccessedShape(llvm::cast<MappingAttr>(mapping)) != shape) {
       return mlir::failure();
     }
   }

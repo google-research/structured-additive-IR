@@ -15,6 +15,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Casting.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Attributes.h"
@@ -104,7 +105,8 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
         builder.getArrayAttr({init_mappings[i], identity_mapping});
     // This produces a value that of the same rank as the domain.
     auto fby_type = ValueType::get(
-        op.getShape(), init_value.getType().cast<ValueType>().ElementType());
+        op.getShape(),
+        llvm::cast<ValueType>(init_value.getType()).ElementType());
 
     // Same operands as in map_reduce are used for domain dimensions and the
     // init. The fby value is taken from the instance with the same position as
@@ -142,7 +144,7 @@ void RewriteMapReduceToMap(SairMapReduceOp op, mlir::OpBuilder &builder) {
   auto result_types = llvm::to_vector<4>(
       llvm::map_range(op.getResultTypes(), [&](mlir::Type type) -> mlir::Type {
         return ValueType::get(op.getShape(),
-                              type.cast<ValueType>().ElementType());
+                              llvm::cast<ValueType>(type).ElementType());
       }));
 
   // The new map op instances similar to that of map_reduce, but the operands
