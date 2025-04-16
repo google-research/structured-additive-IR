@@ -16,6 +16,7 @@
 
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/Support/Casting.h"
 #include "mlir/IR/Builders.h"
 #include "sequence.h"
 #include "util.h"
@@ -106,7 +107,7 @@ const IterationSpace &IterationSpaceAnalysis::ComputeIterationSpace(
     loop_names.reserve(num_loops);
 
     for (mlir::Attribute attr : compute_op.Loops()) {
-      LoopAttr loop = attr.cast<LoopAttr>();
+      LoopAttr loop = llvm::cast<LoopAttr>(attr);
       loop_names.push_back(loop.name());
       exprs.push_back(loop.iter());
     }
@@ -265,10 +266,10 @@ mlir::LogicalResult VerifyLoopNestWellFormed(
   int domain_size = shape.Dimensions().size();
 
   for (int i = 0, e = loop_nest.size(); i < e; ++i) {
-    LoopAttr loop = loop_nest[i].dyn_cast<LoopAttr>();
+    LoopAttr loop = llvm::dyn_cast<LoopAttr>(loop_nest[i]);
     // Ensure that symbols are unique in the loop nest.
     for (int j = 0; j < i; ++j) {
-      if (loop.name() == loop_nest[j].cast<LoopAttr>().name()) {
+      if (loop.name() == llvm::cast<LoopAttr>(loop_nest[j]).name()) {
         return mlir::emitError(loc)
                << "name " << loop.name() << " used twice in the same loop nest";
       }
@@ -317,7 +318,7 @@ class LoopNestState {
     int common_prefix_size = 0;
     for (int e = std::min(loop_nest.size(), open_loops_.size());
          common_prefix_size < e; ++common_prefix_size) {
-      LoopAttr loop = loop_nest[common_prefix_size].cast<LoopAttr>();
+      LoopAttr loop = llvm::cast<LoopAttr>(loop_nest[common_prefix_size]);
       if (loop.name() != open_loops_[common_prefix_size]) break;
     }
 
@@ -326,7 +327,7 @@ class LoopNestState {
 
     // Add remaining loops to the current fusion prefix.
     for (mlir::Attribute attribute : loop_nest.drop_front(common_prefix_size)) {
-      LoopAttr loop = attribute.cast<LoopAttr>();
+      LoopAttr loop = llvm::cast<LoopAttr>(attribute);
 
       if (closed_loops_.count(loop.name()) > 0) {
         return op.EmitError() << "occurrences of loop " << loop.name()
@@ -500,7 +501,7 @@ static mlir::LogicalResult VerifyLoopRanges(
     const LoopFusionAnalysis &fusion_analysis,
     const SequenceAnalysis &sequence_analysis) {
   for (mlir::Attribute attr : loop_nest) {
-    LoopAttr loop = attr.cast<LoopAttr>();
+    LoopAttr loop = llvm::cast<LoopAttr>(attr);
     const LoopFusionClass &fusion_class = fusion_analysis.GetClass(loop.name());
     for (const auto &dimension : fusion_class.getDomain()) {
       if (sequence_analysis.IsBefore(op, dimension.value.defining_op())) {
@@ -670,7 +671,7 @@ mlir::LogicalResult LoopFusionAnalysis::Init(
 // Returns the unroll factor of the `pos`-th loop in the given compute op.
 // Expects the op to have a well-formed loop nest attribute.
 static unsigned ExtractUnrollFactor(const ComputeOpInstance &op, unsigned pos) {
-  auto loop = op.Loops()[pos].cast<LoopAttr>();
+  auto loop = llvm::cast<LoopAttr>(op.Loops()[pos]);
   if (mlir::IntegerAttr unroll_factor = loop.unroll()) {
     return unroll_factor.getInt();
   }
@@ -686,7 +687,7 @@ mlir::LogicalResult LoopFusionAnalysis::RegisterLoop(
   loop_names.reserve(loop_pos);
   iter_exprs.reserve(loop_pos);
   for (int i = 0; i < loop_pos; ++i) {
-    LoopAttr loop = op.Loops()[i].cast<LoopAttr>();
+    LoopAttr loop = llvm::cast<LoopAttr>(op.Loops()[i]);
     loop_names.push_back(loop.name());
     iter_exprs.push_back(loop.iter());
   }
@@ -698,7 +699,7 @@ mlir::LogicalResult LoopFusionAnalysis::RegisterLoop(
   auto loop_nest_mapping =
       MappingAttr::get(op.context(), op.domain_size(), iter_exprs);
 
-  LoopAttr loop = op.Loops()[loop_pos].cast<LoopAttr>();
+  LoopAttr loop = llvm::cast<LoopAttr>(op.Loops()[loop_pos]);
   auto [it, was_inserted] =
       fusion_classes_.try_emplace(loop.name(), loop.name(), op, loop_nest);
   LoopFusionClass &fusion_class = it->second;

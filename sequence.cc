@@ -19,6 +19,7 @@
 #include <map>
 
 #include "llvm/ADT/iterator_range.h"
+#include "llvm/Support/Casting.h"
 #include "llvm/Support/Debug.h"
 #include "loop_nest.h"
 #include "sair_op_interfaces.h"
@@ -454,7 +455,7 @@ ProgramPoint SequenceAnalysis::FindInsertionPoint(
     llvm::ArrayRef<mlir::Attribute> new_loops = new_op.Loops();
     num_common_loops = std::min<int>(new_loops.size(), num_common_loops);
     for (; num_common_loops > 0; --num_common_loops) {
-      auto loop = new_loops[num_common_loops - 1].cast<LoopAttr>();
+      auto loop = llvm::cast<LoopAttr>(new_loops[num_common_loops - 1]);
       if (loop.name() == start_loop_nest[num_common_loops - 1]) break;
     }
     if (num_common_loops <= num_loops) break;
