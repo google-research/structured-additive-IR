@@ -16,6 +16,7 @@
 #define THIRD_PARTY_SAIR_TRANSFORMS_UTIL_H_
 
 #include "mlir/IR/Builders.h"
+#include "mlir/Support/LLVM.h"
 #include "sair_attributes.h"
 #include "sair_op_interfaces.h"
 
@@ -95,7 +96,7 @@ std::function<mlir::ArrayAttr(mlir::ArrayAttr)> MkArrayAttrMapper(
     llvm::SmallVector<mlir::Attribute> output;
     output.reserve(array.size());
     for (mlir::Attribute attr : array.getValue()) {
-      output.push_back(scalar_fn(attr.cast<T>()));
+      output.push_back(scalar_fn(mlir::cast<T>(attr)));
     }
     return mlir::ArrayAttr::get(array.getContext(), output);
   };

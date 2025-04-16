@@ -15,6 +15,7 @@
 #include "test/passes.h"
 
 #include "mlir/IR/Builders.h"
+#include "mlir/Support/LLVM.h"
 #include "sair_attributes.h"
 #include "sair_dialect.h"
 
@@ -34,7 +35,7 @@ static llvm::SmallVector<T, 4> GetAttrVector(llvm::StringRef name,
   llvm::SmallVector<T, 4> vector;
   vector.reserve(array.size());
   for (mlir::Attribute element : array.getValue()) {
-    vector.push_back(element.cast<T>());
+    vector.push_back(mlir::cast<T>(element));
   }
   return vector;
 }
