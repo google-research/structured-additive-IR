@@ -15,6 +15,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Pass/Pass.h"
+#include "mlir/Support/LLVM.h"
 #include "loop_nest.h"
 #include "sair_dialect.h"
 #include "sair_ops.h"
@@ -86,7 +87,7 @@ class LowerProjAny : public impl::LowerProjAnyPassBase<LowerProjAny> {
         // guaranteed to be identity by verifiers.
         for (MappingExpr expr :
              mapping.Dimensions().drop_front(num_common_loops)) {
-          if (!expr.isa<MappingNoneExpr>()) {
+          if (!mlir::isa<MappingNoneExpr>(expr)) {
             return op.emitError()
                    << "cannot lower operation to proj_last on scalars";
           }

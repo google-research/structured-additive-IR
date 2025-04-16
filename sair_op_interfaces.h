@@ -26,6 +26,7 @@
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 #include "sair_attributes.h"
 #include "sair_types.h"
@@ -67,7 +68,7 @@ class ValueOperand {
 
   // Returns the type of the value referenced by the operand.
   ValueType GetType() const {
-    return operand_->get().getType().cast<ValueType>();
+    return mlir::cast<ValueType>(operand_->get().getType());
   }
 
   // Returns the operation owning the operand.
@@ -510,14 +511,14 @@ class OperandInstance {
 inline auto OpInstance::getDomain() const {
   return llvm::map_range(GetDomainValues(), [](mlir::Value v) {
     OpInstance dim_op = OpInstance(llvm::cast<SairOp>(v.getDefiningOp()));
-    return ResultInstance(dim_op, v.cast<OpResult>().getResultNumber());
+    return ResultInstance(dim_op, mlir::cast<OpResult>(v).getResultNumber());
   });
 }
 
 inline auto OpInstance::DomainWithDependencies() const {
   DomainShapeAttr shape = GetShape();
   return llvm::map_range(llvm::enumerate(GetDomainValues()), [=](auto p) {
-    auto value = p.value().template cast<mlir::OpResult>();
+    auto value = mlir::cast<mlir::OpResult>(p.value());
     OpInstance dim_op = OpInstance(llvm::cast<SairOp>(value.getOwner()));
     ValueAccessInstance access = {
         .value = ResultInstance(dim_op, value.getResultNumber()),
