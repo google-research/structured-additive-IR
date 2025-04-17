@@ -86,7 +86,7 @@ mlir::LogicalResult VerifyStorageAttrWellFormed(
 
   llvm::DenseSet<mlir::Attribute> buffer_names;
   for (auto [attr, type] : llvm::zip(storage, result_types)) {
-    if (attr.isa<UnitAttr>()) continue;
+    if (llvm::isa<mlir::UnitAttr>(attr)) continue;
     BufferAttr buffer = llvm::dyn_cast<BufferAttr>(attr);
     if (buffer == nullptr) {
       return mlir::emitError(loc)
@@ -101,7 +101,7 @@ mlir::LogicalResult VerifyStorageAttrWellFormed(
 
     auto element_type = llvm::cast<ValueType>(type).ElementType();
     if (buffer.space() == sair_dialect->memory_attr() &&
-        element_type.isa<mlir::IndexType, mlir::MemRefType>()) {
+        llvm::isa<mlir::IndexType, mlir::MemRefType>(element_type)) {
       return mlir::emitError(loc)
              << "index and memref variables cannot be allocated in memory";
     }
@@ -192,7 +192,7 @@ static mlir::LogicalResult UnifyBufferShape(
       constraints));
   DomainShapeAttr shape = op.GetShape();
   for (int i = 0, e = op.domain_size(); i < e; ++i) {
-    if (!constraints[i].isa<MappingNoneExpr>()) continue;
+    if (!llvm::isa<MappingNoneExpr>(constraints[i])) continue;
     auto renaming = MappingAttr::get(context, domain.size(), constraints);
     auto mapping = shape.Dimension(i).dependency_mapping();
     constraints[i] = MappingDimExpr::get(domain.size(), context);

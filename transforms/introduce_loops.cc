@@ -282,7 +282,7 @@ mlir::LogicalResult RegisterOperations(
 
     for (mlir::Attribute attr : op.Loops()) {
       LoopAttr loop = llvm::cast<LoopAttr>(attr);
-      if (!loop.iter().isa<MappingDimExpr>()) {
+      if (!llvm::isa<MappingDimExpr>(loop.iter())) {
         return map_op.emitError()
                << "loop must not rematerialize or be strip-mined";
       }
@@ -699,7 +699,7 @@ void Fuse(SairMapOp first_op, llvm::ArrayRef<mlir::Attribute> first_loop_nest,
     MappingExpr first_iter = llvm::cast<LoopAttr>(first_attr).iter();
     int first_dimension = llvm::cast<MappingDimExpr>(first_iter).dimension();
     int second_dimension =
-        llvm::cast<MappingDimExpr>(second_attr.cast<LoopAttr>().iter())
+        llvm::cast<MappingDimExpr>(llvm::cast<LoopAttr>(second_attr).iter())
             .dimension();
     first_to_second_mapping[second_dimension] = first_iter;
     second_block_args[second_dimension] =

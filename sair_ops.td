@@ -94,9 +94,9 @@ def SairStaticRangeOp : SairOp<"static_range", [Pure, SairRangeOp]> {
   DerivedAttr shape = SairEmptyDomainShapeAttr;
 
   let extraClassDeclaration = [{
-    int Step() { return getType().cast<StaticRangeType>().getStep(); }
+    int Step() { return llvm::cast<StaticRangeType>(getType()).getStep(); }
 
-    int Size() { return getType().cast<StaticRangeType>().size(); }
+    int Size() { return llvm::cast<StaticRangeType>(getType()).size(); }
 
     ValueOrConstant LowerBound() {
       auto type = mlir::IndexType::get(getContext());
@@ -304,7 +304,7 @@ def SairLoadFromMemRefOp : SairOp<"load_from_memref", [
     ValueOperand MemRef() { return ValueOperands()[0]; }
 
     mlir::MemRefType MemRefType() {
-      return MemRef().GetType().ElementType().cast<mlir::MemRefType>();
+      return llvm::cast<mlir::MemRefType>(MemRef().GetType().ElementType());
     }
   }];
 
@@ -411,10 +411,7 @@ def SairStoreToMemRefOp : SairOp<"store_to_memref", [
     ValueOperand Value() { return ValueOperands()[1]; }
 
     mlir::MemRefType MemRefType() {
-      return MemRef()
-          .GetType()
-          .ElementType()
-          .cast<mlir::MemRefType>();
+      return llvm::cast<mlir::MemRefType>(MemRef().GetType().ElementType());
     }
   }];
 }
@@ -858,7 +855,8 @@ def SairAllocOp : SairOp<"alloc", [
 
   let extraClassDeclaration = [{
     MemRefType MemType() {
-      return getType().cast<ValueType>().ElementType().cast<MemRefType>();
+      return llvm::cast<MemRefType>(
+          llvm::cast<ValueType>(getType()).ElementType());
     }
   }];
 }

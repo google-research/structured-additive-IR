@@ -192,7 +192,7 @@ static mlir::LogicalResult VerifyInstancesAttr(SairOp op) {
 
     for (auto en : llvm::enumerate(decisions.operands().getValue())) {
       mlir::Attribute operand_instance = en.value();
-      if (operand_instance.isa<mlir::UnitAttr>()) continue;
+      if (llvm::isa<mlir::UnitAttr>(operand_instance)) continue;
       if (auto copy = llvm::dyn_cast<CopyAttr>(operand_instance)) {
         Value operand = op->getOperand(en.index());
         auto defining_op = operand.getDefiningOp<ValueProducerOp>();
@@ -370,7 +370,7 @@ mlir::LogicalResult VerifyValueProducerOp(mlir::Operation *operation) {
         return op.emitError() << "cannot specify 'operands' in 'copies'";
       }
       if (decisions.copy_of() == nullptr ||
-          decisions.copy_of().isa<mlir::UnitAttr>()) {
+          llvm::isa<mlir::UnitAttr>(decisions.copy_of())) {
         continue;
       }
       if (auto copy = llvm::dyn_cast<CopyAttr>(decisions.copy_of())) {
@@ -597,7 +597,7 @@ void ComputeOpInstance::SetLoopNest(mlir::ArrayAttr loop_nest) {
 BufferAttr ComputeOpInstance::Storage(int result) const {
   DecisionsAttr decisions = GetDecisions();
   if (decisions.storage() == nullptr ||
-      decisions.storage()[result].isa<mlir::UnitAttr>()) {
+      llvm::isa<mlir::UnitAttr>(decisions.storage()[result])) {
     return nullptr;
   }
   return llvm::cast<BufferAttr>(decisions.storage()[result]);

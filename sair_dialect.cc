@@ -286,9 +286,9 @@ namespace {
 // Accepts a ray stream so that it can be used from different flavors of
 // printers.
 void PrintMappingExpr(MappingExpr expr, llvm::raw_ostream &os) {
-  if (expr.isa<MappingNoneExpr>()) {
+  if (llvm::isa<MappingNoneExpr>(expr)) {
     os << MappingNoneExpr::kAttrName;
-  } else if (expr.isa<MappingUnknownExpr>()) {
+  } else if (llvm::isa<MappingUnknownExpr>(expr)) {
     os << MappingUnknownExpr::kAttrName;
   } else if (auto dim_expr = llvm::dyn_cast<MappingDimExpr>(expr)) {
     os << "d" << dim_expr.dimension();
@@ -325,7 +325,7 @@ void PrintDomainShapeDim(const DomainShapeDim &dimension,
                          mlir::DialectAsmPrinter &os) {
   if (auto static_range = llvm::dyn_cast<StaticRangeType>(dimension.type())) {
     Print(static_range, os);
-  } else if (dimension.type().isa<DynRangeType>()) {
+  } else if (llvm::isa<DynRangeType>(dimension.type())) {
     os << DynRangeType::Name();
   } else {
     llvm_unreachable("unsupported dimension type");

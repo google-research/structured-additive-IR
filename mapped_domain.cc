@@ -60,7 +60,7 @@ mlir::LogicalResult MappedDomain::ResolveUnification(
   mlir::Operation *dim_op = dimension.value.defining_op().GetDuplicatedOp();
   if (isa<SairPlaceholderOp>(dim_op)) return mlir::success();
 
-  if (constraint.isa<MappingNoneExpr, MappingUnknownExpr>()) {
+  if (llvm::isa<MappingNoneExpr, MappingUnknownExpr>(constraint)) {
     // If the dimension is new, extend the domain.
     constraint = MappingDimExpr::get(domain_.size(), context());
     assert(dimension.mapping.IsSurjective());

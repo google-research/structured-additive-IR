@@ -123,7 +123,7 @@ def MappingExpr : AttrInterface<"MappingExpr"> {
 }
 
 // Tests if an attribute is an MappingAttr.
-def IsSairMappingAttr : CPred<"$_self.isa<MappingAttr>()">;
+def IsSairMappingAttr : CPred<"llvm::isa<MappingAttr>($_self)">;
 
 // Specifies how a Sair value is accessed in the domain of another operation.
 def SairMappingAttr : Attr<IsSairMappingAttr, "mapping"> {
@@ -131,7 +131,7 @@ def SairMappingAttr : Attr<IsSairMappingAttr, "mapping"> {
   let returnType = storageType;
 }
 
-def IsSairNamedMappingAttr : CPred<"$_self.isa<NamedMappingAttr>()">;
+def IsSairNamedMappingAttr : CPred<"llvm::isa<NamedMappingAttr>($_self)">;
 
 def SairNamedMappingAttr : Attr<IsSairNamedMappingAttr, "named_mapping"> {
   let storageType = [{NamedMappingAttr}];
@@ -139,7 +139,7 @@ def SairNamedMappingAttr : Attr<IsSairNamedMappingAttr, "named_mapping"> {
 }
 
 // Tests if an attribute is a DomainShapeAttr.
-def IsSairDomainShapeAttr : CPred<"$_self.isa<DomainShapeAttr>()">;
+def IsSairDomainShapeAttr : CPred<"llvm::isa<DomainShapeAttr>($_self)">;
 
 // Specifies the shape of a Sair iteration domain.
 def SairDomainShapeAttr : Attr<IsSairDomainShapeAttr, "domain shape"> {
@@ -158,13 +158,13 @@ def SairEmptyDomainShapeAttr :
 def SairResultDomainShapeAttr :
     DerivedAttr<"DomainShapeAttr", [{
       mlir::Type type = getOperation()->getResult(0).getType();
-      return type.cast<ShapedType>().Shape();
+      return llvm::cast<ShapedType>(type).Shape();
     }]> {
   let convertFromStorage = [{$_self}];
 }
 
 // Tests if an attribute is an MappingExpr.
-def IsSairMappingExpr : CPred<"$_self.isa<sair::MappingExpr>()">;
+def IsSairMappingExpr : CPred<"llvm::isa<sair::MappingExpr>($_self)">;
 
 // Defines an iterator on a dimension of the domain of the current operation.
 def SairMappingExpr : Attr<IsSairMappingExpr, "mapping_expr"> {
@@ -203,7 +203,7 @@ def SairOperandsAttr
 
 // An attribute describing a loop to generate when lowering an operation.
 def SairLoopAttr
-  : Attr<CPred<"$_self.isa<::sair::LoopAttr>()">, "LoopAttr">;
+  : Attr<CPred<"llvm::isa<::sair::LoopAttr>($_self)">, "LoopAttr">;
 
 // A loop nest to generate when lowering an operation.
 def SairLoopNestAttr
@@ -211,7 +211,7 @@ def SairLoopNestAttr
 
 // An attribute that specifies how a value is stored in a buffer.
 def SairBufferAttr
-  : Attr<CPred<"$_self.isa<::sair::BufferAttr>()">, "BufferAttr">;
+  : Attr<CPred<"llvm::isa<::sair::BufferAttr>($_self)">, "BufferAttr">;
 
 // An attribute that specifies how results of a sair operation are stored in
 // memory.
@@ -219,7 +219,7 @@ def SairStorageAttr : OptionalAttr<ArrayAttr>;
 
 // An attribute that specifies how to implement an operation.
 def SairDecisionsAttr
-  : Attr<CPred<"$_self.isa<::sair::DecisionsAttr>()">, "DecisionsAttr">;
+  : Attr<CPred<"llvm::isa<::sair::DecisionsAttr>($_self)">, "DecisionsAttr">;
 
 // An attribute that specifies instances of an operation.
 def SairInstancesAttr
@@ -234,21 +234,21 @@ def SairCopiesAttr
 //===----------------------------------------------------------------------===//
 
 // Type constraint for dimensions.
-def SairDimension : Type<CPred<"$_self.isa<DimensionType>()">, "dimension">;
+def SairDimension : Type<CPred<"llvm::isa<DimensionType>($_self)">, "dimension">;
 
 // Type constraint for ranges.
-def SairDynRange : Type<CPred<"$_self.isa<DynRangeType>()">, "range">;
+def SairDynRange : Type<CPred<"llvm::isa<DynRangeType>($_self)">, "range">;
 
 // Type constraint for static ranges.
 def SairStaticRange
-  : Type<CPred<"$_self.isa<StaticRangeType>()">, "static_range">;
+  : Type<CPred<"llvm::isa<StaticRangeType>($_self)">, "static_range">;
 
 // Type constraint for Sair values.
-def SairValue : Type<CPred<"$_self.isa<ValueType>()">, "value">;
+def SairValue : Type<CPred<"llvm::isa<ValueType>($_self)">, "value">;
 
 // Predicate that checks the element type of a Sair value.
 class SairElementTypePred<Type type>
-  : SubstLeaves<"$_self", "$_self.cast<ValueType>().ElementType()",
+  : SubstLeaves<"$_self", "llvm::cast<ValueType>($_self).ElementType()",
     type.predicate>;
 
 // Type constraint for Sair values with a specific element type.
@@ -420,7 +420,7 @@ def SairOpInterface : OpInterface<"SairOp"> {
       "Returns lowering decisions for the given operation instance",
       "DecisionsAttr", "GetDecisions", (ins "int":$instance), [{}], [{
         mlir::ArrayAttr instances = *$_op.getInstances();
-        return instances.getValue()[instance].cast<DecisionsAttr>();
+        return llvm::cast<DecisionsAttr>(instances.getValue()[instance]);
       }]
     >,
     InterfaceMethod<
@@ -504,8 +504,7 @@ def SairValueProducerOp : OpInterface<"ValueProducerOp"> {
       "llvm::ArrayRef<mlir::Attribute>", "GetCopies", (ins "int":$result), [{}], [{
           auto all_copies = $_op.getCopiesAttr();
           if (all_copies == nullptr) return {};
-          return all_copies.getValue()[result]
-            .template cast<mlir::ArrayAttr>().getValue();
+          return llvm::cast<mlir::ArrayAttr>(all_copies.getValue()[result]).getValue();
       }]>,
     InterfaceMethod<
       "Indicates if the operation has any copy set in its `copies` attribute`",
@@ -513,7 +512,7 @@ def SairValueProducerOp : OpInterface<"ValueProducerOp"> {
         auto all_copies = $_op.getCopiesAttr();
         if (all_copies == nullptr) return false;
         return llvm::any_of(all_copies.getValue(), [](mlir::Attribute attr) {
-          return !attr.cast<mlir::ArrayAttr>().empty();
+          return !llvm::cast<mlir::ArrayAttr>(attr).empty();
         });
       }]>,
     InterfaceMethod<
@@ -521,7 +520,7 @@ def SairValueProducerOp : OpInterface<"ValueProducerOp"> {
       "void", "SetCopy",
       (ins "int":$result, "int":$copy, "DecisionsAttr":$decisions), [{}], [{
         auto all_copies = llvm::to_vector<4>(*$_op.getCopies());
-        auto result_copies_attr = all_copies[result].template cast<mlir::ArrayAttr>();
+        auto result_copies_attr = llvm::cast<mlir::ArrayAttr>(all_copies[result]);
         auto result_copies = llvm::to_vector<4>(result_copies_attr.getValue());
 
         result_copies[copy] = decisions;
@@ -582,10 +581,8 @@ def SairFromToMemRefOp : OpInterface<"FromToMemRefOp"> {
     InterfaceMethod<"Buffer name", "llvm::StringRef", "getBufferName">,
     InterfaceMethod<"Memref type", "mlir::MemRefType", "MemRefType", (ins),
                     [{}], [{
-                      return $_op.MemRef()
-                          .GetType()
-                          .ElementType()
-                          .template cast<mlir::MemRefType>();
+                      return llvm::cast<mlir::MemRefType>(
+                          $_op.MemRef().GetType().ElementType());
                     }]>,
     InterfaceMethod<"Mapping from value domain to layout", "MappingAttr",
                     "Layout", (ins), [{}], [{
