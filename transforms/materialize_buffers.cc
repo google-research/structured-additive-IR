@@ -427,7 +427,7 @@ class MaterializeBuffers
                                  "when materializing buffers";
       }
       for (mlir::Value result : op->getResults()) {
-        if (!result.getType().isa<ValueType>()) continue;
+        if (!isa<ValueType>(result.getType())) continue;
         const ValueStorage &storage =
             storage_analysis.GetStorage(ResultInstance::Unique(result));
         if (storage.space() == nullptr) {

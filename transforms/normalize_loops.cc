@@ -16,6 +16,7 @@
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Pass/Pass.h"
+#include "mlir/Support/LLVM.h"
 #include "loop_nest.h"
 #include "sair_dialect.h"
 #include "sair_op_interfaces.h"
@@ -283,7 +284,7 @@ void NormalizeLoops(SairOp op, const IterationSpace &iteration_space,
          llvm::zip(op->getResults(), new_op->getResults())) {
       // We do not normalize range operations, so we know that results are
       // values.
-      assert(old_value.getType().isa<ValueType>());
+      assert(isa<ValueType>(old_value.getType()));
       UpdateValueUses(old_value,
                       {new_value, mapping.Resize(new_op.results_rank())});
     }
