@@ -123,7 +123,7 @@ def MappingExpr : AttrInterface<"MappingExpr"> {
 }
 
 // Tests if an attribute is an MappingAttr.
-def IsSairMappingAttr : CPred<"$_self.isa<MappingAttr>()">;
+def IsSairMappingAttr : CPred<"isa<MappingAttr>($_self)">;
 
 // Specifies how a Sair value is accessed in the domain of another operation.
 def SairMappingAttr : Attr<IsSairMappingAttr, "mapping"> {
@@ -131,7 +131,7 @@ def SairMappingAttr : Attr<IsSairMappingAttr, "mapping"> {
   let returnType = storageType;
 }
 
-def IsSairNamedMappingAttr : CPred<"$_self.isa<NamedMappingAttr>()">;
+def IsSairNamedMappingAttr : CPred<"isa<NamedMappingAttr>($_self)">;
 
 def SairNamedMappingAttr : Attr<IsSairNamedMappingAttr, "named_mapping"> {
   let storageType = [{NamedMappingAttr}];
@@ -139,7 +139,7 @@ def SairNamedMappingAttr : Attr<IsSairNamedMappingAttr, "named_mapping"> {
 }
 
 // Tests if an attribute is a DomainShapeAttr.
-def IsSairDomainShapeAttr : CPred<"$_self.isa<DomainShapeAttr>()">;
+def IsSairDomainShapeAttr : CPred<"isa<DomainShapeAttr>($_self)">;
 
 // Specifies the shape of a Sair iteration domain.
 def SairDomainShapeAttr : Attr<IsSairDomainShapeAttr, "domain shape"> {
@@ -164,7 +164,7 @@ def SairResultDomainShapeAttr :
 }
 
 // Tests if an attribute is an MappingExpr.
-def IsSairMappingExpr : CPred<"$_self.isa<sair::MappingExpr>()">;
+def IsSairMappingExpr : CPred<"isa<sair::MappingExpr>($_self)">;
 
 // Defines an iterator on a dimension of the domain of the current operation.
 def SairMappingExpr : Attr<IsSairMappingExpr, "mapping_expr"> {
@@ -203,7 +203,7 @@ def SairOperandsAttr
 
 // An attribute describing a loop to generate when lowering an operation.
 def SairLoopAttr
-  : Attr<CPred<"$_self.isa<::sair::LoopAttr>()">, "LoopAttr">;
+  : Attr<CPred<"isa<::sair::LoopAttr>($_self)">, "LoopAttr">;
 
 // A loop nest to generate when lowering an operation.
 def SairLoopNestAttr
@@ -211,7 +211,7 @@ def SairLoopNestAttr
 
 // An attribute that specifies how a value is stored in a buffer.
 def SairBufferAttr
-  : Attr<CPred<"$_self.isa<::sair::BufferAttr>()">, "BufferAttr">;
+  : Attr<CPred<"isa<::sair::BufferAttr>($_self)">, "BufferAttr">;
 
 // An attribute that specifies how results of a sair operation are stored in
 // memory.
@@ -219,7 +219,7 @@ def SairStorageAttr : OptionalAttr<ArrayAttr>;
 
 // An attribute that specifies how to implement an operation.
 def SairDecisionsAttr
-  : Attr<CPred<"$_self.isa<::sair::DecisionsAttr>()">, "DecisionsAttr">;
+  : Attr<CPred<"isa<::sair::DecisionsAttr>($_self)">, "DecisionsAttr">;
 
 // An attribute that specifies instances of an operation.
 def SairInstancesAttr
@@ -234,17 +234,17 @@ def SairCopiesAttr
 //===----------------------------------------------------------------------===//
 
 // Type constraint for dimensions.
-def SairDimension : Type<CPred<"$_self.isa<DimensionType>()">, "dimension">;
+def SairDimension : Type<CPred<"isa<DimensionType>($_self)">, "dimension">;
 
 // Type constraint for ranges.
-def SairDynRange : Type<CPred<"$_self.isa<DynRangeType>()">, "range">;
+def SairDynRange : Type<CPred<"isa<DynRangeType>($_self)">, "range">;
 
 // Type constraint for static ranges.
 def SairStaticRange
-  : Type<CPred<"$_self.isa<StaticRangeType>()">, "static_range">;
+  : Type<CPred<"isa<StaticRangeType>($_self)">, "static_range">;
 
 // Type constraint for Sair values.
-def SairValue : Type<CPred<"$_self.isa<ValueType>()">, "value">;
+def SairValue : Type<CPred<"isa<ValueType>($_self)">, "value">;
 
 // Predicate that checks the element type of a Sair value.
 class SairElementTypePred<Type type>
