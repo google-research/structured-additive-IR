@@ -236,7 +236,7 @@ static mlir::LogicalResult CreateBufferIfNeeded(
   if (FitsInRegisters(operand, iteration_spaces)) return mlir::success();
   mlir::Type element_type =
       llvm::cast<ValueType>(value->GetType()).ElementType();
-  if (element_type.isa<mlir::IndexType>()) {
+  if (llvm::isa<mlir::IndexType>(element_type)) {
     return value->defining_op().EmitError()
            << "cannot generate default storage for multi-dimensional index "
               "values";
@@ -301,7 +301,7 @@ class DefaultStorage : public impl::DefaultStoragePassBase<DefaultStorage> {
     // Assign all remaining values to register and intialize layout fields.
     program.WalkOpInstances([&](const OpInstance &op) {
       for (ResultInstance value : op.Results()) {
-        if (!value.GetType().isa<ValueType>()) continue;
+        if (!llvm::isa<ValueType>(value.GetType())) continue;
         InitializeStorage(value, fusion_analysis, iteration_spaces,
                           storage_analysis);
       }
@@ -326,7 +326,7 @@ class DefaultStorage : public impl::DefaultStoragePassBase<DefaultStorage> {
     // the layout set for the new dimensions and other places will be unknown.
     program.WalkOpInstances([&](const OpInstance &op) {
       for (ResultInstance value : op.Results()) {
-        if (!value.GetType().isa<ValueType>()) continue;
+        if (!llvm::isa<ValueType>(value.GetType())) continue;
         MakeLayoutFullySpecified(value, fusion_analysis, iteration_spaces,
                                  storage_analysis);
       }

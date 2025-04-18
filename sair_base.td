@@ -158,7 +158,7 @@ def SairEmptyDomainShapeAttr :
 def SairResultDomainShapeAttr :
     DerivedAttr<"DomainShapeAttr", [{
       mlir::Type type = getOperation()->getResult(0).getType();
-      return type.cast<ShapedType>().Shape();
+      return llvm::cast<ShapedType>(type).Shape();
     }]> {
   let convertFromStorage = [{$_self}];
 }
@@ -248,7 +248,7 @@ def SairValue : Type<CPred<"isa<ValueType>($_self)">, "value">;
 
 // Predicate that checks the element type of a Sair value.
 class SairElementTypePred<Type type>
-  : SubstLeaves<"$_self", "$_self.cast<ValueType>().ElementType()",
+  : SubstLeaves<"$_self", "llvm::cast<ValueType>($_self).ElementType()",
     type.predicate>;
 
 // Type constraint for Sair values with a specific element type.
@@ -420,7 +420,7 @@ def SairOpInterface : OpInterface<"SairOp"> {
       "Returns lowering decisions for the given operation instance",
       "DecisionsAttr", "GetDecisions", (ins "int":$instance), [{}], [{
         mlir::ArrayAttr instances = *$_op.getInstances();
-        return instances.getValue()[instance].cast<DecisionsAttr>();
+        return llvm::cast<DecisionsAttr>(instances.getValue()[instance]);
       }]
     >,
     InterfaceMethod<
@@ -504,8 +504,7 @@ def SairValueProducerOp : OpInterface<"ValueProducerOp"> {
       "llvm::ArrayRef<mlir::Attribute>", "GetCopies", (ins "int":$result), [{}], [{
           auto all_copies = $_op.getCopiesAttr();
           if (all_copies == nullptr) return {};
-          return all_copies.getValue()[result]
-            .template cast<mlir::ArrayAttr>().getValue();
+          return llvm::cast<mlir::ArrayAttr>(all_copies.getValue()[result]).getValue();
       }]>,
     InterfaceMethod<
       "Indicates if the operation has any copy set in its `copies` attribute`",
@@ -513,7 +512,7 @@ def SairValueProducerOp : OpInterface<"ValueProducerOp"> {
         auto all_copies = $_op.getCopiesAttr();
         if (all_copies == nullptr) return false;
         return llvm::any_of(all_copies.getValue(), [](mlir::Attribute attr) {
-          return !attr.cast<mlir::ArrayAttr>().empty();
+          return !llvm::cast<mlir::ArrayAttr>(attr).empty();
         });
       }]>,
     InterfaceMethod<
@@ -521,7 +520,7 @@ def SairValueProducerOp : OpInterface<"ValueProducerOp"> {
       "void", "SetCopy",
       (ins "int":$result, "int":$copy, "DecisionsAttr":$decisions), [{}], [{
         auto all_copies = llvm::to_vector<4>(*$_op.getCopies());
-        auto result_copies_attr = all_copies[result].template cast<mlir::ArrayAttr>();
+        auto result_copies_attr = llvm::cast<mlir::ArrayAttr>(all_copies[result]);
         auto result_copies = llvm::to_vector<4>(result_copies_attr.getValue());
 
         result_copies[copy] = decisions;
@@ -582,10 +581,8 @@ def SairFromToMemRefOp : OpInterface<"FromToMemRefOp"> {
     InterfaceMethod<"Buffer name", "llvm::StringRef", "getBufferName">,
     InterfaceMethod<"Memref type", "mlir::MemRefType", "MemRefType", (ins),
                     [{}], [{
-                      return $_op.MemRef()
-                          .GetType()
-                          .ElementType()
-                          .template cast<mlir::MemRefType>();
+                      return llvm::cast<mlir::MemRefType>(
+                          $_op.MemRef().GetType().ElementType());
                     }]>,
     InterfaceMethod<"Mapping from value domain to layout", "MappingAttr",
                     "Layout", (ins), [{}], [{

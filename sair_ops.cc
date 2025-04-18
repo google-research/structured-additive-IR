@@ -802,7 +802,7 @@ void PrintProjectionOp(Op op, OpAsmPrinter &printer) {
       op->getAttrs(), {SairFromMemRefOp::getOperandSegmentSizeAttr(),
                        SairDialect::kShapeAttrName, SairOp::kMappingAttrName});
   printer << " : " << op.getShape() << ", "
-          << op.getResult().getType().template cast<ValueType>().ElementType();
+          << llvm::cast<ValueType>(op.getResult().getType()).ElementType();
 }
 }  // namespace
 
@@ -906,7 +906,7 @@ static mlir::LogicalResult VerifyFromToMemRef(mlir::Operation *op,
                                               mlir::Value memref,
                                               mlir::Value value) {
   auto memref_type = llvm::cast<mlir::MemRefType>(
-      memref.getType().cast<ValueType>().ElementType());
+      llvm::cast<ValueType>(memref.getType()).ElementType());
   auto value_type = llvm::cast<ValueType>(value.getType());
   if (memref_type.getElementType() != value_type.ElementType()) {
     return op->emitError()

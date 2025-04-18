@@ -74,7 +74,7 @@ llvm::SmallBitVector MappingExpr::DependencyMask(int domain_size) const {
 bool MappingExpr::HasNoneExprs() const {
   bool has_none_exprs = false;
   Walk([&](MappingExpr sub_expr) {
-    has_none_exprs |= sub_expr.isa<MappingNoneExpr>();
+    has_none_exprs |= llvm::isa<MappingNoneExpr>(sub_expr);
   });
   return has_none_exprs;
 }
@@ -82,7 +82,7 @@ bool MappingExpr::HasNoneExprs() const {
 bool MappingExpr::HasUnknownExprs() const {
   bool has_unknown_exprs = false;
   Walk([&](MappingExpr sub_expr) {
-    has_unknown_exprs |= sub_expr.isa<MappingUnknownExpr>();
+    has_unknown_exprs |= llvm::isa<MappingUnknownExpr>(sub_expr);
   });
   return has_unknown_exprs;
 }
@@ -109,10 +109,10 @@ int MappingExpr::MinDomainSize() const {
 // expression is `?` or `none`. Returns `nullptr` if unification fails.
 static MappingExpr ResolveNoneAndUnknownUnification(MappingExpr lhs,
                                                     MappingExpr rhs) {
-  if (lhs.isa<MappingNoneExpr>()) return rhs;
-  if (rhs.isa<MappingNoneExpr>()) return lhs;
-  if (lhs.isa<MappingUnknownExpr>()) return rhs;
-  if (rhs.isa<MappingUnknownExpr>()) return lhs;
+  if (llvm::isa<MappingNoneExpr>(lhs)) return rhs;
+  if (llvm::isa<MappingNoneExpr>(rhs)) return lhs;
+  if (llvm::isa<MappingUnknownExpr>(lhs)) return rhs;
+  if (llvm::isa<MappingUnknownExpr>(rhs)) return lhs;
   return MappingExpr();
 }
 
@@ -383,7 +383,7 @@ mlir::LogicalResult MappingStripeExpr::SetInverse(
 MappingExpr MappingStripeExpr::FindInInverse(
     llvm::ArrayRef<MappingExpr> inverse) const {
   auto operand_inverse = operand().FindInInverse(inverse);
-  if (operand_inverse.isa<MappingUnknownExpr, MappingNoneExpr>()) {
+  if (llvm::isa<MappingUnknownExpr, MappingNoneExpr>(operand_inverse)) {
     return operand_inverse;
   }
   auto unstripe_expr = llvm::cast<MappingUnStripeExpr>(operand_inverse);
@@ -545,7 +545,7 @@ MappingExpr MappingUnStripeExpr::Unify(
 
   // If the last operand is `none` or `?`, we can replace it by an arbitrary
   // number of operands.
-  if (min_operands.back().isa<MappingNoneExpr, MappingUnknownExpr>()) {
+  if (llvm::isa<MappingNoneExpr, MappingUnknownExpr>(min_operands.back())) {
     min_operands = min_operands.drop_back();
     min_factors = min_factors.drop_back();
   }
@@ -568,7 +568,7 @@ MappingExpr MappingUnStripeExpr::FindInInverse(
   MappingExpr operand_inverse;
   for (int i = 0, e = operands().size(); i < e; ++i) {
     operand_inverse = operands()[i].FindInInverse(inverse);
-    if (operand_inverse.isa<MappingUnknownExpr, MappingNoneExpr>()) continue;
+    if (llvm::isa<MappingUnknownExpr, MappingNoneExpr>(operand_inverse)) continue;
     return llvm::cast<MappingStripeExpr>(operand_inverse).operand();
   }
   // Unstripe has at least one operand.
@@ -797,7 +797,7 @@ MappingAttr MappingAttr::MakeSurjective() const {
   new_exprs.reserve(size());
   for (MappingExpr expr : Dimensions()) {
     MappingExpr new_expr = expr.Map([&](MappingExpr sub_expr) -> MappingExpr {
-      if (!sub_expr.isa<MappingNoneExpr>()) return sub_expr;
+      if (!llvm::isa<MappingNoneExpr>(sub_expr)) return sub_expr;
       return MappingDimExpr::get(num_dimensions++, getContext());
     });
     new_exprs.push_back(new_expr);
@@ -810,7 +810,7 @@ MappingAttr MappingAttr::MakeFullySpecified() const {
   auto new_exprs =
       llvm::to_vector<4>(llvm::map_range(Dimensions(), [&](auto expr) {
         return expr.Map([&](MappingExpr sub_expr) -> MappingExpr {
-          return sub_expr.isa<MappingUnknownExpr>() ? none : sub_expr;
+          return llvm::isa<MappingUnknownExpr>(sub_expr) ? none : sub_expr;
         });
       }));
   return MappingAttr::get(getContext(), UseDomainSize(), new_exprs);
@@ -946,8 +946,8 @@ MappingAttr MappingAttr::UnifyUnknownExprs(MappingAttr other) const {
   for (auto [lhs, rhs] : llvm::zip(Dimensions(), other.Dimensions())) {
     MappingExpr unified =
         lhs.Unify(rhs, [](MappingExpr sub_lhs, MappingExpr sub_rhs) {
-          if (sub_lhs.isa<MappingUnknownExpr>()) return sub_rhs;
-          if (sub_rhs.isa<MappingUnknownExpr>()) return sub_lhs;
+          if (llvm::isa<MappingUnknownExpr>(sub_lhs)) return sub_rhs;
+          if (llvm::isa<MappingUnknownExpr>(sub_rhs)) return sub_lhs;
           return MappingExpr();
         });
     if (unified == nullptr) return nullptr;
@@ -1236,7 +1236,7 @@ static DomainShapeDim StripeAccessedShape(MappingStripeExpr expr,
 static DomainShapeDim UnStripeAccessedShape(MappingUnStripeExpr expr,
                                             DomainShapeDim inner_shape,
                                             MappingAttr inverted_mapping) {
-  if (inner_shape.type().isa<DynRangeType>()) return inner_shape;
+  if (llvm::isa<DynRangeType>(inner_shape.type())) return inner_shape;
   auto type = llvm::cast<StaticRangeType>(inner_shape.type());
   int new_step = type.getStep() / expr.factors().front();
   return DomainShapeDim(
@@ -1460,10 +1460,10 @@ bool LoopAttr::classof(mlir::Attribute attr) {
   if (!derived) return false;
 
   auto name = derived.get("name");
-  if (!name.isa_and_nonnull<mlir::StringAttr>()) return false;
+  if (!llvm::isa_and_nonnull<mlir::StringAttr>(name)) return false;
 
   auto iter = derived.get("iter");
-  if (!iter.isa_and_nonnull<sair::MappingExpr>()) return false;
+  if (!llvm::isa_and_nonnull<sair::MappingExpr>(iter)) return false;
 
   auto unroll = derived.get("unroll");
   if (!unroll) return derived.size() == 2;
@@ -1481,7 +1481,8 @@ mlir::StringAttr LoopAttr::name() const {
   auto derived = llvm::cast<mlir::DictionaryAttr>(*this);
   auto name = derived.get("name");
   assert(name && "attribute not found.");
-  assert(name.isa<mlir::StringAttr>() && "incorrect Attribute type found.");
+  assert(llvm::isa<mlir::StringAttr>(name) &&
+         "incorrect Attribute type found.");
   return llvm::cast<mlir::StringAttr>(name);
 }
 
@@ -1489,7 +1490,7 @@ MappingExpr LoopAttr::iter() const {
   auto derived = llvm::cast<mlir::DictionaryAttr>(*this);
   auto iter = derived.get("iter");
   assert(iter && "attribute not found.");
-  assert(iter.isa<MappingExpr>() && "incorrect Attribute type found.");
+  assert(llvm::isa<MappingExpr>(iter) && "incorrect Attribute type found.");
   return llvm::cast<MappingExpr>(iter);
 }
 
@@ -1497,7 +1498,8 @@ mlir::IntegerAttr LoopAttr::unroll() const {
   auto derived = llvm::cast<mlir::DictionaryAttr>(*this);
   auto unroll = derived.get("unroll");
   if (!unroll) return nullptr;
-  assert(unroll.isa<mlir::IntegerAttr>() && "incorrect Attribute type found.");
+  assert(llvm::isa<mlir::IntegerAttr>(unroll) &&
+         "incorrect Attribute type found.");
   return llvm::cast<mlir::IntegerAttr>(unroll);
 }
 
@@ -1531,19 +1533,19 @@ bool BufferAttr::classof(mlir::Attribute attr) {
   int num_absent_attrs = 0;
 
   auto space = derived.get("space");
-  if (!space.isa_and_nonnull<mlir::StringAttr>()) return false;
+  if (!llvm::isa_and_nonnull<mlir::StringAttr>(space)) return false;
 
   auto name = derived.get("name");
   if (!name) {
     ++num_absent_attrs;
-  } else if (!name.isa<mlir::StringAttr>()) {
+  } else if (!llvm::isa<mlir::StringAttr>(name)) {
     return false;
   }
 
   auto layout = derived.get("layout");
   if (!layout) {
     ++num_absent_attrs;
-  } else if (!layout.isa<NamedMappingAttr>()) {
+  } else if (!llvm::isa<NamedMappingAttr>(layout)) {
     return false;
   }
 
@@ -1554,7 +1556,7 @@ mlir::StringAttr BufferAttr::space() const {
   auto derived = llvm::cast<mlir::DictionaryAttr>(*this);
   auto space = derived.get("space");
   assert(space && "attribute not found.");
-  assert(space.isa<mlir::StringAttr>() && "incorrect Attribute type found.");
+  assert(llvm::isa<mlir::StringAttr>(space) && "incorrect Attribute type found.");
   return llvm::cast<mlir::StringAttr>(space);
 }
 
@@ -1562,7 +1564,8 @@ mlir::StringAttr BufferAttr::name() const {
   auto derived = llvm::cast<mlir::DictionaryAttr>(*this);
   auto name = derived.get("name");
   if (!name) return nullptr;
-  assert(name.isa<mlir::StringAttr>() && "incorrect Attribute type found.");
+  assert(llvm::isa<mlir::StringAttr>(name) &&
+         "incorrect Attribute type found.");
   return llvm::cast<mlir::StringAttr>(name);
 }
 
@@ -1570,7 +1573,8 @@ NamedMappingAttr BufferAttr::layout() const {
   auto derived = llvm::cast<mlir::DictionaryAttr>(*this);
   auto layout = derived.get("layout");
   if (!layout) return nullptr;
-  assert(layout.isa<NamedMappingAttr>() && "incorrect Attribute type found.");
+  assert(llvm::isa<NamedMappingAttr>(layout) &&
+         "incorrect Attribute type found.");
   return llvm::cast<NamedMappingAttr>(layout);
 }
 
@@ -1640,7 +1644,7 @@ bool DecisionsAttr::classof(mlir::Attribute attr) {
     auto loop_nest_attr = llvm::dyn_cast<mlir::ArrayAttr>(loop_nest);
     if (!loop_nest_attr) return false;
     if (llvm::any_of(loop_nest_attr, [](mlir::Attribute attr) {
-          return !attr.isa_and_nonnull<LoopAttr>();
+          return !llvm::isa_and_nonnull<LoopAttr>(attr);
         })) {
       return false;
     }
@@ -1649,21 +1653,21 @@ bool DecisionsAttr::classof(mlir::Attribute attr) {
   auto storage = derived.get("storage");
   if (!storage) {
     ++num_absent_attrs;
-  } else if (!storage.isa<mlir::ArrayAttr>()) {
+  } else if (!llvm::isa<mlir::ArrayAttr>(storage)) {
     return false;
   }
 
   auto expansion = derived.get("expansion");
   if (!expansion) {
     ++num_absent_attrs;
-  } else if (!expansion.isa<mlir::StringAttr>()) {
+  } else if (!llvm::isa<mlir::StringAttr>(expansion)) {
     return false;
   }
 
   auto copy_of = derived.get("copy_of");
   if (!copy_of) {
     ++num_absent_attrs;
-  } else if (!copy_of.isa<CopyAttr, InstanceAttr, mlir::UnitAttr>()) {
+  } else if (!llvm::isa<CopyAttr, InstanceAttr, mlir::UnitAttr>(copy_of)) {
     return false;
   }
 
@@ -1673,8 +1677,8 @@ bool DecisionsAttr::classof(mlir::Attribute attr) {
   } else {
     auto operands_attr = llvm::dyn_cast<mlir::ArrayAttr>(operands);
     if (llvm::any_of(operands_attr, [](mlir::Attribute attr) {
-          return !attr.isa_and_nonnull<CopyAttr, InstanceAttr,
-                                       mlir::UnitAttr>();
+          return !llvm::isa_and_nonnull<CopyAttr, InstanceAttr, mlir::UnitAttr>(
+              attr);
         })) {
       return false;
     }
@@ -1687,7 +1691,7 @@ mlir::IntegerAttr DecisionsAttr::sequence() const {
   auto derived = llvm::cast<mlir::DictionaryAttr>(*this);
   auto sequence = derived.get("sequence");
   if (!sequence) return nullptr;
-  assert(sequence.isa<mlir::IntegerAttr>() &&
+  assert(llvm::isa<mlir::IntegerAttr>(sequence) &&
          "incorrect Attribute type found.");
   return llvm::cast<mlir::IntegerAttr>(sequence);
 }
@@ -1696,7 +1700,8 @@ mlir::ArrayAttr DecisionsAttr::loop_nest() const {
   auto derived = llvm::cast<mlir::DictionaryAttr>(*this);
   auto loop_nest = derived.get("loop_nest");
   if (!loop_nest) return nullptr;
-  assert(loop_nest.isa<mlir::ArrayAttr>() && "incorrect Attribute type found.");
+  assert(llvm::isa<mlir::ArrayAttr>(loop_nest) &&
+         "incorrect Attribute type found.");
   return llvm::cast<mlir::ArrayAttr>(loop_nest);
 }
 
@@ -1704,7 +1709,8 @@ mlir::ArrayAttr DecisionsAttr::storage() const {
   auto derived = llvm::cast<mlir::DictionaryAttr>(*this);
   auto storage = derived.get("storage");
   if (!storage) return nullptr;
-  assert(storage.isa<mlir::ArrayAttr>() && "incorrect Attribute type found.");
+  assert(llvm::isa<mlir::ArrayAttr>(storage) &&
+         "incorrect Attribute type found.");
   return llvm::cast<mlir::ArrayAttr>(storage);
 }
 
@@ -1712,7 +1718,7 @@ mlir::StringAttr DecisionsAttr::expansion() const {
   auto derived = llvm::cast<mlir::DictionaryAttr>(*this);
   auto expansion = derived.get("expansion");
   if (!expansion) return nullptr;
-  assert(expansion.isa<mlir::StringAttr>() &&
+  assert(llvm::isa<mlir::StringAttr>(expansion) &&
          "incorrect Attribute type found.");
   return llvm::cast<mlir::StringAttr>(expansion);
 }
@@ -1721,7 +1727,8 @@ mlir::Attribute DecisionsAttr::copy_of() const {
   auto derived = llvm::cast<mlir::DictionaryAttr>(*this);
   auto copy_of = derived.get("copy_of");
   if (!copy_of) return nullptr;
-  assert(copy_of.isa<mlir::Attribute>() && "incorrect Attribute type found.");
+  assert(llvm::isa<mlir::Attribute>(copy_of) &&
+         "incorrect Attribute type found.");
   return llvm::cast<mlir::Attribute>(copy_of);
 }
 
@@ -1729,7 +1736,8 @@ mlir::ArrayAttr DecisionsAttr::operands() const {
   auto derived = llvm::cast<mlir::DictionaryAttr>(*this);
   auto operands = derived.get("operands");
   if (!operands) return nullptr;
-  assert(operands.isa<mlir::ArrayAttr>() && "incorrect Attribute type found.");
+  assert(llvm::isa<mlir::ArrayAttr>(operands) &&
+         "incorrect Attribute type found.");
   return llvm::cast<mlir::ArrayAttr>(operands);
 }
 

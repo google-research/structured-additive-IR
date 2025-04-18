@@ -41,7 +41,8 @@ std::optional<unsigned> FindCopiedInstance(
     llvm::ArrayRef<mlir::Attribute> result_copies, unsigned position,
     mlir::Location location) {
   auto decisions = llvm::cast<DecisionsAttr>(result_copies[position]);
-  if (decisions.copy_of() == nullptr || decisions.copy_of().isa<UnitAttr>()) {
+  if (decisions.copy_of() == nullptr ||
+      llvm::isa<UnitAttr>(decisions.copy_of())) {
     mlir::emitError(location) << "expected the source of copy to be specified";
     return std::nullopt;
   }
@@ -179,7 +180,7 @@ mlir::LogicalResult CreateInstancesAndCopies(Operation *container) {
     for (int i = 0, e = op->getNumOperands(); i < e; ++i) {
       mlir::Value value = op->getOperand(i);
       mlir::Attribute key_attr = operand_attrs[i];
-      if (key_attr.isa<UnitAttr>()) {
+      if (llvm::isa<UnitAttr>(key_attr)) {
         return op->emitError()
                << "expceted concerete instance or copy as operand #" << i;
       }
