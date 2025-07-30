@@ -109,7 +109,7 @@ bool InlineTrivialSairOp(mlir::func::FuncOp function) {
   for (mlir::Value operand : terminator->getOperands()) {
     mlir::Type type = ValueType::get(operand.getType());
     mlir::Value value =
-        builder.create<SairFromScalarOp>(trivial_op.getLoc(), type, operand);
+        SairFromScalarOp::create(builder, trivial_op.getLoc(), type, operand);
     result_values.push_back(value);
   }
   trivial_operation->replaceAllUsesWith(result_values);

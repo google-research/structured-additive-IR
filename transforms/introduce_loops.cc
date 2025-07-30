@@ -437,9 +437,9 @@ mlir::scf::ForOp CreateForOp(mlir::Location loc, mlir::Value lower_bound,
                              llvm::ArrayRef<int> results_pos, Driver &driver) {
   mlir::OpBuilder::InsertionGuard guard(driver);
   auto step_value =
-      driver.create<mlir::arith::ConstantIndexOp>(loc, step.getSExtValue());
-  mlir::scf::ForOp for_op = driver.create<mlir::scf::ForOp>(
-      loc, lower_bound, upper_bound, step_value, iter_args_init);
+      mlir::arith::ConstantIndexOp::create(driver, loc, step.getSExtValue());
+  mlir::scf::ForOp for_op = mlir::scf::ForOp::create(
+      driver, loc, lower_bound, upper_bound, step_value, iter_args_init);
 
   // Replace the sair.map results.
   mlir::Block &block = *driver.getBlock();
@@ -458,7 +458,7 @@ mlir::scf::ForOp CreateForOp(mlir::Location loc, mlir::Value lower_bound,
   // builder if there are no induction variables.
   if (!iter_args_result.empty()) {
     driver.setInsertionPointToEnd(for_op.getBody());
-    driver.create<mlir::scf::YieldOp>(for_op.getLoc(), iter_args_result);
+    mlir::scf::YieldOp::create(driver, for_op.getLoc(), iter_args_result);
   }
 
   old_index.replaceAllUsesWith(for_op.getInductionVar());
@@ -481,8 +481,8 @@ mlir::Value GetValueOfType(mlir::Location loc, mlir::Type type,
     mlir::emitError(loc) << "unable to create a default value of type " << type;
     return nullptr;
   }
-  return driver.create<mlir::arith::ConstantOp>(loc, type,
-                                                cast<TypedAttr>(value));
+  return mlir::arith::ConstantOp::create(driver, loc, type,
+                                         cast<TypedAttr>(value));
 }
 
 // Updates users of a value after introducing a loop in the sair.map operation
@@ -558,8 +558,8 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
   driver.setInsertionPointToStart(&op.block());
   auto materialize_bound = [&](const ValueOrConstant &bound) -> mlir::Value {
     if (bound.is_constant()) {
-      return driver.create<arith::ConstantOp>(
-          op.getLoc(), cast<TypedAttr>(bound.constant()));
+      return arith::ConstantOp::create(driver, op.getLoc(),
+                                       cast<TypedAttr>(bound.constant()));
     }
     // Check that the value is stored in registers.
     auto bound_instance = ResultInstance::Unique(bound.value().value);
@@ -595,8 +595,8 @@ mlir::LogicalResult IntroduceLoop(SairMapOp op,
       /*copy_of=*/nullptr,
       /*operands=*/EraseOperandFromArray(decisions.operands(), dimension),
       op.getContext());
-  SairMapOp new_op = driver.create<SairMapOp>(
-      op.getLoc(),
+  SairMapOp new_op = SairMapOp::create(
+      driver, op.getLoc(),
       /*result_types=*/EraseDimension(op.getResultTypes(), dimension),
       /*domain=*/EraseValue(op.getDomain(), dimension),
       /*mappings_array=*/driver.getArrayAttr(mappings),
@@ -774,15 +774,16 @@ void Fuse(SairMapOp first_op, llvm::ArrayRef<mlir::Attribute> first_loop_nest,
       GetInstanceZeroOperands(context,
                               first_op.getDomain().size() + inputs.size()),
       context);
-  SairMapOp new_op = driver.create<SairMapOp>(
-      /*location=*/first_op.getLoc(),
-      /*result_types=*/result_types,
-      /*domain=*/first_op.getDomain(),
-      /*mappings_array=*/driver.getArrayAttr(mappings),
-      /*inputs=*/inputs,
-      /*shape=*/first_op.getShape(),
-      /*instances=*/driver.getArrayAttr({new_decisions}),
-      /*copies=*/nullptr);
+  SairMapOp new_op =
+      SairMapOp::create(driver,
+                        /*location=*/first_op.getLoc(),
+                        /*result_types=*/result_types,
+                        /*domain=*/first_op.getDomain(),
+                        /*mappings_array=*/driver.getArrayAttr(mappings),
+                        /*inputs=*/inputs,
+                        /*shape=*/first_op.getShape(),
+                        /*instances=*/driver.getArrayAttr({new_decisions}),
+                        /*copies=*/nullptr);
   new_op.getBody().takeBody(first_op.getBody());
   driver.replaceOp(first_op,
                    new_op.getResults().take_front(first_op.getNumResults()));

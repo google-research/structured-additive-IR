@@ -1875,10 +1875,9 @@ SairOp SairCopyOp::ReCreateWithNewDomain(
       ValueType::get(new_shape, llvm::cast<ValueType>(getType()).ElementType());
 
   auto new_instances = ComposeInstances(new_to_old_mapping, getInstancesAttr());
-  auto new_op =
-      builder.create<SairCopyOp>(getLoc(), new_type, new_domains[0],
-                                 new_mappings, getValue(), new_instances,
-                                 /*copies=*/nullptr);
+  auto new_op = SairCopyOp::create(builder, getLoc(), new_type, new_domains[0],
+                                   new_mappings, getValue(), new_instances,
+                                   /*copies=*/nullptr);
   return llvm::cast<SairOp>(new_op.getOperation());
 }
 
@@ -1910,8 +1909,8 @@ SairOp SairLoadFromMemRefOp::ReCreateWithNewDomain(
   auto return_type =
       ValueType::get(new_shape, llvm::cast<ValueType>(getType()).ElementType());
   auto new_instances = ComposeInstances(new_to_old_mapping, getInstancesAttr());
-  auto new_op = builder.create<SairLoadFromMemRefOp>(
-      getLoc(), return_type, new_domains[0], new_mappings, getMemref(),
+  auto new_op = SairLoadFromMemRefOp::create(
+      builder, getLoc(), return_type, new_domains[0], new_mappings, getMemref(),
       new_layout, new_instances, /*copies=*/nullptr);
   return llvm::cast<SairOp>(new_op.getOperation());
 }
@@ -1934,8 +1933,8 @@ SairOp SairStoreToMemRefOp::ReCreateWithNewDomain(
       ComposeMappings(new_to_old_mapping, getMappingArray());
   MappingAttr new_layout = new_to_old_mapping.Compose(getLayout());
   auto new_instances = ComposeInstances(new_to_old_mapping, getInstancesAttr());
-  auto new_op = builder.create<SairStoreToMemRefOp>(
-      getLoc(), new_domains[0], new_mappings, getMemref(), getValue(),
+  auto new_op = SairStoreToMemRefOp::create(
+      builder, getLoc(), new_domains[0], new_mappings, getMemref(), getValue(),
       new_layout, new_shape, new_instances, /*copies=*/nullptr);
   return llvm::cast<SairOp>(new_op.getOperation());
 }
@@ -1951,8 +1950,8 @@ static void MoveMapBody(mlir::Location loc, mlir::Block &old_body,
   for (auto [index, expr] :
        llvm::zip(old_body.getArguments(), new_to_old_mapping.Dimensions())) {
     auto map = mlir::AffineMap::get(new_domain_size, 0, expr.AsAffineExpr());
-    auto new_index = builder.create<mlir::affine::AffineApplyOp>(
-        loc, map, new_body.getArguments().take_front(new_domain_size));
+    auto new_index = mlir::affine::AffineApplyOp::create(
+        builder, loc, map, new_body.getArguments().take_front(new_domain_size));
     index.replaceAllUsesWith(new_index);
   }
 
@@ -1980,9 +1979,9 @@ SairOp SairMapOp::ReCreateWithNewDomain(
         ValueType::get(new_shape, llvm::cast<ValueType>(type).ElementType()));
   }
   auto new_instances = ComposeInstances(new_to_old_mapping, getInstancesAttr());
-  auto new_op = builder.create<SairMapOp>(
-      getLoc(), new_return_types, new_domains[0], new_mappings, getInputs(),
-      new_shape, new_instances, /*copies=*/nullptr);
+  auto new_op = SairMapOp::create(builder, getLoc(), new_return_types,
+                                  new_domains[0], new_mappings, getInputs(),
+                                  new_shape, new_instances, /*copies=*/nullptr);
   MoveMapBody(getLoc(), block(), new_op.block(), new_to_old_mapping, builder);
   return llvm::cast<SairOp>(new_op.getOperation());
 }
@@ -2004,9 +2003,10 @@ SairOp SairMapReduceOp::ReCreateWithNewDomain(
                        llvm::cast<ValueType>(type).ElementType()));
   }
   auto new_instances = ComposeInstances(new_to_old_mapping, getInstancesAttr());
-  auto new_op = builder.create<SairMapReduceOp>(
-      getLoc(), new_return_types, new_domains[0], new_domains[1], new_mappings,
-      getInits(), getInputs(), new_shape, new_instances, /*copies=*/nullptr);
+  auto new_op = SairMapReduceOp::create(
+      builder, getLoc(), new_return_types, new_domains[0], new_domains[1],
+      new_mappings, getInits(), getInputs(), new_shape, new_instances,
+      /*copies=*/nullptr);
   // Create the map body.
   llvm::SmallVector<mlir::Type> block_arg_types(new_shape.NumDimensions(),
                                                 builder.getIndexType());
@@ -2034,9 +2034,10 @@ SairOp SairProjLastOp::ReCreateWithNewDomain(
   auto new_return_type =
       ValueType::get(new_shape.Prefix(new_domains[0].size()),
                      llvm::cast<ValueType>(getType()).ElementType());
-  auto new_op = builder.create<SairProjLastOp>(
-      getLoc(), new_return_type, new_domains[0], new_domains[1], new_mappings,
-      getValue(), new_shape, /*instances=*/nullptr, /*copies=*/nullptr);
+  auto new_op = SairProjLastOp::create(
+      builder, getLoc(), new_return_type, new_domains[0], new_domains[1],
+      new_mappings, getValue(), new_shape, /*instances=*/nullptr,
+      /*copies=*/nullptr);
   return llvm::cast<SairOp>(new_op.getOperation());
 }
 
@@ -2052,9 +2053,10 @@ SairOp SairProjAnyOp::ReCreateWithNewDomain(
   auto new_return_type =
       ValueType::get(new_shape.Prefix(new_domains[0].size()),
                      llvm::cast<ValueType>(getType()).ElementType());
-  auto new_op = builder.create<SairProjAnyOp>(
-      getLoc(), new_return_type, new_domains[0], new_domains[1], new_mappings,
-      getValue(), new_shape, /*instances=*/nullptr, /*copies=*/nullptr);
+  auto new_op =
+      SairProjAnyOp::create(builder, getLoc(), new_return_type, new_domains[0],
+                            new_domains[1], new_mappings, getValue(), new_shape,
+                            /*instances=*/nullptr, /*copies=*/nullptr);
   return llvm::cast<SairOp>(new_op.getOperation());
 }
 
@@ -2068,9 +2070,10 @@ SairOp SairFbyOp::ReCreateWithNewDomain(
       ComposeMappings(new_to_old_mapping, getMappingArray());
   auto new_return_type =
       ValueType::get(new_shape, llvm::cast<ValueType>(getType()).ElementType());
-  auto new_op = builder.create<SairFbyOp>(
-      getLoc(), new_return_type, new_domains[0], new_domains[1], new_mappings,
-      getInit(), getValue(), /*instances=*/nullptr, /*copies=*/nullptr);
+  auto new_op =
+      SairFbyOp::create(builder, getLoc(), new_return_type, new_domains[0],
+                        new_domains[1], new_mappings, getInit(), getValue(),
+                        /*instances=*/nullptr, /*copies=*/nullptr);
   return llvm::cast<SairOp>(new_op.getOperation());
 }
 
@@ -2093,8 +2096,8 @@ SairOp SairAllocOp::ReCreateWithNewDomain(
       ComposeMappings(new_to_old_mapping, getMappingArray());
   auto new_return_type = ValueType::get(new_shape, MemType());
   auto new_instances = ComposeInstances(new_to_old_mapping, getInstancesAttr());
-  auto new_op = builder.create<SairAllocOp>(
-      getLoc(), new_return_type, new_domains[0], new_mappings,
+  auto new_op = SairAllocOp::create(
+      builder, getLoc(), new_return_type, new_domains[0], new_mappings,
       getDynamicSizes(), new_instances, /*copies=*/nullptr);
   return llvm::cast<SairOp>(new_op.getOperation());
 }
@@ -2108,8 +2111,8 @@ SairOp SairFreeOp::ReCreateWithNewDomain(
   mlir::ArrayAttr new_mappings =
       ComposeMappings(new_to_old_mapping, getMappingArray());
   auto new_instances = ComposeInstances(new_to_old_mapping, getInstancesAttr());
-  auto new_op = builder.create<SairFreeOp>(
-      getLoc(), new_domains[0], new_mappings, getValue(), new_instances);
+  auto new_op = SairFreeOp::create(builder, getLoc(), new_domains[0],
+                                   new_mappings, getValue(), new_instances);
   return llvm::cast<SairOp>(new_op.getOperation());
 }
 

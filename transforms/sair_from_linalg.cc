@@ -85,8 +85,8 @@ mlir::Value CreateSairRange(mlir::Location loc, const LoopBound &bound,
   // If the shape is statically known, create a simple static range.
   if (!mlir::ShapedType::isDynamic(dimension)) {
     auto range_type = StaticRangeType::get(dimension, 1, context);
-    return rewriter.create<SairStaticRangeOp>(loc, range_type,
-                                              /*instances=*/nullptr);
+    return SairStaticRangeOp::create(rewriter, loc, range_type,
+                                     /*instances=*/nullptr);
   }
 
   // Otherwise, extract the dynamic dimension of the shaped type, construct a 0d
@@ -102,17 +102,17 @@ mlir::Value CreateSairRange(mlir::Location loc, const LoopBound &bound,
   mlir::Value bound_dim = [&] {
     mlir::OpBuilder::InsertionGuard raii(rewriter);
     rewriter.setInsertionPoint(sair_program);
-    return rewriter.create<mlir::memref::DimOp>(loc, bound.referenced_value,
-                                                bound.dimension);
+    return mlir::memref::DimOp::create(rewriter, loc, bound.referenced_value,
+                                       bound.dimension);
   }();
   mlir::Value bound_value =
-      rewriter.create<SairFromScalarOp>(loc, value_type, bound_dim);
-  return rewriter.create<SairDynRangeOp>(loc, range_type, mlir::ValueRange(),
-                                         mapping_array,
-                                         /*begin=*/nullptr,
-                                         /*end=*/bound_value,
-                                         /*step=*/rewriter.getIndexAttr(1),
-                                         /*instances=*/nullptr);
+      SairFromScalarOp::create(rewriter, loc, value_type, bound_dim);
+  return SairDynRangeOp::create(rewriter, loc, range_type, mlir::ValueRange(),
+                                mapping_array,
+                                /*begin=*/nullptr,
+                                /*end=*/bound_value,
+                                /*step=*/rewriter.getIndexAttr(1),
+                                /*instances=*/nullptr);
 }
 
 // Extracts bounds of the loops comprised in the iteration domain from the list
@@ -267,17 +267,18 @@ void EmitMemRefToValue(
         ValueType::get(DomainShapeAttr::get(context), type);
 
     auto from_scalar =
-        rewriter.create<SairFromScalarOp>(loc, memref_value_type, operand);
-    Value new_operand = rewriter.create<SairFromMemRefOp>(
-        loc, value_type, mlir::ValueRange(), ranges, mappings, from_scalar,
-        storage_analysis.GetFreshBufferName(), /*instances=*/nullptr,
+        SairFromScalarOp::create(rewriter, loc, memref_value_type, operand);
+    Value new_operand = SairFromMemRefOp::create(
+        rewriter, loc, value_type, mlir::ValueRange(), ranges, mappings,
+        from_scalar, storage_analysis.GetFreshBufferName(),
+        /*instances=*/nullptr,
         /*copies=*/nullptr);
     // Insert a copy to avoid storage specification mismatch.
     // TODO(b/181850491): introduce a sair.maybe_copy operation instead.
     auto copy_mapping = rewriter.getArrayAttr(
         {MappingAttr::GetIdentity(context, ranges.size())});
-    Value copied_operand = rewriter.create<SairCopyOp>(
-        loc, value_type, ranges, copy_mapping, new_operand,
+    Value copied_operand = SairCopyOp::create(
+        rewriter, loc, value_type, ranges, copy_mapping, new_operand,
         /*decisions=*/nullptr, /*copies=*/nullptr);
     map_operands.push_back(copied_operand);
 
@@ -318,14 +319,14 @@ void EmitValueToMemRef(mlir::Location loc, SairProgramOp program,
     {
       mlir::OpBuilder::InsertionGuard guard(rewriter);
       rewriter.setInsertionPointToStart(&program.getBody().front());
-      from_scalar =
-          rewriter.create<SairFromScalarOp>(loc, memref_value_type, memrefs[i]);
+      from_scalar = SairFromScalarOp::create(rewriter, loc, memref_value_type,
+                                             memrefs[i]);
     }
-    rewriter.create<SairToMemRefOp>(
-        loc, mlir::ValueRange(), ranges[i], mapping_array, from_scalar,
-        sair_values[i], shape, storage_analysis.GetFreshBufferName(),
-        /*instances=*/nullptr,
-        /*copies=*/nullptr);
+    SairToMemRefOp::create(rewriter, loc, mlir::ValueRange(), ranges[i],
+                           mapping_array, from_scalar, sair_values[i], shape,
+                           storage_analysis.GetFreshBufferName(),
+                           /*instances=*/nullptr,
+                           /*copies=*/nullptr);
   }
 }
 
@@ -440,8 +441,8 @@ void MoveBodyBlock(mlir::AffineMap linalg_to_sair_loops,
   {
     OpBuilder::InsertionGuard raii(rewriter);
     rewriter.setInsertionPointToEnd(&body);
-    rewriter.create<SairReturnOp>(source_op.getLoc(),
-                                  body.getTerminator()->getOperands());
+    SairReturnOp::create(rewriter, source_op.getLoc(),
+                         body.getTerminator()->getOperands());
   }
   body.back().getPrevNode()->erase();
 }
@@ -532,10 +533,10 @@ mlir::Operation *CreateMapReduceOp(
   llvm::append_range(mappings, operand_mappings.take_front(num_outputs));
   mlir::ArrayAttr mappings_attr = rewriter.getArrayAttr(mappings);
 
-  return rewriter.create<SairMapReduceOp>(
-      loc, result_types, parallel_domain, reduction_domain, mappings_attr,
-      init_operands, input_operands, domain_shape,
-      /*decisions=*/nullptr, /*copies=*/nullptr);
+  return SairMapReduceOp::create(rewriter, loc, result_types, parallel_domain,
+                                 reduction_domain, mappings_attr, init_operands,
+                                 input_operands, domain_shape,
+                                 /*decisions=*/nullptr, /*copies=*/nullptr);
 }
 
 // Rewrites Linalg generic operation into a semantically equivalent sequence of
@@ -600,7 +601,7 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
     return mlir::failure();
   }
 
-  auto sair_program = rewriter.create<SairProgramOp>(loc);
+  auto sair_program = SairProgramOp::create(rewriter, loc);
   rewriter.setInsertionPointToStart(&sair_program.getBody().front());
   StorageAnalysis storage_analysis(sair_program);
 
@@ -642,11 +643,11 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
   // Construct the main map or map_reduce operation.
   mlir::Operation *map_op;
   if (num_reduction_dims == 0) {
-    map_op = rewriter.create<SairMapOp>(loc, result_types, domain_ranges,
-                                        rewriter.getArrayAttr(operand_mappings),
-                                        map_operands, domain_shape,
-                                        /*decisions=*/nullptr,
-                                        /*copies=*/nullptr);
+    map_op = SairMapOp::create(rewriter, loc, result_types, domain_ranges,
+                               rewriter.getArrayAttr(operand_mappings),
+                               map_operands, domain_shape,
+                               /*decisions=*/nullptr,
+                               /*copies=*/nullptr);
   } else {
     map_op = CreateMapReduceOp(
         loc, result_types, domain_ranges, map_operands, operand_mappings,
@@ -661,7 +662,7 @@ mlir::LogicalResult RewriteLinalgToSair(mlir::linalg::LinalgOp op,
                     result_mappings, result_ranges, storage_analysis, rewriter);
 
   // Add the sair.program terminator.
-  rewriter.create<SairExitOp>(loc);
+  SairExitOp::create(rewriter, loc);
 
   // Delete the source operation after conversion.
   op.erase();
